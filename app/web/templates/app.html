@@ -3,9 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
-<meta name="theme-color" content="#3b5d99">
+<meta name="theme-color" content="#4a6fae">
 <title>{{ school or "Дневник" }}</title>
-<link rel="manifest" href="{{ base }}/manifest.webmanifest?token={{ token }}">
+{% if not demo %}<link rel="manifest" href="{{ base }}/manifest.webmanifest?token={{ token }}">{% endif %}
 <link rel="icon" href="{{ base }}/static/icon.svg">
 <link rel="apple-touch-icon" href="{{ base }}/static/icon.svg">
 <link rel="stylesheet" href="{{ base }}/static/app.css?v={{ version }}">
@@ -15,64 +15,72 @@
 </head>
 <body>
 
-<header class="topbar">
-  <button class="topbar-btn" id="menuBtn" aria-label="Меню">☰</button>
-  <div class="topbar-title" id="topTitle">Дневник</div>
-  <button class="topbar-btn" id="bellBtn" aria-label="Объявления">🔔</button>
+<!-- Шапка и полоса вкладки — один закреплённый блок: раньше полоса с датой
+     была липкой внутри страницы и при прокрутке отрывалась от шапки. -->
+<header class="app-header" id="appHeader">
+  <div class="topbar">
+    <button class="topbar-btn" id="menuBtn" aria-label="Меню" data-icon="menu"></button>
+    <div class="topbar-title" id="topTitle">Дневник</div>
+    <button class="topbar-btn" id="bellBtn" aria-label="Объявления" data-icon="bell"></button>
+  </div>
+
+  <div class="subbar" data-for="day">
+    <div class="date-bar">
+      <button class="date-arrow" id="dayPrev" aria-label="Предыдущий день" data-icon="left"></button>
+      <button class="date-title" id="dayTitle">
+        <span class="date-label" id="dayLabel">Сегодня</span>
+        <span class="date-sub" id="daySub"></span>
+      </button>
+      <button class="date-arrow" id="dayNext" aria-label="Следующий день" data-icon="right"></button>
+    </div>
+  </div>
+
+  <div class="subbar" data-for="schedule" hidden>
+    <div class="date-bar">
+      <button class="date-arrow" id="schedPrev" aria-label="Предыдущая неделя" data-icon="left"></button>
+      <button class="date-title" id="schedTitle">
+        <span class="date-label" id="schedLabel">Текущая</span>
+        <span class="date-sub" id="schedSub"></span>
+      </button>
+      <button class="date-arrow" id="schedNext" aria-label="Следующая неделя" data-icon="right"></button>
+    </div>
+  </div>
+
+  <div class="subbar" data-for="homework" hidden>
+    <div class="filter-bar">
+      <div class="segment-title" id="hwCount">Домашние задания</div>
+      <label class="search"><span data-icon="search"></span>
+        <input id="hwSearch" type="search" placeholder="Поиск" autocomplete="off"></label>
+    </div>
+  </div>
+
+  <div class="subbar" data-for="mail" hidden>
+    <div class="filter-bar"><div class="segment-title">Входящие</div></div>
+  </div>
 </header>
 
 <div class="pull-indicator" id="pullIndicator"></div>
 <div class="banner" id="banner" hidden></div>
 
 <main>
-  <section class="panel active" id="panel-day">
-    <div class="date-bar">
-      <button class="date-arrow" id="dayPrev" aria-label="Предыдущий день">‹</button>
-      <button class="date-title" id="dayTitle">
-        <span class="date-label" id="dayLabel">Сегодня</span>
-        <span class="date-sub" id="daySub"></span>
-      </button>
-      <button class="date-arrow" id="dayNext" aria-label="Следующий день">›</button>
-    </div>
-    <div class="list" id="dayContent"></div>
-  </section>
-
-  <section class="panel" id="panel-schedule">
-    <div class="date-bar">
-      <button class="date-arrow" id="schedPrev" aria-label="Предыдущая неделя">‹</button>
-      <button class="date-title" id="schedTitle">
-        <span class="date-label" id="schedLabel">Текущая</span>
-        <span class="date-sub" id="schedSub"></span>
-      </button>
-      <button class="date-arrow" id="schedNext" aria-label="Следующая неделя">›</button>
-    </div>
-    <div class="list" id="scheduleContent"></div>
-  </section>
-
-  <section class="panel" id="panel-homework">
-    <div class="filter-bar">
-      <div class="segment-title" id="hwCount">Домашние задания</div>
-      <input class="search" id="hwSearch" type="search" placeholder="Поиск" autocomplete="off">
-    </div>
-    <div class="list" id="homeworkContent"></div>
-  </section>
-
+  <section class="panel active" id="panel-day"><div class="list" id="dayContent"></div></section>
+  <section class="panel" id="panel-schedule"><div class="list" id="scheduleContent"></div></section>
+  <section class="panel" id="panel-homework"><div class="list" id="homeworkContent"></div></section>
   <section class="panel" id="panel-totals"><div id="totalsContent"></div></section>
-
   <section class="panel" id="panel-mail">
-    <div class="filter-bar"><div class="segment-title">Входящие</div></div>
     <div class="list" id="mailContent"></div>
+    <button class="fab" id="composeBtn" aria-label="Написать письмо" data-icon="plus"></button>
   </section>
 </main>
 
 <div id="screens"></div>
 
 <nav class="bottom-nav" id="bottomNav">
-  <button class="nav-item active" data-tab="day"><span class="ico">🕘</span><span>День</span></button>
-  <button class="nav-item" data-tab="schedule"><span class="ico">🗓</span><span>Расписание</span></button>
-  <button class="nav-item" data-tab="homework"><span class="ico">🏠</span><span>Д/З</span></button>
-  <button class="nav-item" data-tab="totals"><span class="ico">📖</span><span>Итоги</span></button>
-  <button class="nav-item" data-tab="mail"><span class="ico">📣</span><span>Сообщения</span></button>
+  <button class="nav-item active" data-tab="day"><span class="ico" data-icon="clock"></span><span>День</span></button>
+  <button class="nav-item" data-tab="schedule"><span class="ico" data-icon="calendar"></span><span>Расписание</span></button>
+  <button class="nav-item" data-tab="homework"><span class="ico" data-icon="home"></span><span>Д/З</span></button>
+  <button class="nav-item" data-tab="totals"><span class="ico" data-icon="book"></span><span>Итоги</span></button>
+  <button class="nav-item" data-tab="mail"><span class="ico" data-icon="megaphone"></span><span>Сообщения</span></button>
 </nav>
 
 <aside class="drawer" id="drawer">
@@ -85,7 +93,7 @@
     <div class="sheet-grip"></div>
     <div class="sheet-head">
       <h3 id="sheetTitle"></h3>
-      <button class="sheet-close" id="sheetClose" aria-label="Закрыть">✕</button>
+      <button class="sheet-close" id="sheetClose" aria-label="Закрыть" data-icon="close"></button>
     </div>
     <div class="sheet-body" id="sheetBody"></div>
   </div>
@@ -97,7 +105,8 @@
     token: {{ token | tojson }},
     pushEnabled: {{ push_enabled | tojson }},
     student: {{ student | tojson }},
-    school: {{ school | tojson }}
+    school: {{ school | tojson }},
+    demo: {{ (demo or false) | tojson }}
   };
 </script>
 <script src="{{ base }}/static/js/app.js?v={{ version }}" type="module"></script>

@@ -7,6 +7,7 @@
 
 import { $, esc, tg } from './core.js';
 import { tap } from './haptics.js';
+import { ICONS } from './icons.js';
 
 const stack = [];
 
@@ -16,7 +17,7 @@ export function pushScreen(title, subtitle = '') {
   screen.className = 'screen';
   screen.innerHTML = `
     <header class="screen-head">
-      <button class="screen-back" aria-label="Назад">←</button>
+      <button class="screen-back" aria-label="Назад">${ICONS.back}</button>
       <div class="screen-titles">
         <div class="screen-title">${esc(title)}</div>
         ${subtitle ? `<div class="screen-subtitle">${esc(subtitle)}</div>` : ''}

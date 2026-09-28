@@ -6,7 +6,9 @@ import { initDay, loadDay } from './day.js';
 import { initSchedule, loadSchedule } from './schedule.js';
 import { initHomework, loadHomework } from './homework.js';
 import { loadTotals } from './totals.js';
-import { loadMail, openAnnouncements } from './mail.js';
+import { loadMail, openAnnouncements, openCompose } from './mail.js';
+import { applyAccent, initFullscreen } from './appearance.js';
+import { ICONS } from './icons.js';
 import { applyStoredTheme, closeDrawer, isDrawerOpen, loadProfile, openDrawer } from './profile.js';
 import { closeSheet, initSheet } from './sheet.js';
 import { clearScreens, handleBack, hasScreens, setFallbackBack } from './screens.js';
@@ -29,6 +31,12 @@ function switchTab(name) {
   document.querySelectorAll('.nav-item').forEach((item) => {
     item.classList.toggle('active', item.dataset.tab === name);
   });
+  // Полоса под шапкой (дата, поиск) — своя у каждой вкладки.
+  document.querySelectorAll('.subbar').forEach((bar) => {
+    bar.hidden = bar.dataset.for !== name;
+  });
+  syncHeaderHeight();
+  window.scrollTo(0, 0);
   banner('');
   TABS[name]();
 }
@@ -55,6 +63,19 @@ function initTelegram() {
   tg.ready();
   tg.expand();
   tg.BackButton.onClick(handleBack);
+}
+
+/** Иконки подставляются из одного набора: в разметке только data-icon. */
+function renderIcons(root = document) {
+  root.querySelectorAll('[data-icon]').forEach((el) => {
+    el.innerHTML = ICONS[el.dataset.icon] || '';
+  });
+}
+
+/** Контент начинается под шапкой, высота которой зависит от вкладки. */
+function syncHeaderHeight() {
+  const height = $('appHeader').getBoundingClientRect().height;
+  document.documentElement.style.setProperty('--header-h', `${Math.round(height)}px`);
 }
 
 /** Свайп вниз от верха вкладки — обновить её с сервера, минуя кэш. */
@@ -99,13 +120,19 @@ function initChrome() {
   $('menuBtn').addEventListener('click', openDrawer);
   $('drawerShade').addEventListener('click', closeDrawer);
   $('bellBtn').addEventListener('click', openAnnouncements);
+  $('composeBtn').addEventListener('click', openCompose);
+  window.addEventListener('resize', syncHeaderHeight);
+  new ResizeObserver(syncHeaderHeight).observe($('appHeader'));
   // «Перейти ко дню» из расписания.
   window.addEventListener('netschool:tab', (event) => switchTab(event.detail));
 }
 
 async function start() {
   applyStoredTheme();
+  applyAccent();
+  renderIcons();
   initTelegram();
+  initFullscreen();
   initSheet();
   initDay();
   initSchedule();
@@ -121,7 +148,7 @@ async function start() {
   // если страница открыта без токена (по initData Telegram).
   try {
     const profile = await loadProfile();
-    if (!student && profile?.name) $('topTitle').textContent = profile.name;
+    if (profile?.name) $('topTitle').textContent = profile.name;
   } catch {
     /* профиль не критичен для остальных экранов */
   }

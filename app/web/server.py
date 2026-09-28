@@ -153,6 +153,24 @@ async def index(request: web.Request) -> web.Response:
     return response
 
 
+@page_routes.get("/demo")
+async def demo(request: web.Request) -> web.Response:
+    """Демо на выдуманных данных: страница та же, данные генерирует браузер."""
+    return aiohttp_jinja2.render_template(
+        "app.html",
+        request,
+        {
+            "base": _base(request),
+            "version": STATIC_VERSION,
+            "token": "",
+            "student": "Пятёркин Отличник",
+            "school": "Демо-школа",
+            "push_enabled": False,
+            "demo": True,
+        },
+    )
+
+
 @page_routes.get("/manifest.webmanifest")
 async def manifest(request: web.Request) -> web.Response:
     context: AppContext = request.app[CONTEXT]

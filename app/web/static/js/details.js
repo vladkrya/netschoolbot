@@ -7,6 +7,7 @@ import {
   markClass,
 } from './core.js';
 import { pushScreen } from './screens.js';
+import { ICONS } from './icons.js';
 
 /** Статус урока справа от времени, как в официальном приложении. */
 export function lessonStatus(lesson, iso, now = new Date()) {
@@ -60,7 +61,7 @@ export function openLesson(lesson, iso) {
     ...realMarks(lesson.marks).map((mark, index) => `
       <button class="task-block task-mark" data-mark="${index}">
         <div class="task-head">
-          <span class="task-icon">💬</span>
+          <span class="task-icon">${ICONS.chat}</span>
           <span class="task-kind">${esc(mark.type || 'Оценка')}</span>
           ${markBox(mark.mark)}
         </div>
@@ -69,9 +70,9 @@ export function openLesson(lesson, iso) {
     ...(lesson.homework || []).map((item, index) => `
       <button class="task-block task-hw" data-hw="${index}">
         <div class="task-head">
-          <span class="task-icon">🏠</span>
+          <span class="task-icon">${ICONS.homework}</span>
           <span class="task-kind">Домашнее задание</span>
-          ${item.attachments?.length ? '<span class="clip">📎</span>' : ''}
+          ${item.attachments?.length ? `<span class="clip">${ICONS.clip}</span>` : ''}
         </div>
         <span class="task-go">Перейти ›</span>
       </button>`),

@@ -176,6 +176,9 @@ class Lesson:
     teacher: str = ""
     marks: tuple[MarkRecord, ...] = ()
     homework: tuple[HomeworkRecord, ...] = ()
+    # id заданий урока: учителя дневник не отдаёт, его приходится брать
+    # из карточки любого задания (student/diary/assigns/{id}).
+    assignment_ids: tuple[int, ...] = ()
 
     @property
     def time_range(self) -> str:

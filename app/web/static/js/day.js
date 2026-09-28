@@ -9,6 +9,7 @@ import {
   $, addDays, api, dayMonth, errorCard, esc, fullDate, isoOf, isoToday,
   parseIso, skeleton, state, WEEKDAYS, WEEKDAYS_FULL, weekdayIndex, weekOffsetOf,
 } from './core.js';
+import { ICONS } from './icons.js';
 import { lessonStatus, markBox, openHomework, openLesson, realMarks } from './details.js';
 import { closeSheet, openSheet } from './sheet.js';
 import { select, tap } from './haptics.js';
@@ -108,7 +109,7 @@ function lessonCard(lesson, index) {
       </div>
       ${lesson.homework.length ? `<div class="lc-badges">
         <span class="hw-badge" data-hw-badge>Д/З</span>
-        ${hasFiles ? '<span class="hw-badge clip">📎</span>' : ''}
+        ${hasFiles ? `<span class="hw-badge clip">${ICONS.clip}</span>` : ''}
       </div>` : ''}
       <div class="lc-bottom"><span>${esc(time)}</span><span>${esc(lessonStatus(lesson, state.date))}</span></div>
     </div>`;

@@ -85,6 +85,9 @@ class FakeDiary:
     async def fetch_period(self, user, start, end, **kwargs):
         return await self.fetch_diary(user)
 
+    async def fetch_teachers(self, user, wanted):
+        return {subject: "Учитель" for subject in wanted}
+
     async def fetch_announcements(self, user, limit=30):
         if self.error:
             raise self.error

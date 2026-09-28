@@ -1,7 +1,9 @@
 // Общее для всех экранов: доступ к API, разметка, состояние.
 'use strict';
 
-export const { base, token, pushEnabled, student, school } = window.NETSCHOOL;
+import { ICONS } from './icons.js';
+
+export const { base, token, pushEnabled, student, school, demo } = window.NETSCHOOL;
 
 // Telegram отдаёт объект только внутри мини-приложения. Вне его
 // (установленное на домашний экран) работаем по токену из ссылки.
@@ -58,6 +60,11 @@ export function banner(text, isError) {
 
 /** Запрос к API с удостоверением личности и разбором ошибки. */
 export async function api(path, options = {}) {
+  if (demo) {
+    // Демо: данные выдумывает браузер, сервер не участвует.
+    const { demoApi } = await import('./demo.js');
+    return demoApi(path, options);
+  }
   const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
   // initData подписана токеном бота — сервер доверяет ей больше, чем
   // токену из ссылки, поэтому шлём оба и приоритет отдаёт он.
@@ -82,6 +89,7 @@ export async function api(path, options = {}) {
 
 /** Ссылка на вложение: браузер качает её сам, заголовок туда не положить. */
 export function attachmentUrl(id) {
+  if (demo) return '#';
   const credential = initData
     ? `tgWebAppData=${encodeURIComponent(initData)}`
     : `token=${encodeURIComponent(token)}`;
@@ -93,7 +101,7 @@ export function attachmentsHtml(items) {
   return items
     .map(
       (item) =>
-        `<a class="attach" href="${attachmentUrl(item.id)}" target="_blank" rel="noopener">📎 ${esc(item.name)}</a>`
+        `<a class="attach" href="${attachmentUrl(item.id)}" target="_blank" rel="noopener">${ICONS.clip} ${esc(item.name)}</a>`
     )
     .join('');
 }

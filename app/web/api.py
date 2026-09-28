@@ -173,7 +173,33 @@ def _homework_to_json(item) -> dict:
     }
 
 
-def _day_to_json(day: DiaryDay) -> dict:
+async def _teachers(app: AppContext, user: User, days: list[DiaryDay]) -> dict[str, str]:
+    """Учителя по предметам, с долговременным кэшем.
+
+    Дневник учителя не отдаёт — только карточка задания, по запросу на
+    предмет. Учителя меняются редко, поэтому однажды найденный хранится,
+    а спрашиваются только новые предметы.
+    """
+    cached = await app.cache.get(user.telegram_id, "teachers")
+    known: dict[str, str] = dict(cached[0]) if cached else {}
+    wanted: dict[str, int] = {}
+    for day in days:
+        for lesson in day.lessons:
+            if lesson.subject not in known and lesson.assignment_ids:
+                wanted.setdefault(lesson.subject, lesson.assignment_ids[0])
+    if wanted:
+        try:
+            found = await app.diary.fetch_teachers(user, wanted)
+        except NetSchoolError as exc:
+            logger.info("Учителя не получены для %s: %s", user.telegram_id, exc.reason)
+            found = {}
+        if found:
+            known.update(found)
+            await app.cache.put(user.telegram_id, "teachers", known)
+    return known
+
+
+def _day_to_json(day: DiaryDay, teachers: dict[str, str] | None = None) -> dict:
     return {
         "date": day.day.isoformat(),
         "label": formatting.date_label(day.day),
@@ -186,7 +212,7 @@ def _day_to_json(day: DiaryDay) -> dict:
                 "start": lesson.start,
                 "end": lesson.end,
                 "room": lesson.room,
-                "teacher": lesson.teacher,
+                "teacher": lesson.teacher or (teachers or {}).get(lesson.subject, ""),
                 # Тема урока: карточка «Тема урока» на экране урока.
                 "topic": getattr(lesson, "topic", ""),
                 "marks": [_mark_to_json(m) for m in lesson.marks],
@@ -274,7 +300,8 @@ async def diary(request: web.Request) -> web.Response:
     async def produce(app: AppContext, user: User):
         today = msk_today() + dt.timedelta(weeks=offset)
         days = await app.diary.fetch_diary(user, weeks_back=1, weeks_forward=1, today=today)
-        return {"days": [_day_to_json(day) for day in days], "week": offset}
+        teachers = await _teachers(app, user, days)
+        return {"days": [_day_to_json(day, teachers) for day in days], "week": offset}
 
     # Каждое окно кэшируется отдельно, иначе соседние недели вытесняли бы
     # друг друга и стрелки снова упирались бы в сеть.
@@ -315,6 +342,7 @@ async def marks(request: web.Request) -> web.Response:
                     seen[lesson.teacher] = seen.get(lesson.teacher, 0) + 1
 
         records = [record for items in by_subject.values() for record in items]
+        found_teachers = await _teachers(app, user, days)
         subjects = []
         for subject in sorted(set(by_subject) | set(lessons)):
             items = by_subject.get(subject, [])
@@ -330,7 +358,11 @@ async def marks(request: web.Request) -> web.Response:
                         _mark_to_json(r) for r in sorted(items, key=lambda r: r.date)
                     ],
                     "lessons": lessons.get(subject, {}),
-                    "teacher": max(teacher_counts, key=teacher_counts.get) if teacher_counts else "",
+                    "teacher": (
+                        max(teacher_counts, key=teacher_counts.get)
+                        if teacher_counts
+                        else found_teachers.get(subject, "")
+                    ),
                 }
             )
         return {
@@ -381,6 +413,34 @@ async def mail(request: web.Request) -> web.Response:
         return {"messages": await app.diary.fetch_mail(user, limit=50)}
 
     return await _cached(request, "mail", produce)
+
+
+@routes.get("/api/mail/recipients")
+async def mail_recipients(request: web.Request) -> web.Response:
+    async def produce(app: AppContext, user: User):
+        return {"items": await app.diary.fetch_recipients(user)}
+
+    return await _cached(request, "mail:recipients", produce)
+
+
+@routes.post("/api/mail/send")
+async def mail_send(request: web.Request) -> web.Response:
+    app, user = context(request), current_user(request)
+    try:
+        body = await request.json()
+    except ValueError:
+        return json_error("Некорректный запрос")
+    to = [str(item) for item in (body.get("to") or []) if str(item).strip()]
+    subject = str(body.get("subject") or "").strip()
+    text = str(body.get("text") or "").strip()
+    if not to:
+        return json_error("Выберите получателя")
+    if not subject:
+        return json_error("Укажите тему письма")
+    if len(subject) > 200 or len(text) > 10000:
+        return json_error("Письмо слишком длинное")
+    await app.diary.send_mail(user, to, subject, text)
+    return web.json_response({"ok": True})
 
 
 @routes.get("/api/mail/{message_id}")
@@ -439,6 +499,33 @@ async def switch_student(request: web.Request) -> web.Response:
     await app.cache.clear(updated.telegram_id)
     await app.pool.invalidate(updated.telegram_id)
     return web.json_response({"ok": True, "data": {"name": student.name}})
+
+
+NOTIFICATION_KEYS = ("grades", "changes", "deletes", "homework", "mail", "weekly_summary")
+
+
+@routes.post("/api/settings/notifications")
+async def notification_settings(request: web.Request) -> web.Response:
+    """Переключатели уведомлений в Telegram — те же, что в /settings бота."""
+    app, user = context(request), current_user(request)
+    try:
+        body = await request.json()
+    except ValueError:
+        return json_error("Некорректный запрос")
+    key = str(body.get("key") or "")
+    if key not in NOTIFICATION_KEYS:
+        return json_error("Неизвестная настройка")
+    prefs = replace(user.notifications, **{key: bool(body.get("value"))})
+    updated = await app.users.save(replace(user, notifications=prefs))
+    return web.json_response({"ok": True, "data": asdict(updated.notifications)})
+
+
+@routes.get("/api/pwa-link")
+async def pwa_link(request: web.Request) -> web.Response:
+    """Постоянная ссылка для установки на домашний экран (как /app_install)."""
+    app, user = context(request), current_user(request)
+    token = await app.miniapp.issue_token(user.telegram_id)
+    return web.json_response({"ok": True, "data": {"url": f"{app.settings.web.miniapp_url}/?token={token}"}})
 
 
 @routes.get("/api/push/key")

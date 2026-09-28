@@ -145,6 +145,58 @@ class DiaryService:
 
         return await self._with_session(user, call)
 
+    async def fetch_teachers(self, user: User, wanted: dict[str, int]) -> dict[str, str]:
+        """Учителя по предметам: {предмет: id любого задания} → {предмет: ФИО}.
+
+        В дневнике учителя нет — только в карточке задания. Одного задания на
+        предмет достаточно, поэтому вызывающий код кэширует ответ надолго.
+        """
+
+        async def call(client: Any) -> dict[str, str]:
+            result: dict[str, str] = {}
+            for subject, assignment_id in wanted.items():
+                try:
+                    response = await client._authed_get(
+                        f"student/diary/assigns/{assignment_id}",
+                        params={"studentId": client._student_id},
+                    )
+                    teachers = response.json().get("teachers") or []
+                except Exception as exc:
+                    logger.debug("Учитель для %s не получен: %s", subject, exc)
+                    continue
+                names = [str(t.get("name") or "").strip() for t in teachers if isinstance(t, dict)]
+                if any(names):
+                    result[subject] = ", ".join(n for n in names if n)
+            return result
+
+        return await self._with_session(user, call)
+
+    async def fetch_recipients(self, user: User) -> list[dict[str, str]]:
+        """Кому можно написать: учителя и администрация школы."""
+
+        async def call(client: Any) -> list[dict[str, str]]:
+            items = await client.mail_recipients()
+            return [
+                {
+                    "id": str(getattr(item, "id", "")),
+                    "name": str(getattr(item, "name", "") or ""),
+                    "organization": str(getattr(item, "organization_name", "") or ""),
+                }
+                for item in items
+                if getattr(item, "id", "")
+            ]
+
+        return await self._with_session(user, call)
+
+    async def send_mail(self, user: User, to: list[str], subject: str, text: str) -> None:
+        # Без _with_session: при сбое он повторяет запрос, а повтор отправки
+        # мог бы послать письмо дважды.
+        async with self._pool.acquire(user) as client:
+            try:
+                await client.mail_send(subject, text, to)
+            except Exception as exc:
+                raise wrap(exc, context=f"письмо от {user.telegram_id}") from exc
+
     async def fetch_announcements(self, user: User, limit: int = 30) -> list[dict[str, Any]]:
         """Объявления школы — экран под колокольчиком."""
 

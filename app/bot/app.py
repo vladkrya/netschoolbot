@@ -26,6 +26,7 @@ COMMANDS = [
     BotCommand(command="weeksummary", description="Сводка за неделю"),
     BotCommand(command="app", description="Открыть дневник"),
     BotCommand(command="app_install", description="Установить на телефон"),
+    BotCommand(command="demo", description="Демо-версия приложения"),
     BotCommand(command="settings", description="Настройки"),
     BotCommand(command="profile", description="Профиль"),
     BotCommand(command="status", description="Состояние проверки"),

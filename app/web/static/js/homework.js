@@ -2,6 +2,7 @@
 'use strict';
 
 import { $, api, dayMonth, errorCard, esc, isoToday, skeleton, state } from './core.js';
+import { ICONS } from './icons.js';
 import { openHomework } from './details.js';
 
 let query = '';
@@ -43,7 +44,7 @@ function render() {
           <div class="hw-subject">${esc(item.subject)}</div>
           <div class="hw-text">${esc(item.text) || '—'}</div>
           <div class="hw-foot">
-            <span><span class="hw-badge">Д/З</span>${item.attachments.length ? '<span class="hw-badge clip">📎</span>' : ''}</span>
+            <span><span class="hw-badge">Д/З</span>${item.attachments.length ? `<span class="hw-badge clip">${ICONS.clip}</span>` : ''}</span>
             <span class="muted small">${esc(dayMonth(item.date))}</span>
           </div>
         </div>`

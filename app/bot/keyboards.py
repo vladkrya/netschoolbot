@@ -135,6 +135,16 @@ def miniapp(url: str) -> InlineKeyboardMarkup:
     )
 
 
+def demo(url: str) -> InlineKeyboardMarkup:
+    """Демо: внутри Telegram и отдельной ссылкой — поделиться или открыть в браузере."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="✨ Открыть демо", web_app=WebAppInfo(url=url))],
+            [InlineKeyboardButton(text="🌐 В браузере", url=url)],
+        ]
+    )
+
+
 def miniapp_external(url: str) -> InlineKeyboardMarkup:
     """Обычная ссылка — для установки приложения на домашний экран.
 

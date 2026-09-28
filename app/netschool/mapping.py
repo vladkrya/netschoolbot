@@ -170,6 +170,11 @@ def lessons_from_day(day: Any, *, today: dt.date | None = None) -> list[Lesson]:
                 end=_time_text(_attr(raw, "end")),
                 room=str(_attr(raw, "room", "") or ""),
                 teacher=str(_attr(raw, "teacher", "") or ""),
+                assignment_ids=tuple(
+                    int(a_id)
+                    for a_id in (_attr(a, "id") for a in _attr(raw, "assignments", []) or [])
+                    if _safe_int(a_id)
+                ),
                 marks=tuple(
                     m for m in all_marks
                     if m.subject == subject and m.lesson_number == number

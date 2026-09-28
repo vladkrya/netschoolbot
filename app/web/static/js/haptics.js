@@ -12,6 +12,8 @@ import { initData, tg } from './core.js';
 const haptic = initData ? tg?.HapticFeedback : null;
 
 function vibrate(pattern) {
+  // До первого касания браузер вибрацию запрещает и пишет ошибку в консоль.
+  if (navigator.userActivation && !navigator.userActivation.hasBeenActive) return;
   try {
     navigator.vibrate?.(pattern);
   } catch {

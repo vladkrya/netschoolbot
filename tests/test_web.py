@@ -217,7 +217,7 @@ class TestData:
         from app.domain.records import DiaryDay, Lesson
 
         day = dt.date(2026, 9, 7)
-        lesson = Lesson(number=1, subject="Алгебра", teacher="Поликарпова Е. В.")
+        lesson = Lesson(number=1, subject="Алгебра", teacher="Циркулев А. Г.")
 
         async def fetch_period(user, start, end, **kwargs):
             # Год целиком: от 1 сентября, а не пять недель назад.
@@ -228,7 +228,7 @@ class TestData:
         response = await client.get(f"{BASE}/api/marks", params={"token": token})
         data = (await response.json())["data"]
         algebra = data["subjects"][0]
-        assert algebra["teacher"] == "Поликарпова Е. В."
+        assert algebra["teacher"] == "Циркулев А. Г."
         assert algebra["lessons"]["q1"]["total"] == 1
         assert [q["key"] for q in data["quarters"]] == ["q1", "q2", "q3", "q4"]
 
@@ -246,6 +246,69 @@ class TestData:
         response = await client.get(f"{BASE}/api/homework", params={"token": token})
         items = (await response.json())["data"]["items"]
         assert items[0]["subject"] == "Алгебра"
+
+
+class TestNewFeatures:
+    async def test_notification_toggle_is_saved(self, client, users, token):
+        response = await client.post(
+            f"{BASE}/api/settings/notifications",
+            params={"token": token},
+            json={"key": "mail", "value": True},
+        )
+        assert (await response.json())["data"]["mail"] is True
+        assert (await users.get(1)).notifications.mail is True
+
+    async def test_unknown_notification_key_is_rejected(self, client, token):
+        response = await client.post(
+            f"{BASE}/api/settings/notifications", params={"token": token}, json={"key": "enabled"}
+        )
+        assert response.status == 400
+
+    async def test_mail_send_requires_recipient_and_subject(self, client, token):
+        response = await client.post(
+            f"{BASE}/api/mail/send", params={"token": token}, json={"to": [], "subject": "Тема"}
+        )
+        assert response.status == 400
+        response = await client.post(
+            f"{BASE}/api/mail/send", params={"token": token}, json={"to": ["abc"], "subject": ""}
+        )
+        assert response.status == 400
+
+    async def test_mail_send_goes_to_school(self, client, app_context, token):
+        sent = []
+
+        async def send_mail(user, to, subject, text):
+            sent.append((to, subject, text))
+
+        app_context.diary.send_mail = send_mail
+        response = await client.post(
+            f"{BASE}/api/mail/send",
+            params={"token": token},
+            json={"to": ["abc"], "subject": "Вопрос", "text": "Здравствуйте"},
+        )
+        assert (await response.json())["ok"] is True
+        assert sent == [(["abc"], "Вопрос", "Здравствуйте")]
+
+    async def test_pwa_link_is_personal(self, client, token):
+        response = await client.get(f"{BASE}/api/pwa-link", params={"token": token})
+        assert f"token={token}" in (await response.json())["data"]["url"]
+
+    async def test_demo_page_needs_no_login(self, client):
+        response = await client.get(f"{BASE}/demo")
+        assert response.status == 200
+        assert "demo: true" in await response.text()
+
+    async def test_teacher_comes_from_assignment_card(self, client, app_context, token):
+        from app.domain.records import DiaryDay, Lesson
+
+        async def fetch_diary(user, **kwargs):
+            lesson = Lesson(number=1, subject="Алгебра", assignment_ids=(42,))
+            return [DiaryDay(day=dt.date(2026, 9, 23), lessons=[lesson])]
+
+        app_context.diary.fetch_diary = fetch_diary
+        response = await client.get(f"{BASE}/api/diary", params={"token": token})
+        lesson = (await response.json())["data"]["days"][0]["lessons"][0]
+        assert lesson["teacher"] == "Учитель"
 
 
 class TestErrors:

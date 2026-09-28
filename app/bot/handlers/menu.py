@@ -240,6 +240,20 @@ async def install_miniapp(message: Message, user: User, app: AppContext) -> None
     )
 
 
+@router.message(Command("demo"))
+async def demo(message: Message, app: AppContext) -> None:
+    """Демо-версия приложения на выдуманных данных — без входа в школу."""
+    url = f"{app.settings.web.miniapp_url}/demo"
+    await message.answer(
+        "✨ <b>Демо-версия дневника</b>\n\n"
+        "Выдуманный ученик и оценки, всё можно трогать: в меню ☰ есть "
+        "«Настройки демо» — имя, школа, дети, пропуски, число оценок.\n\n"
+        "Ссылкой можно делиться — личных данных в ней нет.",
+        parse_mode="HTML",
+        reply_markup=keyboards.demo(url),
+    )
+
+
 @router.message(Command("app_reset"))
 async def miniapp_reset(message: Message, user: User, app: AppContext) -> None:
     token = await app.miniapp.issue_token(user.telegram_id, revoke_existing=True)

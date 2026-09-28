@@ -2,9 +2,12 @@
 'use strict';
 
 import {
-  $, api, attachmentsHtml, errorCard, esc, escRich, shortDate, skeleton, state,
+  $, api, attachmentsHtml, banner, errorCard, esc, escRich, shortDate, skeleton, state,
 } from './core.js';
-import { pushScreen } from './screens.js';
+import { notify, select } from './haptics.js';
+import { ICONS } from './icons.js';
+import { popScreen, pushScreen } from './screens.js';
+import { closeSheet, openSheet } from './sheet.js';
 
 const AVATAR_COLORS = ['#a7b83a', '#4a9fd8', '#d8844a', '#9a6ad8', '#d84a6a', '#3ab89a'];
 
@@ -109,4 +112,95 @@ export async function openAnnouncements() {
   } catch (error) {
     body.innerHTML = errorCard(error);
   }
+}
+
+/* ─────────────────────────── Новое письмо ─────────────────────────── */
+
+let recipients = null;
+
+export async function openCompose() {
+  const chosen = new Map();
+  const body = pushScreen('Новое письмо');
+  body.innerHTML = `
+    <div class="card compose">
+      <div class="detail-label">Кому</div>
+      <button class="to-field" id="composeTo"><span class="muted">Выбрать получателя</span></button>
+      <div class="detail-label">Тема</div>
+      <input class="field" id="composeSubject" maxlength="200" placeholder="Тема письма">
+      <div class="detail-label">Сообщение</div>
+      <textarea class="field" id="composeText" rows="8" maxlength="10000" placeholder="Текст письма"></textarea>
+      <button class="btn" id="composeSend">${ICONS.send} Отправить</button>
+    </div>`;
+
+  const renderTo = () => {
+    $('composeTo').innerHTML = chosen.size
+      ? [...chosen.values()].map((r) => `<span class="to-chip">${esc(r.name)}</span>`).join('')
+      : '<span class="muted">Выбрать получателя</span>';
+  };
+
+  $('composeTo').addEventListener('click', async () => {
+    const sheet = openSheet('Получатели', skeleton(5));
+    try {
+      if (!recipients) recipients = (await api('/api/mail/recipients')).data.items;
+    } catch (error) {
+      sheet.innerHTML = errorCard(error);
+      return;
+    }
+    const draw = (query = '') => {
+      const needle = query.trim().toLowerCase();
+      const list = recipients.filter((r) => !needle || `${r.name} ${r.organization}`.toLowerCase().includes(needle));
+      $('recipientList').innerHTML = list
+        .map((r) => `<button class="recipient ${chosen.has(r.id) ? 'on' : ''}" data-id="${esc(r.id)}">
+            <span class="avatar small" style="background:${avatarColor(r.name)}">${esc(r.name.trim()[0] || '?')}</span>
+            <span class="recipient-main"><span>${esc(r.name)}</span><span class="muted small">${esc(r.organization)}</span></span>
+            <span class="check">${chosen.has(r.id) ? '✓' : ''}</span>
+          </button>`)
+        .join('') || '<div class="empty">Никого не нашлось</div>';
+      $('recipientList').querySelectorAll('[data-id]').forEach((row) =>
+        row.addEventListener('click', () => {
+          select();
+          const recipient = recipients.find((r) => String(r.id) === row.dataset.id);
+          if (chosen.has(recipient.id)) chosen.delete(recipient.id);
+          else chosen.set(recipient.id, recipient);
+          draw($('recipientSearch').value);
+          renderTo();
+        })
+      );
+    };
+    sheet.innerHTML = `
+      <input class="field" id="recipientSearch" type="search" placeholder="Поиск по имени или предмету">
+      <div id="recipientList"></div>
+      <button class="btn" id="recipientDone">Готово</button>`;
+    $('recipientSearch').addEventListener('input', (event) => draw(event.target.value));
+    $('recipientDone').addEventListener('click', closeSheet);
+    draw();
+  });
+
+  $('composeSend').addEventListener('click', async (event) => {
+    const button = event.currentTarget;
+    const subject = $('composeSubject').value.trim();
+    const text = $('composeText').value.trim();
+    if (!chosen.size || !subject) {
+      notify('error');
+      banner(!chosen.size ? 'Выберите получателя' : 'Укажите тему письма', true);
+      return;
+    }
+    button.disabled = true;
+    button.classList.add('loading');
+    try {
+      await api('/api/mail/send', {
+        method: 'POST',
+        body: JSON.stringify({ to: [...chosen.keys()], subject, text }),
+      });
+      notify('success');
+      popScreen();
+      banner('Письмо отправлено ✓');
+      setTimeout(() => banner(''), 3000);
+    } catch (error) {
+      notify('error');
+      banner(error.message, true);
+      button.disabled = false;
+      button.classList.remove('loading');
+    }
+  });
 }

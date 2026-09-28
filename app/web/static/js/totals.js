@@ -86,7 +86,7 @@ function openSubject(subject, key) {
 
   const segments = lessons.total
     ? `<div class="progress">${Array.from({ length: lessons.total }, (_, i) =>
-        `<span class="seg ${i < lessons.done ? 'done' : ''}"></span>`).join('')}</div>
+        `<span class="seg ${i < lessons.done ? 'done' : ''}" style="--i:${i}"></span>`).join('')}</div>
        <div class="progress-caption"><span>${esc(quarter?.label || SHORT[key])} ${lessons.done}/${lessons.total}</span>
        <span>Осталось ${left} ${left === 1 ? 'урок' : [2, 3, 4].includes(left % 10) && ![12, 13, 14].includes(left % 100) ? 'урока' : 'уроков'}</span></div>`
     : `<div class="muted small">${esc(quarter?.label || '')}</div>`;
