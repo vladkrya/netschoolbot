@@ -174,6 +174,8 @@ class Lesson:
     end: str = ""
     room: str = ""
     teacher: str = ""
+    topic: str = ""
+    absence: str = ""
     marks: tuple[MarkRecord, ...] = ()
     homework: tuple[HomeworkRecord, ...] = ()
     # id заданий урока: учителя дневник не отдаёт, его приходится брать
@@ -228,7 +230,7 @@ def extract_mark(source: Any, _depth: int = 0) -> str:
                 return extract_mark(value, _depth + 1)
         return ""
 
-    text_mark = getattr(source, "textMark", None)
+    text_mark = getattr(source, "textMark", None) or getattr(source, "mark_text", None) or getattr(source, "special_mark_code", None)
     if text_mark:
         return extract_mark(text_mark, _depth + 1)
 

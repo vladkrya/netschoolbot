@@ -11,6 +11,7 @@ import { ICONS } from './icons.js';
 
 /** Статус урока справа от времени, как в официальном приложении. */
 export function lessonStatus(lesson, iso, now = new Date()) {
+  if (lesson.absence) return absenceText(lesson.absence) || lesson.absence;
   const absence = (lesson.marks || []).map((m) => absenceText(m.mark)).find(Boolean);
   if (absence) return absence;
 

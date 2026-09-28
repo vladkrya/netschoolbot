@@ -62,6 +62,8 @@ class TestExtractMark:
             ({"mark": 3}, "3"),
             ({"value": 4}, "4"),
             (SimpleNamespace(textMark="н/а", mark=None), "н/а"),
+            (SimpleNamespace(mark_text="Б", mark=None), "Б"),
+            (SimpleNamespace(special_mark_code="НП", mark=None), "НП"),
             (SimpleNamespace(mark=5), "5"),
             (True, ""),
         ],

@@ -170,6 +170,8 @@ def lessons_from_day(day: Any, *, today: dt.date | None = None) -> list[Lesson]:
                 end=_time_text(_attr(raw, "end")),
                 room=str(_attr(raw, "room", "") or ""),
                 teacher=str(_attr(raw, "teacher", "") or ""),
+                topic=str(_attr(raw, "topic", "") or _attr(raw, "lessonTopic", "") or ""),
+                absence=str(_attr(raw, "absence", "") or _attr(raw, "absenceReason", "") or ""),
                 assignment_ids=tuple(
                     int(a_id)
                     for a_id in (_attr(a, "id") for a in _attr(raw, "assignments", []) or [])

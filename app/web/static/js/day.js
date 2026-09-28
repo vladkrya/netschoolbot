@@ -83,9 +83,11 @@ function renderDay() {
     return;
   }
 
-  container.innerHTML = lessons.map((lesson, index) => lessonCard(lesson, index)).join('');
+  const progress = activeProgress(lessons);
+  container.innerHTML = lessons.map((lesson, index) => lessonCard(lesson, index, progress?.index === index ? progress : null)).join('');
   container.querySelectorAll('[data-lesson]').forEach((card) => {
     card.addEventListener('click', (event) => {
+      tap();
       const lesson = lessons[Number(card.dataset.lesson)];
       // Бейдж «Д/З» открывает задание сразу, минуя экран урока.
       if (event.target.closest('[data-hw-badge]') && lesson.homework.length) {
@@ -97,7 +99,26 @@ function renderDay() {
   });
 }
 
-function lessonCard(lesson, index) {
+function activeProgress(lessons, now = new Date()) {
+  if (state.date !== isoToday()) return null;
+  const minute = now.getHours() * 60 + now.getMinutes();
+  for (let index = 0; index < lessons.length; index += 1) {
+    const [sh, sm] = String(lessons[index].start || '').split(':').map(Number);
+    const [eh, em] = String(lessons[index].end || '').split(':').map(Number);
+    if (![sh, sm, eh, em].every(Number.isFinite)) continue;
+    const start = sh * 60 + sm;
+    const end = eh * 60 + em;
+    if (end <= start || minute >= end) continue;
+    if (minute < start) {
+      if (start - minute > 60) return null;
+      return { index, label: `Начнётся через ${start - minute} мин`, percent: (60 - start + minute) / 60 * 100 };
+    }
+    return { index, label: `Закончится через ${end - minute} мин`, percent: (minute - start) / (end - start) * 100 };
+  }
+  return null;
+}
+
+function lessonCard(lesson, index, progress) {
   const marks = realMarks(lesson.marks).map((m) => markBox(m.mark)).join('');
   const hasFiles = lesson.homework.some((h) => (h.attachments || []).length);
   const time = lesson.time || [lesson.start, lesson.end].filter(Boolean).join(' – ');
@@ -107,11 +128,13 @@ function lessonCard(lesson, index) {
         <span class="lc-subject">${esc(lesson.subject)}</span>
         <span class="lc-marks">${marks}</span>
       </div>
+      ${(lesson.topic || lesson.teacher) ? `<div class="lc-meta">${lesson.topic ? `<span>${esc(lesson.topic)}</span>` : ''}${lesson.teacher ? `<span>${esc(lesson.teacher)}</span>` : ''}</div>` : ''}
       ${lesson.homework.length ? `<div class="lc-badges">
         <span class="hw-badge" data-hw-badge>Д/З</span>
         ${hasFiles ? `<span class="hw-badge clip">${ICONS.clip}</span>` : ''}
       </div>` : ''}
       <div class="lc-bottom"><span>${esc(time)}</span><span>${esc(lessonStatus(lesson, state.date))}</span></div>
+      ${progress ? `<div class="lesson-progress-label">${esc(progress.label)}</div><div class="lesson-progress"><span style="width:${Math.max(0, Math.min(100, progress.percent))}%"></span></div>` : ''}
     </div>`;
 }
 
@@ -216,6 +239,7 @@ function bindSwipe() {
 }
 
 export function initDay() {
+  setInterval(() => { if (state.tab === 'day' && dayData(state.date)) renderDay(); }, 30000);
   $('dayPrev').addEventListener('click', () => shiftDay(-1));
   $('dayNext').addEventListener('click', () => shiftDay(1));
   $('dayTitle').addEventListener('click', openCalendar);

@@ -88,6 +88,12 @@ function pushSection() {
     </section>`;
   }
   if (!pushEnabled) return '';
+  const iphone = /iPhone|iPad|iPod/.test(navigator.userAgent);
+  const installed = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  if (iphone && !installed) return `<section class="drawer-section">
+      <div class="drawer-heading">Уведомления в браузере</div>
+      <p class="muted small">Чтобы включить уведомления, откройте дневник в Safari, нажмите «Поделиться» → «На экран Домой» и запустите приложение с новой иконки.</p>
+    </section>`;
   return `<section class="drawer-section">
       <div class="drawer-heading">Уведомления в браузере</div>
       <button class="btn outline" id="pushBtn">Включить уведомления</button>
@@ -179,8 +185,8 @@ function bindDrawer() {
       render();
     })
   );
-  $('accentCustom').addEventListener('input', (event) => saveAccent(event.target.value));
-  $('accentCustom').addEventListener('change', () => {
+  $('accentCustom').addEventListener('change', (event) => {
+    saveAccent(event.target.value);
     select();
     render();
   });

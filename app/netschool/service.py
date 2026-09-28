@@ -156,17 +156,13 @@ class DiaryService:
             result: dict[str, str] = {}
             for subject, assignment_id in wanted.items():
                 try:
-                    response = await client._authed_get(
-                        f"student/diary/assigns/{assignment_id}",
-                        params={"studentId": client._student_id},
-                    )
-                    teachers = response.json().get("teachers") or []
+                    details = await client.assignment_details(assignment_id)
+                    name = details.teacher
                 except Exception as exc:
                     logger.debug("Учитель для %s не получен: %s", subject, exc)
                     continue
-                names = [str(t.get("name") or "").strip() for t in teachers if isinstance(t, dict)]
-                if any(names):
-                    result[subject] = ", ".join(n for n in names if n)
+                if name:
+                    result[subject] = name
             return result
 
         return await self._with_session(user, call)

@@ -215,6 +215,7 @@ def _day_to_json(day: DiaryDay, teachers: dict[str, str] | None = None) -> dict:
                 "teacher": lesson.teacher or (teachers or {}).get(lesson.subject, ""),
                 # Тема урока: карточка «Тема урока» на экране урока.
                 "topic": getattr(lesson, "topic", ""),
+                "absence": getattr(lesson, "absence", ""),
                 "marks": [_mark_to_json(m) for m in lesson.marks],
                 "homework": [_homework_to_json(h) for h in lesson.homework],
             }
