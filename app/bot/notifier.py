@@ -12,6 +12,7 @@ import logging
 
 from aiogram import Bot
 from aiogram.exceptions import TelegramForbiddenError, TelegramRetryAfter
+from aiogram.types import ReplyKeyboardRemove
 
 from ..db.repositories import UserRepository
 from ..domain import formatting
@@ -83,7 +84,9 @@ class TelegramNotifier:
 
     async def _send_part(self, user: User, text: str, *, retry: bool = True) -> None:
         try:
-            await self._bot.send_message(user.telegram_id, text, parse_mode="HTML")
+            await self._bot.send_message(
+                user.telegram_id, text, parse_mode="HTML", reply_markup=ReplyKeyboardRemove()
+            )
         except TelegramRetryAfter as exc:
             if not retry:
                 logger.warning("Повторное ограничение частоты для %s", user.telegram_id)
