@@ -4,7 +4,7 @@ Telegram-бот и PWA для «Сетевого города. Образова�
 оценках, их изменениях и удалениях, домашние задания, расписание, школьная
 почта и статистика.
 
-Домен: **https://netschool.ikrya.ru**
+Домен: **https://ns.ikrya.ru** (прежний netschool.ikrya.ru работает параллельно — на нём установленные PWA)
 
 ## Что это за версия
 
@@ -94,9 +94,9 @@ cp .env.example .env && nano .env
 cp deploy/systemd/netschoolbot.service /etc/systemd/system/
 systemctl daemon-reload && systemctl enable --now netschoolbot
 
-cp deploy/nginx/netschool.ikrya.ru.conf /etc/nginx/sites-available/
-ln -s /etc/nginx/sites-available/netschool.ikrya.ru.conf /etc/nginx/sites-enabled/
-certbot --nginx -d netschool.ikrya.ru
+cp deploy/nginx/ns.ikrya.ru.conf /etc/nginx/sites-available/ns.ikrya.ru
+ln -s /etc/nginx/sites-available/ns.ikrya.ru /etc/nginx/sites-enabled/
+certbot certonly --webroot -w /var/www/certbot -d ns.ikrya.ru
 nginx -t && systemctl reload nginx
 ```
 
