@@ -7,6 +7,7 @@ import {
   WEEKDAYS_FULL,
 } from './core.js';
 import { dayData, ensureWeek, goToDay } from './day.js';
+import { select, tap } from './haptics.js';
 
 const expanded = new Set();
 
@@ -74,6 +75,7 @@ function render(monday) {
   container.innerHTML = cards.join('');
   container.querySelectorAll('[data-toggle]').forEach((button) =>
     button.addEventListener('click', () => {
+      select();
       const iso = button.dataset.toggle;
       if (expanded.has(iso)) expanded.delete(iso);
       else expanded.add(iso);
@@ -82,6 +84,7 @@ function render(monday) {
   );
   container.querySelectorAll('[data-goto]').forEach((button) =>
     button.addEventListener('click', () => {
+      tap();
       window.dispatchEvent(new CustomEvent('netschool:tab', { detail: 'day' }));
       goToDay(button.dataset.goto);
     })
@@ -90,14 +93,17 @@ function render(monday) {
 
 export function initSchedule() {
   $('schedPrev').addEventListener('click', () => {
+    select();
     state.scheduleWeek -= 1;
     loadSchedule();
   });
   $('schedNext').addEventListener('click', () => {
+    select();
     state.scheduleWeek += 1;
     loadSchedule();
   });
   $('schedTitle').addEventListener('click', () => {
+    select();
     state.scheduleWeek = 0;
     loadSchedule();
   });

@@ -10,6 +10,7 @@ import { loadMail, openAnnouncements } from './mail.js';
 import { applyStoredTheme, closeDrawer, isDrawerOpen, loadProfile, openDrawer } from './profile.js';
 import { closeSheet, initSheet } from './sheet.js';
 import { clearScreens, handleBack, hasScreens, setFallbackBack } from './screens.js';
+import { notify, select, tap } from './haptics.js';
 
 const TABS = {
   day: loadDay,
@@ -68,7 +69,10 @@ function bindPullToRefresh() {
   }, { passive: true });
   document.addEventListener('touchmove', (event) => {
     if (startY == null) return;
+    const before = pulled;
     pulled = event.touches[0].clientY - startY;
+    // Отклик в момент, когда жест «взвёлся» — как у нативного pull-to-refresh.
+    if (before <= 80 && pulled > 80) tap('medium');
     indicator.classList.toggle('show', pulled > 30);
     indicator.textContent = pulled > 80 ? 'Отпустите, чтобы обновить' : 'Потяните, чтобы обновить';
   }, { passive: true });
@@ -78,6 +82,8 @@ function bindPullToRefresh() {
     if (pulled > 80) {
       indicator.textContent = 'Обновляю…';
       await TABS[state.tab](true);
+      const failed = document.querySelector('.panel.active .error-card');
+      notify(failed ? 'error' : 'success');
     }
     indicator.classList.remove('show');
   }, { passive: true });
@@ -85,7 +91,10 @@ function bindPullToRefresh() {
 
 function initChrome() {
   document.querySelectorAll('.nav-item').forEach((item) => {
-    item.addEventListener('click', () => switchTab(item.dataset.tab));
+    item.addEventListener('click', () => {
+      select();
+      switchTab(item.dataset.tab);
+    });
   });
   $('menuBtn').addEventListener('click', openDrawer);
   $('drawerShade').addEventListener('click', closeDrawer);

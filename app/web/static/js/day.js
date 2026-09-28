@@ -11,6 +11,7 @@ import {
 } from './core.js';
 import { lessonStatus, markBox, openHomework, openLesson, realMarks } from './details.js';
 import { closeSheet, openSheet } from './sheet.js';
+import { select, tap } from './haptics.js';
 
 /** Загруженные дни по ISO-дате и недели, которые уже спрашивали. */
 const days = new Map();
@@ -119,6 +120,7 @@ export async function goToDay(iso) {
 }
 
 function shiftDay(delta) {
+  select();
   const container = $('dayContent');
   container.classList.remove('slide-left', 'slide-right');
   // Перезапуск анимации: без чтения layout класс не срабатывает повторно.
@@ -130,6 +132,7 @@ function shiftDay(delta) {
 /* ─────────────────────────── Календарь ─────────────────────────── */
 
 function openCalendar() {
+  tap();
   const month = parseIso(state.date);
   month.setDate(1);
 
@@ -166,12 +169,14 @@ function openCalendar() {
       </div>`;
     body.querySelectorAll('[data-shift]').forEach((button) =>
       button.addEventListener('click', () => {
+        select();
         month.setMonth(month.getMonth() + Number(button.dataset.shift));
         render();
       })
     );
     body.querySelectorAll('[data-date]').forEach((button) =>
       button.addEventListener('click', () => {
+        select();
         closeSheet();
         goToDay(button.dataset.date);
       })

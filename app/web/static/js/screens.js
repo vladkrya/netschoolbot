@@ -6,10 +6,12 @@
 'use strict';
 
 import { $, esc, tg } from './core.js';
+import { tap } from './haptics.js';
 
 const stack = [];
 
 export function pushScreen(title, subtitle = '') {
+  tap();
   const screen = document.createElement('section');
   screen.className = 'screen';
   screen.innerHTML = `
@@ -21,7 +23,10 @@ export function pushScreen(title, subtitle = '') {
       </div>
     </header>
     <div class="screen-body"></div>`;
-  screen.querySelector('.screen-back').addEventListener('click', popScreen);
+  screen.querySelector('.screen-back').addEventListener('click', () => {
+    tap('soft');
+    popScreen();
+  });
   $('screens').appendChild(screen);
   stack.push(screen);
   syncBackButton();
@@ -59,9 +64,10 @@ export function syncBackButton() {
 
 export function handleBack() {
   if (stack.length) {
+    tap('soft');
     popScreen();
     return;
   }
-  fallbackBack(false);
+  if (fallbackBack(false)) tap('soft');
   syncBackButton();
 }

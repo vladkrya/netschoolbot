@@ -5,6 +5,7 @@
 import { $, api, banner, esc, pushEnabled, state } from './core.js';
 import { loadCalc } from './calc.js';
 import { pushScreen, syncBackButton } from './screens.js';
+import { notify, select, tap } from './haptics.js';
 
 const THEME_KEY = 'ns-theme';
 
@@ -40,6 +41,7 @@ export function closeDrawer() {
 }
 
 export async function openDrawer() {
+  tap();
   $('drawer').classList.add('open');
   syncBackButton();
   const panel = $('drawerBody');
@@ -103,6 +105,7 @@ function render() {
 
   $('drawerBody').querySelectorAll('input[name="theme"]').forEach((input) =>
     input.addEventListener('change', () => {
+      select();
       try {
         localStorage.setItem(THEME_KEY, input.value);
       } catch {
@@ -130,9 +133,11 @@ async function switchStudent(button) {
       method: 'POST',
       body: JSON.stringify({ id: Number(button.dataset.student) }),
     });
+    notify('success');
     // Дневник другого ребёнка — совсем другие данные, сбрасываем всё.
     location.reload();
   } catch (error) {
+    notify('error');
     banner(error.message, true);
     button.disabled = false;
   }
@@ -162,7 +167,9 @@ async function enablePush(button) {
       body: JSON.stringify(subscription.toJSON()),
     });
     button.textContent = 'Уведомления включены ✓';
+    notify('success');
   } catch (error) {
+    notify('error');
     banner(error.message, true);
     button.disabled = false;
   }
