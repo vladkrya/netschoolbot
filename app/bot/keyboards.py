@@ -5,32 +5,10 @@ from __future__ import annotations
 from aiogram.types import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
-    KeyboardButton,
-    ReplyKeyboardMarkup,
     WebAppInfo,
 )
 
 from ..domain.models import User
-
-
-def main_menu(miniapp_url: str = "") -> ReplyKeyboardMarkup:
-    """Нижнее меню бота.
-
-    Если известен адрес мини-приложения, первой кнопкой ставим его: это
-    основной способ смотреть дневник, а команды остаются для быстрых
-    ответов прямо в чате.
-    """
-    rows = [
-        [KeyboardButton(text="📚 Домашка"), KeyboardButton(text="🗓 Расписание")],
-        [KeyboardButton(text="📊 Оценки"), KeyboardButton(text="📈 Статистика")],
-        [KeyboardButton(text="⚙️ Настройки"), KeyboardButton(text="👤 Профиль")],
-    ]
-    if miniapp_url:
-        rows.insert(
-            0,
-            [KeyboardButton(text="📱 Дневник", web_app=WebAppInfo(url=miniapp_url))],
-        )
-    return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
 
 
 def settings_menu(user: User) -> InlineKeyboardMarkup:
@@ -130,7 +108,7 @@ def miniapp(url: str) -> InlineKeyboardMarkup:
     """
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="📱 Открыть дневник", web_app=WebAppInfo(url=url))]
+            [InlineKeyboardButton(text="📱 Открыть дневник", web_app=WebAppInfo(url=url), style="primary")]
         ]
     )
 

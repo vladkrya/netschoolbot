@@ -4,7 +4,7 @@
 
 import {
   absenceText, attachmentsHtml, esc, escRich, forDate, fullDate, isAbsence,
-  markClass,
+  markClass, observedTime,
 } from './core.js';
 import { pushScreen } from './screens.js';
 import { ICONS } from './icons.js';
@@ -101,12 +101,14 @@ export function openLesson(lesson, iso) {
 
 export function openHomework(item, topic = '') {
   const body = pushScreen('Домашнее задание', forDate(item.date));
+  const observed = observedTime(item.observed_at);
   body.innerHTML = `
     <div class="detail">
       <h2>${esc(item.subject)}</h2>
       ${topic ? `<div class="detail-label">Тема урока</div><div class="detail-text">${esc(topic)}</div>` : ''}
       <div class="detail-row"><span class="detail-label">Задание</span>${item.type ? `<span class="muted small">${esc(item.type)}</span>` : ''}</div>
       <div class="detail-text">${escRich(item.text) || '<span class="muted">—Не указано—</span>'}</div>
+      ${observed ? `<div class="detail-label">Впервые замечено ботом</div><div class="detail-text">${esc(observed)}</div>` : ''}
       ${attachmentsHtml(item.attachments)}
     </div>`;
 }

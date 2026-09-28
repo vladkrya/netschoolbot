@@ -8,7 +8,7 @@ from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.types import BotCommand
+from aiogram.types import BotCommand, MenuButtonCommands, MenuButtonWebApp, WebAppInfo
 
 from ..context import AppContext
 from ..settings import Settings
@@ -63,8 +63,14 @@ def create_dispatcher(context: AppContext) -> Dispatcher:
     return dispatcher
 
 
-async def run_bot(bot: Bot, dispatcher: Dispatcher) -> None:
+async def run_bot(bot: Bot, dispatcher: Dispatcher, miniapp_url: str) -> None:
     await bot.set_my_commands(COMMANDS)
+    await bot.set_chat_menu_button(
+        menu_button=(
+            MenuButtonWebApp(text="Дневник", web_app=WebAppInfo(url=f"{miniapp_url.rstrip('/')}/"))
+            if miniapp_url.startswith("https://") else MenuButtonCommands()
+        )
+    )
     me = await bot.get_me()
     logger.info("Бот @%s запущен", me.username)
     # drop_pending_updates: после простоя очередь может быть забита старыми

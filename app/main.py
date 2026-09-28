@@ -120,7 +120,7 @@ async def run(settings: Settings, args: argparse.Namespace) -> int:
             await asyncio.gather(*tasks)
         else:
             dispatcher = create_dispatcher(context)
-            await run_bot(bot, dispatcher)
+            await run_bot(bot, dispatcher, settings.web.miniapp_url if settings.web.enabled else "")
     except (KeyboardInterrupt, asyncio.CancelledError):
         logger.info("Остановка по сигналу")
     finally:

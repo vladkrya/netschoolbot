@@ -240,12 +240,13 @@ class TestData:
     async def test_homework(self, client, app_context, token):
         from app.domain.records import HomeworkRecord
 
-        app_context.diary.homework = [
-            HomeworkRecord("Алгебра", dt.date(2026, 3, 3), "ДЗ", "Упр. 1")
-        ]
+        item = HomeworkRecord("Алгебра", dt.date(2026, 3, 3), "ДЗ", "Упр. 1")
+        app_context.diary.homework = [item]
+        await app_context.state.replace_homework(1, {item.identity}, {item.identity})
         response = await client.get(f"{BASE}/api/homework", params={"token": token})
         items = (await response.json())["data"]["items"]
         assert items[0]["subject"] == "Алгебра"
+        assert items[0]["observed_at"].endswith("Z")
 
 
 class TestNewFeatures:

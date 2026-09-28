@@ -301,14 +301,37 @@ class MarkStateRepository:
         )
         return {row["identity"] for row in rows}
 
-    async def replace_homework(self, telegram_id: int, identities: set[str]) -> None:
+    async def replace_homework(
+        self, telegram_id: int, identities: set[str], observed_new: set[str] | None = None
+    ) -> None:
+        """Обновить слежение, сохранив время обнаружения существующих заданий."""
+        observed_new = observed_new or set()
         async with self._db.transaction() as db:
-            await db.execute("DELETE FROM tracked_homework WHERE telegram_id = ?", (telegram_id,))
-            if identities:
+            cursor = await db.execute(
+                "SELECT identity FROM tracked_homework WHERE telegram_id = ?", (telegram_id,)
+            )
+            existing = {row[0] for row in await cursor.fetchall()}
+            removed = existing - identities
+            added = identities - existing
+            if removed:
                 await db.executemany(
-                    "INSERT INTO tracked_homework (telegram_id, identity) VALUES (?,?)",
-                    [(telegram_id, identity) for identity in identities],
+                    "DELETE FROM tracked_homework WHERE telegram_id = ? AND identity = ?",
+                    [(telegram_id, identity) for identity in removed],
                 )
+            if added:
+                await db.executemany(
+                    """INSERT INTO tracked_homework (telegram_id, identity, first_seen_at)
+                       VALUES (?, ?, CASE WHEN ? THEN datetime('now') END)""",
+                    [(telegram_id, identity, int(identity in observed_new)) for identity in added],
+                )
+
+    async def observed_homework(self, telegram_id: int) -> dict[str, str]:
+        rows = await self._db.fetch_all(
+            """SELECT identity, first_seen_at FROM tracked_homework
+               WHERE telegram_id = ? AND first_seen_at IS NOT NULL""",
+            (telegram_id,),
+        )
+        return {row["identity"]: row["first_seen_at"].replace(" ", "T") + "Z" for row in rows}
 
     async def seen_mail_ids(self, telegram_id: int) -> set[int]:
         rows = await self._db.fetch_all(

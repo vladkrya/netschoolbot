@@ -28,6 +28,7 @@ from aiogram.types import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     Message,
+    ReplyKeyboardRemove,
 )
 
 from ...context import AppContext
@@ -542,5 +543,6 @@ async def _finish_login(user: User, app: AppContext, message: Message) -> None:
     await message.answer(
         "\n".join(lines),
         parse_mode="HTML",
-        reply_markup=keyboards.main_menu(await miniapp_url(app, saved)),
+        reply_markup=ReplyKeyboardRemove(),
     )
+    await message.answer("Открыть мини-приложение", reply_markup=keyboards.miniapp(await miniapp_url(app, saved)))

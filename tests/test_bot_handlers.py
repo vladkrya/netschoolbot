@@ -111,17 +111,17 @@ class TestMenu:
         user = await users.get_or_create(1)
         message = FakeMessage()
         await menu.show_menu(message, user, app)
-        _, kwargs = message.answers[-1]
-        buttons = [b.text for row in kwargs["reply_markup"].keyboard for b in row]
-        assert not any("Дневник" in text for text in buttons)
+        assert len(message.answers) == 1
+        assert message.answers[-1][1]["reply_markup"].remove_keyboard is True
 
     async def test_menu_has_app_button_after_login(self, app, users):
         user = await users.save(make_user())
         message = FakeMessage()
         await menu.show_menu(message, user, app)
-        _, kwargs = message.answers[-1]
-        rows = kwargs["reply_markup"].keyboard
+        assert message.answers[0][1]["reply_markup"].remove_keyboard is True
+        rows = message.answers[-1][1]["reply_markup"].inline_keyboard
         assert rows[0][0].web_app is not None
+        assert rows[0][0].style == "primary"
         assert "token=" in rows[0][0].web_app.url
 
     async def test_homework_requires_school(self, app, users):

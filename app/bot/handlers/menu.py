@@ -7,7 +7,7 @@ import logging
 
 from aiogram import F, Router
 from aiogram.filters import Command, CommandStart
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery, Message, ReplyKeyboardRemove
 
 from ...context import AppContext
 from ...domain import formatting
@@ -55,12 +55,14 @@ async def miniapp_url(app: AppContext, user: User) -> str:
 @router.message(CommandStart())
 @router.message(Command("menu"))
 async def show_menu(message: Message, user: User, app: AppContext) -> None:
-    text = GREETING if not user.school.configured else "Главное меню"
+    text = GREETING if not user.school.configured else "📱 Дневник открывается кнопкой внизу чата. Команды доступны через /."
     await message.answer(
         text,
         parse_mode="HTML",
-        reply_markup=keyboards.main_menu(await miniapp_url(app, user)),
+        reply_markup=ReplyKeyboardRemove(),
     )
+    if user.school.configured:
+        await message.answer("Открыть мини-приложение", reply_markup=keyboards.miniapp(await miniapp_url(app, user)))
 
 
 @router.message(Command("dz"))

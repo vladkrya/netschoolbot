@@ -163,13 +163,14 @@ def _mark_to_json(record) -> dict:
     }
 
 
-def _homework_to_json(item) -> dict:
+def _homework_to_json(item, observed: dict[str, str] | None = None) -> dict:
     return {
         "subject": item.subject,
         "date": item.due_date.isoformat(),
         "type": item.assignment_type,
         "text": item.text,
         "attachments": [{"id": a.id, "name": a.name} for a in item.attachments],
+        "observed_at": (observed or {}).get(item.identity, ""),
     }
 
 
@@ -199,7 +200,10 @@ async def _teachers(app: AppContext, user: User, days: list[DiaryDay]) -> dict[s
     return known
 
 
-def _day_to_json(day: DiaryDay, teachers: dict[str, str] | None = None) -> dict:
+def _day_to_json(
+    day: DiaryDay, teachers: dict[str, str] | None = None,
+    observed: dict[str, str] | None = None,
+) -> dict:
     return {
         "date": day.day.isoformat(),
         "label": formatting.date_label(day.day),
@@ -217,12 +221,12 @@ def _day_to_json(day: DiaryDay, teachers: dict[str, str] | None = None) -> dict:
                 "topic": getattr(lesson, "topic", ""),
                 "absence": getattr(lesson, "absence", ""),
                 "marks": [_mark_to_json(m) for m in lesson.marks],
-                "homework": [_homework_to_json(h) for h in lesson.homework],
+                "homework": [_homework_to_json(h, observed) for h in lesson.homework],
             }
             for lesson in day.lessons
         ],
         "marks": [_mark_to_json(record) for record in day.marks],
-        "homework": [_homework_to_json(item) for item in day.homework],
+        "homework": [_homework_to_json(item, observed) for item in day.homework],
     }
 
 
@@ -302,7 +306,8 @@ async def diary(request: web.Request) -> web.Response:
         today = msk_today() + dt.timedelta(weeks=offset)
         days = await app.diary.fetch_diary(user, weeks_back=1, weeks_forward=1, today=today)
         teachers = await _teachers(app, user, days)
-        return {"days": [_day_to_json(day, teachers) for day in days], "week": offset}
+        observed = await app.state.observed_homework(user.telegram_id)
+        return {"days": [_day_to_json(day, teachers, observed) for day in days], "week": offset}
 
     # Каждое окно кэшируется отдельно, иначе соседние недели вытесняли бы
     # друг друга и стрелки снова упирались бы в сеть.
@@ -392,6 +397,7 @@ async def announcements(request: web.Request) -> web.Response:
 async def homework(request: web.Request) -> web.Response:
     async def produce(app: AppContext, user: User):
         items = await app.diary.fetch_homework(user, weeks_back=0, weeks_forward=2)
+        observed = await app.state.observed_homework(user.telegram_id)
         return {
             "items": [
                 {
@@ -400,6 +406,7 @@ async def homework(request: web.Request) -> web.Response:
                     "subject": item.subject,
                     "text": item.text,
                     "attachments": [{"id": a.id, "name": a.name} for a in item.attachments],
+                    "observed_at": observed.get(item.identity, ""),
                 }
                 for item in sorted(items, key=lambda h: (h.due_date, h.subject))
             ]

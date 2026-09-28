@@ -1,7 +1,7 @@
 // «Д/З»: домашние задания карточками с поиском, как во вкладке приложения.
 'use strict';
 
-import { $, api, dayMonth, errorCard, esc, isoToday, skeleton, state } from './core.js';
+import { $, api, dayMonth, errorCard, esc, isoToday, observedTime, skeleton, state } from './core.js';
 import { ICONS } from './icons.js';
 import { openHomework } from './details.js';
 
@@ -43,6 +43,7 @@ function render() {
       (item, index) => `<div class="card hw-card" data-hw="${index}">
           <div class="hw-subject">${esc(item.subject)}</div>
           <div class="hw-text">${esc(item.text) || '—'}</div>
+          ${item.observed_at ? `<div class="hw-observed">Замечено ботом: ${esc(observedTime(item.observed_at))}</div>` : ''}
           <div class="hw-foot">
             <span><span class="hw-badge">Д/З</span>${item.attachments.length ? `<span class="hw-badge clip">${ICONS.clip}</span>` : ''}</span>
             <span class="muted small">${esc(dayMonth(item.date))}</span>

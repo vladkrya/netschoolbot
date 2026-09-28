@@ -133,6 +133,11 @@ MIGRATIONS: list[str] = [
     """
     ALTER TABLE users ADD COLUMN baseline_pending INTEGER NOT NULL DEFAULT 0;
     """,
+    # 3 — время первого обнаружения новых домашних заданий. Старым заданиям
+    # оставляем NULL: их фактическое появление восстановить нельзя.
+    """
+    ALTER TABLE tracked_homework ADD COLUMN first_seen_at TEXT;
+    """,
 ]
 
 

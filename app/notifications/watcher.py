@@ -137,7 +137,9 @@ class UserWatcher:
         fresh_homework, all_homework = diff_homework(
             known_homework, homework, first_run=first_run
         )
-        await self._state.replace_homework(user.telegram_id, all_homework)
+        await self._state.replace_homework(
+            user.telegram_id, all_homework, {item.identity for item in fresh_homework}
+        )
 
         if self._is_quiet(user):
             if result.events or fresh_homework:

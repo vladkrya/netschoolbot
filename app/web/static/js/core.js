@@ -137,6 +137,15 @@ export function isAbsence(mark) {
   return Boolean(absenceText(mark));
 }
 
+export function observedTime(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return new Intl.DateTimeFormat('ru-RU', {
+    day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
+  }).format(date);
+}
+
 /** Средневзвешенный балл по числовым оценкам. null — считать не из чего. */
 export function weightedAverage(marks) {
   let total = 0;

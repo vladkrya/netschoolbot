@@ -170,6 +170,16 @@ class TestMarkState:
         assert await marks.load_homework(1) == set()
         assert await marks.seen_mail_ids(1) == set()
 
+    async def test_homework_observation_is_preserved(self, users, marks):
+        await users.save(make_user())
+        await marks.replace_homework(1, {"old"})
+        assert await marks.observed_homework(1) == {}
+        await marks.replace_homework(1, {"old", "new"}, {"new"})
+        first = (await marks.observed_homework(1))["new"]
+        assert first.endswith("Z")
+        await marks.replace_homework(1, {"new"})
+        assert await marks.observed_homework(1) == {"new": first}
+
     async def test_mail_ids_deduplicate(self, users, marks):
         await users.save(make_user())
         await marks.mark_mail_seen(1, {1, 2})
