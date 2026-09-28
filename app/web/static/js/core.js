@@ -10,15 +10,13 @@ export const initData = (tg && tg.initData) || '';
 
 /** Состояние приложения. Одно место вместо переменных врассыпную. */
 export const state = {
-  tab: 'diary',
-  week: 0,
-  day: null,
-  diary: null,
+  tab: 'day',
+  date: null,
+  scheduleWeek: 0,
   grades: null,
   homework: null,
   mail: null,
   profile: null,
-  gradeFilter: 'all',
   calc: null,
 };
 
@@ -102,11 +100,51 @@ export function attachmentsHtml(items) {
 
 export function errorCard(error, retryId) {
   const needsLogin = error.reason === 'login' || error.reason === 'auth';
-  return `<div class="card">
+  return `<div class="card error-card">
       <p>${esc(error.message)}</p>
       ${needsLogin ? '<p class="muted small" style="margin-top:6px">Откройте бота и выполните /login.</p>' : ''}
       ${retryId ? `<button class="btn" id="${retryId}">Повторить</button>` : ''}
     </div>`;
+}
+
+/* ─────────────────────── Оценки и пропуски ─────────────────────── */
+
+/** Отметки посещаемости: в официальном приложении они пишутся текстом
+ * в карточке урока («Пропуск по болезни»), а не рамкой, как оценка. */
+export const ABSENCES = {
+  'Б': 'Пропуск по болезни',
+  'УП': 'Пропуск по уважительной причине',
+  'НП': 'Пропуск без причины',
+  'Н': 'Пропуск',
+  'ОТ': 'Отсутствовал',
+  'ОП': 'Опоздал',
+  'ОСВ': 'Освобождён',
+};
+
+export function absenceText(mark) {
+  return ABSENCES[String(mark || '').trim().toUpperCase()] || '';
+}
+
+export function isAbsence(mark) {
+  return Boolean(absenceText(mark));
+}
+
+/** Средневзвешенный балл по числовым оценкам. null — считать не из чего. */
+export function weightedAverage(marks) {
+  let total = 0;
+  let weights = 0;
+  for (const mark of marks) {
+    const value = Number(mark.mark);
+    if (!Number.isFinite(value) || value < 1 || value > 5) continue;
+    const weight = Number(mark.weight) > 0 ? Number(mark.weight) : 1;
+    total += value * weight;
+    weights += weight;
+  }
+  return weights ? total / weights : null;
+}
+
+export function formatAverage(value) {
+  return value == null ? '-' : value.toFixed(2).replace('.', ',');
 }
 
 /* ─────────────────────────── Даты ─────────────────────────── */
@@ -139,4 +177,52 @@ export function shortDate(iso) {
 export function longDate(iso) {
   const date = parseIso(iso);
   return `${WEEKDAYS[(date.getDay() + 6) % 7]}, ${date.getDate()} ${MONTHS[date.getMonth()]}`;
+}
+
+export const WEEKDAYS_FULL = [
+  'Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота', 'Воскресенье',
+];
+const WEEKDAYS_ACC = [
+  'понедельник', 'вторник', 'среду', 'четверг', 'пятницу', 'субботу', 'воскресенье',
+];
+
+export function weekdayIndex(iso) {
+  return (parseIso(iso).getDay() + 6) % 7;
+}
+
+/** «30 сентября» */
+export function dayMonth(iso) {
+  const date = parseIso(iso);
+  return `${date.getDate()} ${MONTHS[date.getMonth()]}`;
+}
+
+/** «на среду, 30 сентября» — подзаголовок экранов задания и оценки. */
+export function forDate(iso) {
+  return `на ${WEEKDAYS_ACC[weekdayIndex(iso)]}, ${dayMonth(iso)}`;
+}
+
+/** «Среда, 30 сентября» */
+export function fullDate(iso) {
+  return `${WEEKDAYS_FULL[weekdayIndex(iso)]}, ${dayMonth(iso)}`;
+}
+
+export function addDays(iso, days) {
+  const date = parseIso(iso);
+  date.setDate(date.getDate() + days);
+  return isoOf(date);
+}
+
+export function isoOf(date) {
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+/** Понедельник недели, в которую попадает дата. */
+export function mondayOf(iso) {
+  return addDays(iso, -weekdayIndex(iso));
+}
+
+/** На сколько недель дата отстоит от текущей. */
+export function weekOffsetOf(iso) {
+  const diff = parseIso(mondayOf(iso)) - parseIso(mondayOf(isoToday()));
+  return Math.round(diff / (7 * 24 * 3600 * 1000));
 }

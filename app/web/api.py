@@ -17,9 +17,9 @@ from aiohttp import web
 from ..context import AppContext
 from ..domain import formatting
 from ..domain.models import User, normalize
-from ..domain.records import DiaryDay
+from ..domain.records import DiaryDay, clean_content
 from ..netschool.errors import NetSchoolError, Reason
-from ..domain.periods import current_quarter, quarter_of
+from ..domain.periods import quarter_of, quarters
 from ..netschool.service import msk_today
 from .telegram_auth import InitDataError, verify_init_data
 
@@ -150,6 +150,8 @@ def _mark_to_json(record) -> dict:
     return {
         "subject": record.subject,
         "title": record.title,
+        # Содержание работы без типа: «Тема» на экране оценки.
+        "topic": clean_content(record.content),
         "type": record.assignment_type,
         "date": record.date.isoformat(),
         "mark": record.mark,
@@ -185,6 +187,8 @@ def _day_to_json(day: DiaryDay) -> dict:
                 "end": lesson.end,
                 "room": lesson.room,
                 "teacher": lesson.teacher,
+                # Тема урока: карточка «Тема урока» на экране урока.
+                "topic": getattr(lesson, "topic", ""),
                 "marks": [_mark_to_json(m) for m in lesson.marks],
                 "homework": [_homework_to_json(h) for h in lesson.homework],
             }
@@ -279,14 +283,42 @@ async def diary(request: web.Request) -> web.Response:
 
 @routes.get("/api/marks")
 async def marks(request: web.Request) -> web.Response:
-    async def produce(app: AppContext, user: User):
-        records = await app.diary.fetch_marks(user)
-        by_subject: dict[str, list] = {}
-        for record in records:
-            by_subject.setdefault(record.subject, []).append(record)
+    """Оценки за учебный год — экран «Итоги».
 
+    Берётся весь год до конца текущей четверти, а не пять недель, как раньше:
+    таблице «предмет × четверть» нужны все четверти, а полосе прогресса —
+    число уроков, включая ещё не прошедшие.
+    """
+
+    async def produce(app: AppContext, user: User):
+        today = msk_today()
+        year = quarters(today)
+        now_quarter = next((q for q in year if q.covers(today)), year[0])
+        days = await app.diary.fetch_period(user, year[0].start, now_quarter.end, today=today)
+
+        by_subject: dict[str, list] = {}
+        lessons: dict[str, dict[str, dict[str, int]]] = {}
+        teachers: dict[str, dict[str, int]] = {}
+        for day in days:
+            key = quarter_of(day.day)
+            for record in day.marks:
+                by_subject.setdefault(record.subject, []).append(record)
+            for lesson in day.lessons:
+                counts = lessons.setdefault(lesson.subject, {}).setdefault(
+                    key or "", {"total": 0, "done": 0}
+                )
+                counts["total"] += 1
+                if day.day <= today:
+                    counts["done"] += 1
+                if lesson.teacher:
+                    seen = teachers.setdefault(lesson.subject, {})
+                    seen[lesson.teacher] = seen.get(lesson.teacher, 0) + 1
+
+        records = [record for items in by_subject.values() for record in items]
         subjects = []
-        for subject, items in sorted(by_subject.items()):
+        for subject in sorted(set(by_subject) | set(lessons)):
+            items = by_subject.get(subject, [])
+            teacher_counts = teachers.get(subject, {})
             subjects.append(
                 {
                     "subject": subject,
@@ -297,15 +329,30 @@ async def marks(request: web.Request) -> web.Response:
                     "marks": [
                         _mark_to_json(r) for r in sorted(items, key=lambda r: r.date)
                     ],
+                    "lessons": lessons.get(subject, {}),
+                    "teacher": max(teacher_counts, key=teacher_counts.get) if teacher_counts else "",
                 }
             )
         return {
             "subjects": subjects,
             "average": formatting.weighted_average(records),
-            "current_quarter": current_quarter(msk_today()),
+            "current_quarter": now_quarter.key,
+            "quarters": [
+                {"key": q.key, "label": q.label, "start": q.start.isoformat(), "end": q.end.isoformat()}
+                for q in year
+            ],
+            "year": f"{year[0].start.year}/{year[0].start.year + 1}",
         }
 
-    return await _cached(request, "marks", produce)
+    return await _cached(request, "marks:year", produce)
+
+
+@routes.get("/api/announcements")
+async def announcements(request: web.Request) -> web.Response:
+    async def produce(app: AppContext, user: User):
+        return {"items": await app.diary.fetch_announcements(user)}
+
+    return await _cached(request, "announcements", produce)
 
 
 @routes.get("/api/homework")

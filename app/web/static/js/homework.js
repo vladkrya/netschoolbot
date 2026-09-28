@@ -1,18 +1,17 @@
-// Домашние задания, сгруппированные по дате.
+// «Д/З»: домашние задания карточками с поиском, как во вкладке приложения.
 'use strict';
 
-import {
-  $, api, attachmentsHtml, errorCard, esc, escRich, isoToday, longDate,
-  skeleton, state,
-} from './core.js';
-import { openSheet } from './sheet.js';
+import { $, api, dayMonth, errorCard, esc, isoToday, skeleton, state } from './core.js';
+import { openHomework } from './details.js';
+
+let query = '';
 
 export async function loadHomework(force = false) {
   const container = $('homeworkContent');
   if (!state.homework || force) {
     container.innerHTML = skeleton();
     try {
-      const { data } = await api('/api/homework');
+      const { data } = await api(`/api/homework${force ? '?refresh=1' : ''}`);
       state.homework = data;
     } catch (error) {
       container.innerHTML = errorCard(error, 'hwRetry');
@@ -25,48 +24,39 @@ export async function loadHomework(force = false) {
 
 function render() {
   const today = isoToday();
+  const needle = query.trim().toLowerCase();
   // Прошедшее не показываем: домашка нужна на «сейчас и вперёд».
-  const items = state.homework.items.filter((item) => item.date >= today);
+  const items = state.homework.items
+    .filter((item) => item.date >= today)
+    .filter((item) => !needle || `${item.subject} ${item.text}`.toLowerCase().includes(needle));
 
+  $('hwCount').textContent = `Домашние задания (${items.length})`;
+  const container = $('homeworkContent');
   if (!items.length) {
-    $('homeworkContent').innerHTML =
-      '<div class="card"><div class="empty">Заданий нет 🎉</div></div>';
+    container.innerHTML = `<div class="empty big">${needle ? 'Ничего не найдено' : 'Заданий нет 🎉'}</div>`;
     return;
   }
 
-  const byDate = new Map();
-  for (const item of items) {
-    if (!byDate.has(item.date)) byDate.set(item.date, []);
-    byDate.get(item.date).push(item);
-  }
-
-  $('homeworkContent').innerHTML = [...byDate.entries()]
+  container.innerHTML = items
     .map(
-      ([date, group]) => `<div class="card">
-          <div class="card-title">${esc(longDate(date))}<span class="muted small">${group.length}</span></div>
-          ${group.map((item) => row(item, items.indexOf(item))).join('')}
+      (item, index) => `<div class="card hw-card" data-hw="${index}">
+          <div class="hw-subject">${esc(item.subject)}</div>
+          <div class="hw-text">${esc(item.text) || '—'}</div>
+          <div class="hw-foot">
+            <span><span class="hw-badge">Д/З</span>${item.attachments.length ? '<span class="hw-badge clip">📎</span>' : ''}</span>
+            <span class="muted small">${esc(dayMonth(item.date))}</span>
+          </div>
         </div>`
     )
     .join('');
-
-  $('homeworkContent').querySelectorAll('[data-hw]').forEach((element) => {
-    element.addEventListener('click', () => open(items[Number(element.dataset.hw)]));
-  });
-}
-
-function row(item, index) {
-  const files = item.attachments.length ? ` <span class="muted small">📎 ${item.attachments.length}</span>` : '';
-  return `<div class="hw-item" data-hw="${index}">
-      <div class="hw-subject">${esc(item.subject)}${files}</div>
-      <div class="hw-text">${esc(item.text) || '—'}</div>
-    </div>`;
-}
-
-function open(item) {
-  openSheet(
-    item.subject,
-    `<div class="row"><span class="label">Срок</span><span>${esc(longDate(item.date))}</span></div>
-     <div style="margin-top:12px">${escRich(item.text) || '<span class="muted">Без текста</span>'}</div>
-     ${attachmentsHtml(item.attachments)}`
+  container.querySelectorAll('[data-hw]').forEach((card) =>
+    card.addEventListener('click', () => openHomework(items[Number(card.dataset.hw)]))
   );
+}
+
+export function initHomework() {
+  $('hwSearch').addEventListener('input', (event) => {
+    query = event.target.value;
+    if (state.homework) render();
+  });
 }

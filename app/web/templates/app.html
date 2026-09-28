@@ -3,52 +3,82 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
-<meta name="theme-color" content="#4a76a8">
+<meta name="theme-color" content="#3b5d99">
 <title>{{ school or "Дневник" }}</title>
 <link rel="manifest" href="{{ base }}/manifest.webmanifest?token={{ token }}">
 <link rel="icon" href="{{ base }}/static/icon.svg">
 <link rel="apple-touch-icon" href="{{ base }}/static/icon.svg">
 <link rel="stylesheet" href="{{ base }}/static/app.css?v={{ version }}">
 <!-- До app.js: приложению нужен Telegram.WebApp уже при старте, чтобы
-     забрать initData и цвета темы до первой отрисовки. -->
+     забрать initData до первого запроса. -->
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
 
 <header class="topbar">
-  <button class="topbar-btn" id="childBtn" hidden aria-label="Сменить ученика">👤</button>
+  <button class="topbar-btn" id="menuBtn" aria-label="Меню">☰</button>
   <div class="topbar-title" id="topTitle">Дневник</div>
-  <button class="topbar-btn" id="refreshBtn" aria-label="Обновить">⟳</button>
+  <button class="topbar-btn" id="bellBtn" aria-label="Объявления">🔔</button>
 </header>
 
+<div class="pull-indicator" id="pullIndicator"></div>
 <div class="banner" id="banner" hidden></div>
 
 <main>
-  <section class="panel active" id="panel-diary">
-    <div class="week-nav">
-      <button id="weekPrev" aria-label="Предыдущая неделя">◀</button>
-      <button class="week-label" id="weekLabel"></button>
-      <button id="weekNext" aria-label="Следующая неделя">▶</button>
+  <section class="panel active" id="panel-day">
+    <div class="date-bar">
+      <button class="date-arrow" id="dayPrev" aria-label="Предыдущий день">‹</button>
+      <button class="date-title" id="dayTitle">
+        <span class="date-label" id="dayLabel">Сегодня</span>
+        <span class="date-sub" id="daySub"></span>
+      </button>
+      <button class="date-arrow" id="dayNext" aria-label="Следующий день">›</button>
     </div>
-    <div class="day-strip" id="dayStrip"></div>
-    <div id="diaryContent"></div>
+    <div class="list" id="dayContent"></div>
   </section>
 
-  <section class="panel" id="panel-grades"><div id="gradesContent"></div></section>
-  <section class="panel" id="panel-homework"><div id="homeworkContent"></div></section>
-  <section class="panel" id="panel-mail"><div id="mailContent"></div></section>
-  <section class="panel" id="panel-calc"><div id="calcContent"></div></section>
-  <section class="panel" id="panel-profile"><div id="profileContent"></div></section>
+  <section class="panel" id="panel-schedule">
+    <div class="date-bar">
+      <button class="date-arrow" id="schedPrev" aria-label="Предыдущая неделя">‹</button>
+      <button class="date-title" id="schedTitle">
+        <span class="date-label" id="schedLabel">Текущая</span>
+        <span class="date-sub" id="schedSub"></span>
+      </button>
+      <button class="date-arrow" id="schedNext" aria-label="Следующая неделя">›</button>
+    </div>
+    <div class="list" id="scheduleContent"></div>
+  </section>
+
+  <section class="panel" id="panel-homework">
+    <div class="filter-bar">
+      <div class="segment-title" id="hwCount">Домашние задания</div>
+      <input class="search" id="hwSearch" type="search" placeholder="Поиск" autocomplete="off">
+    </div>
+    <div class="list" id="homeworkContent"></div>
+  </section>
+
+  <section class="panel" id="panel-totals"><div id="totalsContent"></div></section>
+
+  <section class="panel" id="panel-mail">
+    <div class="filter-bar"><div class="segment-title">Входящие</div></div>
+    <div class="list" id="mailContent"></div>
+  </section>
 </main>
 
+<div id="screens"></div>
+
 <nav class="bottom-nav" id="bottomNav">
-  <button class="nav-item active" data-tab="diary"><span class="ico">📒</span><span>Дневник</span></button>
-  <button class="nav-item" data-tab="grades"><span class="badge" id="badgeGrades" hidden></span><span class="ico">📊</span><span>Оценки</span></button>
-  <button class="nav-item" data-tab="homework"><span class="badge" id="badgeHomework" hidden></span><span class="ico">📝</span><span>ДЗ</span></button>
-  <button class="nav-item" data-tab="mail"><span class="badge" id="badgeMail" hidden></span><span class="ico">✉️</span><span>Почта</span></button>
-  <button class="nav-item" data-tab="calc"><span class="ico">🧮</span><span>Баллы</span></button>
-  <button class="nav-item" data-tab="profile"><span class="ico">⚙️</span><span>Ещё</span></button>
+  <button class="nav-item active" data-tab="day"><span class="ico">🕘</span><span>День</span></button>
+  <button class="nav-item" data-tab="schedule"><span class="ico">🗓</span><span>Расписание</span></button>
+  <button class="nav-item" data-tab="homework"><span class="ico">🏠</span><span>Д/З</span></button>
+  <button class="nav-item" data-tab="totals"><span class="ico">📖</span><span>Итоги</span></button>
+  <button class="nav-item" data-tab="mail"><span class="ico">📣</span><span>Сообщения</span></button>
 </nav>
+
+<aside class="drawer" id="drawer">
+  <div class="drawer-shade" id="drawerShade"></div>
+  <div class="drawer-panel" id="drawerBody"></div>
+</aside>
 
 <div class="overlay" id="sheet" hidden>
   <div class="sheet">

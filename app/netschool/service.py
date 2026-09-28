@@ -131,7 +131,26 @@ class DiaryService:
             entries = getattr(page, "entries", None)
             if entries is None:
                 entries = page if isinstance(page, list) else []
-            return [_mail_to_dict(item) for item in entries]
+            messages = [_mail_to_dict(item) for item in entries]
+            # В списке писем netschoolpy флага прочтения нет — без этого запроса
+            # каждое письмо выглядело непрочитанным.
+            try:
+                unread = {int(i) for i in await client.mail_unread()}
+            except Exception as exc:
+                logger.debug("Не удалось получить непрочитанные письма: %s", exc)
+            else:
+                for message in messages:
+                    message["read"] = _safe_int(message["id"]) not in unread
+            return messages
+
+        return await self._with_session(user, call)
+
+    async def fetch_announcements(self, user: User, limit: int = 30) -> list[dict[str, Any]]:
+        """Объявления школы — экран под колокольчиком."""
+
+        async def call(client: Any) -> list[dict[str, Any]]:
+            items = await client.announcements(take=limit)
+            return [_announcement_to_dict(item) for item in items]
 
         return await self._with_session(user, call)
 
@@ -256,6 +275,27 @@ def _message_to_dict(message: Any) -> dict[str, Any]:
         "read": bool(field("is_read", False)),
         "attachments": attachments,
     }
+
+
+def _announcement_to_dict(item: Any) -> dict[str, Any]:
+    author = getattr(item, "author", None)
+    posted = getattr(item, "post_date", None)
+    return {
+        "title": str(getattr(item, "name", "") or "Объявление"),
+        "text": str(getattr(item, "content", "") or ""),
+        "author": str(getattr(author, "full_name", "") or getattr(author, "nickname", "") or ""),
+        "posted": posted.isoformat() if hasattr(posted, "isoformat") else str(posted or ""),
+        "attachments": [
+            {"id": a.id, "name": a.name} for a in getattr(item, "attachments", None) or []
+        ],
+    }
+
+
+def _safe_int(value: Any) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _mail_to_dict(message: Any) -> dict[str, Any]:

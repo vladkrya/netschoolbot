@@ -1,0 +1,217 @@
+// «День»: уроки выбранного дня, как на главном экране официального приложения.
+//
+// Заголовок «Вчера / Сегодня / Завтра» со стрелками, календарь по нажатию на
+// дату, листание дней свайпом. Карточка урока: номер и предмет, оценка в
+// рамке, бейдж «Д/З» (сразу открывает задание), время и статус урока.
+'use strict';
+
+import {
+  $, addDays, api, dayMonth, errorCard, esc, fullDate, isoOf, isoToday,
+  parseIso, skeleton, state, WEEKDAYS, WEEKDAYS_FULL, weekdayIndex, weekOffsetOf,
+} from './core.js';
+import { lessonStatus, markBox, openHomework, openLesson, realMarks } from './details.js';
+import { closeSheet, openSheet } from './sheet.js';
+
+/** Загруженные дни по ISO-дате и недели, которые уже спрашивали. */
+const days = new Map();
+const loadedWeeks = new Set();
+const pending = new Map();
+
+export function dayData(iso) {
+  return days.get(iso) || null;
+}
+
+/** Загрузить окно недель вокруг даты. Сервер отдаёт неделю и соседние. */
+export async function ensureWeek(iso, force = false) {
+  const offset = weekOffsetOf(iso);
+  if (!force && loadedWeeks.has(offset)) return;
+  if (pending.has(offset)) return pending.get(offset);
+
+  const request = api(`/api/diary?week=${offset}${force ? '&refresh=1' : ''}`)
+    .then(({ data }) => {
+      for (const day of data.days || []) days.set(day.date, day);
+      // Окно — неделя до и после: соседние недели тоже уже на руках.
+      for (const shift of [-1, 0, 1]) loadedWeeks.add(offset + shift);
+    })
+    .finally(() => pending.delete(offset));
+  pending.set(offset, request);
+  return request;
+}
+
+export async function loadDay(force = false) {
+  if (!state.date) state.date = isoToday();
+  renderHeader();
+  const container = $('dayContent');
+  if (force || !loadedWeeks.has(weekOffsetOf(state.date))) {
+    container.innerHTML = skeleton();
+    try {
+      await ensureWeek(state.date, force);
+    } catch (error) {
+      container.innerHTML = errorCard(error, 'dayRetry');
+      $('dayRetry')?.addEventListener('click', () => loadDay(true));
+      return;
+    }
+  }
+  renderDay();
+}
+
+function relativeLabel(iso) {
+  const today = isoToday();
+  if (iso === today) return 'Сегодня';
+  if (iso === addDays(today, -1)) return 'Вчера';
+  if (iso === addDays(today, 1)) return 'Завтра';
+  return WEEKDAYS_FULL[weekdayIndex(iso)];
+}
+
+function renderHeader() {
+  const label = relativeLabel(state.date);
+  $('dayLabel').textContent = label;
+  // Когда сверху день недели, снизу только дата — без повтора.
+  $('daySub').textContent = WEEKDAYS_FULL.includes(label) ? dayMonth(state.date) : fullDate(state.date);
+}
+
+function renderDay() {
+  renderHeader();
+  const day = days.get(state.date);
+  const lessons = day?.lessons || [];
+  const container = $('dayContent');
+
+  if (!lessons.length) {
+    container.innerHTML = `<div class="empty big">${weekdayIndex(state.date) >= 5 ? 'Выходной' : 'Уроков нет'}</div>`;
+    return;
+  }
+
+  container.innerHTML = lessons.map((lesson, index) => lessonCard(lesson, index)).join('');
+  container.querySelectorAll('[data-lesson]').forEach((card) => {
+    card.addEventListener('click', (event) => {
+      const lesson = lessons[Number(card.dataset.lesson)];
+      // Бейдж «Д/З» открывает задание сразу, минуя экран урока.
+      if (event.target.closest('[data-hw-badge]') && lesson.homework.length) {
+        openHomework(lesson.homework[0], lesson.topic);
+        return;
+      }
+      openLesson(lesson, state.date);
+    });
+  });
+}
+
+function lessonCard(lesson, index) {
+  const marks = realMarks(lesson.marks).map((m) => markBox(m.mark)).join('');
+  const hasFiles = lesson.homework.some((h) => (h.attachments || []).length);
+  const time = lesson.time || [lesson.start, lesson.end].filter(Boolean).join(' – ');
+  return `<div class="lesson-card" data-lesson="${index}">
+      <div class="lc-top">
+        <span class="lc-num">${esc(lesson.number ?? '')}</span>
+        <span class="lc-subject">${esc(lesson.subject)}</span>
+        <span class="lc-marks">${marks}</span>
+      </div>
+      ${lesson.homework.length ? `<div class="lc-badges">
+        <span class="hw-badge" data-hw-badge>Д/З</span>
+        ${hasFiles ? '<span class="hw-badge clip">📎</span>' : ''}
+      </div>` : ''}
+      <div class="lc-bottom"><span>${esc(time)}</span><span>${esc(lessonStatus(lesson, state.date))}</span></div>
+    </div>`;
+}
+
+export async function goToDay(iso) {
+  state.date = iso;
+  await loadDay();
+}
+
+function shiftDay(delta) {
+  const container = $('dayContent');
+  container.classList.remove('slide-left', 'slide-right');
+  // Перезапуск анимации: без чтения layout класс не срабатывает повторно.
+  void container.offsetWidth;
+  container.classList.add(delta > 0 ? 'slide-left' : 'slide-right');
+  goToDay(addDays(state.date, delta));
+}
+
+/* ─────────────────────────── Календарь ─────────────────────────── */
+
+function openCalendar() {
+  const month = parseIso(state.date);
+  month.setDate(1);
+
+  const body = openSheet('', '');
+  const render = () => {
+    const today = isoToday();
+    const first = new Date(month);
+    const start = new Date(first);
+    start.setDate(1 - ((first.getDay() + 6) % 7));
+    const cells = [];
+    for (let i = 0; i < 42; i += 1) {
+      const date = new Date(start);
+      date.setDate(start.getDate() + i);
+      const iso = isoOf(date);
+      const classes = [
+        'cal-day',
+        date.getMonth() !== month.getMonth() ? 'other' : '',
+        i % 7 >= 5 ? 'weekend' : '',
+        iso === today ? 'today' : '',
+        iso === state.date ? 'selected' : '',
+      ].filter(Boolean).join(' ');
+      cells.push(`<button class="${classes}" data-date="${iso}">${date.getDate()}</button>`);
+    }
+    const monthName = MONTHS_NOMINATIVE[month.getMonth()];
+    body.innerHTML = `
+      <div class="cal-head">
+        <button class="cal-arrow" data-shift="-1">‹</button>
+        <div><div class="cal-month">${monthName}</div><div class="muted small">${month.getFullYear()}</div></div>
+        <button class="cal-arrow" data-shift="1">›</button>
+      </div>
+      <div class="cal-grid">
+        ${WEEKDAYS.map((d) => `<div class="cal-dow">${d}</div>`).join('')}
+        ${cells.join('')}
+      </div>`;
+    body.querySelectorAll('[data-shift]').forEach((button) =>
+      button.addEventListener('click', () => {
+        month.setMonth(month.getMonth() + Number(button.dataset.shift));
+        render();
+      })
+    );
+    body.querySelectorAll('[data-date]').forEach((button) =>
+      button.addEventListener('click', () => {
+        closeSheet();
+        goToDay(button.dataset.date);
+      })
+    );
+  };
+  render();
+}
+
+const MONTHS_NOMINATIVE = [
+  'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
+  'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь',
+];
+
+/* ─────────────────────────── Свайп ─────────────────────────── */
+
+function bindSwipe() {
+  const area = $('panel-day');
+  let startX = 0;
+  let startY = 0;
+  let tracking = false;
+  area.addEventListener('touchstart', (event) => {
+    const touch = event.touches[0];
+    startX = touch.clientX;
+    startY = touch.clientY;
+    tracking = true;
+  }, { passive: true });
+  area.addEventListener('touchend', (event) => {
+    if (!tracking) return;
+    tracking = false;
+    const touch = event.changedTouches[0];
+    const dx = touch.clientX - startX;
+    const dy = touch.clientY - startY;
+    // Горизонтальный жест заметно длиннее вертикального — иначе это прокрутка.
+    if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) shiftDay(dx < 0 ? 1 : -1);
+  }, { passive: true });
+}
+
+export function initDay() {
+  $('dayPrev').addEventListener('click', () => shiftDay(-1));
+  $('dayNext').addEventListener('click', () => shiftDay(1));
+  $('dayTitle').addEventListener('click', openCalendar);
+  bindSwipe();
+}

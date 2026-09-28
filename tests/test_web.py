@@ -213,6 +213,30 @@ class TestData:
         assert algebra["count"] == 2
         assert algebra["average"] == pytest.approx(4.0)
 
+    async def test_marks_cover_year_with_lessons_and_teacher(self, client, app_context, token):
+        from app.domain.records import DiaryDay, Lesson
+
+        day = dt.date(2026, 9, 7)
+        lesson = Lesson(number=1, subject="Алгебра", teacher="Поликарпова Е. В.")
+
+        async def fetch_period(user, start, end, **kwargs):
+            # Год целиком: от 1 сентября, а не пять недель назад.
+            assert start == dt.date(start.year, 9, 1)
+            return [DiaryDay(day=day, lessons=[lesson], marks=[record(0, "5", subject="Алгебра")])]
+
+        app_context.diary.fetch_period = fetch_period
+        response = await client.get(f"{BASE}/api/marks", params={"token": token})
+        data = (await response.json())["data"]
+        algebra = data["subjects"][0]
+        assert algebra["teacher"] == "Поликарпова Е. В."
+        assert algebra["lessons"]["q1"]["total"] == 1
+        assert [q["key"] for q in data["quarters"]] == ["q1", "q2", "q3", "q4"]
+
+    async def test_announcements(self, client, app_context, token):
+        app_context.diary.announcements = [{"title": "Собрание", "text": "В 18:00"}]
+        response = await client.get(f"{BASE}/api/announcements", params={"token": token})
+        assert (await response.json())["data"]["items"][0]["title"] == "Собрание"
+
     async def test_homework(self, client, app_context, token):
         from app.domain.records import HomeworkRecord
 
