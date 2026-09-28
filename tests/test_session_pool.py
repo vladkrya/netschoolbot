@@ -304,3 +304,62 @@ class TestSelectedStudent:
         await users.save(user)
         async with pool.acquire(user) as client:
             assert client._student_id == 77
+
+
+class TestGosuslugiSession:
+    """Сессию Госуслуг без человека не восстановить — её надо беречь."""
+
+    def esia_user(self):
+        return make_user(credentials=Credentials(login_type=LoginType.ESIA, login="", password=""))
+
+    async def test_expired_session_is_detected(self, pool, users, sessions):
+        """netschoolpy 3.x сообщает о протухшей сессии SessionExpired — раньше
+        это считалось неизвестной ошибкой, и мёртвый клиент выдавался за живой."""
+        from netschoolpy.exceptions import SessionExpired
+
+        user = make_user()
+        await users.save(user)
+        async with pool.acquire(user) as client:
+            pass
+
+        async def expired(path):
+            raise SessionExpired("Сессия истекла. Авторизуйтесь заново.")
+
+        client._authed_get = expired
+        async with pool.acquire(user) as again:
+            pass
+        assert again is not client
+        assert client.closed is True
+
+    async def test_network_error_keeps_saved_session(self, pool, users, sessions):
+        from netschoolpy.exceptions import SessionExpired
+
+        user = self.esia_user()
+        await users.save(user)
+        await sessions.save(1, '{"cookies": "esia"}')
+
+        def factory(url, proxy):
+            client = FakeClient(url, proxy)
+
+            async def flaky_import(payload):
+                raise SessionExpired("Сессия истекла или невалидна: ReadTimeout timed out")
+
+            client.import_session = flaky_import
+            return client
+
+        pool._client_factory = factory
+        with pytest.raises(NetSchoolError) as info:
+            async with pool.acquire(user):
+                pass
+        assert info.value.reason is Reason.SERVER_UNAVAILABLE
+        assert await sessions.load(1) == '{"cookies": "esia"}'
+
+    async def test_idle_gosuslugi_client_is_not_evicted(self, pool, users, sessions):
+        user = self.esia_user()
+        await users.save(user)
+        await sessions.save(1, '{"cookies": "esia"}')
+        async with pool.acquire(user) as client:
+            pass
+        pool._entries[1].last_used = dt.datetime.now() - dt.timedelta(hours=2)
+        assert await pool.evict_idle() == 0
+        assert client.closed is False

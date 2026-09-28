@@ -172,8 +172,12 @@ class DiaryService:
                 last = wrap(exc, context=f"пользователь {user.telegram_id}")
 
             if last.reason.needs_relogin:
-                # Сессия протухла: сбрасываем её и даём одну попытку войти заново.
-                await self._pool.invalidate(user.telegram_id, forget_saved=True)
+                # Сессия протухла: сбрасываем клиент и даём одну попытку войти
+                # заново. Сохранённую сессию не стираем — пул сам проверит её
+                # при восстановлении и выбросит, только если она мертва. Иначе
+                # случайный 403 на одном запросе (закрытая для ученика почта)
+                # стоил пользователю Госуслуг нового входа с кодом.
+                await self._pool.invalidate(user.telegram_id)
                 if attempt == 0:
                     continue
                 raise last

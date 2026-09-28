@@ -208,7 +208,11 @@ async def _cached(request: web.Request, section: str, producer):
 
     if cached is not None and not request.query.get("refresh"):
         payload, updated = cached
-        if dt.datetime.now() - updated < fresh_for:
+        # updated_at пишется SQLite-функцией datetime('now') — это UTC.
+        # С локальным now() в Москве кэш всегда был «старше на 3 часа»,
+        # и каждое открытие приложения шло в школьный сервер.
+        now_utc = dt.datetime.now(dt.timezone.utc).replace(tzinfo=None)
+        if now_utc - updated < fresh_for:
             return web.json_response({"ok": True, "data": payload, "stale": False})
 
     try:

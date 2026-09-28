@@ -27,7 +27,7 @@ from typing import Any
 from ..db.repositories import SessionRepository
 from ..domain.models import LoginType, User
 from ..settings import NetSchoolSettings
-from .errors import NetSchoolError, Reason, wrap
+from .errors import NetSchoolError, Reason, classify, wrap
 
 logger = logging.getLogger("netschoolbot.netschool")
 
@@ -37,6 +37,10 @@ class _Entry:
     client: Any
     last_used: dt.datetime
     lock: asyncio.Lock
+    # Сессию Госуслуг без человека не восстановить, поэтому её клиент не
+    # закрываем за простой: пока он жив, keep-alive netschoolpy продлевает
+    # сессию на сервере школы.
+    keep_alive: bool = False
 
 
 class SessionPool:
@@ -95,7 +99,11 @@ class SessionPool:
         """
         deadline = dt.datetime.now() - dt.timedelta(seconds=self._settings.session_ttl)
         async with self._registry_lock:
-            stale = [uid for uid, e in self._entries.items() if e.last_used < deadline]
+            stale = [
+                uid
+                for uid, e in self._entries.items()
+                if e.last_used < deadline and not e.keep_alive
+            ]
             entries = [self._entries.pop(uid) for uid in stale]
         for entry in entries:
             await _close_client(entry.client)
@@ -112,6 +120,7 @@ class SessionPool:
             return entry
 
     async def _ensure_logged_in(self, user: User, entry: _Entry) -> Any:
+        entry.keep_alive = user.credentials.login_type.is_gosuslugi
         if entry.client is not None and await self._is_alive(entry.client):
             return entry.client
 
@@ -143,6 +152,15 @@ class SessionPool:
             await client.import_session(payload)
             return True
         except Exception as exc:
+            # netschoolpy заворачивает в SessionExpired любую ошибку проверки,
+            # включая таймаут. Судим по тексту: из-за сетевого сбоя сессию не
+            # выбрасываем — для Госуслуг это означало бы новый вход с кодом.
+            # Префикс «Сессия истекла или невалидна:» сам похож на ошибку
+            # входа, поэтому классифицируем исходную причину после него.
+            cause = Exception(str(exc).split(": ", 1)[-1])
+            reason = classify(cause)
+            if reason.is_retryable or reason is Reason.ESIA:
+                raise wrap(cause, context=f"восстановление {telegram_id}") from exc
             logger.info("Сохранённая сессия %s не восстановилась: %s", telegram_id, exc)
             await self._sessions.drop(telegram_id)
             return False

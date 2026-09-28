@@ -55,6 +55,10 @@ class NetSchoolError(Exception):
 _AUTH_MARKERS = (
     "401", "unauthorized", "not authorized", "authorization required",
     "session expired", "не авториз", "forbidden",
+    # Так netschoolpy 3.x пишет о протухшей сессии («Сессия истекла.
+    # Авторизуйтесь заново.») — без этих маркеров она считалась неизвестной
+    # ошибкой, и мёртвая сессия выдавалась за живую.
+    "сессия истекла", "авторизуйтесь",
 )
 _SERVER_MARKERS = (
     "timeout", "temporarily unavailable", "service unavailable",
@@ -111,6 +115,9 @@ def _classify_by_type(exc: BaseException) -> Reason | None:
     for attr, reason in (
         ("MFAError", Reason.MFA),
         ("AuthError", Reason.AUTH),
+        # В netschoolpy 3.3.3 класса AuthError нет — протухшая сессия
+        # приходит как SessionExpired.
+        ("SessionExpired", Reason.AUTH),
         ("ESIAError", Reason.ESIA),
         ("ServerUnavailable", Reason.SERVER_UNAVAILABLE),
     ):
