@@ -179,6 +179,7 @@ appVersion=2.0.3
 | GET | `/mail/messages` | `userId`, `boxType` = `INBOX` / `SENT` / `DRAFT` (вкладка «Удалённые» не открывалась), `page`, `pageSize=27`, `expand=text&expand=subject&expand=author`, `OrderInfo.Field=Sent`, `OrderInfo.Ascending=false` | `{page, pageSize, totalPages, totalItems, items:[{id, subject, text, sent, author:{id,name}, notify, read, noReply, mailBox, fileAttachments}]}` |
 | GET | `/mail/messages/unread-count` | `userId` | число |
 | POST | `/mail/messages/{messageId}/read` | `userId`, пустое тело | Полное письмо `{id, subject, text, sent, author, to:[Recipient], toNames, cc, bcc, fileAttachments:[], mailBox, read, canReplyAll, canForward, canEdit, noReply}`. **Помечает письмо прочитанным** |
+| POST | `/mail/messages` | JSON `{to:[Recipient.id], cc:[], bcc:[], text, subject, notify:true, draft:false, authorId:<userId>, fileAttachmentIds:[]}` | `{messageId, author:{id,name}, dateSent}`. Отправка письма *(снято 29.09.2026 отдельным захватом)*. `Recipient.id` — base64 от `{"UserSpec":{"Id":<userId>}}` из `/address-book`. Приложение дописывает к тексту подпись «Отправлено из приложения NetSchool», бот — нет; вложения не поддерживаются |
 | GET | `/mail/blocked-users` | `userId` | `[]` |
 | GET | `/address-book` | `userId`, `orgId` | `[{groupName, groupType, groupRecipientId, recipients:[Recipient], subGroups:[{groupRecipientId, groupName, groupType, recipients:[Recipient+tags]}]}]`, адресная книга (учителя, ученики, родители, администрация, завучи) |
 
@@ -220,7 +221,7 @@ appVersion=2.0.3
 
 ## Что не наблюдалось
 
-- Отправка письма, сохранение черновика, удаление письма, ответ на задание (текст или файл), изменение настроек push: действия с записью намеренно не выполнялись.
+- Сохранение черновика, удаление письма, вложения к письму, ответ на задание (текст или файл), изменение настроек push: действия с записью намеренно не выполнялись.
 - Вход через Госуслуги (ЕСИА): `logindata.esiaLoginPage = /webapi/sso/esia/crosslogin`, поток не проходился.
 - Обновление токена (`grant_type=refresh_token`), см. выше.
 - Родительский аккаунт: у родителя `/users?v=2` возвращает `children`, и `studentId` берётся оттуда (по устройству API; не проверялось).

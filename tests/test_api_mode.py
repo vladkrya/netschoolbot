@@ -30,6 +30,9 @@ class FakeMobile(FakeClient):
     async def classmeetings(self, *args):
         return []
 
+    async def mail_send(self, subject, text, to):
+        self.sent = getattr(self, "sent", []) + [(subject, text, list(to))]
+
     async def is_alive(self):
         return self.session_status == 200
 
@@ -132,17 +135,39 @@ async def test_pool_replaces_client_of_other_mode(db):
     assert web.closed
 
 
-async def test_service_switch_saves_mode_and_blocks_mail(db, from_web):
+async def test_service_switch_saves_mode_and_sends_mail_through_mobile(db, from_web):
     users = UserRepository(db)
     user = await users.save(make_user())
-    service = DiaryService(pool_for(db), users)
+    pool = pool_for(db)
+    service = DiaryService(pool, users)
 
     updated = await service.switch_api(user, ApiMode.MOBILE)
 
     assert updated.api_mode is ApiMode.MOBILE
     assert (await users.get(1)).api_mode is ApiMode.MOBILE
-    with pytest.raises(NetSchoolError, match="/changeapi"):
-        await service.send_mail(updated, ["1"], "Тема", "Текст")
+    await service.send_mail(updated, ["cmVjaXBpZW50"], "Тема", "Текст")
+    async with pool.acquire(updated) as client:
+        assert isinstance(client, FakeMobile)
+        assert client.sent == [("Тема", "Текст", ["cmVjaXBpZW50"])]
+
+
+async def test_mobile_mail_error_is_wrapped_and_not_repeated(db, from_web):
+    users = UserRepository(db)
+    user = await users.save(make_user(api_mode=ApiMode.MOBILE))
+    pool = pool_for(db)
+    service = DiaryService(pool, users)
+    calls = []
+
+    async def failing(subject, text, to):
+        calls.append(1)
+        raise RuntimeError("HTTP 403")
+
+    async with pool.acquire(user) as client:
+        client.mail_send = failing
+    with pytest.raises(NetSchoolError):
+        await service.send_mail(user, ["a"], "Тема", "Текст")
+    # Повтор отправки мог бы послать письмо дважды.
+    assert calls == [1]
 
 
 def test_homework_keeps_publication_time():

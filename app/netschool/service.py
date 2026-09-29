@@ -339,12 +339,6 @@ class DiaryService:
         return await self._with_session(user, call)
 
     async def send_mail(self, user: User, to: list[str], subject: str, text: str) -> None:
-        if user.effective_api_mode is ApiMode.MOBILE:
-            # Маршрут отправки в мобильном API не изучен.
-            raise NetSchoolError(
-                Reason.UNKNOWN,
-                "Отправка писем работает только через веб-API. Переключиться: /changeapi",
-            )
         # Без _with_session: при сбое он повторяет запрос, а повтор отправки
         # мог бы послать письмо дважды.
         async with self._pool.acquire(user) as client:
