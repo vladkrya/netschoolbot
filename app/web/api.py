@@ -19,7 +19,7 @@ from ..domain import formatting
 from ..domain.models import ApiMode, User, normalize
 from ..domain.records import DiaryDay, clean_content
 from ..netschool.errors import NetSchoolError, Reason
-from ..domain.periods import quarter_of, quarters
+from ..domain.periods import QUARTER_KEYS, quarter_of, quarters
 from ..netschool.service import msk_today
 from .telegram_auth import InitDataError, verify_init_data
 
@@ -238,11 +238,13 @@ def _day_to_json(
     }
 
 
-async def _cached(request: web.Request, section: str, producer):
+async def _cached(request: web.Request, section: str, producer, *, cacheable=lambda payload: True):
     """Отдать свежий кэш или сходить за данными и обновить его.
 
     Если школьный сервер недоступен, отдаётся устаревший кэш с пометкой —
     приложение продолжает работать, а не показывает пустой экран.
+    `cacheable` не пускает в кэш ответ, который лишь сообщает «данных нет»:
+    иначе разовый сбой запомнился бы на весь срок свежести кэша.
     """
     app = context(request)
     user = current_user(request)
@@ -268,7 +270,8 @@ async def _cached(request: web.Request, section: str, producer):
             {"ok": True, "data": cached[0], "stale": True, "reason": exc.reason.value}
         )
 
-    await app.cache.put(user.telegram_id, section, payload)
+    if cacheable(payload):
+        await app.cache.put(user.telegram_id, section, payload)
     return web.json_response({"ok": True, "data": payload, "stale": False})
 
 
@@ -357,8 +360,15 @@ async def marks(request: web.Request) -> web.Response:
 
         records = [record for items in by_subject.values() for record in items]
         found_teachers = await _teachers(app, user, days)
+        # Официальные четвертные и годовые оценки — только мобильный режим;
+        # без них таблица остаётся на расчётных средних.
+        totals = await app.diary.fetch_totals(user) or {}
+        totals_by_name = {normalize(name): (name, item) for name, item in totals.items()}
+        known = {normalize(name) for name in set(by_subject) | set(lessons)}
+        extra = {name for key, (name, _) in totals_by_name.items() if key not in known}
+
         subjects = []
-        for subject in sorted(set(by_subject) | set(lessons)):
+        for subject in sorted(set(by_subject) | set(lessons) | extra):
             items = by_subject.get(subject, [])
             teacher_counts = teachers.get(subject, {})
             subjects.append(
@@ -372,6 +382,7 @@ async def marks(request: web.Request) -> web.Response:
                         _mark_to_json(r) for r in sorted(items, key=lambda r: r.date)
                     ],
                     "lessons": lessons.get(subject, {}),
+                    "totals": totals_by_name.get(normalize(subject), (None, None))[1],
                     "teacher": (
                         max(teacher_counts, key=teacher_counts.get)
                         if teacher_counts
@@ -383,6 +394,10 @@ async def marks(request: web.Request) -> web.Response:
             "subjects": subjects,
             "average": formatting.weighted_average(records),
             "current_quarter": now_quarter.key,
+            # Экран по этому признаку решает, спрашивать ли у сервера
+            # аналитику по предмету (средний балл класса).
+            "mobile": user.effective_api_mode is ApiMode.MOBILE,
+            "has_totals": bool(totals),
             "quarters": [
                 {"key": q.key, "label": q.label, "start": q.start.isoformat(), "end": q.end.isoformat()}
                 for q in year
@@ -391,6 +406,31 @@ async def marks(request: web.Request) -> web.Response:
         }
 
     return await _cached(request, "marks:year", produce)
+
+
+@routes.get("/api/subject")
+async def subject_stats(request: web.Request) -> web.Response:
+    """Аналитика по предмету за четверть: средний балл класса и распределение оценок.
+
+    Данные есть только в мобильном режиме. Иначе, а также когда сервер не
+    вернул аналитику, ответ — `{"available": false}`: экран просто не
+    показывает эту строку.
+    """
+    subject = (request.query.get("subject") or "").strip()[:120]
+    quarter = (request.query.get("quarter") or "").strip()
+    if not subject or quarter not in QUARTER_KEYS:
+        return json_error("Не указан предмет или четверть")
+    if current_user(request).effective_api_mode is not ApiMode.MOBILE:
+        return web.json_response({"ok": True, "data": {"available": False}, "stale": False})
+
+    async def produce(app: AppContext, user: User):
+        stats = await app.diary.fetch_subject_stats(user, subject, quarter)
+        return {"available": True, **stats} if stats else {"available": False}
+
+    return await _cached(
+        request, f"subject:{quarter}:{normalize(subject)}", produce,
+        cacheable=lambda payload: payload.get("available", False),
+    )
 
 
 @routes.get("/api/announcements")

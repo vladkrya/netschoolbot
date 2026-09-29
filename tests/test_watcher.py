@@ -68,6 +68,9 @@ class FakeDiary:
         self.events = None
         self.events_error: Exception | None = None
         self.recent_event_calls = 0
+        self.totals = None
+        self.stats = None
+        self.stats_calls: list = []
         self.diary_calls = 0
 
     async def fetch_marks(self, user, **kwargs):
@@ -95,6 +98,13 @@ class FakeDiary:
         if self.events_error:
             raise self.events_error
         return self.events
+
+    async def fetch_totals(self, user):
+        return self.totals
+
+    async def fetch_subject_stats(self, user, subject, quarter):
+        self.stats_calls.append((subject, quarter))
+        return self.stats
 
     async def fetch_period(self, user, start, end, **kwargs):
         return await self.fetch_diary(user)

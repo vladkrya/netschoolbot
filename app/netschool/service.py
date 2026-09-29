@@ -19,7 +19,15 @@ from ..db.repositories import UserRepository
 from ..domain.models import ApiMode, Student, User
 from ..domain.records import DiaryDay, HomeworkRecord, MarkRecord, RecentEvents
 from .errors import NetSchoolError, Reason, wrap
-from .mapping import diary_days, recent_events_from, students_from_diary_init
+from .mapping import (
+    diary_days,
+    find_by_name,
+    quarter_key_of_term,
+    recent_events_from,
+    students_from_diary_init,
+    subject_stats_from,
+    totals_from_mobile,
+)
 from .session import SessionPool
 
 logger = logging.getLogger("netschoolbot.netschool")
@@ -96,16 +104,73 @@ class DiaryService:
                 return None
             return await client.period_events(period_days=period_days)
 
-        try:
-            payload = await self._with_session(user, call)
-        except NetSchoolError as exc:
-            if exc.reason.needs_relogin:
-                raise
-            logger.info("Лента событий недоступна для %s: %s", user.telegram_id, exc.reason)
-            return None
+        payload = await self._mobile_only(user, call, "Лента событий")
         if payload is None:
             return None
         return recent_events_from(payload)
+
+    async def fetch_totals(self, user: User) -> dict[str, dict[str, Any]] | None:
+        """Четвертные и годовые оценки по предметам одним запросом — только мобильный режим.
+
+        `None` — данных нет (веб-режим или сбой), экран остаётся на расчётных
+        средних. Форма ответа — у `mapping.totals_from_mobile`.
+        """
+        if user.effective_api_mode is not ApiMode.MOBILE:
+            return None
+
+        async def call(client: Any) -> tuple[Any, Any] | None:
+            if not hasattr(client, "totals"):
+                return None
+            return await client.totals(), await client.subjects_raw()
+
+        fetched = await self._mobile_only(user, call, "Итоговые оценки")
+        if fetched is None:
+            return None
+        rows, subjects = fetched
+        names = {
+            item["id"]: str(item.get("name") or "")
+            for item in subjects or []
+            if isinstance(item, dict) and isinstance(item.get("id"), int)
+        }
+        return totals_from_mobile(rows, names)
+
+    async def fetch_subject_stats(
+        self, user: User, subject: str, quarter: str
+    ) -> dict[str, Any] | None:
+        """Аналитика по предмету за четверть: средний балл класса и распределение оценок.
+
+        Только мобильный режим. `None` — предмета или четверти нет в мобильных
+        `subjects`/`terms`, данных нет или запрос не удался.
+        """
+        if user.effective_api_mode is not ApiMode.MOBILE:
+            return None
+
+        async def call(client: Any) -> Any:
+            if not hasattr(client, "subject_performance"):
+                return None
+            found = find_by_name(await client.subjects_raw(), subject)
+            term = next(
+                (t for t in await client.terms() if quarter_key_of_term(t.get("name")) == quarter),
+                None,
+            )
+            if found is None or term is None:
+                return None
+            return await client.subject_performance(found["id"], term["id"])
+
+        payload = await self._mobile_only(user, call, "Аналитика по предмету")
+        return subject_stats_from(payload) if payload is not None else None
+
+    async def _mobile_only(
+        self, user: User, call: Callable[[Any], Awaitable[T]], what: str
+    ) -> T | None:
+        """Необязательный мобильный запрос: сбой означает «данных нет», а не ошибку экрана."""
+        try:
+            return await self._with_session(user, call)
+        except NetSchoolError as exc:
+            if exc.reason.needs_relogin:
+                raise
+            logger.info("%s недоступны для %s: %s", what, user.telegram_id, exc.reason)
+            return None
 
     async def marks_present_in_week(self, user: User, week_day: dt.date) -> set[str]:
         """Свободные ключи работ с оценками за неделю, содержащую `week_day`.

@@ -30,6 +30,29 @@ class MobileClient(FakeMobile):
         self.events_payload: dict = {"events": []}
         self.events_error: Exception | None = None
         self.calls: list[str] = []
+        self.totals_rows: list = []
+        self.subjects: list = []
+        self.terms_list: list = []
+        self.performance: dict = {}
+        self.performance_error: Exception | None = None
+
+    async def totals(self, school_year_id=None, student_id=None):
+        self.calls.append("totals")
+        return self.totals_rows
+
+    async def subjects_raw(self, school_year_id=None, student_id=None):
+        self.calls.append("subjects")
+        return self.subjects
+
+    async def terms(self, school_year_id=None, student_id=None):
+        self.calls.append("terms")
+        return self.terms_list
+
+    async def subject_performance(self, subject_id, term_id, student_id=None):
+        self.calls.append(f"performance:{subject_id}:{term_id}")
+        if self.performance_error:
+            raise self.performance_error
+        return self.performance
 
     async def period_events(self, subject_group_ids=None, *, period_days=14, **kwargs):
         self.calls.append(f"period_events:{period_days}")
@@ -50,6 +73,7 @@ def service(db, holder):
         # Ошибка задаётся через holder, чтобы её видел и клиент, созданный
         # заново после сброса сессии.
         client.events_error = holder.get("events_error")
+        client.performance_error = holder.get("performance_error")
         holder["mobile"] = client
         return client
 
@@ -220,3 +244,223 @@ class TestTeacherInLesson:
 
         assert asked == [{"Алгебра": 42}]
         assert (await response.json())["data"]["days"][0]["lessons"][0]["teacher"] == "Из карточки"
+
+
+SUBJECTS = [
+    {"id": 10, "name": "Алгебра", "order": 1},
+    {"id": 11, "name": "История", "order": 2},
+    {"id": 12, "name": "Физкультура", "order": 3},
+]
+TERMS = [
+    {"id": 71, "name": "1 четверть", "current": False},
+    {"id": 72, "name": "2 четверть", "current": True},
+    {"id": 73, "name": "1 полугодие", "current": False},
+]
+TOTALS = [
+    {
+        "subjectId": 10,
+        "termTotals": [
+            {"term": {"id": 71, "name": "1 четверть"}, "markCode": "4", "avgMark": 4.33},
+            {"term": {"id": 72, "name": "2 четверть"}, "markCode": None, "avgMark": 4.5},
+            {"term": {"id": 73, "name": "1 полугодие"}, "markCode": "4", "avgMark": 4.4},
+        ],
+        "yearTotals": [
+            {"period": {"id": 1, "periodName": "Годовая", "periodType": "Year"}, "markCode": "4"},
+            {"period": {"id": 2, "periodName": "Итоговая", "periodType": "Total"}, "markCode": None},
+        ],
+    },
+    {
+        "subjectId": 11,
+        "termTotals": [{"term": {"id": 71, "name": "1 четверть"}, "markCode": "зач", "avgMark": None}],
+        "yearTotals": [],
+    },
+    # Ни одной оценки — строку в таблице занимать нечем.
+    {"subjectId": 12, "termTotals": [{"term": {"id": 71, "name": "1 четверть"}, "markCode": None, "avgMark": None}],
+     "yearTotals": []},
+    # Предмета нет в списке subjects — назвать его нечем.
+    {"subjectId": 99, "termTotals": [{"term": {"id": 71, "name": "1 четверть"}, "markCode": "5"}], "yearTotals": []},
+]
+PERFORMANCE = {
+    "averageMark": 4.4, "classAverageMark": 3.87, "maxMark": 5,
+    "classmeetingsStats": {"passed": 20, "scheduled": 34},
+    "markStats": [{"mark": 5, "count": 3, "fraction": 0.6}, {"mark": 4, "count": 2, "fraction": 0.4}],
+    "results": [], "attendance": [],
+}
+
+
+class TestTotals:
+    def test_terms_map_to_table_columns(self):
+        from app.netschool.mapping import quarter_key_of_term
+
+        assert [quarter_key_of_term(n) for n in ("1 четверть", "4 Четверть", "1 полугодие", "", None, "5 четверть")] == [
+            "q1", "q4", None, None, None, None,
+        ]
+
+    def test_table_is_built_from_totals_response(self):
+        from app.netschool.mapping import totals_from_mobile
+
+        table = totals_from_mobile(TOTALS, {s["id"]: s["name"] for s in SUBJECTS})
+
+        assert table["Алгебра"] == {
+            # Четвертные с оценкой и с одним лишь средним; полугодие в таблицу не идёт.
+            "terms": {"q1": {"mark": "4", "average": 4.33}, "q2": {"mark": "", "average": 4.5}},
+            "year": "4",
+            "final": "",
+        }
+        assert table["История"]["terms"] == {"q1": {"mark": "зач", "average": None}}
+        assert set(table) == {"Алгебра", "История"}
+
+    def test_year_and_final_are_told_apart(self):
+        from app.netschool.mapping import totals_from_mobile
+
+        rows = [{"subjectId": 10, "termTotals": [], "yearTotals": [
+            {"period": {"periodType": "Year"}, "markCode": "4"},
+            {"period": {"periodType": "Total"}, "markCode": 5},
+        ]}]
+        assert totals_from_mobile(rows, {10: "Алгебра"}) == {
+            "Алгебра": {"terms": {}, "year": "4", "final": "5"}
+        }
+
+    async def test_service_reads_totals_in_one_go(self, service, holder, users):
+        user = await users.save(mobile_user())
+        await service.fetch_totals(user)  # создаёт клиент
+        holder["mobile"].subjects = SUBJECTS
+        holder["mobile"].totals_rows = TOTALS
+        holder["mobile"].calls.clear()
+
+        table = await service.fetch_totals(user)
+
+        assert table["Алгебра"]["year"] == "4"
+        assert holder["mobile"].calls == ["totals", "subjects"]
+
+    async def test_web_mode_has_no_totals(self, service, holder):
+        assert await service.fetch_totals(make_user()) is None
+        assert "mobile" not in holder
+
+    async def test_marks_screen_carries_totals(self, client, app_context, users):
+        from tests.test_web import BASE
+        from tests.test_watcher import record
+
+        user = await users.save(mobile_user())
+        token = await app_context.miniapp.issue_token(user.telegram_id)
+        app_context.diary.marks = [record(0, "5", subject="Алгебра")]
+        app_context.diary.totals = {
+            "Алгебра": {"terms": {"q1": {"mark": "4", "average": 4.33}}, "year": "4", "final": ""},
+            "История": {"terms": {"q1": {"mark": "5", "average": None}}, "year": "", "final": ""},
+        }
+
+        data = (await (await client.get(f"{BASE}/api/marks", params={"token": token})).json())["data"]
+
+        by_name = {s["subject"]: s for s in data["subjects"]}
+        assert by_name["Алгебра"]["totals"]["year"] == "4"
+        # Предмет, по которому оценок в дневнике нет, но итоги выставлены, всё равно в таблице.
+        assert by_name["История"]["totals"]["terms"]["q1"]["mark"] == "5"
+        assert (data["mobile"], data["has_totals"]) == (True, True)
+
+    async def test_marks_screen_without_totals_is_unchanged(self, client, app_context, users):
+        from tests.test_web import BASE
+        from tests.test_watcher import record
+
+        user = await users.save(make_user())
+        token = await app_context.miniapp.issue_token(user.telegram_id)
+        app_context.diary.marks = [record(0, "5", subject="Алгебра")]
+
+        data = (await (await client.get(f"{BASE}/api/marks", params={"token": token})).json())["data"]
+
+        assert [s["subject"] for s in data["subjects"]] == ["Алгебра"]
+        assert data["subjects"][0]["totals"] is None
+        assert (data["mobile"], data["has_totals"]) == (False, False)
+
+
+class TestSubjectStats:
+    async def test_service_resolves_subject_and_term(self, service, holder, users):
+        user = await users.save(mobile_user())
+        await service.fetch_subject_stats(user, "Алгебра", "q2")
+        holder["mobile"].subjects, holder["mobile"].terms_list = SUBJECTS, TERMS
+        holder["mobile"].performance = PERFORMANCE
+
+        stats = await service.fetch_subject_stats(user, " алгебра ", "q2")
+
+        assert holder["mobile"].calls[-1] == "performance:10:72"
+        assert (stats["average"], stats["class_average"]) == (4.4, 3.87)
+        assert stats["lessons"] == {"passed": 20, "scheduled": 34}
+        assert stats["mark_stats"][0] == {"mark": "5", "count": 3, "fraction": 0.6}
+
+    async def test_unknown_subject_or_quarter_gives_none(self, service, holder, users):
+        user = await users.save(mobile_user())
+        await service.fetch_subject_stats(user, "Алгебра", "q2")
+        holder["mobile"].subjects, holder["mobile"].terms_list = SUBJECTS, TERMS
+        holder["mobile"].performance = PERFORMANCE
+
+        assert await service.fetch_subject_stats(user, "Черчение", "q2") is None
+        assert await service.fetch_subject_stats(user, "Алгебра", "q4") is None
+
+    async def test_server_error_gives_none(self, service, holder, users):
+        user = await users.save(mobile_user())
+        await service.fetch_subject_stats(user, "Алгебра", "q2")
+        holder["mobile"].subjects, holder["mobile"].terms_list = SUBJECTS, TERMS
+        holder["mobile"].performance_error = holder["performance_error"] = NetSchoolError(
+            Reason.UNKNOWN, "сбой"
+        )
+        assert await service.fetch_subject_stats(user, "Алгебра", "q2") is None
+
+    def test_empty_class_average_is_kept_as_none(self):
+        from app.netschool.mapping import subject_stats_from
+
+        stats = subject_stats_from({"averageMark": 5, "classAverageMark": None})
+        assert stats["class_average"] is None and stats["mark_stats"] == []
+        assert subject_stats_from(None) == {}
+
+    async def test_endpoint_returns_class_average(self, client, app_context, users):
+        from tests.test_web import BASE
+
+        user = await users.save(mobile_user())
+        token = await app_context.miniapp.issue_token(user.telegram_id)
+        app_context.diary.stats = {"average": 4.4, "class_average": 3.87, "mark_stats": [], "lessons": {}}
+
+        response = await client.get(
+            f"{BASE}/api/subject", params={"token": token, "subject": "Алгебра", "quarter": "q2"}
+        )
+
+        data = (await response.json())["data"]
+        assert data["available"] is True and data["class_average"] == 3.87
+        assert app_context.diary.stats_calls == [("Алгебра", "q2")]
+
+    async def test_endpoint_survives_missing_data_and_retries_later(self, client, app_context, users):
+        from tests.test_web import BASE
+
+        user = await users.save(mobile_user())
+        token = await app_context.miniapp.issue_token(user.telegram_id)
+        params = {"token": token, "subject": "Алгебра", "quarter": "q2"}
+
+        response = await client.get(f"{BASE}/api/subject", params=params)
+        assert response.status == 200
+        assert (await response.json())["data"] == {"available": False}
+
+        # Отсутствие данных не запоминается: при следующем открытии спросим снова.
+        app_context.diary.stats = {"class_average": 3.5}
+        data = (await (await client.get(f"{BASE}/api/subject", params=params)).json())["data"]
+        assert data["available"] is True and data["class_average"] == 3.5
+        assert len(app_context.diary.stats_calls) == 2
+
+    async def test_web_mode_never_asks_the_school(self, client, app_context, users):
+        from tests.test_web import BASE
+
+        user = await users.save(make_user())
+        token = await app_context.miniapp.issue_token(user.telegram_id)
+
+        response = await client.get(
+            f"{BASE}/api/subject", params={"token": token, "subject": "Алгебра", "quarter": "q1"}
+        )
+
+        assert (await response.json())["data"] == {"available": False}
+        assert app_context.diary.stats_calls == []
+
+    async def test_endpoint_rejects_bad_request(self, client, users, app_context):
+        from tests.test_web import BASE
+
+        user = await users.save(mobile_user())
+        token = await app_context.miniapp.issue_token(user.telegram_id)
+        for params in ({"subject": "Алгебра"}, {"quarter": "q1"}, {"subject": "Алгебра", "quarter": "q9"}):
+            response = await client.get(f"{BASE}/api/subject", params={"token": token, **params})
+            assert response.status == 400

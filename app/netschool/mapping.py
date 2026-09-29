@@ -12,6 +12,7 @@ import logging
 import re
 from typing import Any
 
+from ..domain.models import normalize
 from ..domain.records import (
     Attachment,
     DiaryDay,
@@ -245,6 +246,115 @@ def recent_events_from(payload: Any) -> RecentEvents:
             keys.add(f"h:{item.get('assignmentId')}:{item.get('assignmentDate')}")
             homework += 1
     return RecentEvents(keys=frozenset(keys), marks=marks, homework=homework)
+
+
+_TERM_NUMBER = re.compile(r"(\d)\s*четверт", re.IGNORECASE)
+
+
+def quarter_key_of_term(name: Any) -> str | None:
+    """Ключ четверти (`q1`…`q4`) по названию периода мобильного API.
+
+    «1 четверть» → `q1`. Полугодия и триместры к четвертям таблицы не
+    привязываются — для них None, и такой период в таблицу не попадает.
+    """
+    match = _TERM_NUMBER.search(str(name or ""))
+    if match and 1 <= int(match.group(1)) <= 4:
+        return f"q{match.group(1)}"
+    return None
+
+
+def _mark_code(value: Any) -> str:
+    if value is None or isinstance(value, bool):
+        return ""
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    return str(value).strip()
+
+
+def _number(value: Any) -> float | None:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def totals_from_mobile(
+    rows: Any, subject_names: dict[int, str]
+) -> dict[str, dict[str, Any]]:
+    """Итоговые оценки из `/totals`: {предмет: {terms, year, final}}.
+
+    `terms` — четвертные оценки по ключам `q1`…`q4`: `{mark, average}`,
+    `year` — годовая, `final` — итоговая (`periodType` `Year`/`Total`).
+    Предметы без единой оценки пропускаются, а не занимают строку таблицы.
+    """
+    result: dict[str, dict[str, Any]] = {}
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        name = subject_names.get(_safe_int(row.get("subjectId")) or -1)
+        if not name:
+            continue
+
+        terms: dict[str, dict[str, Any]] = {}
+        for item in row.get("termTotals") or []:
+            key = quarter_key_of_term((item.get("term") or {}).get("name"))
+            mark, average = _mark_code(item.get("markCode")), _number(item.get("avgMark"))
+            if key and (mark or average is not None):
+                terms[key] = {"mark": mark, "average": average}
+
+        year = final = ""
+        for item in row.get("yearTotals") or []:
+            period = item.get("period") or {}
+            kind = str(period.get("periodType") or period.get("periodName") or "").lower()
+            mark = _mark_code(item.get("markCode"))
+            if kind in ("year", "годовая"):
+                year = mark or year
+            elif kind in ("total", "итоговая"):
+                final = mark or final
+
+        if terms or year or final:
+            result[name] = {"terms": terms, "year": year, "final": final}
+    return result
+
+
+def subject_stats_from(payload: Any) -> dict[str, Any]:
+    """Итоги по предмету из `/analytics/subject-performance`.
+
+    Ответ на экран: средний балл ученика и класса, распределение оценок и
+    сколько уроков прошло из запланированных.
+    """
+    if not isinstance(payload, dict):
+        return {}
+    stats = payload.get("classmeetingsStats") or {}
+    return {
+        "average": _number(payload.get("averageMark")),
+        "class_average": _number(payload.get("classAverageMark")),
+        "max_mark": _number(payload.get("maxMark")),
+        "mark_stats": [
+            {
+                "mark": _mark_code(item.get("mark")),
+                "count": _safe_int(item.get("count")) or 0,
+                "fraction": _number(item.get("fraction")),
+            }
+            for item in payload.get("markStats") or []
+            if isinstance(item, dict)
+        ],
+        "lessons": {
+            "passed": _safe_int(stats.get("passed")) or 0,
+            "scheduled": _safe_int(stats.get("scheduled")) or 0,
+        },
+    }
+
+
+def find_by_name(items: Any, wanted: str) -> dict[str, Any] | None:
+    """Предмет из мобильного списка `subjects` по названию (без учёта регистра и пробелов)."""
+    target = normalize(wanted)
+    for item in items or []:
+        if isinstance(item, dict) and normalize(item.get("name")) == target:
+            return item
+    return None
 
 
 # Поля, в которых «Сетевой город» держит имя ученика, в порядке предпочтения.

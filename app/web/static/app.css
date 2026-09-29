@@ -444,6 +444,8 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .tt-subject { flex: 1; min-width: 0; padding: 6px 10px; font-size: 14px; }
 .tt-cell { width: 52px; flex: none; text-align: center; font-size: 14px; padding: 14px 0; }
 .tt-cell.now { color: var(--primary); }
+.tt-cell.official { font-weight: 700; }
+.class-avg { margin: -6px 0 8px; text-align: right; }
 .year-pill { margin-left: 6px; padding: 2px 6px; border-radius: 5px; background: var(--primary); color: #fff; font-size: 11px; }
 
 .subject-title { font-size: 22px; margin-bottom: 10px; }

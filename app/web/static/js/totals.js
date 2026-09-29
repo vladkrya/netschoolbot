@@ -33,9 +33,12 @@ function quarterMarks(subject, key) {
 function render() {
   const data = state.grades;
   const quarters = data.quarters || Object.keys(SHORT).map((key) => ({ key }));
+  // Годовая оценка есть только в мобильном режиме, где итоги приходят с сервера.
+  const hasYear = data.subjects.some((subject) => subject.totals?.year);
   const head = `<div class="tt-row tt-head">
       <div class="tt-subject">Четверти <span class="year-pill">${esc(data.year || '')}</span></div>
       ${quarters.map((q) => `<div class="tt-cell ${q.key === data.current_quarter ? 'now' : ''}">${SHORT[q.key]}</div>`).join('')}
+      ${hasYear ? '<div class="tt-cell">Год</div>' : ''}
     </div>`;
 
   const rows = data.subjects.map((subject, index) => `
@@ -43,10 +46,13 @@ function render() {
         <div class="tt-subject">${esc(subject.subject)}</div>
         ${quarters
           .map((q) => {
+            // Выставленная оценка за четверть важнее расчётного среднего.
+            const official = subject.totals?.terms?.[q.key]?.mark;
             const avg = weightedAverage(quarterMarks(subject, q.key));
-            return `<button class="tt-cell" data-subject="${index}" data-q="${q.key}">${formatAverage(avg)}</button>`;
+            return `<button class="tt-cell ${official ? 'official' : ''}" data-subject="${index}" data-q="${q.key}">${official ? esc(official) : formatAverage(avg)}</button>`;
           })
           .join('')}
+        ${hasYear ? `<div class="tt-cell official">${esc(subject.totals?.year || '')}</div>` : ''}
       </div>`);
 
   const container = $('totalsContent');
@@ -83,6 +89,9 @@ function openSubject(subject, key) {
   const lessons = subject.lessons?.[key] || { total: 0, done: 0 };
   const left = Math.max(0, lessons.total - lessons.done);
   const avg = weightedAverage(marks);
+  const official = subject.totals?.terms?.[key]?.mark;
+  const yearMark = subject.totals?.year;
+  const finalMark = subject.totals?.final;
 
   const segments = lessons.total
     ? `<div class="progress">${Array.from({ length: lessons.total }, (_, i) =>
@@ -109,6 +118,12 @@ function openSubject(subject, key) {
     </div>
     <div class="card">
       <div class="avg-line"><span>Средний балл ученика:</span><strong>${formatAverage(avg)}</strong></div>
+      <div class="muted small class-avg" data-class-avg hidden></div>
+      ${official || yearMark || finalMark ? `<div class="muted small">${[
+        official ? `Оценка за четверть: <strong>${esc(official)}</strong>` : '',
+        yearMark ? `Годовая: <strong>${esc(yearMark)}</strong>` : '',
+        finalMark ? `Итоговая: <strong>${esc(finalMark)}</strong>` : '',
+      ].filter(Boolean).join(' · ')}</div>` : ''}
       ${distribution(marks)}
       <div class="muted small">*доли оценок, образующих средний балл</div>
     </div>
@@ -120,4 +135,20 @@ function openSubject(subject, key) {
   body.querySelectorAll('[data-mark]').forEach((tile) =>
     tile.addEventListener('click', () => openMark(marks[Number(tile.dataset.mark)], subject.subject))
   );
+
+  if (state.grades.mobile) loadClassAverage(body, subject.subject, key);
+}
+
+/** Средний балл класса приходит отдельным запросом: только мобильное API, и не всегда. */
+async function loadClassAverage(body, subject, key) {
+  try {
+    const { data } = await api(`/api/subject?subject=${encodeURIComponent(subject)}&quarter=${key}`);
+    const line = body.querySelector('[data-class-avg]');
+    if (line && data?.available && data.class_average != null) {
+      line.textContent = `у класса ${formatAverage(data.class_average)}`;
+      line.hidden = false;
+    }
+  } catch {
+    // Строка необязательная: без неё экран остаётся полным.
+  }
 }
