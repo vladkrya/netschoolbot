@@ -180,6 +180,7 @@ appVersion=2.0.3
 | GET | `/mail/messages/unread-count` | `userId` | число |
 | POST | `/mail/messages/{messageId}/read` | `userId`, пустое тело | Полное письмо `{id, subject, text, sent, author, to:[Recipient], toNames, cc, bcc, fileAttachments:[], mailBox, read, canReplyAll, canForward, canEdit, noReply}`. **Помечает письмо прочитанным** |
 | POST | `/mail/messages` | JSON `{to:[Recipient.id], cc:[], bcc:[], text, subject, notify:true, draft:false, authorId:<userId>, fileAttachmentIds:[]}` | `{messageId, author:{id,name}, dateSent}`. Отправка письма *(снято 29.09.2026 отдельным захватом)*. `Recipient.id` — base64 от `{"UserSpec":{"Id":<userId>}}` из `/address-book`. Приложение дописывает к тексту подпись «Отправлено из приложения NetSchool», бот — нет; вложения не поддерживаются |
+| POST | `/attachments` | `userId`; multipart, поле `file` (имя файла в URL-кодировке) | Число: id вложения *(снято 29.09.2026)*. Его кладут в `fileAttachmentIds` при `POST /mail/messages`. Лимиты сервера не изучены; бот ограничивает 5 файлов, 10 МБ на файл и 15 МБ суммарно |
 | GET | `/mail/blocked-users` | `userId` | `[]` |
 | GET | `/address-book` | `userId`, `orgId` | `[{groupName, groupType, groupRecipientId, recipients:[Recipient], subGroups:[{groupRecipientId, groupName, groupType, recipients:[Recipient+tags]}]}]`, адресная книга (учителя, ученики, родители, администрация, завучи) |
 
@@ -221,7 +222,7 @@ appVersion=2.0.3
 
 ## Что не наблюдалось
 
-- Сохранение черновика, удаление письма, вложения к письму, ответ на задание (текст или файл), изменение настроек push: действия с записью намеренно не выполнялись.
+- Сохранение черновика, удаление письма, ответ на задание (текст или файл), изменение настроек push: действия с записью намеренно не выполнялись.
 - Вход через Госуслуги (ЕСИА): `logindata.esiaLoginPage = /webapi/sso/esia/crosslogin`, поток не проходился.
 - Обновление токена (`grant_type=refresh_token`), см. выше.
 - Родительский аккаунт: у родителя `/users?v=2` возвращает `children`, и `studentId` берётся оттуда (по устройству API; не проверялось).

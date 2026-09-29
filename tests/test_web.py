@@ -300,7 +300,7 @@ class TestNewFeatures:
     async def test_mail_send_goes_to_school(self, client, app_context, token):
         sent = []
 
-        async def send_mail(user, to, subject, text):
+        async def send_mail(user, to, subject, text, attachments=None):
             sent.append((to, subject, text))
 
         app_context.diary.send_mail = send_mail

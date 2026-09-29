@@ -118,8 +118,29 @@ export async function openAnnouncements() {
 
 let recipients = null;
 
+// Те же пределы, что на сервере (api.py): лишнее отсекаем сразу, без загрузки.
+const MAX_FILES = 5;
+const MAX_FILE_BYTES = 10 * 1024 * 1024;
+const MAX_TOTAL_BYTES = 15 * 1024 * 1024;
+
+function fileSize(bytes) {
+  return bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} МБ` : `${Math.max(1, Math.round(bytes / 1024))} КБ`;
+}
+
+/** Вложения к письму работают только в мобильном API. */
+async function canAttach() {
+  try {
+    if (!state.profile) state.profile = (await api('/api/profile')).data;
+    return state.profile.api_mode === 'mobile';
+  } catch {
+    return false;
+  }
+}
+
 export async function openCompose() {
   const chosen = new Map();
+  const files = [];
+  const attach = await canAttach();
   const body = pushScreen('Новое письмо');
   body.innerHTML = `
     <div class="card compose">
@@ -129,6 +150,10 @@ export async function openCompose() {
       <input class="field" id="composeSubject" maxlength="200" placeholder="Тема письма">
       <div class="detail-label">Сообщение</div>
       <textarea class="field" id="composeText" rows="8" maxlength="10000" placeholder="Текст письма"></textarea>
+      ${attach ? `<div class="detail-label">Вложения</div>
+        <div id="composeFiles" class="compose-files"></div>
+        <label class="btn secondary attach-btn">📎 Прикрепить файл
+          <input type="file" id="composeFile" multiple hidden></label>` : ''}
       <button class="btn" id="composeSend">${ICONS.send} Отправить</button>
     </div>`;
 
@@ -137,6 +162,40 @@ export async function openCompose() {
       ? [...chosen.values()].map((r) => `<span class="to-chip">${esc(r.name)}</span>`).join('')
       : '<span class="muted">Выбрать получателя</span>';
   };
+
+  const renderFiles = () => {
+    const list = $('composeFiles');
+    if (!list) return;
+    list.innerHTML = files
+      .map((file, index) => `<div class="compose-file"><span class="compose-file-name">${esc(file.name)}</span>
+          <span class="muted small">${fileSize(file.size)}</span>
+          <button class="compose-file-x" data-drop="${index}" aria-label="Убрать файл">✕</button></div>`)
+      .join('');
+    list.querySelectorAll('[data-drop]').forEach((button) =>
+      button.addEventListener('click', () => {
+        files.splice(Number(button.dataset.drop), 1);
+        renderFiles();
+      })
+    );
+  };
+
+  $('composeFile')?.addEventListener('change', (event) => {
+    for (const file of event.target.files) {
+      const total = files.reduce((sum, item) => sum + item.size, 0) + file.size;
+      const problem = files.length >= MAX_FILES ? `Не больше ${MAX_FILES} файлов`
+        : file.size === 0 ? `«${file.name}» пустой`
+        : file.size > MAX_FILE_BYTES ? `«${file.name}» больше ${MAX_FILE_BYTES / 1024 / 1024} МБ`
+        : total > MAX_TOTAL_BYTES ? `Файлы больше ${MAX_TOTAL_BYTES / 1024 / 1024} МБ в сумме` : '';
+      if (problem) {
+        notify('error');
+        banner(problem, true);
+        continue;
+      }
+      files.push(file);
+    }
+    event.target.value = '';
+    renderFiles();
+  });
 
   $('composeTo').addEventListener('click', async () => {
     const sheet = openSheet('Получатели', skeleton(5));
@@ -188,10 +247,18 @@ export async function openCompose() {
     button.disabled = true;
     button.classList.add('loading');
     try {
-      await api('/api/mail/send', {
-        method: 'POST',
-        body: JSON.stringify({ to: [...chosen.keys()], subject, text }),
-      });
+      let payload;
+      if (files.length) {
+        // С файлами — multipart; без них остаётся прежний JSON.
+        payload = new FormData();
+        [...chosen.keys()].forEach((id) => payload.append('to', id));
+        payload.append('subject', subject);
+        payload.append('text', text);
+        files.forEach((file) => payload.append('file', file, file.name));
+      } else {
+        payload = JSON.stringify({ to: [...chosen.keys()], subject, text });
+      }
+      await api('/api/mail/send', { method: 'POST', body: payload });
       notify('success');
       popScreen();
       banner('Письмо отправлено ✓');

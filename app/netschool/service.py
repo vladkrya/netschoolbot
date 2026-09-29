@@ -338,12 +338,29 @@ class DiaryService:
 
         return await self._with_session(user, call)
 
-    async def send_mail(self, user: User, to: list[str], subject: str, text: str) -> None:
+    async def send_mail(
+        self,
+        user: User,
+        to: list[str],
+        subject: str,
+        text: str,
+        attachments: list[tuple[str, bytes]] | None = None,
+    ) -> None:
+        """Отправить письмо. Файлы `[(имя, байты)]` — только в мобильном режиме."""
+        if attachments and user.effective_api_mode is not ApiMode.MOBILE:
+            # Маршрут загрузки вложений известен только у мобильного API.
+            raise NetSchoolError(
+                Reason.UNKNOWN,
+                "Вложения к письмам работают только в мобильном API. Переключиться: /changeapi",
+            )
         # Без _with_session: при сбое он повторяет запрос, а повтор отправки
         # мог бы послать письмо дважды.
         async with self._pool.acquire(user) as client:
             try:
-                await client.mail_send(subject, text, to)
+                if attachments:
+                    await client.mail_send(subject, text, to, attachments=attachments)
+                else:
+                    await client.mail_send(subject, text, to)
             except Exception as exc:
                 raise wrap(exc, context=f"письмо от {user.telegram_id}") from exc
 

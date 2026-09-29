@@ -65,7 +65,9 @@ export async function api(path, options = {}) {
     const { demoApi } = await import('./demo.js');
     return demoApi(path, options);
   }
-  const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
+  // Для FormData браузер сам ставит Content-Type с границей частей.
+  const isForm = typeof FormData !== 'undefined' && options.body instanceof FormData;
+  const headers = { ...(isForm ? {} : { 'Content-Type': 'application/json' }), ...(options.headers || {}) };
   // initData подписана токеном бота — сервер доверяет ей больше, чем
   // токену из ссылки, поэтому шлём оба и приоритет отдаёт он.
   if (initData) headers['X-Telegram-Init-Data'] = initData;

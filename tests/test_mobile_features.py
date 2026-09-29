@@ -39,6 +39,10 @@ class MobileClient(FakeMobile):
         self.refresh_result = None
         self.refresh_error: Exception | None = None
         self.refreshes = 0
+        self.sent: list = []
+
+    async def mail_send(self, subject, text, to, **kwargs):
+        self.sent.append((subject, text, list(to), kwargs))
 
     async def refresh(self):
         self.refreshes += 1
@@ -927,3 +931,118 @@ class TestTokenWarning:
             await migrate(db)
             cursor = await db.execute("SELECT token_warned_at FROM users WHERE telegram_id = 7")
             assert (await cursor.fetchone())[0] is None
+
+
+class TestMailAttachments:
+    @staticmethod
+    def _form(files, to=("aWQ=",), subject="Тема", text="Текст"):
+        """Тело multipart, как его шлют браузеры: имя файла — сырой UTF-8.
+
+        Клиент aiohttp сам URL-кодирует имена файлов, поэтому для проверки
+        сервера тело собирается вручную. Возвращает (тело, заголовки).
+        """
+        boundary = "----testboundary"
+        chunks: list[bytes] = []
+
+        def field(name, value):
+            chunks.append(
+                f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"\r\n\r\n{value}\r\n'.encode()
+            )
+
+        for item in to:
+            field("to", item)
+        field("subject", subject)
+        field("text", text)
+        for name, data in files:
+            chunks.append(
+                (f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="{name}"\r\n'
+                 "Content-Type: application/octet-stream\r\n\r\n").encode() + data + b"\r\n"
+            )
+        chunks.append(f"--{boundary}--\r\n".encode())
+        return b"".join(chunks), {"Content-Type": f"multipart/form-data; boundary={boundary}"}
+
+    @pytest.fixture
+    async def sent(self, app_context, users):
+        user = await users.save(mobile_user())
+        calls = []
+
+        async def send_mail(user, to, subject, text, attachments=None):
+            calls.append((to, subject, text, attachments))
+
+        app_context.diary.send_mail = send_mail
+        return calls, await app_context.miniapp.issue_token(user.telegram_id)
+
+    async def test_files_reach_the_service(self, client, sent):
+        from tests.test_web import BASE
+
+        calls, token = sent
+        body, headers = self._form([("../x/evil.txt", b"abc"), ("Фото.png", b"\x89PNG")], to=("a", "b"))
+        response = await client.post(f"{BASE}/api/mail/send", params={"token": token}, data=body, headers=headers)
+
+        assert response.status == 200
+        # Путь из имени отброшен, содержимое и порядок сохранены.
+        assert calls == [(["a", "b"], "Тема", "Текст", [("evil.txt", b"abc"), ("Фото.png", b"\x89PNG")])]
+
+    async def test_json_without_files_still_works(self, client, sent):
+        from tests.test_web import BASE
+
+        calls, token = sent
+        response = await client.post(
+            f"{BASE}/api/mail/send", params={"token": token},
+            json={"to": ["a"], "subject": "Тема", "text": "Текст"},
+        )
+        assert response.status == 200 and calls == [(["a"], "Тема", "Текст", None)]
+
+    async def test_limits_are_enforced(self, client, sent, monkeypatch):
+        from app.web import api
+        from tests.test_web import BASE
+
+        calls, token = sent
+
+        def post(files):
+            body, headers = self._form(files)
+            return client.post(f"{BASE}/api/mail/send", params={"token": token}, data=body, headers=headers)
+
+        monkeypatch.setattr(api, "MAIL_MAX_FILES", 2)
+        assert (await post([("a", b"1"), ("b", b"1"), ("c", b"1")])).status == 400
+
+        monkeypatch.setattr(api, "MAIL_MAX_FILE_BYTES", 10)
+        response = await post([("big", b"x" * 11)])
+        assert response.status == 400 and "больше" in (await response.json())["error"]
+
+        monkeypatch.setattr(api, "MAIL_MAX_FILE_BYTES", 10 * 1024 * 1024)
+        monkeypatch.setattr(api, "MAIL_MAX_TOTAL_BYTES", 15)
+        assert (await post([("a", b"x" * 10), ("b", b"x" * 10)])).status == 400
+
+        assert (await post([("empty", b"")])).status == 400
+        assert calls == []
+
+    async def test_recipient_and_subject_are_still_required(self, client, sent):
+        from tests.test_web import BASE
+
+        calls, token = sent
+        body, headers = self._form([("a", b"1")], to=())
+        response = await client.post(f"{BASE}/api/mail/send", params={"token": token}, data=body, headers=headers)
+        assert response.status == 400 and calls == []
+
+    async def test_service_passes_files_to_mobile_client(self, service, holder, users):
+        user = await users.save(mobile_user())
+        await service.send_mail(user, ["a"], "Тема", "Текст")
+        await service.send_mail(user, ["a"], "Тема", "Текст", [("a.txt", b"1")])
+
+        sent = holder["mobile"].sent
+        assert sent[0][3] == {} and sent[1][3] == {"attachments": [("a.txt", b"1")]}
+
+    async def test_web_mode_refuses_files_and_sends_nothing(self, service, holder, users):
+        user = await users.save(make_user())
+        with pytest.raises(NetSchoolError, match="/changeapi"):
+            await service.send_mail(user, ["a"], "Тема", "Текст", [("a.txt", b"1")])
+        assert "web" not in holder  # клиента даже не поднимали
+
+    async def test_profile_tells_whether_files_can_be_attached(self, client, app_context, users):
+        from tests.test_web import BASE
+
+        user = await users.save(mobile_user())
+        token = await app_context.miniapp.issue_token(user.telegram_id)
+        data = (await (await client.get(f"{BASE}/api/profile", params={"token": token})).json())["data"]
+        assert data["api_mode"] == "mobile"

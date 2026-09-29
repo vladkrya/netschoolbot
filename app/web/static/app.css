@@ -675,6 +675,11 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
   background: var(--card-2);
   text-align: left;
 }
+.compose-files { display: flex; flex-direction: column; gap: 6px; margin: 4px 0 8px; }
+.compose-file { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 10px; background: var(--card-2); }
+.compose-file-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.compose-file-x { color: var(--text2); padding: 2px 6px; }
+.attach-btn { margin-bottom: 10px; cursor: pointer; background: var(--card-2); color: var(--text); }
 .to-chip { padding: 3px 10px; border-radius: 14px; background: var(--head); color: #fff; font-size: 13px; animation: pop .3s var(--ease); }
 .btn { display: flex; align-items: center; justify-content: center; gap: 8px; }
 .btn.loading { opacity: .6; pointer-events: none; }
