@@ -21,11 +21,11 @@ import datetime as dt
 import logging
 from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator, Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from ..db.repositories import SessionRepository
-from ..domain.models import LoginType, User
+from ..domain.models import ApiMode, LoginType, User
 from ..settings import NetSchoolSettings
 from .errors import NetSchoolError, Reason, classify, wrap
 
@@ -52,6 +52,7 @@ class SessionPool:
         sessions: SessionRepository,
         *,
         client_factory: Callable[[str, str | None], Any] | None = None,
+        mobile_factory: Callable[[str, str | None, str], Any] | None = None,
     ) -> None:
         self._settings = settings
         self._sessions = sessions
@@ -60,6 +61,7 @@ class SessionPool:
         # иначе два одновременных запроса заведут два клиента.
         self._registry_lock = asyncio.Lock()
         self._client_factory = client_factory or _default_client_factory
+        self._mobile_factory = mobile_factory or _default_mobile_factory
 
     @asynccontextmanager
     async def acquire(self, user: User) -> AsyncIterator[Any]:
@@ -132,6 +134,59 @@ class SessionPool:
             logger.debug("Закрыто простаивающих сессий: %s", len(stale))
         return len(stale)
 
+    @property
+    def mobile_available(self) -> bool:
+        return bool(self._settings.mobile_client_secret)
+
+    async def switch_api(self, user: User, mode: ApiMode) -> None:
+        """Перевести сессию пользователя на другое API.
+
+        В мобильное — из живой веб-сессии: сервер выдаёт одноразовый код, он
+        меняется на 60-дневный токен. Так переключаются и пользователи
+        Госуслуг, у которых нет пароля. Если код получить не удалось, а
+        пароль сохранён, входим в мобильное API по паролю.
+
+        Обратно в веб — просто забываем токен: следующий запрос войдёт
+        заново по паролю (пользователям Госуслуг понадобится /login).
+        """
+        entry = await self._entry_for(user.telegram_id)
+        async with entry.lock:
+            if mode is ApiMode.MOBILE:
+                if not self.mobile_available:
+                    raise NetSchoolError(Reason.UNKNOWN, "Мобильное API не настроено на сервере бота")
+                web_user = replace(user, api_mode=ApiMode.WEB)
+                web = await self._ensure_logged_in(web_user, entry)
+                mobile = await self._mobile_from_web(web_user, web)
+                await _close_client(web)
+                entry.client = mobile
+                entry.keep_alive = False
+                _apply_student(mobile, user)
+                await self._persist(user.telegram_id, mobile)
+            else:
+                client, entry.client = entry.client, None
+                await _close_client(client)
+                await self._sessions.drop(user.telegram_id)
+
+    async def _mobile_from_web(self, user: User, web: Any) -> Any:
+        secret = self._settings.mobile_client_secret
+        try:
+            from netschoolpy import MobileNetSchool
+
+            return await MobileNetSchool.from_web(web, client_secret=secret)
+        except Exception as exc:
+            if user.credentials.login_type.is_gosuslugi or not user.credentials.usable:
+                raise wrap(exc, context=f"мобильный токен {user.telegram_id}") from exc
+            logger.info("Код из веб-сессии %s не получен (%s), вход по паролю", user.telegram_id, exc)
+        client = self._new_client(user, ApiMode.MOBILE)
+        await self._login(replace(user, api_mode=ApiMode.MOBILE), client)
+        return client
+
+    def _new_client(self, user: User, mode: ApiMode) -> Any:
+        proxy = self._settings.proxy_for(user.school.url)
+        if mode is ApiMode.MOBILE:
+            return self._mobile_factory(user.school.url, proxy, self._settings.mobile_client_secret)
+        return self._client_factory(user.school.url, proxy)
+
     async def _entry_for(self, telegram_id: int) -> _Entry:
         async with self._registry_lock:
             entry = self._entries.get(telegram_id)
@@ -141,7 +196,13 @@ class SessionPool:
             return entry
 
     async def _ensure_logged_in(self, user: User, entry: _Entry) -> Any:
-        entry.keep_alive = user.credentials.login_type.is_gosuslugi
+        entry.keep_alive = (
+            user.credentials.login_type.is_gosuslugi and user.api_mode is ApiMode.WEB
+        )
+        if entry.client is not None and _client_mode(entry.client) is not user.api_mode:
+            # Режим сменили, а в пуле остался клиент другого API.
+            await _close_client(entry.client)
+            entry.client = None
         if entry.client is not None and await self._is_alive(entry.client):
             return entry.client
 
@@ -149,7 +210,7 @@ class SessionPool:
             await _close_client(entry.client)
             entry.client = None
 
-        client = self._client_factory(user.school.url, self._settings.proxy_for(user.school.url))
+        client = self._new_client(user, user.api_mode)
 
         if await self._restore(user.telegram_id, client):
             if await self._is_alive(client):
@@ -202,6 +263,11 @@ class SessionPool:
         if user.credentials.login_type.is_gosuslugi:
             # Вход через Госуслуги нельзя повторить без участия человека:
             # он требует кода или подтверждения в приложении.
+            if user.api_mode is ApiMode.MOBILE:
+                raise NetSchoolError(
+                    Reason.AUTH,
+                    "Токен мобильного API истёк. Войдите заново: /login",
+                )
             raise NetSchoolError(
                 Reason.AUTH,
                 "Сессия Госуслуг истекла. Войдите заново: /login",
@@ -223,6 +289,12 @@ class SessionPool:
         Недоступность сервера не означает протухшую сессию — в этом случае
         считаем её живой, чтобы не устраивать бессмысленный повторный вход.
         """
+        check = getattr(client, "is_alive", None)
+        if check is not None:
+            try:
+                return bool(await check())
+            except Exception as exc:
+                return not wrap(exc).reason.needs_relogin
         try:
             response = await client._authed_get("student/diary/init")
         except Exception as exc:
@@ -234,6 +306,17 @@ def _default_client_factory(url: str, proxy: str | None) -> Any:
     from netschoolpy import NetSchool
 
     return NetSchool(url, proxy=proxy) if proxy else NetSchool(url)
+
+
+def _client_mode(client: Any) -> ApiMode:
+    # У мобильного клиента есть маршруты, которых нет в веб-API.
+    return ApiMode.MOBILE if hasattr(client, "classmeetings") else ApiMode.WEB
+
+
+def _default_mobile_factory(url: str, proxy: str | None, client_secret: str) -> Any:
+    from netschoolpy import MobileNetSchool
+
+    return MobileNetSchool(url, proxy=proxy, client_secret=client_secret or None)
 
 
 def _apply_student(client: Any, user: User) -> None:

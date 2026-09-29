@@ -43,7 +43,9 @@ function render() {
       (item, index) => `<div class="card hw-card" data-hw="${index}">
           <div class="hw-subject">${esc(item.subject)}</div>
           <div class="hw-text">${esc(item.text) || '—'}</div>
-          ${item.observed_at ? `<div class="hw-observed">Замечено ботом: ${esc(observedTime(item.observed_at))}</div>` : ''}
+          ${item.published_at
+            ? `<div class="hw-observed">Опубликовано: ${esc(observedTime(item.published_at))}</div>`
+            : item.observed_at ? `<div class="hw-observed">Замечено ботом: ${esc(observedTime(item.observed_at))}</div>` : ''}
           <div class="hw-foot">
             <span><span class="hw-badge">Д/З</span>${item.attachments.length ? `<span class="hw-badge clip">${ICONS.clip}</span>` : ''}</span>
             <span class="muted small">${esc(dayMonth(item.date))}</span>

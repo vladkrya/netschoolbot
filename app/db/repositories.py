@@ -18,6 +18,7 @@ from typing import Any
 import aiosqlite
 
 from ..domain.models import (
+    ApiMode,
     Credentials,
     Filters,
     LoginType,
@@ -108,8 +109,8 @@ class UserRepository:
                     login_type, login, password, student_name, selected_student_id,
                     check_interval, notify_grades, notify_changes, notify_deletes,
                     notify_homework, notify_mail, weekly_summary,
-                    quiet_start, quiet_end, updated_at
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    quiet_start, quiet_end, api_mode, updated_at
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(telegram_id) DO UPDATE SET
                     enabled = excluded.enabled,
                     display_name = excluded.display_name,
@@ -129,6 +130,7 @@ class UserRepository:
                     weekly_summary = excluded.weekly_summary,
                     quiet_start = excluded.quiet_start,
                     quiet_end = excluded.quiet_end,
+                    api_mode = excluded.api_mode,
                     updated_at = excluded.updated_at
                 """,
                 (
@@ -151,6 +153,7 @@ class UserRepository:
                     int(user.notifications.weekly_summary),
                     user.quiet_hours.start.strftime("%H:%M") if user.quiet_hours.start else None,
                     user.quiet_hours.end.strftime("%H:%M") if user.quiet_hours.end else None,
+                    user.api_mode.value,
                     now,
                 ),
             )
@@ -231,6 +234,7 @@ class UserRepository:
             quiet_hours=QuietHours(
                 start=_parse_time(row["quiet_start"]), end=_parse_time(row["quiet_end"])
             ),
+            api_mode=ApiMode.parse(row["api_mode"]),
             created_at=_parse_dt(row["created_at"]),
             updated_at=_parse_dt(row["updated_at"]),
         )

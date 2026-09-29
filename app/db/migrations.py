@@ -138,6 +138,10 @@ MIGRATIONS: list[str] = [
     """
     ALTER TABLE tracked_homework ADD COLUMN first_seen_at TEXT;
     """,
+    # 4 — выбор API: веб (по умолчанию) или мобильное, команда /changeapi.
+    """
+    ALTER TABLE users ADD COLUMN api_mode TEXT NOT NULL DEFAULT 'web';
+    """,
 ]
 
 

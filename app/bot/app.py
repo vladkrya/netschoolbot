@@ -31,6 +31,7 @@ COMMANDS = [
     BotCommand(command="profile", description="Профиль"),
     BotCommand(command="status", description="Состояние проверки"),
     BotCommand(command="child", description="Переключить ребёнка"),
+    BotCommand(command="changeapi", description="Сменить API: веб или мобильное"),
     BotCommand(command="login", description="Войти в «Сетевой город»"),
     BotCommand(command="logout", description="Выйти"),
     BotCommand(command="cancel", description="Отменить текущий диалог"),

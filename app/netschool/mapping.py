@@ -54,6 +54,10 @@ def _as_date(value: Any) -> dt.date | None:
     return None
 
 
+def _as_datetime(value: Any) -> dt.datetime | None:
+    return value if isinstance(value, dt.datetime) else None
+
+
 def marks_from_day(day: Any) -> list[MarkRecord]:
     """Все выставленные оценки одного дня дневника."""
     day_date = _as_date(_attr(day, "day"))
@@ -128,6 +132,7 @@ def homework_from_day(day: Any, *, today: dt.date | None = None) -> list[Homewor
                     text=text or ("Не указана" if explicitly_empty else ""),
                     lesson_number=lesson_number or (index + 1),
                     attachments=attachments,
+                    published_at=_as_datetime(_attr(assignment, "published_at")),
                 )
             )
     return records

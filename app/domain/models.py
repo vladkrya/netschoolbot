@@ -37,6 +37,29 @@ class LoginType(str, Enum):
             return cls.PASSWORD
 
 
+class ApiMode(str, Enum):
+    """Через какое API «Сетевого города» бот получает данные пользователя.
+
+    WEB — веб-API сайта (netschoolpy `NetSchool`), режим по умолчанию.
+    MOBILE — API приложения NetSchool (`MobileNetSchool`): токен на 60 дней
+    и время публикации заданий. Переключается командой /changeapi.
+    """
+
+    WEB = "web"
+    MOBILE = "mobile"
+
+    @property
+    def title(self) -> str:
+        return "веб-API сайта" if self is ApiMode.WEB else "мобильное API"
+
+    @classmethod
+    def parse(cls, value: Any) -> "ApiMode":
+        try:
+            return cls(str(value or "").strip().lower())
+        except ValueError:
+            return cls.WEB
+
+
 class MarkKind(str, Enum):
     """Что именно произошло с оценкой — вместо строковых литералов в коде."""
 
@@ -151,6 +174,7 @@ class User:
     notifications: NotificationPrefs = field(default_factory=NotificationPrefs)
     filters: Filters = field(default_factory=Filters)
     quiet_hours: QuietHours = field(default_factory=QuietHours)
+    api_mode: ApiMode = ApiMode.WEB
     created_at: dt.datetime | None = None
     updated_at: dt.datetime | None = None
 

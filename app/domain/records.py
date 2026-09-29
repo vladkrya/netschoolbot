@@ -118,6 +118,9 @@ class HomeworkRecord:
     text: str
     lesson_number: int | None = None
     attachments: tuple[Attachment, ...] = ()
+    # Когда учитель опубликовал задание. Есть только в мобильном API; в
+    # ключ не входит, чтобы смена режима не выдала старые задания за новые.
+    published_at: dt.datetime | None = None
 
     @property
     def identity(self) -> str:

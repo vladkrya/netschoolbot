@@ -171,6 +171,7 @@ def _homework_to_json(item, observed: dict[str, str] | None = None) -> dict:
         "text": item.text,
         "attachments": [{"id": a.id, "name": a.name} for a in item.attachments],
         "observed_at": (observed or {}).get(item.identity, ""),
+        "published_at": item.published_at.isoformat() if item.published_at else "",
     }
 
 

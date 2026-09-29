@@ -106,8 +106,20 @@ def homework_digest(items: list[HomeworkRecord]) -> str:
     for item in sorted(items, key=lambda h: (h.due_date, h.subject)):
         suffix = f" ({files_label(len(item.attachments))})" if item.attachments else ""
         text = esc(item.text) or "—"
-        lines.append(f"• {item.due_date:%d.%m} — {esc(item.subject)}: {text}{suffix}")
+        lines.append(
+            f"• {item.due_date:%d.%m} — {esc(item.subject)}: {text}{suffix}{published_label(item)}"
+        )
     return "\n".join(lines)
+
+
+def published_label(item: HomeworkRecord) -> str:
+    """` · опубл. 29.09 09:34` — только в мобильном API, где время известно."""
+    if item.published_at is None:
+        return ""
+    moment = item.published_at
+    if moment.tzinfo is not None:
+        moment = moment.astimezone(dt.timezone(dt.timedelta(hours=3)))
+    return f" <i>· опубл. {moment:%d.%m %H:%M}</i>"
 
 
 def homework_list(items: list[HomeworkRecord], header: str) -> str:
@@ -120,7 +132,7 @@ def homework_list(items: list[HomeworkRecord], header: str) -> str:
             current_date = item.due_date
             lines.append(f"\n📅 <b>{date_label(item.due_date)}</b>")
         suffix = f" ({files_label(len(item.attachments))})" if item.attachments else ""
-        lines.append(f"• {esc(item.subject)}: {esc(item.text) or '—'}{suffix}")
+        lines.append(f"• {esc(item.subject)}: {esc(item.text) or '—'}{suffix}{published_label(item)}")
     return "\n".join(lines)
 
 
@@ -255,6 +267,7 @@ def profile(user: User) -> str:
             f"• Школа: {esc(user.school.name or '—')}",
             f"• Адрес: {esc(user.school.url or '—')}",
             f"• Вход: {user.credentials.login_type.value}",
+            f"• API: {user.api_mode.title} (/changeapi)",
             "",
             f"• Уведомления: {enabled(user.enabled)}",
             f"• Интервал проверки: {user.check_interval // 60} мин",

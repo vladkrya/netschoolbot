@@ -8,7 +8,7 @@ from aiogram.types import (
     WebAppInfo,
 )
 
-from ..domain.models import User
+from ..domain.models import ApiMode, User
 
 
 def settings_menu(user: User) -> InlineKeyboardMarkup:
@@ -40,6 +40,9 @@ def settings_menu(user: User) -> InlineKeyboardMarkup:
         rows.append(
             [InlineKeyboardButton(text="👶 Переключить ребёнка", callback_data="settings:child")]
         )
+    rows.append(
+        [InlineKeyboardButton(text=f"🔌 API: {user.api_mode.title}", callback_data="settings:api")]
+    )
     rows.append([InlineKeyboardButton(text="🚪 Выйти из школы", callback_data="settings:logout")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -134,3 +137,17 @@ def miniapp_external(url: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[[InlineKeyboardButton(text="🌐 Открыть в браузере", url=url)]]
     )
+
+
+def api_modes(user: User, mobile_available: bool) -> InlineKeyboardMarkup:
+    """Выбор API для /changeapi."""
+
+    def option(mode: ApiMode, label: str) -> InlineKeyboardButton:
+        mark = "✅ " if user.api_mode is mode else ""
+        return InlineKeyboardButton(text=f"{mark}{label}", callback_data=f"api:{mode.value}")
+
+    rows = [[option(ApiMode.WEB, "🌐 Веб-API (по умолчанию)")]]
+    if mobile_available:
+        rows.append([option(ApiMode.MOBILE, "📱 Мобильное API")])
+    rows.append([InlineKeyboardButton(text="⬅️ Настройки", callback_data="settings:open")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)

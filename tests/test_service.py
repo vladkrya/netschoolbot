@@ -22,7 +22,7 @@ class DiaryClient(FakeClient):
         self.weeks_requested: list[dt.date] = []
         self.week_payloads: dict[dt.date, list] = {}
         self.week_errors: dict[dt.date, Exception] = {}
-        self.diary_init = {"students": [], "currentStudentId": None}
+        self.init_payload = {"students": [], "currentStudentId": None}
 
     async def diary(self, start):
         self.weeks_requested.append(start)
@@ -30,10 +30,13 @@ class DiaryClient(FakeClient):
             raise self.week_errors[start]
         return SimpleNamespace(schedule=self.week_payloads.get(start, []))
 
+    async def diary_init(self):
+        return self.init_payload
+
     async def _authed_get(self, path):
         if path == "student/diary/init":
             return SimpleNamespace(
-                status_code=self.session_status, json=lambda: self.diary_init
+                status_code=self.session_status, json=lambda: self.init_payload
             )
         return SimpleNamespace(status_code=self.session_status)
 
@@ -222,7 +225,7 @@ class TestStudents:
         user = make_user()
         await users.save(user)
         async with service._pool.acquire(user) as client:
-            client.diary_init = {
+            client.init_payload = {
                 "students": [
                     {"studentId": 10, "fio": "Иванов И."},
                     {"studentId": 11, "fio": "Иванова А."},
@@ -246,7 +249,7 @@ class TestStudents:
         user = make_user()
         await users.save(user)
         async with service._pool.acquire(user) as client:
-            client.diary_init = {"students": [{"studentId": 10, "fio": "И."}]}
+            client.init_payload = {"students": [{"studentId": 10, "fio": "И."}]}
         await service.sync_students(user)
         # Переданный объект остался прежним: неожиданные правки вглубь стека
         # были отдельным источником багов.
@@ -256,7 +259,7 @@ class TestStudents:
         user = make_user(selected_student_id=11)
         await users.save(user)
         async with service._pool.acquire(user) as client:
-            client.diary_init = {
+            client.init_payload = {
                 "students": [{"studentId": 10, "fio": "А"}, {"studentId": 11, "fio": "Б"}],
                 "currentStudentId": 10,
             }
@@ -267,7 +270,7 @@ class TestStudents:
         user = make_user(selected_student_id=99)
         await users.save(user)
         async with service._pool.acquire(user) as client:
-            client.diary_init = {
+            client.init_payload = {
                 "students": [{"studentId": 10, "fio": "А"}],
                 "currentStudentId": 10,
             }

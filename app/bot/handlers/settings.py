@@ -16,6 +16,7 @@ from ...context import AppContext
 from ...domain import formatting
 from ...domain.models import (
     MAX_CHECK_INTERVAL,
+    ApiMode,
     MIN_CHECK_INTERVAL,
     NotificationPrefs,
     QuietHours,
@@ -23,7 +24,7 @@ from ...domain.models import (
     clamp_interval,
 )
 from .. import keyboards
-from .common import reply, report_error
+from .common import reply, report_error, require_school
 
 logger = logging.getLogger("netschoolbot.bot")
 router = Router(name="settings")
@@ -307,3 +308,83 @@ async def cancel(callback: CallbackQuery) -> None:
     await callback.answer("Отменено")
     if callback.message:
         await callback.message.delete()
+
+
+API_HELP = (
+    "🔌 <b>Откуда бот берёт данные</b>\n\n"
+    "Сейчас: <b>{current}</b>.\n\n"
+    "🌐 <b>Веб-API</b> — как сайт «Сетевого города». Режим по умолчанию, "
+    "умеет всё, включая отправку писем.\n\n"
+    "📱 <b>Мобильное API</b> — как приложение NetSchool. Вход держится 60 дней "
+    "без переподключений, у домашних заданий видно время публикации, у уроков — "
+    "учитель и тема. Письма отправлять пока нельзя."
+)
+
+
+def _api_text(user: User, mobile_available: bool) -> str:
+    text = API_HELP.format(current=user.api_mode.title)
+    if not mobile_available:
+        text += "\n\n<i>Мобильное API на этом сервере бота не настроено.</i>"
+    return text
+
+
+@router.message(Command("changeapi"))
+async def change_api(message: Message, user: User, app: AppContext) -> None:
+    if hint := require_school(user):
+        await reply(message, hint)
+        return
+    await message.answer(
+        _api_text(user, app.diary.mobile_available),
+        parse_mode="HTML",
+        reply_markup=keyboards.api_modes(user, app.diary.mobile_available),
+    )
+
+
+@router.callback_query(F.data == "settings:api")
+async def open_api(callback: CallbackQuery, user: User, app: AppContext) -> None:
+    await callback.answer()
+    if callback.message:
+        await callback.message.edit_text(
+            _api_text(user, app.diary.mobile_available),
+            parse_mode="HTML",
+            reply_markup=keyboards.api_modes(user, app.diary.mobile_available),
+        )
+
+
+@router.callback_query(F.data.startswith("api:"))
+async def set_api(callback: CallbackQuery, user: User, app: AppContext) -> None:
+    mode = ApiMode.parse(callback.data.split(":", 1)[1])
+    if mode is user.api_mode:
+        await callback.answer("Уже выбрано")
+        return
+    if not user.school.configured:
+        await callback.answer("Сначала войдите: /login", show_alert=True)
+        return
+    if mode is ApiMode.MOBILE and not app.diary.mobile_available:
+        await callback.answer("Мобильное API не настроено", show_alert=True)
+        return
+
+    await callback.answer("Переключаю…")
+    try:
+        updated = await app.diary.switch_api(user, mode)
+    except Exception as exc:
+        await report_error(callback, exc)
+        return
+
+    # Разные API могут по-разному собирать одну и ту же работу (порядок,
+    # подписи). Без тихой пересборки состояния первая проверка разослала бы
+    # «новые» и «удалённые» оценки, которых на деле нет.
+    await app.state.mark_baseline_pending(updated.telegram_id, True)
+    await app.cache.clear(updated.telegram_id)
+    if updated.ready_to_check:
+        await app.watchers.start(updated.telegram_id)
+
+    note = ""
+    if mode is ApiMode.WEB and updated.credentials.login_type.is_gosuslugi:
+        note = "\n\nДля веб-API нужно заново войти через Госуслуги: /login"
+    if callback.message:
+        await callback.message.edit_text(
+            f"✅ Теперь данные идут через <b>{updated.api_mode.title}</b>.{note}",
+            parse_mode="HTML",
+            reply_markup=keyboards.settings_menu(updated),
+        )

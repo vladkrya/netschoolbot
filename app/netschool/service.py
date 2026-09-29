@@ -16,7 +16,7 @@ from dataclasses import replace
 from typing import Any, TypeVar
 
 from ..db.repositories import UserRepository
-from ..domain.models import Student, User
+from ..domain.models import ApiMode, Student, User
 from ..domain.records import DiaryDay, HomeworkRecord, MarkRecord
 from .errors import NetSchoolError, Reason, wrap
 from .mapping import diary_days, students_from_diary_init
@@ -132,7 +132,10 @@ class DiaryService:
             if entries is None:
                 entries = page if isinstance(page, list) else []
             messages = [_mail_to_dict(item) for item in entries]
-            # В списке писем netschoolpy флага прочтения нет — без этого запроса
+            if entries and all(getattr(item, "read", None) is not None for item in entries):
+                # Мобильное API отдаёт флаг прочтения прямо в списке.
+                return messages
+            # В веб-списке писем флага прочтения нет — без этого запроса
             # каждое письмо выглядело непрочитанным.
             try:
                 unread = {int(i) for i in await client.mail_unread()}
@@ -185,6 +188,12 @@ class DiaryService:
         return await self._with_session(user, call)
 
     async def send_mail(self, user: User, to: list[str], subject: str, text: str) -> None:
+        if user.api_mode is ApiMode.MOBILE:
+            # Маршрут отправки в мобильном API не изучен.
+            raise NetSchoolError(
+                Reason.UNKNOWN,
+                "Отправка писем работает только через веб-API. Переключиться: /changeapi",
+            )
         # Без _with_session: при сбое он повторяет запрос, а повтор отправки
         # мог бы послать письмо дважды.
         async with self._pool.acquire(user) as client:
@@ -215,6 +224,22 @@ class DiaryService:
         return await self._with_session(
             user, lambda client: client.download_attachment_as_bytes(attachment_id)
         )
+
+    @property
+    def mobile_available(self) -> bool:
+        return self._pool.mobile_available
+
+    async def switch_api(self, user: User, mode: ApiMode) -> User:
+        """Сменить API пользователя и сохранить выбор. Возвращает обновлённого пользователя."""
+        if user.api_mode is mode:
+            return user
+        try:
+            await self._pool.switch_api(user, mode)
+        except NetSchoolError:
+            raise
+        except Exception as exc:
+            raise wrap(exc, context=f"смена API {user.telegram_id}") from exc
+        return await self._users.save(replace(user, api_mode=mode))
 
     async def logout(self, user: User) -> None:
         await self._pool.invalidate(user.telegram_id, forget_saved=True)
@@ -295,6 +320,9 @@ async def _collect_weeks(
 
 
 async def _fetch_diary_init(client: Any) -> dict[str, Any]:
+    if hasattr(client, "diary_init"):
+        # netschoolpy 9: общий метод у веб- и мобильного клиента.
+        return await client.diary_init()
     response = await client._authed_get("student/diary/init")
     return response.json()
 

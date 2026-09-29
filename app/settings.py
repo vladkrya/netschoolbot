@@ -120,6 +120,9 @@ class NetSchoolSettings:
     blocked_host_ttl: int
     qr_login_ttl: int
     fallback_proxy: str
+    # Секрет приложения NetSchool (`parent-mobile`) для получения токена
+    # мобильного API. Пусто — режим «мобильное API» в /changeapi недоступен.
+    mobile_client_secret: str = ""
     # host-подстрока -> прокси. Некоторые региональные серверы «Сетевого
     # города» отбивают запросы с datacenter-адресов.
     proxy_hosts: dict[str, str] = field(default_factory=dict)
@@ -242,6 +245,7 @@ def load_settings(*, require_bot_token: bool = True) -> Settings:
             blocked_host_ttl=max(60, _env_int("NETSCHOOL_BLOCKED_HOST_TTL", 600)),
             qr_login_ttl=max(15, _env_int("NETSCHOOL_QR_TTL", 60)),
             fallback_proxy=_env("NETSCHOOL_FALLBACK_PROXY"),
+            mobile_client_secret=_env("NETSCHOOL_MOBILE_CLIENT_SECRET"),
             proxy_hosts=_parse_proxy_hosts(
                 _env("NETSCHOOL_PROXY_HOSTS"),
                 _env("VOLGOGRAD_PROXY", "socks5://127.0.0.1:1080"),
