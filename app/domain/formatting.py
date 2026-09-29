@@ -267,7 +267,7 @@ def profile(user: User) -> str:
             f"• Школа: {esc(user.school.name or '—')}",
             f"• Адрес: {esc(user.school.url or '—')}",
             f"• Вход: {user.credentials.login_type.value}",
-            f"• API: {user.api_mode.title} (/changeapi)",
+            f"• API: {user.effective_api_mode.title} (/changeapi)",
             "",
             f"• Уведомления: {enabled(user.enabled)}",
             f"• Интервал проверки: {user.check_interval // 60} мин",

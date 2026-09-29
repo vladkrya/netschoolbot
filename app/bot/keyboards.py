@@ -41,7 +41,7 @@ def settings_menu(user: User) -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text="👶 Переключить ребёнка", callback_data="settings:child")]
         )
     rows.append(
-        [InlineKeyboardButton(text=f"🔌 API: {user.api_mode.title}", callback_data="settings:api")]
+        [InlineKeyboardButton(text=f"🔌 API: {user.effective_api_mode.title}", callback_data="settings:api")]
     )
     rows.append([InlineKeyboardButton(text="🚪 Выйти из школы", callback_data="settings:logout")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
@@ -143,11 +143,11 @@ def api_modes(user: User, mobile_available: bool) -> InlineKeyboardMarkup:
     """Выбор API для /changeapi."""
 
     def option(mode: ApiMode, label: str) -> InlineKeyboardButton:
-        mark = "✅ " if user.api_mode is mode else ""
+        mark = "✅ " if user.effective_api_mode is mode else ""
         return InlineKeyboardButton(text=f"{mark}{label}", callback_data=f"api:{mode.value}")
 
     rows = [[option(ApiMode.WEB, "🌐 Веб-API (по умолчанию)")]]
-    if mobile_available:
+    if mobile_available and user.mobile_api_supported:
         rows.append([option(ApiMode.MOBILE, "📱 Мобильное API")])
     rows.append([InlineKeyboardButton(text="⬅️ Настройки", callback_data="settings:open")])
     return InlineKeyboardMarkup(inline_keyboard=rows)

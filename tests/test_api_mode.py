@@ -177,3 +177,42 @@ def test_homework_list_shows_publication_time():
     )
     assert "опубл. 27.09 02:05" in formatting.homework_list([item], "ДЗ")
     assert "опубл." not in formatting.homework_list([replace(item, published_at=None)], "ДЗ")
+
+
+def test_gosuslugi_user_always_uses_web_api():
+    esia = make_user(credentials=Credentials(login_type=LoginType.ESIA), api_mode=ApiMode.MOBILE)
+    assert not esia.mobile_api_supported
+    assert esia.effective_api_mode is ApiMode.WEB
+    assert make_user(api_mode=ApiMode.MOBILE).effective_api_mode is ApiMode.MOBILE
+
+
+async def test_gosuslugi_user_left_in_mobile_mode_gets_web_client(db):
+    # Раньше такой пользователь застревал: пул просил /login, а вход через
+    # Госуслуги сохранял веб-сессию, которую мобильный клиент не принимал.
+    pool = pool_for(db)
+    user = await UserRepository(db).save(
+        make_user(credentials=Credentials(login_type=LoginType.ESIA), api_mode=ApiMode.MOBILE)
+    )
+    await SessionRepository(db).save(1, '{"cookies": "esia"}')
+    async with pool.acquire(user) as client:
+        assert not isinstance(client, FakeMobile)
+        assert client.imported == '{"cookies": "esia"}'
+
+
+async def test_service_refuses_mobile_for_gosuslugi(db):
+    users = UserRepository(db)
+    user = await users.save(make_user(credentials=Credentials(login_type=LoginType.ESIA)))
+    service = DiaryService(pool_for(db), users)
+    with pytest.raises(NetSchoolError, match="логину и паролю"):
+        await service.switch_api(user, ApiMode.MOBILE)
+    assert (await users.get(1)).api_mode is ApiMode.WEB
+
+
+def test_keyboard_hides_mobile_for_gosuslugi():
+    from app.bot import keyboards
+
+    def labels(user):
+        return [b.text for row in keyboards.api_modes(user, True).inline_keyboard for b in row]
+
+    assert any("Мобильное" in t for t in labels(make_user()))
+    assert not any("Мобильное" in t for t in labels(make_user(credentials=Credentials(login_type=LoginType.ESIA))))

@@ -188,7 +188,7 @@ class DiaryService:
         return await self._with_session(user, call)
 
     async def send_mail(self, user: User, to: list[str], subject: str, text: str) -> None:
-        if user.api_mode is ApiMode.MOBILE:
+        if user.effective_api_mode is ApiMode.MOBILE:
             # Маршрут отправки в мобильном API не изучен.
             raise NetSchoolError(
                 Reason.UNKNOWN,
@@ -233,6 +233,11 @@ class DiaryService:
         """Сменить API пользователя и сохранить выбор. Возвращает обновлённого пользователя."""
         if user.api_mode is mode:
             return user
+        if mode is ApiMode.MOBILE and not user.mobile_api_supported:
+            raise NetSchoolError(
+                Reason.UNKNOWN,
+                "Мобильное API работает только со входом по логину и паролю «Сетевого города».",
+            )
         try:
             await self._pool.switch_api(user, mode)
         except NetSchoolError:

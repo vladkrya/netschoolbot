@@ -184,6 +184,21 @@ class User:
         return self.enabled and self.school.configured and self.credentials.usable
 
     @property
+    def mobile_api_supported(self) -> bool:
+        """Мобильное API — только для входа по логину и паролю."""
+        return not self.credentials.login_type.is_gosuslugi
+
+    @property
+    def effective_api_mode(self) -> ApiMode:
+        """Через какое API на деле ходить за данными.
+
+        Для входа через Госуслуги мобильный режим не поддерживается: такой
+        пользователь всегда работает через веб-API, даже если выбор в базе
+        остался «мобильным» (иначе он застревал в цикле «войдите заново»).
+        """
+        return self.api_mode if self.mobile_api_supported else ApiMode.WEB
+
+    @property
     def label(self) -> str:
         return self.student_name or self.display_name or f"ID {self.telegram_id}"
 

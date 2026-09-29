@@ -197,9 +197,9 @@ class SessionPool:
 
     async def _ensure_logged_in(self, user: User, entry: _Entry) -> Any:
         entry.keep_alive = (
-            user.credentials.login_type.is_gosuslugi and user.api_mode is ApiMode.WEB
+            user.credentials.login_type.is_gosuslugi and user.effective_api_mode is ApiMode.WEB
         )
-        if entry.client is not None and _client_mode(entry.client) is not user.api_mode:
+        if entry.client is not None and _client_mode(entry.client) is not user.effective_api_mode:
             # Режим сменили, а в пуле остался клиент другого API.
             await _close_client(entry.client)
             entry.client = None
@@ -210,7 +210,7 @@ class SessionPool:
             await _close_client(entry.client)
             entry.client = None
 
-        client = self._new_client(user, user.api_mode)
+        client = self._new_client(user, user.effective_api_mode)
 
         if await self._restore(user.telegram_id, client):
             if await self._is_alive(client):
@@ -263,7 +263,7 @@ class SessionPool:
         if user.credentials.login_type.is_gosuslugi:
             # Вход через Госуслуги нельзя повторить без участия человека:
             # он требует кода или подтверждения в приложении.
-            if user.api_mode is ApiMode.MOBILE:
+            if user.effective_api_mode is ApiMode.MOBILE:
                 raise NetSchoolError(
                     Reason.AUTH,
                     "Токен мобильного API истёк. Войдите заново: /login",
