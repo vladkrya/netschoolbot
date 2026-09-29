@@ -4,7 +4,7 @@ Telegram-бот и PWA для «Сетевого города. Образова�
 оценках, их изменениях и удалениях, домашние задания, расписание, школьная
 почта и статистика.
 
-Домен: **https://ns.ikrya.ru** (прежний netschool.ikrya.ru работает параллельно — на нём установленные PWA)
+Домен: **https://ns2.ikrya.ru** (через Cloudflare). Прежние `ns.ikrya.ru` и `netschool.ikrya.ru` работают параллельно для уже открытых ссылок и установленных PWA.
 
 ## Что это за версия
 
@@ -94,11 +94,17 @@ cp .env.example .env && nano .env
 cp deploy/systemd/netschoolbot.service /etc/systemd/system/
 systemctl daemon-reload && systemctl enable --now netschoolbot
 
-cp deploy/nginx/ns.ikrya.ru.conf /etc/nginx/sites-available/ns.ikrya.ru
-ln -s /etc/nginx/sites-available/ns.ikrya.ru /etc/nginx/sites-enabled/
-certbot certonly --webroot -w /var/www/certbot -d ns.ikrya.ru
+cp deploy/nginx/ns2.ikrya.ru.bootstrap.conf /etc/nginx/sites-available/ns2.ikrya.ru
+ln -s /etc/nginx/sites-available/ns2.ikrya.ru /etc/nginx/sites-enabled/
+nginx -t && systemctl reload nginx
+certbot certonly --webroot -w /var/www/certbot -d ns2.ikrya.ru
+cp deploy/nginx/ns2.ikrya.ru.conf /etc/nginx/sites-available/ns2.ikrya.ru
 nginx -t && systemctl reload nginx
 ```
+
+В `.env` укажите `NETSCHOOL_PUBLIC_URL=https://ns2.ikrya.ru` и перезапустите
+`netschoolbot`. DNS-запись `ns2` должна быть проксирована Cloudflare. Старые
+домены остаются настроенными, чтобы прежние ссылки продолжали открываться.
 
 Веб слушает `127.0.0.1:8283`. Проверка живости — `GET /health`.
 
@@ -133,7 +139,7 @@ python -m pytest
 
 ## Лицензия
 
-Личный проект. Данные учеников не покидают ваш сервер.
+Личный проект. Данные учеников хранятся на вашем сервере; веб-трафик `ns2.ikrya.ru` проходит через Cloudflare.
 
 
 <!-- Security scan triggered at 2026-09-04 13:03:20 -->
