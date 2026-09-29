@@ -86,6 +86,13 @@ class UserRepository:
         )
         return [await self._hydrate(row) for row in rows]
 
+    async def all_with_school(self) -> list[User]:
+        """Пользователи со школой, даже если уведомления отключены."""
+        rows = await self._db.fetch_all(
+            "SELECT * FROM users WHERE school_url != '' ORDER BY telegram_id"
+        )
+        return [await self._hydrate(row) for row in rows]
+
     async def all_ids(self) -> list[int]:
         rows = await self._db.fetch_all("SELECT telegram_id FROM users")
         return [int(row["telegram_id"]) for row in rows]

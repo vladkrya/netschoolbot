@@ -20,7 +20,7 @@ from .settings import Settings, SettingsError, load_settings
 logger = logging.getLogger("netschoolbot")
 
 # Как часто закрывать простаивающие сессии «Сетевого города».
-SESSION_CLEANUP_INTERVAL = 600
+SESSION_CLEANUP_INTERVAL = 300
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -68,15 +68,39 @@ async def run_import(settings: Settings, source: str) -> int:
 
 
 async def cleanup_sessions(context: AppContext) -> None:
-    """Фоновая уборка простаивающих сессий."""
+    """Сохранять сессии и восстанавливать keep-alive Госуслуг."""
     while True:
         await asyncio.sleep(SESSION_CLEANUP_INTERVAL)
         try:
+            await context.pool.checkpoint_all()
             await context.pool.evict_idle()
+            await restore_esia_sessions(context)
         except asyncio.CancelledError:
             raise
         except Exception:
             logger.exception("Сбой уборки сессий")
+
+
+async def restore_esia_sessions(context: AppContext) -> None:
+    """Вернуть keep-alive сессий Госуслуг после рестарта или сетевого сбоя."""
+    semaphore = asyncio.Semaphore(5)
+
+    async def restore(user) -> None:
+        async with semaphore:
+            if await context.pool.has_client(user.telegram_id):
+                return
+            if not await context.sessions.load(user.telegram_id):
+                return
+            try:
+                async with context.pool.acquire(user):
+                    pass
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.info("Не удалось восстановить сессию Госуслуг %s: %s", user.telegram_id, exc)
+
+    users = await context.users.all_with_school()
+    await asyncio.gather(*(restore(user) for user in users if user.credentials.login_type.is_gosuslugi))
 
 
 async def run(settings: Settings, args: argparse.Namespace) -> int:
@@ -97,7 +121,8 @@ async def run(settings: Settings, args: argparse.Namespace) -> int:
     context.watchers.attach_notifier(TelegramNotifier(bot, context.users, push))
 
     tasks: list[asyncio.Task] = [
-        asyncio.create_task(cleanup_sessions(context), name="session-cleanup")
+        asyncio.create_task(cleanup_sessions(context), name="session-cleanup"),
+        asyncio.create_task(restore_esia_sessions(context), name="esia-restore"),
     ]
     if settings.telegram.admin_id:
         tasks.append(

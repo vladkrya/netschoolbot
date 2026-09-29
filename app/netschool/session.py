@@ -73,7 +73,10 @@ class SessionPool:
         async with entry.lock:
             client = await self._ensure_logged_in(user, entry)
             entry.last_used = dt.datetime.now()
-            yield client
+            try:
+                yield client
+            finally:
+                await self._persist(user.telegram_id, client)
 
     async def invalidate(self, telegram_id: int, *, forget_saved: bool = False) -> None:
         """Закрыть сессию пользователя. `forget_saved` — стереть и сохранённую."""
@@ -86,10 +89,27 @@ class SessionPool:
 
     async def close_all(self) -> None:
         async with self._registry_lock:
-            entries = list(self._entries.values())
+            entries = list(self._entries.items())
             self._entries.clear()
-        for entry in entries:
-            await _close_client(entry.client)
+        for telegram_id, entry in entries:
+            async with entry.lock:
+                if entry.client is not None:
+                    await self._persist(telegram_id, entry.client)
+                    await _close_client(entry.client)
+
+    async def checkpoint_all(self) -> None:
+        """Сохранить текущие cookies живых клиентов на случай внезапного рестарта."""
+        async with self._registry_lock:
+            entries = list(self._entries.items())
+        for telegram_id, entry in entries:
+            async with entry.lock:
+                if entry.client is not None:
+                    await self._persist(telegram_id, entry.client)
+
+    async def has_client(self, telegram_id: int) -> bool:
+        async with self._registry_lock:
+            entry = self._entries.get(telegram_id)
+            return entry is not None and entry.client is not None
 
     async def evict_idle(self) -> int:
         """Закрыть сессии, которыми давно не пользовались.
@@ -106,7 +126,8 @@ class SessionPool:
             ]
             entries = [self._entries.pop(uid) for uid in stale]
         for entry in entries:
-            await _close_client(entry.client)
+            async with entry.lock:
+                await _close_client(entry.client)
         if stale:
             logger.debug("Закрыто простаивающих сессий: %s", len(stale))
         return len(stale)
@@ -172,7 +193,10 @@ class SessionPool:
             logger.debug("Не удалось выгрузить сессию %s: %s", telegram_id, exc)
             return
         if payload:
-            await self._sessions.save(telegram_id, payload)
+            try:
+                await self._sessions.save(telegram_id, payload)
+            except Exception:
+                logger.exception("Не удалось сохранить сессию %s", telegram_id)
 
     async def _login(self, user: User, client: Any) -> None:
         if user.credentials.login_type.is_gosuslugi:

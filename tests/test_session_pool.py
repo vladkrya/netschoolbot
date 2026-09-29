@@ -167,6 +167,29 @@ class TestSessionPersistence:
         assert client.imported == '{"cookies": "saved"}'
         assert client.logins == 0
 
+    async def test_updated_session_survives_restart(self, pool, users, sessions):
+        user = make_user(credentials=Credentials(login_type=LoginType.ESIA))
+        await users.save(user)
+        await sessions.save(1, '{"cookies": "old"}')
+        async with pool.acquire(user) as client:
+            client.export_session = lambda: '{"cookies": "new"}'
+        assert await sessions.load(1) == '{"cookies": "new"}'
+        await pool.close_all()
+        restarted = SessionPool(SETTINGS, sessions, client_factory=lambda url, proxy: FakeClient(url, proxy))
+        async with restarted.acquire(user) as restored:
+            assert restored.imported == '{"cookies": "new"}'
+            assert restored.logins == 0
+
+    async def test_checkpoint_saves_idle_esia_cookie_changes(self, pool, users, sessions):
+        user = make_user(credentials=Credentials(login_type=LoginType.ESIA))
+        await users.save(user)
+        await sessions.save(1, '{"cookies": "old"}')
+        async with pool.acquire(user) as client:
+            pass
+        client.export_session = lambda: '{"cookies": "keepalive"}'
+        await pool.checkpoint_all()
+        assert await sessions.load(1) == '{"cookies": "keepalive"}'
+
     async def test_stale_saved_session_falls_back_to_login(self, pool, users, sessions):
         user = make_user()
         await users.save(user)
