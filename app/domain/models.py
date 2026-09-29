@@ -186,19 +186,18 @@ class User:
         return self.enabled and self.school.configured and self.credentials.usable
 
     @property
-    def mobile_api_supported(self) -> bool:
-        """Мобильное API — только для входа по логину и паролю."""
-        return not self.credentials.login_type.is_gosuslugi
-
-    @property
     def effective_api_mode(self) -> ApiMode:
         """Через какое API на деле ходить за данными.
 
-        Для входа через Госуслуги мобильный режим не поддерживается: такой
-        пользователь всегда работает через веб-API, даже если выбор в базе
-        остался «мобильным» (иначе он застревал в цикле «войдите заново»).
+        Сейчас совпадает с выбором в базе. Отдельное свойство осталось, чтобы
+        код спрашивал «через что ходить», а не «что выбрано».
+
+        Пользователю Госуслуг мобильный режим достаётся только вместе с
+        токеном: сразу после входа `_finish_login` меняет живую веб-сессию
+        на мобильный токен, а если не вышло — возвращает веб-режим. Иначе
+        он застревал бы в цикле «войдите заново».
         """
-        return self.api_mode if self.mobile_api_supported else ApiMode.WEB
+        return self.api_mode
 
     @property
     def label(self) -> str:

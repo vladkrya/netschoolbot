@@ -33,7 +33,7 @@ from aiogram.types import (
 
 from ...context import AppContext
 from ...domain import formatting
-from ...domain.models import Credentials, LoginType, School, User
+from ...domain.models import ApiMode, Credentials, LoginType, School, User
 from ...netschool.errors import NetSchoolError, Reason, wrap
 from ...netschool.patches import http as http_patch
 from .. import keyboards
@@ -505,9 +505,36 @@ def _render_qr(content: str) -> bytes | None:
     return buffer.getvalue()
 
 
+async def _settle_api_mode(user: User, app: AppContext) -> tuple[User, str]:
+    """Довести вход через Госуслуги до рабочего мобильного режима.
+
+    После входа через Госуслуги у пользователя есть только веб-сессия, а
+    мобильному клиенту нужен токен. Пока пользователь в мобильном режиме,
+    меняем живую веб-сессию на токен прямо сейчас — позже, без нового кода
+    подтверждения, этого не сделать. Не вышло — возвращаем веб-режим и
+    говорим об этом, чтобы человек не застрял в цикле «войдите заново».
+
+    Возвращает пользователя и пояснение для сообщения (пустое, если
+    сказать нечего).
+    """
+    if not (user.credentials.login_type.is_gosuslugi and user.api_mode is ApiMode.MOBILE):
+        return user, ""
+    try:
+        await app.pool.switch_api(user, ApiMode.MOBILE)
+    except Exception as exc:  # noqa: BLE001 — любой сбой означает «остаёмся на вебе»
+        logger.info("Мобильный токен из Госуслуг не получен для %s: %s", user.telegram_id, exc)
+        reverted = await app.users.save(replace(user, api_mode=ApiMode.WEB))
+        return reverted, (
+            "⚠️ Мобильное API через Госуслуги включить не удалось — работаю через веб-API. "
+            "Попробовать снова: /changeapi."
+        )
+    return user, "📱 Мобильное API включено: вход держится 60 дней."
+
+
 async def _finish_login(user: User, app: AppContext, message: Message) -> None:
     """Завершить вход: сохранить пользователя, найти детей, запустить проверку."""
     saved = await app.users.save(replace(user, enabled=True))
+    saved, api_note = await _settle_api_mode(saved, app)
 
     try:
         saved = await app.diary.sync_students(saved)
@@ -530,6 +557,8 @@ async def _finish_login(user: User, app: AppContext, message: Message) -> None:
         lines.append(f"• Ученик: {formatting.esc(saved.student_name)}")
     if len(saved.available_students) > 1:
         lines.append(f"• Детей в аккаунте: {len(saved.available_students)} (/child — переключить)")
+    if api_note:
+        lines.extend(["", api_note])
     lines.extend(
         [
             "",

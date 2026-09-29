@@ -149,11 +149,15 @@ class TestRecentEvents:
         assert await service.fetch_recent_events(make_user()) is None
         assert "mobile" not in holder
 
-    async def test_gosuslugi_user_stays_on_web_path(self, service, holder):
+    async def test_gosuslugi_user_in_mobile_mode_reads_the_feed(self, service, holder, users, sessions):
         from app.domain.models import Credentials, LoginType
 
-        user = mobile_user(credentials=Credentials(login_type=LoginType.ESIA))
-        assert await service.fetch_recent_events(user) is None
+        user = await users.save(mobile_user(credentials=Credentials(login_type=LoginType.ESIA)))
+        # Пароля нет — клиент поднимается из сохранённого мобильного токена.
+        await sessions.save(1, '{"kind": "mobile"}')
+        await service.fetch_recent_events(user)
+        holder["mobile"].events_payload = {"events": [RESULT_EVENT]}
+        assert (await service.fetch_recent_events(user)).marks == 1
 
     async def test_feed_failure_falls_back(self, service, holder, users):
         user = await users.save(mobile_user())

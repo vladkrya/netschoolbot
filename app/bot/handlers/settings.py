@@ -324,12 +324,7 @@ API_HELP = (
 
 def _api_text(user: User, mobile_available: bool) -> str:
     text = API_HELP.format(current=user.effective_api_mode.title)
-    if not user.mobile_api_supported:
-        text += (
-            "\n\n<i>Вы вошли через Госуслуги — мобильное API работает только со "
-            "входом по логину и паролю «Сетевого города».</i>"
-        )
-    elif not mobile_available:
+    if not mobile_available:
         text += "\n\n<i>Мобильное API на этом сервере бота не настроено.</i>"
     return text
 
@@ -362,11 +357,6 @@ async def set_api(callback: CallbackQuery, user: User, app: AppContext) -> None:
     mode = ApiMode.parse(callback.data.split(":", 1)[1])
     if mode is user.effective_api_mode and mode is user.api_mode:
         await callback.answer("Уже выбрано")
-        return
-    if mode is ApiMode.MOBILE and not user.mobile_api_supported:
-        await callback.answer(
-            "Мобильное API работает только со входом по логину и паролю", show_alert=True
-        )
         return
     if not user.school.configured:
         await callback.answer("Сначала войдите: /login", show_alert=True)

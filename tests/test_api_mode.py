@@ -10,7 +10,7 @@ from app.db.repositories import SessionRepository, UserRepository
 from app.domain import formatting
 from app.domain.models import ApiMode, Credentials, LoginType
 from app.domain.records import HomeworkRecord
-from app.netschool.errors import NetSchoolError
+from app.netschool.errors import NetSchoolError, Reason
 from app.netschool.mapping import homework_from_day
 from app.netschool.service import DiaryService
 from app.netschool.session import SessionPool
@@ -179,40 +179,126 @@ def test_homework_list_shows_publication_time():
     assert "опубл." not in formatting.homework_list([replace(item, published_at=None)], "ДЗ")
 
 
-def test_gosuslugi_user_always_uses_web_api():
+def test_gosuslugi_user_can_use_mobile_api():
     esia = make_user(credentials=Credentials(login_type=LoginType.ESIA), api_mode=ApiMode.MOBILE)
-    assert not esia.mobile_api_supported
-    assert esia.effective_api_mode is ApiMode.WEB
+    assert esia.effective_api_mode is ApiMode.MOBILE
     assert make_user(api_mode=ApiMode.MOBILE).effective_api_mode is ApiMode.MOBILE
+    assert make_user().effective_api_mode is ApiMode.WEB
 
 
-async def test_gosuslugi_user_left_in_mobile_mode_gets_web_client(db):
-    # Раньше такой пользователь застревал: пул просил /login, а вход через
-    # Госуслуги сохранял веб-сессию, которую мобильный клиент не принимал.
-    pool = pool_for(db)
+async def test_gosuslugi_web_session_is_not_a_mobile_session(db):
+    # Веб-сессия Госуслуг мобильному клиенту не подходит, а без человека
+    # новый вход невозможен: пул просит /login, где _finish_login сразу
+    # меняет новую веб-сессию на токен (или возвращает веб-режим).
+    class StrictMobile(FakeMobile):
+        async def import_session(self, data):
+            from netschoolpy.exceptions import SessionExpired
+
+            raise SessionExpired("Это не сессия мобильного API")
+
+    pool = SessionPool(
+        MOBILE_SETTINGS, SessionRepository(db), client_factory=FakeClient, mobile_factory=StrictMobile
+    )
     user = await UserRepository(db).save(
         make_user(credentials=Credentials(login_type=LoginType.ESIA), api_mode=ApiMode.MOBILE)
     )
     await SessionRepository(db).save(1, '{"cookies": "esia"}')
-    async with pool.acquire(user) as client:
-        assert not isinstance(client, FakeMobile)
-        assert client.imported == '{"cookies": "esia"}'
+    with pytest.raises(NetSchoolError, match="/login"):
+        async with pool.acquire(user):
+            pass
 
 
-async def test_service_refuses_mobile_for_gosuslugi(db):
+async def test_service_switches_gosuslugi_user_from_live_web_session(db, from_web):
     users = UserRepository(db)
     user = await users.save(make_user(credentials=Credentials(login_type=LoginType.ESIA)))
+    await SessionRepository(db).save(1, '{"cookies": "esia"}')
     service = DiaryService(pool_for(db), users)
-    with pytest.raises(NetSchoolError, match="логину и паролю"):
-        await service.switch_api(user, ApiMode.MOBILE)
-    assert (await users.get(1)).api_mode is ApiMode.WEB
+
+    updated = await service.switch_api(user, ApiMode.MOBILE)
+
+    assert updated.api_mode is ApiMode.MOBILE
+    assert (await users.get(1)).api_mode is ApiMode.MOBILE
+    assert len(from_web) == 1
+    # Дальше живёт мобильный токен, ESIA-сессия больше не нужна.
+    assert await SessionRepository(db).load(1) == '{"kind": "mobile"}'
 
 
-def test_keyboard_hides_mobile_for_gosuslugi():
+def test_keyboard_offers_mobile_to_everyone():
     from app.bot import keyboards
 
     def labels(user):
         return [b.text for row in keyboards.api_modes(user, True).inline_keyboard for b in row]
 
     assert any("Мобильное" in t for t in labels(make_user()))
-    assert not any("Мобильное" in t for t in labels(make_user(credentials=Credentials(login_type=LoginType.ESIA))))
+    assert any("Мобильное" in t for t in labels(make_user(credentials=Credentials(login_type=LoginType.ESIA))))
+
+
+class TestGosuslugiLogin:
+    """После входа через Госуслуги мобильный режим получает токен или откатывается на веб."""
+
+    class Pool:
+        def __init__(self, error=None):
+            self.error, self.calls = error, []
+
+        async def switch_api(self, user, mode):
+            self.calls.append(mode)
+            if self.error:
+                raise self.error
+
+    @staticmethod
+    def _app(users, pool):
+        return SimpleNamespace(users=users, pool=pool)
+
+    async def test_token_is_taken_right_after_login(self, users):
+        from app.bot.handlers.auth import _settle_api_mode
+
+        user = await users.save(make_user(credentials=Credentials(login_type=LoginType.ESIA_QR), api_mode=ApiMode.MOBILE))
+        pool = self.Pool()
+
+        settled, note = await _settle_api_mode(user, self._app(users, pool))
+
+        assert pool.calls == [ApiMode.MOBILE]
+        assert settled.api_mode is ApiMode.MOBILE and "60 дней" in note
+        assert (await users.get(1)).api_mode is ApiMode.MOBILE
+
+    async def test_failure_returns_user_to_web_api(self, users):
+        from app.bot.handlers.auth import _settle_api_mode
+
+        user = await users.save(make_user(credentials=Credentials(login_type=LoginType.ESIA), api_mode=ApiMode.MOBILE))
+        pool = self.Pool(NetSchoolError(Reason.UNKNOWN, "код не выдан"))
+
+        settled, note = await _settle_api_mode(user, self._app(users, pool))
+
+        # Не застрять в цикле «войдите заново»: остаёмся на вебе и говорим об этом.
+        assert settled.api_mode is ApiMode.WEB and settled.effective_api_mode is ApiMode.WEB
+        assert (await users.get(1)).api_mode is ApiMode.WEB
+        assert "/changeapi" in note
+
+    async def test_unexpected_error_also_falls_back(self, users):
+        from app.bot.handlers.auth import _settle_api_mode
+
+        user = await users.save(make_user(credentials=Credentials(login_type=LoginType.ESIA), api_mode=ApiMode.MOBILE))
+        settled, _ = await _settle_api_mode(user, self._app(users, self.Pool(RuntimeError("boom"))))
+        assert settled.api_mode is ApiMode.WEB
+
+    async def test_web_mode_and_password_users_are_left_alone(self, users):
+        from app.bot.handlers.auth import _settle_api_mode
+
+        pool = self.Pool()
+        esia_web = await users.save(make_user(credentials=Credentials(login_type=LoginType.ESIA)))
+        assert await _settle_api_mode(esia_web, self._app(users, pool)) == (esia_web, "")
+        password_mobile = await users.save(make_user(telegram_id=2, api_mode=ApiMode.MOBILE))
+        assert await _settle_api_mode(password_mobile, self._app(users, pool)) == (password_mobile, "")
+        assert pool.calls == []
+
+    async def test_relogin_with_dead_esia_session_does_not_hang_on_mobile(self, db, from_web):
+        # Полный путь: живая веб-сессия → токен → дальше клиент мобильный.
+        pool = pool_for(db)
+        users = UserRepository(db)
+        user = await users.save(make_user(credentials=Credentials(login_type=LoginType.ESIA), api_mode=ApiMode.MOBILE))
+        await SessionRepository(db).save(1, '{"cookies": "esia"}')
+
+        await pool.switch_api(user, ApiMode.MOBILE)
+
+        async with pool.acquire(user) as client:
+            assert isinstance(client, FakeMobile)

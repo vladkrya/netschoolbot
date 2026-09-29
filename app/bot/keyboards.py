@@ -153,7 +153,7 @@ def api_modes(user: User, mobile_available: bool) -> InlineKeyboardMarkup:
         return InlineKeyboardButton(text=f"{mark}{label}", callback_data=f"api:{mode.value}")
 
     rows = [[option(ApiMode.WEB, "🌐 Веб-API (по умолчанию)")]]
-    if mobile_available and user.mobile_api_supported:
+    if mobile_available:
         rows.append([option(ApiMode.MOBILE, "📱 Мобильное API")])
     rows.append([InlineKeyboardButton(text="⬅️ Настройки", callback_data="settings:open")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
