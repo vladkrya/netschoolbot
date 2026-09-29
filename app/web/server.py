@@ -51,6 +51,12 @@ def create_app(context: AppContext, bot=None) -> web.Application:
 
     inner.add_routes(api.routes)
     inner.add_routes(page_routes)
+    # Те же файлы под путём с версией. Модули JS импортируют друг друга
+    # относительными путями без ?v=, а Cloudflare навязывает браузеру кэш
+    # на 4 часа поверх наших заголовков — после деплоя экраны оставались
+    # старыми. С версией в пути каждый деплой даёт всем модулям новые адреса.
+    inner.router.add_static(f"/static/v{STATIC_VERSION}", STATIC_DIR, name="static_versioned")
+    # Порядок важен: иначе /static перехватит и путь с версией.
     inner.router.add_static("/static", STATIC_DIR, name="static")
     inner.on_response_prepare.append(_revalidate_static)
 

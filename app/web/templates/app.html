@@ -8,7 +8,7 @@
 {% if not demo %}<link rel="manifest" href="{{ base }}/manifest.webmanifest?token={{ token }}">{% endif %}
 <link rel="icon" href="{{ base }}/static/icon.svg">
 <link rel="apple-touch-icon" href="{{ base }}/static/icon.svg">
-<link rel="stylesheet" href="{{ base }}/static/app.css?v={{ version }}">
+<link rel="stylesheet" href="{{ base }}/static/v{{ version }}/app.css">
 <!-- До app.js: приложению нужен Telegram.WebApp уже при старте, чтобы
      забрать initData до первого запроса. -->
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
@@ -109,6 +109,6 @@
     demo: {{ (demo or false) | tojson }}
   };
 </script>
-<script src="{{ base }}/static/js/app.js?v={{ version }}" type="module"></script>
+<script src="{{ base }}/static/v{{ version }}/js/app.js" type="module"></script>
 </body>
 </html>

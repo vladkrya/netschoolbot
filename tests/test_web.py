@@ -154,6 +154,15 @@ class TestPageLinksResolve:
             response = await client.get(link, params={"token": token})
             assert response.status == 200, f"{link} отдал {response.status}"
 
+    async def test_page_loads_assets_by_versioned_path(self, client, token):
+        from app.web.server import STATIC_VERSION
+
+        page = await (await client.get(f"{BASE}/", params={"token": token})).text()
+        assert f"/static/v{STATIC_VERSION}/js/app.js" in page
+        # Относительные импорты модулей разрешаются в тот же путь с версией.
+        response = await client.get(f"{BASE}/static/v{STATIC_VERSION}/js/details.js")
+        assert response.status == 200
+
     async def test_static_is_revalidated(self, client):
         # Модули импортируются без версии в адресе — без этого заголовка
         # WebView показывал старые экраны после обновления.
