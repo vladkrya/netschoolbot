@@ -16,11 +16,13 @@ from __future__ import annotations
 import asyncio
 import datetime as dt
 import logging
+import time
+from collections.abc import Callable
 from typing import Protocol
 
 from ..db.repositories import MarkStateRepository, UserRepository
 from ..domain.models import User
-from ..domain.records import HomeworkRecord, MarkEvent
+from ..domain.records import HomeworkRecord, MarkEvent, RecentEvents
 from ..netschool.errors import NetSchoolError, Reason
 from ..netschool.mapping import is_placeholder_name
 from ..netschool.service import DiaryService, msk_now
@@ -37,6 +39,11 @@ BULK_THRESHOLD = 5
 
 # После ошибки проверки следующий заход откладывается, но не дольше этого.
 MAX_BACKOFF = 1800
+
+# В мобильном режиме каждый проход смотрит лёгкую ленту событий, а полный
+# дневник сверяет только при новых событиях и не реже этого срока: лента не
+# показывает удалённые и исправленные давние оценки.
+FULL_SYNC_INTERVAL = 3600.0
 
 
 class Notifier(Protocol):
@@ -60,6 +67,7 @@ class UserWatcher:
         state: MarkStateRepository,
         diary: DiaryService,
         notifier: Notifier,
+        clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self._user_id = user_id
         self._users = users
@@ -69,6 +77,12 @@ class UserWatcher:
         self._backoff = 0.0
         # Об одной и той же проблеме сообщаем один раз, а не каждый круг.
         self._reported_reason: Reason | None = None
+        # Что уже видели в ленте событий и когда в последний раз сверяли
+        # дневник целиком. В памяти: после перезапуска первая проверка
+        # просто пройдёт полным путём.
+        self._clock = clock
+        self._event_keys: frozenset[str] | None = None
+        self._last_full_sync: float | None = None
 
     async def run(self) -> None:
         """Бесконечный цикл проверки. Останавливается отменой задачи."""
@@ -106,8 +120,13 @@ class UserWatcher:
 
     async def _check(self, user: User) -> None:
         user = await self._refresh_student_if_needed(user)
-        marks = await self._diary.fetch_marks(user)
-        homework = await self._diary.fetch_homework(user)
+        events = await self._diary.fetch_recent_events(user)
+        if events is not None and not self._full_sync_due(events):
+            return
+        # Один запрос дневника на оценки и задания сразу, а не по запросу на каждое.
+        days = await self._diary.fetch_diary(user)
+        marks = [record for day in days for record in day.marks]
+        homework = [record for day in days for record in day.homework]
 
         known = await self._state.load_marks(user.telegram_id)
         first_run = not await self._state.has_history(user.telegram_id)
@@ -140,6 +159,7 @@ class UserWatcher:
         await self._state.replace_homework(
             user.telegram_id, all_homework, {item.identity for item in fresh_homework}
         )
+        self._note_full_sync(events)
 
         if self._is_quiet(user):
             if result.events or fresh_homework:
@@ -154,6 +174,25 @@ class UserWatcher:
             await self._notifier.send_mark_events(user, result.events)
         if fresh_homework and user.notifications.homework:
             await self._notifier.send_homework(user, fresh_homework)
+
+    def _full_sync_due(self, events: RecentEvents) -> bool:
+        """Нужно ли сверять дневник целиком.
+
+        Да — если в ленте появилось то, чего мы не видели, если полной
+        сверки ещё не было или она была давно.
+        """
+        if self._event_keys is None or self._last_full_sync is None:
+            return True
+        if self._clock() - self._last_full_sync >= FULL_SYNC_INTERVAL:
+            return True
+        return bool(events.keys - self._event_keys)
+
+    def _note_full_sync(self, events: RecentEvents | None) -> None:
+        """Запомнить ленту, с которой сверили дневник."""
+        if events is None:
+            return
+        self._event_keys = events.keys
+        self._last_full_sync = self._clock()
 
     async def _refresh_student_if_needed(self, user: User) -> User:
         """Подтянуть имя ученика, если в базе лежит заглушка.

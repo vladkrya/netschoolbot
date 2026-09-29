@@ -17,9 +17,9 @@ from typing import Any, TypeVar
 
 from ..db.repositories import UserRepository
 from ..domain.models import ApiMode, Student, User
-from ..domain.records import DiaryDay, HomeworkRecord, MarkRecord
+from ..domain.records import DiaryDay, HomeworkRecord, MarkRecord, RecentEvents
 from .errors import NetSchoolError, Reason, wrap
-from .mapping import diary_days, students_from_diary_init
+from .mapping import diary_days, recent_events_from, students_from_diary_init
 from .session import SessionPool
 
 logger = logging.getLogger("netschoolbot.netschool")
@@ -30,6 +30,11 @@ T = TypeVar("T")
 # чтобы поймать оценку, выставленную задним числом.
 DEFAULT_WEEKS_BACK = 5
 DEFAULT_WEEKS_FORWARD = 5
+
+# Окно ленты событий мобильного API. Приложение шлёт 14 и 1; берём 14: оценка,
+# выставленная задним числом, попадает в ленту по дате выставления, а запас
+# по дням не даёт потерять её между проверками.
+RECENT_EVENTS_DAYS = 14
 
 RETRY_ATTEMPTS = 3
 RETRY_INITIAL_DELAY = 1.5
@@ -72,6 +77,35 @@ class DiaryService:
     async def fetch_homework(self, user: User, **kwargs) -> list[HomeworkRecord]:
         days = await self.fetch_diary(user, **kwargs)
         return [record for day in days for record in day.homework]
+
+    async def fetch_recent_events(
+        self, user: User, *, period_days: int = RECENT_EVENTS_DAYS
+    ) -> RecentEvents | None:
+        """Лента свежих оценок и заданий — только в мобильном режиме.
+
+        `None` означает «ленты нет, действуйте прежним путём»: веб-режим,
+        клиент без `period_events` или сбой запроса. Ошибки, требующие нового
+        входа, пробрасываются — их обрабатывает вызывающий код так же, как
+        при запросе дневника.
+        """
+        if user.effective_api_mode is not ApiMode.MOBILE:
+            return None
+
+        async def call(client: Any) -> Any:
+            if not hasattr(client, "period_events"):
+                return None
+            return await client.period_events(period_days=period_days)
+
+        try:
+            payload = await self._with_session(user, call)
+        except NetSchoolError as exc:
+            if exc.reason.needs_relogin:
+                raise
+            logger.info("Лента событий недоступна для %s: %s", user.telegram_id, exc.reason)
+            return None
+        if payload is None:
+            return None
+        return recent_events_from(payload)
 
     async def marks_present_in_week(self, user: User, week_day: dt.date) -> set[str]:
         """Свободные ключи работ с оценками за неделю, содержащую `week_day`.

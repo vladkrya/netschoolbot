@@ -10,10 +10,12 @@ import datetime as dt
 import pytest
 
 from app.domain.models import Credentials, LoginType, MarkKind, QuietHours
-from app.domain.records import MarkRecord, TrackedMark
+from app.domain.records import HomeworkRecord, MarkRecord, RecentEvents, TrackedMark
 from app.netschool.errors import NetSchoolError, Reason
 from app.notifications.diff import MISSING_STREAK_FOR_DELETE
-from app.notifications.watcher import MAX_BACKOFF, UserWatcher, WatcherRegistry
+from app.notifications.watcher import (
+    FULL_SYNC_INTERVAL, MAX_BACKOFF, UserWatcher, WatcherRegistry,
+)
 from tests.test_repositories import make_user
 
 
@@ -63,6 +65,10 @@ class FakeDiary:
         self.week_queries = 0
         self.logged_out = False
         self.message = None
+        self.events = None
+        self.events_error: Exception | None = None
+        self.recent_event_calls = 0
+        self.diary_calls = 0
 
     async def fetch_marks(self, user, **kwargs):
         if self.error:
@@ -73,6 +79,7 @@ class FakeDiary:
         """Дни дневника, собранные из заданных оценок и заданий."""
         from app.domain.records import DiaryDay
 
+        self.diary_calls += 1
         if self.error:
             raise self.error
         days: dict = {}
@@ -81,6 +88,13 @@ class FakeDiary:
         for item in self.homework:
             days.setdefault(item.due_date, DiaryDay(day=item.due_date)).homework.append(item)
         return [days[key] for key in sorted(days)]
+
+    async def fetch_recent_events(self, user, **kwargs):
+        """По умолчанию ленты событий нет — как в веб-режиме."""
+        self.recent_event_calls += 1
+        if self.events_error:
+            raise self.events_error
+        return self.events
 
     async def fetch_period(self, user, start, end, **kwargs):
         return await self.fetch_diary(user)
@@ -464,3 +478,102 @@ class TestStudentNameRefresh:
         await watcher.run_once()
         # Проверка оценок всё равно прошла и состояние записано.
         assert len(await marks.load_marks(1)) == 1
+
+
+class TestRecentEvents:
+    """Мобильный режим: лента событий решает, нужен ли полный дневник."""
+
+    @pytest.fixture
+    def clock(self):
+        class Clock:
+            now = 1000.0
+
+            def __call__(self):
+                return self.now
+
+        return Clock()
+
+    @pytest.fixture
+    def mobile_watcher(self, users, marks, diary, notifier, clock):
+        return UserWatcher(1, users=users, state=marks, diary=diary, notifier=notifier, clock=clock)
+
+    async def test_quiet_feed_skips_full_diary(self, users, mobile_watcher, diary):
+        await users.save(make_user())
+        diary.marks = [record(0)]
+        diary.events = RecentEvents(keys=frozenset({"r:1"}), marks=1)
+
+        await mobile_watcher.run_once()
+        assert diary.diary_calls == 1  # первая проверка — полным путём
+
+        for _ in range(3):
+            await mobile_watcher.run_once()
+        assert diary.diary_calls == 1
+        assert diary.recent_event_calls == 4
+
+    async def test_new_mark_in_feed_becomes_notification(
+        self, users, mobile_watcher, diary, notifier
+    ):
+        await users.save(make_user())
+        diary.marks = [record(0)]
+        diary.events = RecentEvents(keys=frozenset({"r:1"}), marks=1)
+        await mobile_watcher.run_once()
+
+        diary.marks = [record(0), record(1, "5", subject="Химия")]
+        diary.events = RecentEvents(keys=frozenset({"r:1", "r:2"}), marks=2)
+        await mobile_watcher.run_once()
+
+        assert diary.diary_calls == 2
+        assert [(e.kind, e.record.subject) for e in notifier.mark_events] == [
+            (MarkKind.NEW, "Химия")
+        ]
+
+    async def test_new_homework_in_feed_becomes_notification(
+        self, users, mobile_watcher, diary, notifier
+    ):
+        await users.save(make_user())
+        diary.marks = [record(0)]  # у пользователя уже есть история проверок
+        diary.events = RecentEvents(keys=frozenset({"h:1"}), homework=1)
+        await mobile_watcher.run_once()
+
+        item = HomeworkRecord("Алгебра", dt.date(2026, 3, 3), "ДЗ", "Упр. 1", lesson_number=2)
+        diary.homework = [item]
+        diary.events = RecentEvents(keys=frozenset({"h:1", "h:2"}), homework=2)
+        await mobile_watcher.run_once()
+
+        assert notifier.homework == [item]
+
+    async def test_full_sync_repeats_hourly(self, users, mobile_watcher, diary, clock):
+        # Лента не видит удалений и правок давних оценок — их ловит сверка.
+        await users.save(make_user())
+        diary.events = RecentEvents(keys=frozenset({"r:1"}), marks=1)
+        await mobile_watcher.run_once()
+        await mobile_watcher.run_once()
+        assert diary.diary_calls == 1
+
+        clock.now += FULL_SYNC_INTERVAL
+        await mobile_watcher.run_once()
+        assert diary.diary_calls == 2
+
+    async def test_failed_full_sync_is_retried(self, users, mobile_watcher, diary, notifier):
+        await users.save(make_user())
+        diary.marks = [record(0)]
+        diary.events = RecentEvents(keys=frozenset({"r:1"}), marks=1)
+        await mobile_watcher.run_once()
+
+        diary.marks = [record(0), record(1)]
+        diary.events = RecentEvents(keys=frozenset({"r:1", "r:2"}), marks=2)
+        diary.error = NetSchoolError(Reason.SERVER_UNAVAILABLE, "недоступно")
+        await mobile_watcher.run_once()
+        assert notifier.mark_events == []
+
+        # Событие не считается обработанным, пока дневник не сверён.
+        diary.error = None
+        await mobile_watcher.run_once()
+        assert len(notifier.mark_events) == 1
+
+    async def test_web_mode_walks_full_diary_every_time(self, users, watcher, diary):
+        await users.save(make_user())
+        diary.marks = [record(0)]
+        for _ in range(3):
+            await watcher.run_once()
+        assert diary.diary_calls == 3

@@ -142,6 +142,22 @@ class HomeworkRecord:
 
 
 @dataclass(frozen=True, slots=True)
+class RecentEvents:
+    """Свежая лента событий мобильного API (`period-events`).
+
+    Событие несёт мало полей: у оценки нет содержания работы, номера урока и
+    комментария, поэтому собрать из него `MarkRecord.identity` так, чтобы он
+    совпал с ключом из дневника, нельзя. Лента используется как дешёвый
+    признак «что-то изменилось», а сами записи берутся из дневника.
+    """
+
+    # Устойчивые отпечатки событий: по ним видно, что появилось нового.
+    keys: frozenset[str] = frozenset()
+    marks: int = 0
+    homework: int = 0
+
+
+@dataclass(frozen=True, slots=True)
 class MarkEvent:
     """Что произошло с оценкой между двумя проверками."""
 

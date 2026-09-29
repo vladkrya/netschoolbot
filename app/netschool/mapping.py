@@ -18,6 +18,7 @@ from ..domain.records import (
     HomeworkRecord,
     Lesson,
     MarkRecord,
+    RecentEvents,
     clean_content,
     extract_mark,
 )
@@ -217,6 +218,33 @@ def diary_days(days: list[Any], *, today: dt.date | None = None) -> list[DiaryDa
         )
     result.sort(key=lambda d: d.day)
     return result
+
+
+def recent_events_from(payload: Any) -> RecentEvents:
+    """Разобрать ответ `period-events`: оценки (`ResultInfo`) и задания (`HomeworkInfo`).
+
+    Отпечаток события включает то, что меняется, когда учитель правит
+    работу: оценку и время выставления/публикации. Так исправленная оценка
+    тоже выглядит новым событием.
+    """
+    events = _attr(payload, "events", None) if isinstance(payload, dict) else None
+    keys: set[str] = set()
+    marks = homework = 0
+    for event in events or []:
+        if not isinstance(event, dict):
+            continue
+        kind = event.get("type")
+        if kind == "ResultInfo" and isinstance(event.get("result"), dict):
+            item = event["result"]
+            keys.add(
+                f"r:{item.get('assignmentId')}:{item.get('result')}:{item.get('resultDate')}"
+            )
+            marks += 1
+        elif kind == "HomeworkInfo" and isinstance(event.get("homework"), dict):
+            item = event["homework"]
+            keys.add(f"h:{item.get('assignmentId')}:{item.get('assignmentDate')}")
+            homework += 1
+    return RecentEvents(keys=frozenset(keys), marks=marks, homework=homework)
 
 
 # Поля, в которых «Сетевой город» держит имя ученика, в порядке предпочтения.
