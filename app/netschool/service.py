@@ -12,7 +12,8 @@ import asyncio
 import datetime as dt
 import logging
 from collections.abc import Awaitable, Callable
-from dataclasses import replace
+from dataclasses import dataclass, replace
+from enum import Enum
 from typing import Any, TypeVar
 
 from ..db.repositories import UserRepository
@@ -44,9 +45,25 @@ DEFAULT_WEEKS_FORWARD = 5
 # по дням не даёт потерять её между проверками.
 RECENT_EVENTS_DAYS = 14
 
+# За сколько дней до конца мобильного токена его пора продлевать или
+# предупреждать пользователя. Токен живёт 60 дней.
+TOKEN_WARN_MARGIN = dt.timedelta(days=3)
+
 RETRY_ATTEMPTS = 3
 RETRY_INITIAL_DELAY = 1.5
 RETRY_MAX_DELAY = 6.0
+
+
+class TokenState(str, Enum):
+    OK = "ok"  # до конца срока далеко
+    RENEWED = "renewed"  # был на исходе, продлён через refresh_token
+    EXPIRING = "expiring"  # на исходе, продлить не удалось — нужен вход заново
+
+
+@dataclass(frozen=True, slots=True)
+class TokenCheck:
+    state: TokenState
+    expires_at: dt.datetime  # UTC
 
 
 class DiaryService:
@@ -171,6 +188,41 @@ class DiaryService:
                 raise
             logger.info("%s недоступны для %s: %s", what, user.telegram_id, exc.reason)
             return None
+
+    async def check_mobile_token(
+        self, user: User, *, margin: dt.timedelta = TOKEN_WARN_MARGIN
+    ) -> TokenCheck | None:
+        """Проверить срок мобильного токена и продлить его, если он на исходе.
+
+        `None` — проверять нечего: веб-режим или клиент без токена. Продление
+        через refresh_token на живом сервере не проверялось, поэтому любой
+        сбой (и «продлили, а срок не вырос») означает `EXPIRING`, а не ошибку:
+        пользователю нужно войти заново. Учтите: продление может
+        аннулировать refresh-токен приложения NetSchool на телефоне
+        пользователя — там придётся войти заново.
+        """
+        if user.effective_api_mode is not ApiMode.MOBILE:
+            return None
+
+        async def call(client: Any) -> TokenCheck | None:
+            token = getattr(client, "token", None)
+            if token is None or not hasattr(client, "refresh"):
+                return None
+            if not token.expires_soon(margin):
+                return TokenCheck(TokenState.OK, token.expires_at)
+            try:
+                renewed = await client.refresh()
+            except Exception as exc:  # noqa: BLE001 — любой сбой означает «не продлили»
+                logger.info("Токен %s не продлён: %s", user.telegram_id, exc)
+                return TokenCheck(TokenState.EXPIRING, token.expires_at)
+            if renewed.expires_soon(margin):
+                # Сервер ответил, но срок не вырос — продлением это не назвать.
+                logger.info("Токен %s: продление не увеличило срок", user.telegram_id)
+                return TokenCheck(TokenState.EXPIRING, renewed.expires_at)
+            logger.info("Токен %s продлён до %s", user.telegram_id, renewed.expires_at)
+            return TokenCheck(TokenState.RENEWED, renewed.expires_at)
+
+        return await self._mobile_only(user, call, "Срок токена")
 
     async def marks_present_in_week(self, user: User, week_day: dt.date) -> set[str]:
         """Свободные ключи работ с оценками за неделю, содержащую `week_day`.

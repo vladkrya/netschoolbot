@@ -42,6 +42,7 @@ class FakeNotifier:
         self.mark_events = []
         self.homework = []
         self.absences = []
+        self.token_warnings = []
         self.errors = []
 
     async def send_mark_events(self, user, events):
@@ -52,6 +53,9 @@ class FakeNotifier:
 
     async def send_absences(self, user, items):
         self.absences.extend(items)
+
+    async def send_token_expiring(self, user, expires_at):
+        self.token_warnings.append(expires_at)
 
     async def send_error(self, user, error):
         self.errors.append(error)
@@ -73,6 +77,9 @@ class FakeDiary:
         self.events_error: Exception | None = None
         self.recent_event_calls = 0
         self.totals = None
+        self.token_check = None
+        self.token_error: Exception | None = None
+        self.token_checks = 0
         # Пропуски: (день, предмет, номер урока, код отметки).
         self.absent: list = []
         self.stats = None
@@ -108,6 +115,12 @@ class FakeDiary:
         if self.events_error:
             raise self.events_error
         return self.events
+
+    async def check_mobile_token(self, user, **kwargs):
+        self.token_checks += 1
+        if self.token_error:
+            raise self.token_error
+        return self.token_check
 
     async def fetch_totals(self, user):
         return self.totals

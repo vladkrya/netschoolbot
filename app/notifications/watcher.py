@@ -25,7 +25,7 @@ from ..domain.models import ApiMode, User
 from ..domain.records import AbsenceRecord, HomeworkRecord, MarkEvent, RecentEvents
 from ..netschool.errors import NetSchoolError, Reason
 from ..netschool.mapping import absences_from_days, is_placeholder_name
-from ..netschool.service import DiaryService, msk_now, msk_today
+from ..netschool.service import DiaryService, TokenState, msk_now, msk_today
 from .diff import confirm_deletions, diff_homework, diff_marks
 
 logger = logging.getLogger("netschoolbot.watcher")
@@ -50,6 +50,9 @@ FULL_SYNC_INTERVAL = 3600.0
 # пропусками за прошлые недели.
 ABSENCE_NOTIFY_DAYS = 7
 
+# Срок мобильного токена меряется в днях — проверять его каждый проход незачем.
+TOKEN_CHECK_INTERVAL = 6 * 3600.0
+
 
 class Notifier(Protocol):
     """Куда уходят уведомления. Позволяет тестировать цикл без Telegram."""
@@ -59,6 +62,8 @@ class Notifier(Protocol):
     async def send_homework(self, user: User, items: list[HomeworkRecord]) -> None: ...
 
     async def send_absences(self, user: User, items: list[AbsenceRecord]) -> None: ...
+
+    async def send_token_expiring(self, user: User, expires_at: dt.datetime) -> None: ...
 
     async def send_error(self, user: User, error: NetSchoolError) -> None: ...
 
@@ -90,6 +95,7 @@ class UserWatcher:
         self._clock = clock
         self._event_keys: frozenset[str] | None = None
         self._last_full_sync: float | None = None
+        self._last_token_check: float | None = None
 
     async def run(self) -> None:
         """Бесконечный цикл проверки. Останавливается отменой задачи."""
@@ -120,6 +126,8 @@ class UserWatcher:
             logger.exception("Сбой проверки для %s", self._user_id)
             self._backoff = min(max(self._backoff * 2, 60.0), MAX_BACKOFF)
             return self._backoff
+
+        await self._check_token(user)
 
         self._backoff = 0.0
         self._reported_reason = None
@@ -184,6 +192,42 @@ class UserWatcher:
             await self._notifier.send_homework(user, fresh_homework)
         if fresh_absences and user.notifications.absences:
             await self._notifier.send_absences(user, fresh_absences)
+
+    async def _check_token(self, user: User) -> None:
+        """Продлить мобильный токен или заранее предупредить, что он истекает.
+
+        Предупреждение уходит один раз: отметка хранится в базе, а не в
+        памяти, иначе каждый перезапуск бота повторял бы его. Она
+        сбрасывается, когда токен снова в порядке (продлён или выдан заново).
+        """
+        if user.effective_api_mode is not ApiMode.MOBILE:
+            return
+        now = self._clock()
+        if self._last_token_check is not None and now - self._last_token_check < TOKEN_CHECK_INTERVAL:
+            return
+        self._last_token_check = now
+
+        try:
+            check = await self._diary.check_mobile_token(user)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001 — срок токена не повод ронять проверку оценок
+            logger.info("Срок токена %s не проверен: %s", user.telegram_id, exc)
+            return
+        if check is None:
+            return
+
+        if check.state is not TokenState.EXPIRING:
+            if await self._state.token_warned_at(user.telegram_id) is not None:
+                await self._state.set_token_warned(user.telegram_id, None)
+            return
+        if await self._state.token_warned_at(user.telegram_id) is not None:
+            return
+        if self._is_quiet(user):
+            # Не будим ночью: следующая проверка через несколько часов, срока хватает.
+            return
+        await self._notifier.send_token_expiring(user, check.expires_at)
+        await self._state.set_token_warned(user.telegram_id, dt.datetime.now())
 
     async def _track_absences(
         self, user: User, days: list, *, first_run: bool

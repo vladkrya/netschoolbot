@@ -35,6 +35,17 @@ class MobileClient(FakeMobile):
         self.terms_list: list = []
         self.performance: dict = {}
         self.performance_error: Exception | None = None
+        self.token = None
+        self.refresh_result = None
+        self.refresh_error: Exception | None = None
+        self.refreshes = 0
+
+    async def refresh(self):
+        self.refreshes += 1
+        if self.refresh_error:
+            raise self.refresh_error
+        self.token = self.refresh_result
+        return self.refresh_result
 
     async def totals(self, school_year_id=None, student_id=None):
         self.calls.append("totals")
@@ -681,3 +692,234 @@ class TestAbsences:
         )
         assert (await response.json())["data"]["absences"] is True
         assert (await users.get(user.telegram_id)).notifications.absences
+
+
+def token_expiring_in(days: float):
+    from netschoolpy.mobile import MobileToken
+
+    return MobileToken(
+        access_token="T", refresh_token="R",
+        expires_at=dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=days),
+    )
+
+
+class TestTokenExpiry:
+    async def test_healthy_token_is_left_alone(self, service, holder, users):
+        from app.netschool.service import TokenState
+
+        user = await users.save(mobile_user())
+        await service.check_mobile_token(user)
+        holder["mobile"].token = token_expiring_in(40)
+
+        check = await service.check_mobile_token(user)
+
+        assert check.state is TokenState.OK
+        assert holder["mobile"].refreshes == 0
+
+    async def test_expiring_token_is_renewed(self, service, holder, users):
+        from app.netschool.service import TokenState
+
+        user = await users.save(mobile_user())
+        await service.check_mobile_token(user)
+        holder["mobile"].token = token_expiring_in(2)
+        holder["mobile"].refresh_result = token_expiring_in(60)
+
+        check = await service.check_mobile_token(user)
+
+        assert check.state is TokenState.RENEWED
+        assert holder["mobile"].refreshes == 1
+        assert check.expires_at > dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=50)
+        # Дальше срок в порядке — повторного продления нет.
+        assert (await service.check_mobile_token(user)).state is TokenState.OK
+        assert holder["mobile"].refreshes == 1
+
+    async def test_failed_renewal_means_expiring(self, service, holder, users):
+        from app.netschool.service import TokenState
+
+        user = await users.save(mobile_user())
+        await service.check_mobile_token(user)
+        expiring = token_expiring_in(2)
+        holder["mobile"].token = expiring
+        holder["mobile"].refresh_error = RuntimeError("identity.ir-tech.ru отказал")
+
+        check = await service.check_mobile_token(user)
+
+        assert (check.state, check.expires_at) == (TokenState.EXPIRING, expiring.expires_at)
+
+    async def test_renewal_that_does_not_extend_is_not_renewal(self, service, holder, users):
+        from app.netschool.service import TokenState
+
+        user = await users.save(mobile_user())
+        await service.check_mobile_token(user)
+        holder["mobile"].token = token_expiring_in(2)
+        holder["mobile"].refresh_result = token_expiring_in(0)  # expires_in не пришёл
+
+        assert (await service.check_mobile_token(user)).state is TokenState.EXPIRING
+
+    async def test_web_mode_and_tokenless_client_have_nothing_to_check(self, service, holder, users):
+        assert await service.check_mobile_token(make_user()) is None
+        user = await users.save(mobile_user())
+        assert await service.check_mobile_token(user) is None  # у заглушки токена нет
+
+    def test_warning_text(self):
+        from app.domain import formatting
+
+        text = formatting.token_expiring(dt.datetime(2026, 10, 12, 21, 30, tzinfo=dt.timezone.utc))
+        assert "до 13.10.2026" in text  # по Москве уже следующий день
+        assert "/login" in text and "/changeapi" in text
+
+
+class TestTokenWarning:
+    @pytest.fixture
+    def clock(self):
+        class Clock:
+            now = 1000.0
+
+            def __call__(self):
+                return self.now
+
+        return Clock()
+
+    @pytest.fixture
+    def make_watcher(self, users, marks, clock):
+        from tests.test_watcher import FakeDiary, FakeNotifier
+        from app.notifications.watcher import UserWatcher
+
+        diary, notifier = FakeDiary(), FakeNotifier()
+
+        def build():
+            return UserWatcher(1, users=users, state=marks, diary=diary, notifier=notifier, clock=clock)
+
+        return build, diary, notifier
+
+    @staticmethod
+    def expiring():
+        from app.netschool.service import TokenCheck, TokenState
+
+        return TokenCheck(TokenState.EXPIRING, dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=2))
+
+    async def test_warning_is_sent_once(self, users, make_watcher, clock):
+        from app.notifications.watcher import TOKEN_CHECK_INTERVAL
+
+        build, diary, notifier = make_watcher
+        await users.save(mobile_user())
+        diary.token_check = self.expiring()
+        watcher = build()
+
+        await watcher.run_once()
+        assert len(notifier.token_warnings) == 1
+
+        for _ in range(3):
+            clock.now += TOKEN_CHECK_INTERVAL
+            await watcher.run_once()
+        assert diary.token_checks == 4 and len(notifier.token_warnings) == 1
+
+    async def test_warning_survives_restart(self, users, make_watcher, clock):
+        build, diary, notifier = make_watcher
+        await users.save(mobile_user())
+        diary.token_check = self.expiring()
+
+        await build().run_once()
+        await build().run_once()  # новый watcher — как после перезапуска бота
+
+        assert len(notifier.token_warnings) == 1
+
+    async def test_token_is_checked_a_few_times_a_day_not_every_pass(self, users, make_watcher, clock):
+        build, diary, notifier = make_watcher
+        await users.save(mobile_user())
+        diary.token_check = self.expiring()
+        watcher = build()
+
+        for _ in range(5):
+            clock.now += 300
+            await watcher.run_once()
+
+        assert diary.token_checks == 1
+
+    async def test_renewed_token_sends_no_warning(self, users, make_watcher):
+        from app.netschool.service import TokenCheck, TokenState
+
+        build, diary, notifier = make_watcher
+        await users.save(mobile_user())
+        diary.token_check = TokenCheck(TokenState.RENEWED, dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=60))
+
+        await build().run_once()
+
+        assert notifier.token_warnings == []
+
+    async def test_new_token_rearms_the_warning(self, users, marks, make_watcher, clock):
+        from app.netschool.service import TokenCheck, TokenState
+        from app.notifications.watcher import TOKEN_CHECK_INTERVAL
+
+        build, diary, notifier = make_watcher
+        await users.save(mobile_user())
+        watcher = build()
+        diary.token_check = self.expiring()
+        await watcher.run_once()
+        assert await marks.token_warned_at(1) is not None
+
+        # Вошли заново: токен свежий, отметка снимается…
+        clock.now += TOKEN_CHECK_INTERVAL
+        diary.token_check = TokenCheck(TokenState.OK, dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=60))
+        await watcher.run_once()
+        assert await marks.token_warned_at(1) is None
+
+        # …и через 57 дней предупреждение снова придёт.
+        clock.now += TOKEN_CHECK_INTERVAL
+        diary.token_check = self.expiring()
+        await watcher.run_once()
+        assert len(notifier.token_warnings) == 2
+
+    async def test_quiet_hours_postpone_the_warning(self, users, make_watcher, clock, monkeypatch):
+        from app.domain.models import QuietHours
+        from app.notifications.watcher import TOKEN_CHECK_INTERVAL
+
+        build, diary, notifier = make_watcher
+        await users.save(mobile_user(quiet_hours=QuietHours(dt.time(0, 0), dt.time(23, 59))))
+        diary.token_check = self.expiring()
+        watcher = build()
+
+        monkeypatch.setattr(watcher, "_is_quiet", lambda user: True)
+        await watcher.run_once()
+        assert notifier.token_warnings == []
+
+        monkeypatch.setattr(watcher, "_is_quiet", lambda user: False)
+        clock.now += TOKEN_CHECK_INTERVAL
+        await watcher.run_once()
+        assert len(notifier.token_warnings) == 1
+
+    async def test_check_failure_does_not_break_the_pass(self, users, make_watcher):
+        from tests.test_watcher import record
+
+        build, diary, notifier = make_watcher
+        await users.save(mobile_user())
+        diary.marks = [record(0)]
+        diary.token_error = RuntimeError("что-то пошло не так")
+
+        await build().run_once()
+
+        assert notifier.errors == [] and notifier.token_warnings == []
+
+    async def test_web_mode_is_not_checked(self, users, make_watcher):
+        build, diary, notifier = make_watcher
+        await users.save(make_user())
+        diary.token_check = self.expiring()
+
+        await build().run_once()
+
+        assert diary.token_checks == 0 and notifier.token_warnings == []
+
+    async def test_migration_adds_warning_column(self, tmp_path):
+        import aiosqlite
+
+        from app.db.migrations import MIGRATIONS, migrate
+
+        async with aiosqlite.connect(tmp_path / "old.sqlite3") as db:
+            for script in MIGRATIONS[:5]:
+                await db.executescript(script)
+            await db.execute("PRAGMA user_version = 5")
+            await db.execute("INSERT INTO users (telegram_id) VALUES (7)")
+            await db.commit()
+            await migrate(db)
+            cursor = await db.execute("SELECT token_warned_at FROM users WHERE telegram_id = 7")
+            assert (await cursor.fetchone())[0] is None

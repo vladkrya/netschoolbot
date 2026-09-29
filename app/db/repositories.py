@@ -361,6 +361,20 @@ class MarkStateRepository:
                     [(telegram_id, identity, int(identity in observed_new)) for identity in added],
                 )
 
+    async def token_warned_at(self, telegram_id: int) -> dt.datetime | None:
+        """Когда предупредили об истечении мобильного токена. None — не предупреждали."""
+        row = await self._db.fetch_one(
+            "SELECT token_warned_at FROM users WHERE telegram_id = ?", (telegram_id,)
+        )
+        return _parse_dt(row["token_warned_at"]) if row and row["token_warned_at"] else None
+
+    async def set_token_warned(self, telegram_id: int, when: dt.datetime | None) -> None:
+        """Отметить предупреждение (или сбросить его: `None`)."""
+        await self._db.execute(
+            "UPDATE users SET token_warned_at = ? WHERE telegram_id = ?",
+            (when.isoformat(timespec="seconds") if when else None, telegram_id),
+        )
+
     async def load_absences(self, telegram_id: int) -> set[str]:
         rows = await self._db.fetch_all(
             "SELECT identity FROM tracked_absences WHERE telegram_id = ?", (telegram_id,)

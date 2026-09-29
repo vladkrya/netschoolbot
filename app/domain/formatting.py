@@ -120,6 +120,23 @@ def absences_digest(items: list[AbsenceRecord]) -> str:
     return "\n".join(lines)
 
 
+def token_expiring(expires_at: dt.datetime) -> str:
+    """Предупреждение: мобильный доступ скоро истечёт, автоматически продлить не вышло."""
+    moment = expires_at
+    if moment.tzinfo is not None:
+        moment = moment.astimezone(dt.timezone(dt.timedelta(hours=3)))
+    return "\n".join(
+        [
+            "⏳ <b>Мобильный доступ скоро истечёт</b>",
+            "",
+            f"Он действует до {moment:%d.%m.%Y}, продлить его автоматически не получилось. "
+            "Чтобы уведомления не прервались, войдите заново: /login.",
+            "",
+            "Или переключитесь на веб-API: /changeapi.",
+        ]
+    )
+
+
 def published_label(item: HomeworkRecord) -> str:
     """` · опубл. 29.09 09:34` — только в мобильном API, где время известно."""
     if item.published_at is None:

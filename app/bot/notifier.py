@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import asyncio
+import datetime as dt
 import logging
 
 from aiogram import Bot
@@ -74,6 +75,9 @@ class TelegramNotifier:
             "Отметки посещаемости",
             ", ".join(sorted({item.subject for item in items})[:4]),
         )
+
+    async def send_token_expiring(self, user: User, expires_at: dt.datetime) -> None:
+        await self._send(user, formatting.token_expiring(expires_at))
 
     async def _push_notify(self, user: User, title: str, body: str) -> None:
         """Отправить push, не давая его сбою повлиять на Telegram."""

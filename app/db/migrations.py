@@ -154,6 +154,11 @@ MIGRATIONS: list[str] = [
         PRIMARY KEY (telegram_id, identity)
     );
     """,
+    # 6 — когда пользователю сказали, что мобильный токен скоро истечёт.
+    # NULL — не предупреждали (или токен с тех пор продлён/выдан заново).
+    """
+    ALTER TABLE users ADD COLUMN token_warned_at TEXT;
+    """,
 ]
 
 
