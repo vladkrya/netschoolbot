@@ -113,13 +113,14 @@ def miniapp(url: str) -> InlineKeyboardMarkup:
     )
 
 
-def demo(url: str, direct_url: str) -> InlineKeyboardMarkup:
-    """Демо в Telegram и два адреса сайта: через Cloudflare и напрямую."""
+def demo(proxied_url: str, direct_url: str) -> InlineKeyboardMarkup:
+    """Оба адреса демо доступны как мини-приложение и как обычный сайт."""
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="✨ Открыть демо", web_app=WebAppInfo(url=url))],
-            [InlineKeyboardButton(text="☁️ Сайт через Cloudflare", url=url)],
+            [InlineKeyboardButton(text="✨ Миниапп напрямую", web_app=WebAppInfo(url=direct_url))],
+            [InlineKeyboardButton(text="☁️ Миниапп через Cloudflare", web_app=WebAppInfo(url=proxied_url))],
             [InlineKeyboardButton(text="🌐 Сайт напрямую", url=direct_url)],
+            [InlineKeyboardButton(text="☁️ Сайт через Cloudflare", url=proxied_url)],
         ]
     )
 
