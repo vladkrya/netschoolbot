@@ -126,9 +126,9 @@ class NetSchoolSettings:
 
     def proxy_for(self, url: str) -> str | None:
         for host, proxy in self.proxy_hosts.items():
-            if host in url:
+            if host != "*" and host in url:
                 return proxy or None
-        return None
+        return self.proxy_hosts.get("*") or None
 
 
 @dataclass(frozen=True, slots=True)
@@ -159,7 +159,7 @@ class Settings:
 
 
 def _parse_proxy_hosts(raw: str, volgograd_proxy: str) -> dict[str, str]:
-    """`host=proxy,host2=proxy2` -> dict. Пусто — берём исторический дефолт."""
+    """`host=proxy,*=proxy` -> dict; `*` задаёт прокси для остальных хостов."""
     if not raw:
         return {"sgo.volganet.ru": volgograd_proxy} if volgograd_proxy else {}
     hosts: dict[str, str] = {}

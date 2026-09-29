@@ -100,6 +100,16 @@ class TestProxyHosts:
         settings = load_settings()
         assert settings.netschool.proxy_for("https://a.ru/x") == "socks5://1:1080"
 
+    def test_wildcard_proxy_with_host_override(self, monkeypatch):
+        monkeypatch.setenv("NETSCHOOL_BOT_TOKEN", "123:abc")
+        monkeypatch.setenv(
+            "NETSCHOOL_PROXY_HOSTS",
+            "*=socks5://127.0.0.1:1082,sgo.volganet.ru=socks5://127.0.0.1:1080",
+        )
+        settings = load_settings()
+        assert settings.netschool.proxy_for("https://asurso.ru") == "socks5://127.0.0.1:1082"
+        assert settings.netschool.proxy_for("https://sgo.volganet.ru") == "socks5://127.0.0.1:1080"
+
     def test_empty_host_is_skipped(self, monkeypatch):
         monkeypatch.setenv("NETSCHOOL_BOT_TOKEN", "123:abc")
         monkeypatch.setenv("NETSCHOOL_PROXY_HOSTS", "=socks5://1:1080")

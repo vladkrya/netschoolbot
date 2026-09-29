@@ -1,0 +1,15 @@
+[Unit]
+Description=SOCKS tunnel to Yandex VM for NetSchool
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/ssh -N -T -D 127.0.0.1:1082 -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o ExitOnForwardFailure=yes -o ConnectTimeout=10 -o ServerAliveInterval=20 -o ServerAliveCountMax=3 -i /root/.ssh/asurso_proxy_ed25519 vlad@yavds.ikrya.ru
+Restart=always
+RestartSec=10
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
