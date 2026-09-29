@@ -16,7 +16,7 @@ from aiohttp import web
 
 from ..context import AppContext
 from ..domain import formatting
-from ..domain.models import User, normalize
+from ..domain.models import ApiMode, User, normalize
 from ..domain.records import DiaryDay, clean_content
 from ..netschool.errors import NetSchoolError, Reason
 from ..domain.periods import quarter_of, quarters
@@ -183,7 +183,12 @@ async def _teachers(app: AppContext, user: User, days: list[DiaryDay]) -> dict[s
     Дневник учителя не отдаёт — только карточка задания, по запросу на
     предмет. Учителя меняются редко, поэтому однажды найденный хранится,
     а спрашиваются только новые предметы.
+
+    В мобильном режиме учитель уже лежит в самом уроке (`classmeetings`), и
+    ходить за карточками заданий не нужно.
     """
+    if user.effective_api_mode is ApiMode.MOBILE:
+        return {}
     cached = await app.cache.get(user.telegram_id, "teachers")
     known: dict[str, str] = dict(cached[0]) if cached else {}
     wanted: dict[str, int] = {}

@@ -19,6 +19,7 @@ from app.netschool.service import DiaryService
 from app.netschool.session import SessionPool
 from tests.test_api_mode import FakeMobile, MOBILE_SETTINGS  # noqa: F401
 from tests.test_session_pool import SETTINGS, FakeClient, make_user, reset_clients  # noqa: F401
+from tests.test_web import client, app_context  # noqa: F401 — фикстуры
 
 
 class MobileClient(FakeMobile):
@@ -138,3 +139,84 @@ class TestRecentEvents:
         holder["mobile"].events_payload = {"events": [None, {"type": "Other"}, {"type": "ResultInfo"}]}
         events = await service.fetch_recent_events(user)
         assert events.keys == frozenset() and events.marks == 0
+
+
+class TestTeacherInLesson:
+    """Мобильный режим: учитель, кабинет и тема приходят вместе с уроком."""
+
+    @staticmethod
+    def _mobile_lesson():
+        from types import SimpleNamespace
+
+        return SimpleNamespace(
+            day=dt.date(2026, 9, 28),
+            lessons=[
+                SimpleNamespace(
+                    subject="Алгебра", number=2, start=dt.time(9, 20), end=dt.time(10, 0),
+                    room="14", teacher="Петрова А. И.", topic="Дроби", absence="Б",
+                    assignments=[SimpleNamespace(id=42, kind="ДЗ", content="Стр. 3", mark=None, weight=1,
+                                                 comment="", deadline=None, attachments=[])],
+                )
+            ],
+        )
+
+    def test_mapping_keeps_teacher_room_topic_and_absence(self):
+        from app.netschool.mapping import diary_days
+
+        (day,) = diary_days([self._mobile_lesson()], today=dt.date(2026, 9, 28))
+        lesson = day.lessons[0]
+        assert (lesson.teacher, lesson.room, lesson.topic, lesson.absence) == (
+            "Петрова А. И.", "14", "Дроби", "Б",
+        )
+
+    async def test_mobile_mode_does_not_ask_for_teachers(self, client, app_context, users):
+        from tests.test_web import BASE
+
+        user = await users.save(mobile_user())
+        token = await app_context.miniapp.issue_token(user.telegram_id)
+        asked = []
+
+        async def fetch_teachers(user, wanted):
+            asked.append(wanted)
+            return {subject: "Из карточки" for subject in wanted}
+
+        async def fetch_diary(user, **kwargs):
+            from app.netschool.mapping import diary_days
+
+            return diary_days([self._mobile_lesson()], today=dt.date(2026, 9, 28))
+
+        app_context.diary.fetch_teachers = fetch_teachers
+        app_context.diary.fetch_diary = fetch_diary
+        response = await client.get(f"{BASE}/api/diary", params={"token": token})
+
+        lesson = (await response.json())["data"]["days"][0]["lessons"][0]
+        assert asked == []
+        assert (lesson["teacher"], lesson["room"], lesson["topic"], lesson["absence"]) == (
+            "Петрова А. И.", "14", "Дроби", "Б",
+        )
+        # Кэш учителей тоже не заводим: он нужен только веб-режиму.
+        assert await app_context.cache.get(user.telegram_id, "teachers") is None
+
+    async def test_web_mode_still_asks_for_teachers(self, client, app_context, users):
+        from tests.test_web import BASE
+
+        user = await users.save(make_user())
+        token = await app_context.miniapp.issue_token(user.telegram_id)
+        asked = []
+
+        async def fetch_teachers(user, wanted):
+            asked.append(wanted)
+            return {subject: "Из карточки" for subject in wanted}
+
+        async def fetch_diary(user, **kwargs):
+            from app.domain.records import DiaryDay, Lesson
+
+            return [DiaryDay(day=dt.date(2026, 9, 28),
+                             lessons=[Lesson(number=1, subject="Алгебра", assignment_ids=(42,))])]
+
+        app_context.diary.fetch_teachers = fetch_teachers
+        app_context.diary.fetch_diary = fetch_diary
+        response = await client.get(f"{BASE}/api/diary", params={"token": token})
+
+        assert asked == [{"Алгебра": 42}]
+        assert (await response.json())["data"]["days"][0]["lessons"][0]["teacher"] == "Из карточки"
