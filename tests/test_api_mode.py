@@ -153,10 +153,11 @@ def test_homework_keeps_publication_time():
             SimpleNamespace(
                 subject="Русский язык",
                 number=1,
+                topic="Союзы",
                 assignments=[
                     SimpleNamespace(
                         kind="Домашнее задание", content="Стр. 78", deadline=dt.date(2026, 9, 29),
-                        attachments=[], published_at=published,
+                        attachments=[], published_at=published, weight=2,
                     )
                 ],
             )
@@ -164,6 +165,7 @@ def test_homework_keeps_publication_time():
     )
     (record,) = homework_from_day(day, today=dt.date(2026, 9, 29))
     assert record.published_at == published
+    assert (record.weight, record.topic) == (2, "Союзы")
     # Время публикации не входит в ключ: смена API не делает задание «новым».
     assert record.identity == replace(record, published_at=None).identity
 

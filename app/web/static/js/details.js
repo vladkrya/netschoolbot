@@ -100,6 +100,7 @@ export function openLesson(lesson, iso) {
 }
 
 export function openHomework(item, topic = '') {
+  topic = topic || item.topic || '';
   const body = pushScreen('Домашнее задание', forDate(item.date));
   const observed = observedTime(item.observed_at);
   const published = observedTime(item.published_at);
@@ -109,6 +110,7 @@ export function openHomework(item, topic = '') {
       ${topic ? `<div class="detail-label">Тема урока</div><div class="detail-text">${esc(topic)}</div>` : ''}
       <div class="detail-row"><span class="detail-label">Задание</span>${item.type ? `<span class="muted small">${esc(item.type)}</span>` : ''}</div>
       <div class="detail-text">${escRich(item.text) || '<span class="muted">—Не указано—</span>'}</div>
+      ${item.weight ? `<div class="detail-row"><span class="detail-label">Вес задания</span><span class="muted small">${esc(String(item.weight))}</span></div>` : ''}
       ${published ? `<div class="detail-label">Опубликовано учителем</div><div class="detail-text">${esc(published)}</div>` : ''}
       ${observed ? `<div class="detail-label">Впервые замечено ботом</div><div class="detail-text">${esc(observed)}</div>` : ''}
       ${attachmentsHtml(item.attachments)}

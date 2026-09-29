@@ -154,6 +154,12 @@ class TestPageLinksResolve:
             response = await client.get(link, params={"token": token})
             assert response.status == 200, f"{link} отдал {response.status}"
 
+    async def test_static_is_revalidated(self, client):
+        # Модули импортируются без версии в адресе — без этого заголовка
+        # WebView показывал старые экраны после обновления.
+        response = await client.get(f"{BASE}/static/js/details.js")
+        assert response.headers["Cache-Control"] == "no-cache"
+
     async def test_stylesheet_and_script_have_content(self, client, token):
         for asset in ("app.css", "js/app.js"):
             response = await client.get(f"{BASE}/static/{asset}")
@@ -240,13 +246,20 @@ class TestData:
     async def test_homework(self, client, app_context, token):
         from app.domain.records import HomeworkRecord
 
-        item = HomeworkRecord("Алгебра", dt.date(2026, 3, 3), "ДЗ", "Упр. 1")
+        item = HomeworkRecord(
+            "Алгебра", dt.date(2026, 3, 3), "ДЗ", "Упр. 1", weight=2, topic="Дроби",
+            published_at=dt.datetime(2026, 3, 1, 9, 30, tzinfo=dt.timezone.utc),
+        )
         app_context.diary.homework = [item]
         await app_context.state.replace_homework(1, {item.identity}, {item.identity})
         response = await client.get(f"{BASE}/api/homework", params={"token": token})
         items = (await response.json())["data"]["items"]
         assert items[0]["subject"] == "Алгебра"
         assert items[0]["observed_at"].endswith("Z")
+        # Экран «Домашнее задание»: вес, тема урока и время публикации.
+        assert items[0]["weight"] == 2
+        assert items[0]["topic"] == "Дроби"
+        assert items[0]["published_at"] == "2026-03-01T09:30:00+00:00"
 
 
 class TestNewFeatures:

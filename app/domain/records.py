@@ -121,6 +121,9 @@ class HomeworkRecord:
     # Когда учитель опубликовал задание. Есть только в мобильном API; в
     # ключ не входит, чтобы смена режима не выдала старые задания за новые.
     published_at: dt.datetime | None = None
+    # Вес задания и тема урока — для экрана задания; в ключ не входят.
+    weight: int = 1
+    topic: str = ""
 
     @property
     def identity(self) -> str:

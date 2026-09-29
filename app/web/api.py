@@ -172,6 +172,8 @@ def _homework_to_json(item, observed: dict[str, str] | None = None) -> dict:
         "attachments": [{"id": a.id, "name": a.name} for a in item.attachments],
         "observed_at": (observed or {}).get(item.identity, ""),
         "published_at": item.published_at.isoformat() if item.published_at else "",
+        "weight": item.weight,
+        "topic": item.topic,
     }
 
 
@@ -400,15 +402,10 @@ async def homework(request: web.Request) -> web.Response:
         items = await app.diary.fetch_homework(user, weeks_back=0, weeks_forward=2)
         observed = await app.state.observed_homework(user.telegram_id)
         return {
+            # Та же форма, что у заданий внутри урока: экран задания один,
+            # и раньше отсюда не доходили тип, вес, тема и время публикации.
             "items": [
-                {
-                    "date": item.due_date.isoformat(),
-                    "label": formatting.date_label(item.due_date),
-                    "subject": item.subject,
-                    "text": item.text,
-                    "attachments": [{"id": a.id, "name": a.name} for a in item.attachments],
-                    "observed_at": observed.get(item.identity, ""),
-                }
+                {**_homework_to_json(item, observed), "label": formatting.date_label(item.due_date)}
                 for item in sorted(items, key=lambda h: (h.due_date, h.subject))
             ]
         }

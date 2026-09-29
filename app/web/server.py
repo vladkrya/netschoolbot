@@ -52,6 +52,7 @@ def create_app(context: AppContext, bot=None) -> web.Application:
     inner.add_routes(api.routes)
     inner.add_routes(page_routes)
     inner.router.add_static("/static", STATIC_DIR, name="static")
+    inner.on_response_prepare.append(_revalidate_static)
 
     prefix = context.settings.web.miniapp_path.rstrip("/")
     if not prefix:
@@ -67,6 +68,17 @@ def create_app(context: AppContext, bot=None) -> web.Application:
     # которым незачем знать про префикс приложения.
     outer.router.add_get("/health", health)
     return outer
+
+
+async def _revalidate_static(request: web.Request, response: web.StreamResponse) -> None:
+    """Статику браузер обязан перепроверять.
+
+    Версия в адресе есть только у app.js, а остальные модули он импортирует
+    без неё. Без заголовка WebView Telegram брал их из своего кэша, и после
+    обновления экраны оставались старыми. Перепроверка стоит ответа 304.
+    """
+    if "/static/" in request.path:
+        response.headers["Cache-Control"] = "no-cache"
 
 
 def _make_redirect_middleware(prefix: str):

@@ -108,6 +108,7 @@ def homework_from_day(day: Any, *, today: dt.date | None = None) -> list[Homewor
     for lesson in _attr(day, "lessons", []) or []:
         subject = str(_attr(lesson, "subject", "") or "—")
         lesson_number = _attr(lesson, "number")
+        topic = str(_attr(lesson, "topic", "") or _attr(lesson, "lessonTopic", "") or "")
 
         for index, assignment in enumerate(_attr(lesson, "assignments", []) or []):
             raw_content = _attr(assignment, "content", "") or ""
@@ -133,6 +134,8 @@ def homework_from_day(day: Any, *, today: dt.date | None = None) -> list[Homewor
                     lesson_number=lesson_number or (index + 1),
                     attachments=attachments,
                     published_at=_as_datetime(_attr(assignment, "published_at")),
+                    weight=_safe_int(_attr(assignment, "weight")) or 1,
+                    topic=topic,
                 )
             )
     return records
