@@ -610,3 +610,26 @@ class TestRecentEvents:
         for _ in range(3):
             await watcher.run_once()
         assert diary.diary_calls == 3
+
+
+class TestApiSwitchDoesNotFakeDeletions:
+    async def test_stale_keys_after_switch_never_become_deleted_marks(
+        self, users, marks, watcher, diary, notifier
+    ):
+        """Старые ключи от прежнего API исчезают при молчаливой пересборке.
+
+        Раньше они копили пропажи, и после нескольких быстрых проходов
+        (например, при перезапусках бота) приходило «Оценка удалена» по
+        оценкам, которые на месте.
+        """
+        await users.save(make_user())
+        stale = [record(i, subject=f"Старый {i}") for i in range(6)]
+        await marks.replace_marks(1, {r.identity: TrackedMark(r, missing_streak=2) for r in stale})
+        await marks.mark_baseline_pending(1, True)
+        diary.marks = [record(i, subject=f"Новый {i}") for i in range(6)]
+
+        for _ in range(MISSING_STREAK_FOR_DELETE + 2):
+            await watcher.run_once()
+
+        assert notifier.mark_events == []
+        assert set((await marks.load_marks(1))) == {r.identity for r in diary.marks}

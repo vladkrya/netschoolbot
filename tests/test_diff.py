@@ -214,3 +214,16 @@ class TestMarkParsing:
     )
     def test_numeric_mark(self, raw, expected):
         assert mark(value=raw).numeric_mark == expected
+
+
+def test_first_run_drops_state_that_is_gone_from_the_new_answer():
+    """Смена API: ключи оценок другие, старые записи не должны дожить до «удалений»."""
+    legacy = {
+        "web-key": TrackedMark(record=mark("Химия", value="4"), missing_streak=2),
+    }
+    current = [mark("Физика", value="5")]
+
+    result = diff_marks(legacy, current, filters=Filters(), first_run=True)
+
+    assert result.events == [] and result.pending_deletes == []
+    assert set(result.tracked) == {current[0].identity}
