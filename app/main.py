@@ -39,6 +39,7 @@ async def run_import(settings: Settings, source: str) -> int:
     """Перенос данных из старого проекта."""
     from pathlib import Path
 
+    from .context import password_cipher
     from .db.engine import Database
     from .db.import_legacy import LegacyImporter
     from .db.repositories import (
@@ -54,7 +55,7 @@ async def run_import(settings: Settings, source: str) -> int:
     try:
         importer = LegacyImporter(
             Path(source),
-            users=UserRepository(db),
+            users=UserRepository(db, password_cipher(settings)),
             state=MarkStateRepository(db),
             sessions=SessionRepository(db),
             miniapp=MiniappRepository(db),

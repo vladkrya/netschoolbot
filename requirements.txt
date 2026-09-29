@@ -24,5 +24,8 @@ Pillow
 # Web push
 pywebpush>=2.0.3
 
+# Шифрование паролей в базе
+cryptography>=42.0
+
 # Конфигурация
 python-dotenv>=1.0.0

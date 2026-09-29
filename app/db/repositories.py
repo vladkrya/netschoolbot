@@ -31,6 +31,7 @@ from ..domain.models import (
     normalize,
 )
 from ..domain.records import MarkRecord, TrackedMark
+from .crypto import NO_ENCRYPTION, PasswordCipher
 from .engine import Database
 
 logger = logging.getLogger("netschoolbot.db")
@@ -56,8 +57,9 @@ def _parse_dt(value: str | None) -> dt.datetime | None:
 
 
 class UserRepository:
-    def __init__(self, db: Database) -> None:
+    def __init__(self, db: Database, cipher: PasswordCipher = NO_ENCRYPTION) -> None:
         self._db = db
+        self._cipher = cipher
 
     async def get(self, telegram_id: int) -> User | None:
         row = await self._db.fetch_one(
@@ -141,7 +143,7 @@ class UserRepository:
                     user.school.name,
                     user.credentials.login_type.value,
                     user.credentials.login,
-                    user.credentials.password,
+                    self._cipher.encrypt(user.credentials.password),
                     user.student_name,
                     user.selected_student_id,
                     clamp_interval(user.check_interval),
@@ -160,6 +162,26 @@ class UserRepository:
             await self._replace_students(db, user)
             await self._replace_filters(db, user)
         return replace(user, updated_at=dt.datetime.fromisoformat(now))
+
+    async def encrypt_stored_passwords(self) -> int:
+        """Зашифровать пароли, сохранённые открытым текстом или старым ключом.
+
+        Возвращает число переписанных записей. Без ключа ничего не делает.
+        """
+        if not self._cipher.enabled:
+            return 0
+        rows = await self._db.fetch_all(
+            "SELECT telegram_id, password FROM users WHERE password != ''"
+        )
+        updates = [
+            (self._cipher.rewrite(row["password"]), row["telegram_id"])
+            for row in rows
+            if self._cipher.needs_rewrite(row["password"])
+        ]
+        await self._db.execute_many(
+            "UPDATE users SET password = ? WHERE telegram_id = ?", updates
+        )
+        return len(updates)
 
     async def delete(self, telegram_id: int) -> None:
         """Полное удаление пользователя. Связанные записи уходят по CASCADE."""
@@ -207,7 +229,7 @@ class UserRepository:
             credentials=Credentials(
                 login_type=LoginType.parse(row["login_type"]),
                 login=row["login"],
-                password=row["password"],
+                password=self._cipher.decrypt(row["password"]),
             ),
             student_name=row["student_name"],
             selected_student_id=row["selected_student_id"],

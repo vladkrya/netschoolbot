@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 
+from .db.crypto import PasswordCipher
 from .db.engine import Database
 from .db.repositories import (
     CacheRepository,
@@ -59,8 +60,11 @@ class AppContext:
         db = Database(settings.db_path)
         await db.connect()
 
-        users = UserRepository(db)
+        users = UserRepository(db, password_cipher(settings))
         await _import_legacy_if_empty(settings, db, users)
+        rewritten = await users.encrypt_stored_passwords()
+        if rewritten:
+            logger.info("Зашифровано паролей в базе: %s", rewritten)
         sessions = SessionRepository(db)
         pool = SessionPool(settings.netschool, sessions)
         state = MarkStateRepository(db)
@@ -87,6 +91,15 @@ class AppContext:
         await self.pool.close_all()
         await self.db.close()
         logger.info("Приложение остановлено")
+
+
+def password_cipher(settings: Settings) -> PasswordCipher:
+    cipher = PasswordCipher(settings.secret_key)
+    if not cipher.enabled:
+        logger.warning(
+            "NETSCHOOL_SECRET_KEY не задан — пароли хранятся в базе открытым текстом"
+        )
+    return cipher
 
 
 async def _import_legacy_if_empty(settings: Settings, db: Database, users: UserRepository) -> None:

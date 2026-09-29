@@ -143,6 +143,8 @@ class Settings:
     push: PushSettings
     netschool: NetSchoolSettings
     debug: bool
+    # Ключ(и) Fernet для паролей в базе, через запятую; пусто — без шифрования.
+    secret_key: str = ""
 
     @property
     def logs_dir(self) -> Path:
@@ -252,4 +254,5 @@ def load_settings(*, require_bot_token: bool = True) -> Settings:
             ),
         ),
         debug=_env_bool("DEBUG_MODE", False),
+        secret_key=_env("NETSCHOOL_SECRET_KEY"),
     )
