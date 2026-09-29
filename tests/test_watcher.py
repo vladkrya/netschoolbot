@@ -9,7 +9,7 @@ import datetime as dt
 
 import pytest
 
-from app.domain.models import MarkKind, QuietHours
+from app.domain.models import Credentials, LoginType, MarkKind, QuietHours
 from app.domain.records import MarkRecord, TrackedMark
 from app.netschool.errors import NetSchoolError, Reason
 from app.notifications.diff import MISSING_STREAK_FOR_DELETE
@@ -297,6 +297,13 @@ class TestPreferences:
 
 
 class TestErrors:
+    async def test_expired_gosuslugi_session_does_not_notify(self, users, watcher, diary, notifier):
+        await users.save(make_user(credentials=Credentials(login_type=LoginType.ESIA)))
+        diary.error = NetSchoolError(Reason.AUTH, "Сессия Госуслуг истекла. Войдите заново")
+        await watcher.run_once()
+        await watcher.run_once()
+        assert notifier.errors == []
+
     async def test_auth_error_reported_once(self, users, watcher, diary, notifier):
         await users.save(make_user())
         diary.error = NetSchoolError(Reason.AUTH, "войдите заново")

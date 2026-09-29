@@ -206,7 +206,11 @@ class UserWatcher:
             # Первое появление проблемы — сообщаем. Повторы молчат, иначе
             # недоступная школа шлёт сообщение каждые пять минут.
             self._reported_reason = error.reason
-            if error.reason.needs_relogin or not error.reason.is_retryable:
+            # Вход через Госуслуги требует действий пользователя. Фоновая
+            # проверка не должна снова писать об этом после каждого рестарта
+            # бота или перезапуска проверки; при ручном запросе ошибка видна.
+            esia_expired = user.credentials.login_type.is_gosuslugi and error.reason.needs_relogin
+            if not esia_expired and (error.reason.needs_relogin or not error.reason.is_retryable):
                 await self._notifier.send_error(user, error)
 
         if error.reason.needs_relogin:
