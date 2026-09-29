@@ -110,9 +110,9 @@ class UserRepository:
                     telegram_id, enabled, display_name, school_url, school_name,
                     login_type, login, password, student_name, selected_student_id,
                     check_interval, notify_grades, notify_changes, notify_deletes,
-                    notify_homework, notify_mail, weekly_summary,
+                    notify_homework, notify_mail, weekly_summary, notify_absences,
                     quiet_start, quiet_end, api_mode, updated_at
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(telegram_id) DO UPDATE SET
                     enabled = excluded.enabled,
                     display_name = excluded.display_name,
@@ -130,6 +130,7 @@ class UserRepository:
                     notify_homework = excluded.notify_homework,
                     notify_mail = excluded.notify_mail,
                     weekly_summary = excluded.weekly_summary,
+                    notify_absences = excluded.notify_absences,
                     quiet_start = excluded.quiet_start,
                     quiet_end = excluded.quiet_end,
                     api_mode = excluded.api_mode,
@@ -153,6 +154,7 @@ class UserRepository:
                     int(user.notifications.homework),
                     int(user.notifications.mail),
                     int(user.notifications.weekly_summary),
+                    int(user.notifications.absences),
                     user.quiet_hours.start.strftime("%H:%M") if user.quiet_hours.start else None,
                     user.quiet_hours.end.strftime("%H:%M") if user.quiet_hours.end else None,
                     user.api_mode.value,
@@ -244,6 +246,7 @@ class UserRepository:
                 homework=bool(row["notify_homework"]),
                 mail=bool(row["notify_mail"]),
                 weekly_summary=bool(row["weekly_summary"]),
+                absences=bool(row["notify_absences"]),
             ),
             filters=Filters(
                 exclude_titles=frozenset(
@@ -358,6 +361,31 @@ class MarkStateRepository:
                     [(telegram_id, identity, int(identity in observed_new)) for identity in added],
                 )
 
+    async def load_absences(self, telegram_id: int) -> set[str]:
+        rows = await self._db.fetch_all(
+            "SELECT identity FROM tracked_absences WHERE telegram_id = ?", (telegram_id,)
+        )
+        return {row["identity"] for row in rows}
+
+    async def replace_absences(self, telegram_id: int, identities: set[str]) -> None:
+        """Запомнить виденные отметки посещаемости; ушедшие из окна дневника забываются."""
+        async with self._db.transaction() as db:
+            cursor = await db.execute(
+                "SELECT identity FROM tracked_absences WHERE telegram_id = ?", (telegram_id,)
+            )
+            existing = {row[0] for row in await cursor.fetchall()}
+            removed, added = existing - identities, identities - existing
+            if removed:
+                await db.executemany(
+                    "DELETE FROM tracked_absences WHERE telegram_id = ? AND identity = ?",
+                    [(telegram_id, identity) for identity in removed],
+                )
+            if added:
+                await db.executemany(
+                    "INSERT INTO tracked_absences (telegram_id, identity) VALUES (?, ?)",
+                    [(telegram_id, identity) for identity in added],
+                )
+
     async def observed_homework(self, telegram_id: int) -> dict[str, str]:
         rows = await self._db.fetch_all(
             """SELECT identity, first_seen_at FROM tracked_homework
@@ -383,7 +411,7 @@ class MarkStateRepository:
     async def forget_all(self, telegram_id: int) -> None:
         """Сбросить слежение — например при смене школы или ученика."""
         async with self._db.transaction() as db:
-            for table in ("tracked_marks", "tracked_homework", "seen_mail"):
+            for table in ("tracked_marks", "tracked_homework", "seen_mail", "tracked_absences"):
                 await db.execute(f"DELETE FROM {table} WHERE telegram_id = ?", (telegram_id,))
 
 

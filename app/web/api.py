@@ -289,6 +289,8 @@ async def profile(request: web.Request) -> web.Response:
                     for s in user.available_students
                 ],
                 "notifications": asdict(user.notifications),
+                # Тумблер пропусков показывается только там, где есть отметки посещаемости.
+                "api_mode": user.effective_api_mode.value,
                 "interval_minutes": user.check_interval // 60,
                 "quiet_hours": user.quiet_hours.as_text(),
                 "enabled": user.enabled,
@@ -343,6 +345,8 @@ async def marks(request: web.Request) -> web.Response:
         by_subject: dict[str, list] = {}
         lessons: dict[str, dict[str, dict[str, int]]] = {}
         teachers: dict[str, dict[str, int]] = {}
+        # Отметки посещаемости: {предмет: {четверть: {код: сколько}}}.
+        absences: dict[str, dict[str, dict[str, int]]] = {}
         for day in days:
             key = quarter_of(day.day)
             for record in day.marks:
@@ -354,6 +358,10 @@ async def marks(request: web.Request) -> web.Response:
                 counts["total"] += 1
                 if day.day <= today:
                     counts["done"] += 1
+                code = (lesson.absence or "").strip()
+                if code:
+                    counts_by_code = absences.setdefault(lesson.subject, {}).setdefault(key or "", {})
+                    counts_by_code[code] = counts_by_code.get(code, 0) + 1
                 if lesson.teacher:
                     seen = teachers.setdefault(lesson.subject, {})
                     seen[lesson.teacher] = seen.get(lesson.teacher, 0) + 1
@@ -382,6 +390,7 @@ async def marks(request: web.Request) -> web.Response:
                         _mark_to_json(r) for r in sorted(items, key=lambda r: r.date)
                     ],
                     "lessons": lessons.get(subject, {}),
+                    "absences": absences.get(subject, {}),
                     "totals": totals_by_name.get(normalize(subject), (None, None))[1],
                     "teacher": (
                         max(teacher_counts, key=teacher_counts.get)
@@ -552,7 +561,9 @@ async def switch_student(request: web.Request) -> web.Response:
     return web.json_response({"ok": True, "data": {"name": student.name}})
 
 
-NOTIFICATION_KEYS = ("grades", "changes", "deletes", "homework", "mail", "weekly_summary")
+NOTIFICATION_KEYS = (
+    "grades", "changes", "deletes", "homework", "mail", "weekly_summary", "absences",
+)
 
 
 @routes.post("/api/settings/notifications")

@@ -42,6 +42,7 @@ TOGGLES = {
     "homework": "homework",
     "mail": "mail",
     "weekly": "weekly_summary",
+    "absences": "absences",
 }
 
 

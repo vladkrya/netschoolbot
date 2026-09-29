@@ -464,3 +464,220 @@ class TestSubjectStats:
         for params in ({"subject": "Алгебра"}, {"quarter": "q1"}, {"subject": "Алгебра", "quarter": "q9"}):
             response = await client.get(f"{BASE}/api/subject", params={"token": token, **params})
             assert response.status == 400
+
+
+class TestAbsences:
+    """Отметки посещаемости: сводка, уведомление один раз, только мобильный режим."""
+
+    TODAY = dt.date(2026, 9, 29)
+
+    @pytest.fixture(autouse=True)
+    def _today(self, monkeypatch):
+        # Уведомляем только о свежих уроках, поэтому «сегодня» фиксируем.
+        monkeypatch.setattr("app.notifications.watcher.msk_today", lambda: self.TODAY)
+
+    @staticmethod
+    def _user(**kwargs):
+        from app.domain.models import NotificationPrefs
+
+        kwargs.setdefault("notifications", NotificationPrefs(absences=True))
+        return mobile_user(**kwargs)
+
+    @staticmethod
+    def _watcher(users, marks, diary, notifier):
+        from app.notifications.watcher import UserWatcher
+
+        return UserWatcher(1, users=users, state=marks, diary=diary, notifier=notifier)
+
+    def test_absences_are_read_from_lessons(self):
+        from app.domain.records import DiaryDay, Lesson
+        from app.netschool.mapping import absences_from_days
+
+        days = [DiaryDay(day=dt.date(2026, 9, 28), lessons=[
+            Lesson(number=1, subject="Алгебра", absence="Б"),
+            Lesson(number=2, subject="История", absence=""),
+            Lesson(number=3, subject="Физкультура", absence=" ОП "),
+        ])]
+
+        records = absences_from_days(days)
+
+        assert [(r.subject, r.lesson_number, r.code) for r in records] == [
+            ("Алгебра", 1, "Б"), ("Физкультура", 3, "ОП"),
+        ]
+        assert [r.label for r in records] == ["Пропуск по болезни", "Опоздал"]
+        # Ключ различает уроки и отметки: иначе два пропуска за день слились бы.
+        assert len({r.identity for r in records}) == 2
+
+    def test_unknown_code_is_shown_as_is(self):
+        from app.domain.records import absence_label
+
+        assert absence_label("XYZ") == "XYZ"
+
+    def test_digest_text(self):
+        from app.domain import formatting
+        from app.domain.records import AbsenceRecord
+
+        text = formatting.absences_digest([
+            AbsenceRecord("Алгебра", dt.date(2026, 9, 28), 2, "Б"),
+            AbsenceRecord("История", dt.date(2026, 9, 27), None, "Н"),
+        ])
+        assert "Новые отметки посещаемости</b> (2)" in text
+        assert "27.09 — История: Пропуск" in text
+        assert "28.09 — Алгебра, 2 урок: Пропуск по болезни" in text
+
+    async def test_new_absence_is_notified_exactly_once(self, users, marks):
+        from tests.test_watcher import FakeDiary, FakeNotifier, record
+
+        diary, notifier = FakeDiary(), FakeNotifier()
+        await users.save(self._user())
+        watcher = self._watcher(users, marks, diary, notifier)
+        diary.marks = [record(0)]
+        diary.events = None  # ленты событий нет — дневник читается на каждом проходе
+
+        await watcher.run_once()  # первая проверка молчит и запоминает
+        assert notifier.absences == []
+
+        diary.absent = [(dt.date(2026, 9, 28), "Алгебра", 2, "Б")]
+        await watcher.run_once()
+        assert [(a.subject, a.code) for a in notifier.absences] == [("Алгебра", "Б")]
+
+        await watcher.run_once()
+        await watcher.run_once()
+        assert len(notifier.absences) == 1
+
+        diary.absent.append((dt.date(2026, 9, 29), "История", 3, "Н"))
+        await watcher.run_once()
+        assert [a.subject for a in notifier.absences] == ["Алгебра", "История"]
+
+    async def test_switch_off_records_but_stays_silent(self, users, marks):
+        from app.domain.models import NotificationPrefs
+        from tests.test_watcher import FakeDiary, FakeNotifier, record
+
+        diary, notifier = FakeDiary(), FakeNotifier()
+        user = await users.save(self._user(notifications=NotificationPrefs(absences=False)))
+        watcher = self._watcher(users, marks, diary, notifier)
+        diary.marks = [record(0)]
+        await watcher.run_once()
+
+        diary.absent = [(dt.date(2026, 9, 28), "Алгебра", 2, "Б")]
+        await watcher.run_once()
+        assert notifier.absences == []
+
+        # Включили позже — отметка уже виденная, старое за новое не выдаём.
+        await users.save(replace(user, notifications=NotificationPrefs(absences=True)))
+        await watcher.run_once()
+        assert notifier.absences == []
+
+    async def test_old_absences_are_not_announced(self, users, marks):
+        from tests.test_watcher import FakeDiary, FakeNotifier, record
+
+        diary, notifier = FakeDiary(), FakeNotifier()
+        await users.save(self._user())
+        watcher = self._watcher(users, marks, diary, notifier)
+        diary.marks = [record(0)]
+        await watcher.run_once()
+
+        diary.absent = [(dt.date(2026, 8, 30), "Алгебра", 2, "Б")]
+        await watcher.run_once()
+        assert notifier.absences == []
+
+    async def test_web_mode_ignores_absences(self, users, marks):
+        from app.domain.models import NotificationPrefs
+        from tests.test_watcher import FakeDiary, FakeNotifier, record
+
+        diary, notifier = FakeDiary(), FakeNotifier()
+        await users.save(make_user(notifications=NotificationPrefs(absences=True)))
+        watcher = self._watcher(users, marks, diary, notifier)
+        diary.marks = [record(0)]
+        await watcher.run_once()
+        diary.absent = [(dt.date(2026, 9, 28), "Алгебра", 2, "Б")]
+        await watcher.run_once()
+
+        assert notifier.absences == []
+        assert await marks.load_absences(1) == set()
+
+    async def test_flag_is_saved_and_off_by_default(self, users):
+        from app.domain.models import NotificationPrefs
+
+        assert not (await users.save(make_user())).notifications.absences
+        saved = await users.save(make_user(notifications=NotificationPrefs(absences=True)))
+        assert (await users.get(saved.telegram_id)).notifications.absences
+
+    async def test_state_is_forgotten_with_the_rest(self, users, marks):
+        await users.save(make_user())
+        await marks.replace_absences(1, {"a", "b"})
+        await marks.replace_absences(1, {"b", "c"})
+        assert await marks.load_absences(1) == {"b", "c"}
+        await marks.forget_all(1)
+        assert await marks.load_absences(1) == set()
+
+    async def test_migration_adds_flag_to_existing_users(self, tmp_path):
+        import aiosqlite
+
+        from app.db.migrations import MIGRATIONS, migrate
+
+        async with aiosqlite.connect(tmp_path / "old.sqlite3") as db:
+            for version, script in enumerate(MIGRATIONS[:4]):
+                await db.executescript(script)
+            await db.execute("PRAGMA user_version = 4")
+            await db.execute("INSERT INTO users (telegram_id) VALUES (7)")
+            await db.commit()
+
+            assert await migrate(db) == len(MIGRATIONS)
+
+            cursor = await db.execute("SELECT notify_absences FROM users WHERE telegram_id = 7")
+            assert (await cursor.fetchone())[0] == 0
+            await db.execute("INSERT INTO tracked_absences (telegram_id, identity) VALUES (7, 'x')")
+
+    def test_settings_toggle_only_for_mobile(self):
+        from app.bot import keyboards
+
+        def buttons(user):
+            return [b.callback_data for row in keyboards.settings_menu(user).inline_keyboard for b in row]
+
+        assert "toggle:absences" in buttons(mobile_user())
+        assert "toggle:absences" not in buttons(make_user())
+
+    async def test_marks_screen_summarizes_absences_by_quarter(self, client, app_context, users):
+        from app.domain.records import DiaryDay, Lesson
+        from tests.test_web import BASE
+
+        user = await users.save(mobile_user())
+        token = await app_context.miniapp.issue_token(user.telegram_id)
+
+        async def fetch_period(user, start, end, **kwargs):
+            lessons = lambda *codes: [Lesson(number=i + 1, subject="Алгебра", absence=c) for i, c in enumerate(codes)]
+            return [
+                DiaryDay(day=dt.date(2026, 9, 7), lessons=lessons("Б", "", "Б")),
+                DiaryDay(day=dt.date(2026, 11, 9), lessons=lessons("Н")),
+            ]
+
+        app_context.diary.fetch_period = fetch_period
+        data = (await (await client.get(f"{BASE}/api/marks", params={"token": token})).json())["data"]
+
+        algebra = data["subjects"][0]
+        assert algebra["absences"] == {"q1": {"Б": 2}, "q2": {"Н": 1}}
+
+    async def test_profile_tells_the_screen_which_api_is_used(self, client, app_context, users):
+        from tests.test_web import BASE
+
+        mobile = await users.save(mobile_user())
+        token = await app_context.miniapp.issue_token(mobile.telegram_id)
+        data = (await (await client.get(f"{BASE}/api/profile", params={"token": token})).json())["data"]
+        assert data["api_mode"] == "mobile" and data["notifications"]["absences"] is False
+
+        await users.save(make_user())
+        data = (await (await client.get(f"{BASE}/api/profile", params={"token": token})).json())["data"]
+        assert data["api_mode"] == "web"
+
+    async def test_absences_toggle_is_saved_from_miniapp(self, client, app_context, users):
+        from tests.test_web import BASE
+
+        user = await users.save(mobile_user())
+        token = await app_context.miniapp.issue_token(user.telegram_id)
+        response = await client.post(
+            f"{BASE}/api/settings/notifications", params={"token": token},
+            json={"key": "absences", "value": True},
+        )
+        assert (await response.json())["data"]["absences"] is True
+        assert (await users.get(user.telegram_id)).notifications.absences

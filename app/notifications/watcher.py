@@ -21,11 +21,11 @@ from collections.abc import Callable
 from typing import Protocol
 
 from ..db.repositories import MarkStateRepository, UserRepository
-from ..domain.models import User
-from ..domain.records import HomeworkRecord, MarkEvent, RecentEvents
+from ..domain.models import ApiMode, User
+from ..domain.records import AbsenceRecord, HomeworkRecord, MarkEvent, RecentEvents
 from ..netschool.errors import NetSchoolError, Reason
-from ..netschool.mapping import is_placeholder_name
-from ..netschool.service import DiaryService, msk_now
+from ..netschool.mapping import absences_from_days, is_placeholder_name
+from ..netschool.service import DiaryService, msk_now, msk_today
 from .diff import confirm_deletions, diff_homework, diff_marks
 
 logger = logging.getLogger("netschoolbot.watcher")
@@ -45,6 +45,11 @@ MAX_BACKOFF = 1800
 # показывает удалённые и исправленные давние оценки.
 FULL_SYNC_INTERVAL = 3600.0
 
+# Об отметке посещаемости сообщаем, только если урок был не раньше этого числа
+# дней назад: так включение уведомлений или смена API не засыпают человека
+# пропусками за прошлые недели.
+ABSENCE_NOTIFY_DAYS = 7
+
 
 class Notifier(Protocol):
     """Куда уходят уведомления. Позволяет тестировать цикл без Telegram."""
@@ -52,6 +57,8 @@ class Notifier(Protocol):
     async def send_mark_events(self, user: User, events: list[MarkEvent]) -> None: ...
 
     async def send_homework(self, user: User, items: list[HomeworkRecord]) -> None: ...
+
+    async def send_absences(self, user: User, items: list[AbsenceRecord]) -> None: ...
 
     async def send_error(self, user: User, error: NetSchoolError) -> None: ...
 
@@ -160,13 +167,14 @@ class UserWatcher:
             user.telegram_id, all_homework, {item.identity for item in fresh_homework}
         )
         self._note_full_sync(events)
+        fresh_absences = await self._track_absences(user, days, first_run=first_run)
 
         if self._is_quiet(user):
-            if result.events or fresh_homework:
+            if result.events or fresh_homework or fresh_absences:
                 logger.info(
                     "Тихие часы у %s: отложено событий %s",
                     user.telegram_id,
-                    len(result.events) + len(fresh_homework),
+                    len(result.events) + len(fresh_homework) + len(fresh_absences),
                 )
             return
 
@@ -174,6 +182,27 @@ class UserWatcher:
             await self._notifier.send_mark_events(user, result.events)
         if fresh_homework and user.notifications.homework:
             await self._notifier.send_homework(user, fresh_homework)
+        if fresh_absences and user.notifications.absences:
+            await self._notifier.send_absences(user, fresh_absences)
+
+    async def _track_absences(
+        self, user: User, days: list, *, first_run: bool
+    ) -> list[AbsenceRecord]:
+        """Отметки посещаемости, которых ещё не видели.
+
+        Только мобильный режим: в веб-дневнике отметок нет. Состояние
+        обновляется всегда, даже при выключенных уведомлениях, — тогда
+        включение тумблера не выдаст старые пропуски за новые.
+        """
+        if user.effective_api_mode is not ApiMode.MOBILE:
+            return []
+        current = absences_from_days(days)
+        known = await self._state.load_absences(user.telegram_id)
+        await self._state.replace_absences(user.telegram_id, {a.identity for a in current})
+        if first_run:
+            return []
+        earliest = msk_today() - dt.timedelta(days=ABSENCE_NOTIFY_DAYS)
+        return [a for a in current if a.identity not in known and a.date >= earliest]
 
     def _full_sync_due(self, events: RecentEvents) -> bool:
         """Нужно ли сверять дневник целиком.

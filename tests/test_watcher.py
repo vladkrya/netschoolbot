@@ -41,6 +41,7 @@ class FakeNotifier:
     def __init__(self):
         self.mark_events = []
         self.homework = []
+        self.absences = []
         self.errors = []
 
     async def send_mark_events(self, user, events):
@@ -48,6 +49,9 @@ class FakeNotifier:
 
     async def send_homework(self, user, items):
         self.homework.extend(items)
+
+    async def send_absences(self, user, items):
+        self.absences.extend(items)
 
     async def send_error(self, user, error):
         self.errors.append(error)
@@ -69,6 +73,8 @@ class FakeDiary:
         self.events_error: Exception | None = None
         self.recent_event_calls = 0
         self.totals = None
+        # Пропуски: (день, предмет, номер урока, код отметки).
+        self.absent: list = []
         self.stats = None
         self.stats_calls: list = []
         self.diary_calls = 0
@@ -80,7 +86,7 @@ class FakeDiary:
 
     async def fetch_diary(self, user, **kwargs):
         """Дни дневника, собранные из заданных оценок и заданий."""
-        from app.domain.records import DiaryDay
+        from app.domain.records import DiaryDay, Lesson
 
         self.diary_calls += 1
         if self.error:
@@ -90,6 +96,10 @@ class FakeDiary:
             days.setdefault(item.date, DiaryDay(day=item.date)).marks.append(item)
         for item in self.homework:
             days.setdefault(item.due_date, DiaryDay(day=item.due_date)).homework.append(item)
+        for when, subject, number, code in self.absent:
+            days.setdefault(when, DiaryDay(day=when)).lessons.append(
+                Lesson(number=number, subject=subject, absence=code)
+            )
         return [days[key] for key in sorted(days)]
 
     async def fetch_recent_events(self, user, **kwargs):

@@ -66,7 +66,11 @@ const NOTIFY_LABELS = {
   homework: 'Домашние задания',
   mail: 'Школьная почта',
   weekly_summary: 'Сводка по понедельникам',
+  absences: 'Новые пропуски',
 };
+
+// Отметки посещаемости есть только в мобильном API.
+const MOBILE_ONLY = new Set(['absences']);
 
 function toggle(key, label, on) {
   return `<label class="switch-row"><span>${label}</span>
@@ -155,7 +159,10 @@ function render() {
     </section>
     <section class="drawer-section">
       <div class="drawer-heading">Уведомления в Telegram</div>
-      ${Object.entries(NOTIFY_LABELS).map(([key, label]) => toggle(key, label, data.notifications[key])).join('')}
+      ${Object.entries(NOTIFY_LABELS)
+        .filter(([key]) => !MOBILE_ONLY.has(key) || data.api_mode === 'mobile')
+        .map(([key, label]) => toggle(key, label, data.notifications[key]))
+        .join('')}
       <div class="muted small">Проверка каждые ${data.interval_minutes} мин</div>
     </section>
     ${pushSection()}

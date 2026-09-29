@@ -24,6 +24,12 @@ def settings_menu(user: User) -> InlineKeyboardMarkup:
         [toggle("Домашние задания", user.notifications.homework, "homework")],
         [toggle("Школьная почта", user.notifications.mail, "mail")],
         [toggle("Сводка по понедельникам", user.notifications.weekly_summary, "weekly")],
+        # Отметки посещаемости есть только в мобильном API.
+        *(
+            [[toggle("Новые пропуски", user.notifications.absences, "absences")]]
+            if user.effective_api_mode is ApiMode.MOBILE
+            else []
+        ),
         [
             InlineKeyboardButton(
                 text=f"⏱ Интервал: {user.check_interval // 60} мин", callback_data="settings:interval"

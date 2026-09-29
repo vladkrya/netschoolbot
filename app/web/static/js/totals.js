@@ -2,7 +2,7 @@
 'use strict';
 
 import {
-  $, api, errorCard, esc, formatAverage, isAbsence, isoToday, dayMonth,
+  $, ABSENCES, api, errorCard, esc, formatAverage, isAbsence, isoToday, dayMonth,
   shortDate, skeleton, state, weightedAverage,
 } from './core.js';
 import { markBox, openMark } from './details.js';
@@ -62,6 +62,14 @@ function render() {
       openSubject(data.subjects[Number(cell.dataset.subject)], cell.dataset.q)
     )
   );
+}
+
+/** Сводка отметок посещаемости за четверть: «Посещаемость: Пропуск по болезни — 2, Опоздал — 1». */
+function attendanceLine(counts) {
+  const entries = Object.entries(counts || {});
+  if (!entries.length) return '';
+  const parts = entries.map(([code, count]) => `${esc(ABSENCES[code.toUpperCase()] || code)} — ${count}`);
+  return `<div class="muted small attendance">Посещаемость: ${parts.join(', ')}</div>`;
 }
 
 /** Доли оценок в среднем балле: полоса из отрезков по весу каждой оценки. */
@@ -124,6 +132,7 @@ function openSubject(subject, key) {
         yearMark ? `Годовая: <strong>${esc(yearMark)}</strong>` : '',
         finalMark ? `Итоговая: <strong>${esc(finalMark)}</strong>` : '',
       ].filter(Boolean).join(' · ')}</div>` : ''}
+      ${attendanceLine(subject.absences?.[key])}
       ${distribution(marks)}
       <div class="muted small">*доли оценок, образующих средний балл</div>
     </div>

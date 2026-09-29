@@ -11,8 +11,8 @@ import datetime as dt
 import html
 from collections import Counter
 
-from .models import MarkKind, User
-from .records import HomeworkRecord, MarkEvent, MarkRecord, parse_mark_float
+from .models import ApiMode, MarkKind, User
+from .records import AbsenceRecord, HomeworkRecord, MarkEvent, MarkRecord, parse_mark_float
 
 WEEKDAYS = ("Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс")
 
@@ -109,6 +109,14 @@ def homework_digest(items: list[HomeworkRecord]) -> str:
         lines.append(
             f"• {item.due_date:%d.%m} — {esc(item.subject)}: {text}{suffix}{published_label(item)}"
         )
+    return "\n".join(lines)
+
+
+def absences_digest(items: list[AbsenceRecord]) -> str:
+    lines = [f"🚫 <b>Новые отметки посещаемости</b> ({len(items)})", ""]
+    for item in sorted(items, key=lambda a: (a.date, a.lesson_number or 0, a.subject)):
+        lesson = f", {item.lesson_number} урок" if item.lesson_number else ""
+        lines.append(f"• {item.date:%d.%m} — {esc(item.subject)}{lesson}: {esc(item.label)}")
     return "\n".join(lines)
 
 
@@ -276,6 +284,11 @@ def profile(user: User) -> str:
             f"• Домашние задания: {enabled(notifications.homework)}",
             f"• Школьная почта: {enabled(notifications.mail)}",
             f"• Сводка по понедельникам: {enabled(notifications.weekly_summary)}",
+            *(
+                [f"• Новые пропуски: {enabled(notifications.absences)}"]
+                if user.effective_api_mode is ApiMode.MOBILE
+                else []
+            ),
             f"• Тихие часы: {user.quiet_hours.as_text()}",
             "",
             f"• Фильтр работ: {', '.join(sorted(user.filters.exclude_titles)) or 'нет'}",

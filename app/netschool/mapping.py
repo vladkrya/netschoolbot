@@ -14,6 +14,7 @@ from typing import Any
 
 from ..domain.models import normalize
 from ..domain.records import (
+    AbsenceRecord,
     Attachment,
     DiaryDay,
     HomeworkRecord,
@@ -219,6 +220,21 @@ def diary_days(days: list[Any], *, today: dt.date | None = None) -> list[DiaryDa
         )
     result.sort(key=lambda d: d.day)
     return result
+
+
+def absences_from_days(days: list[DiaryDay]) -> list[AbsenceRecord]:
+    """Отметки посещаемости из уроков дневника (поле `absence` мобильного API)."""
+    records: list[AbsenceRecord] = []
+    for day in days:
+        for lesson in day.lessons:
+            code = (lesson.absence or "").strip()
+            if code:
+                records.append(
+                    AbsenceRecord(
+                        subject=lesson.subject, date=day.day, lesson_number=lesson.number, code=code
+                    )
+                )
+    return records
 
 
 def recent_events_from(payload: Any) -> RecentEvents:

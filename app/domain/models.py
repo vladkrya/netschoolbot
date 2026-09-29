@@ -112,6 +112,8 @@ class NotificationPrefs:
     homework: bool = True
     mail: bool = False
     weekly_summary: bool = False
+    # Новые пропуски — только мобильный режим: в веб-дневнике отметок посещаемости нет.
+    absences: bool = False
 
 
 @dataclass(frozen=True, slots=True)

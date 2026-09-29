@@ -142,6 +142,18 @@ MIGRATIONS: list[str] = [
     """
     ALTER TABLE users ADD COLUMN api_mode TEXT NOT NULL DEFAULT 'web';
     """,
+    # 5 — уведомления о пропусках (мобильный режим). По умолчанию выключены;
+    # tracked_absences хранит уже виденные отметки, чтобы не слать повторно.
+    """
+    ALTER TABLE users ADD COLUMN notify_absences INTEGER NOT NULL DEFAULT 0;
+
+    CREATE TABLE tracked_absences (
+        telegram_id INTEGER NOT NULL REFERENCES users(telegram_id) ON DELETE CASCADE,
+        identity    TEXT    NOT NULL,
+        seen_at     TEXT    NOT NULL DEFAULT (datetime('now')),
+        PRIMARY KEY (telegram_id, identity)
+    );
+    """,
 ]
 
 

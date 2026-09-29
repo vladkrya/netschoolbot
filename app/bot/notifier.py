@@ -17,7 +17,7 @@ from aiogram.types import ReplyKeyboardRemove
 from ..db.repositories import UserRepository
 from ..domain import formatting
 from ..domain.models import User
-from ..domain.records import HomeworkRecord, MarkEvent
+from ..domain.records import AbsenceRecord, HomeworkRecord, MarkEvent
 from ..netschool.errors import NetSchoolError
 
 logger = logging.getLogger("netschoolbot.notifier")
@@ -62,6 +62,16 @@ class TelegramNotifier:
         await self._push_notify(
             user,
             "Новые задания",
+            ", ".join(sorted({item.subject for item in items})[:4]),
+        )
+
+    async def send_absences(self, user: User, items: list[AbsenceRecord]) -> None:
+        if not items:
+            return
+        await self._send(user, formatting.absences_digest(items))
+        await self._push_notify(
+            user,
+            "Отметки посещаемости",
             ", ".join(sorted({item.subject for item in items})[:4]),
         )
 

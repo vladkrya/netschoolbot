@@ -157,6 +157,41 @@ class RecentEvents:
     homework: int = 0
 
 
+# Отметки посещаемости мобильного API (`attendance` урока).
+ABSENCE_LABELS = {
+    "Б": "Пропуск по болезни",
+    "УП": "Пропуск по уважительной причине",
+    "НП": "Пропуск без уважительной причины",
+    "Н": "Пропуск",
+    "ОТ": "Отсутствовал",
+    "ОП": "Опоздал",
+    "ОСВ": "Освобождён от посещения",
+}
+
+
+def absence_label(code: str) -> str:
+    """Расшифровка отметки; неизвестный код показывается как есть."""
+    return ABSENCE_LABELS.get(str(code or "").strip().upper(), str(code or "").strip())
+
+
+@dataclass(frozen=True, slots=True)
+class AbsenceRecord:
+    """Отметка посещаемости за один урок."""
+
+    subject: str
+    date: dt.date
+    lesson_number: int | None
+    code: str
+
+    @property
+    def label(self) -> str:
+        return absence_label(self.code)
+
+    @property
+    def identity(self) -> str:
+        return _join(self.date.isoformat(), self.lesson_number, self.subject, self.code)
+
+
 @dataclass(frozen=True, slots=True)
 class MarkEvent:
     """Что произошло с оценкой между двумя проверками."""
