@@ -87,7 +87,9 @@ export async function api(path, options = {}) {
     throw error;
   }
   if (payload.stale) {
-    banner('Дневник сейчас недоступен. Показаны сохранённые данные.');
+    banner(payload.refreshing
+      ? 'Показаны сохранённые данные. Обновление идёт в фоне.'
+      : 'Дневник сейчас недоступен. Показаны сохранённые данные.');
   }
   return payload;
 }

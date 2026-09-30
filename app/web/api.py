@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import datetime as dt
 import logging
 from dataclasses import asdict, replace
@@ -33,6 +34,40 @@ CONTEXT = web.AppKey("context", AppContext)
 BOT = web.AppKey("bot", object)
 # AppKey предназначен для Application; Request хранит строковые ключи.
 USER = "netschool_user"
+
+# Не задерживаем показ сохранённых данных ожиданием школьного сервера.
+CACHE_RESPONSE_WAIT = 0.2
+
+
+def _cache_owner(user: User) -> tuple:
+    return user.school, user.credentials, user.selected_student_id, user.effective_api_mode
+
+
+def _refresh_cached_section(app, user, section, producer, cacheable):
+    key = user.telegram_id, section, _cache_owner(user)
+    if task := app.cache_refreshes.get(key):
+        return task
+
+    async def refresh():
+        payload = await producer(app, user)
+        current = await app.users.get(user.telegram_id)
+        # Переключение ребёнка или выход во время запроса не должны вернуть
+        # в очищенный кэш данные прежнего аккаунта.
+        if current is not None and _cache_owner(current) == _cache_owner(user) and cacheable(payload):
+            await app.cache.put(user.telegram_id, section, payload)
+        return payload
+
+    task = asyncio.create_task(refresh(), name=f"cache:{section}")
+    app.cache_refreshes[key] = task
+
+    def done(completed):
+        if app.cache_refreshes.get(key) is completed:
+            del app.cache_refreshes[key]
+        if not completed.cancelled() and (error := completed.exception()):
+            logger.info("Обновление кэша %s не завершилось: %s", section, type(error).__name__)
+
+    task.add_done_callback(done)
+    return task
 
 
 def context(request: web.Request) -> AppContext:
@@ -240,7 +275,7 @@ def _day_to_json(
 
 
 async def _cached(request: web.Request, section: str, producer, *, cacheable=lambda payload: True):
-    """Отдать свежий кэш или сходить за данными и обновить его.
+    """Отдать сохранённые данные сразу, обновив устаревшие в фоне.
 
     Если школьный сервер недоступен, отдаётся устаревший кэш с пометкой —
     приложение продолжает работать, а не показывает пустой экран.
@@ -261,8 +296,16 @@ async def _cached(request: web.Request, section: str, producer, *, cacheable=lam
         if now_utc - updated < fresh_for:
             return web.json_response({"ok": True, "data": payload, "stale": False})
 
+    task = _refresh_cached_section(app, user, section, producer, cacheable)
+    if cached is not None:
+        completed, _ = await asyncio.wait({task}, timeout=CACHE_RESPONSE_WAIT)
+        if not completed:
+            return web.json_response(
+                {"ok": True, "data": cached[0], "stale": True, "refreshing": True}
+            )
     try:
-        payload = await producer(app, user)
+        # Отмена HTTP-запроса не прерывает общее обновление для других вкладок.
+        payload = await asyncio.shield(task)
     except NetSchoolError as exc:
         if cached is None:
             raise
@@ -271,8 +314,6 @@ async def _cached(request: web.Request, section: str, producer, *, cacheable=lam
             {"ok": True, "data": cached[0], "stale": True, "reason": exc.reason.value}
         )
 
-    if cacheable(payload):
-        await app.cache.put(user.telegram_id, section, payload)
     return web.json_response({"ok": True, "data": payload, "stale": False})
 
 

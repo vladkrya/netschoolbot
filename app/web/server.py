@@ -42,6 +42,10 @@ def create_app(context: AppContext, bot=None) -> web.Application:
     inner = web.Application(middlewares=[api.error_middleware, api.auth_middleware])
     inner[CONTEXT] = context
     inner[BOT] = bot
+    async def stop_refreshes(app):
+        await context.stop_cache_refreshes()
+
+    inner.on_cleanup.append(stop_refreshes)
 
     aiohttp_jinja2.setup(
         inner,

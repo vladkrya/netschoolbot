@@ -5,6 +5,7 @@
 то текст исключения.
 """
 
+import asyncio
 import datetime as dt
 import json
 import re
@@ -357,6 +358,67 @@ class TestErrors:
 
 
 class TestCache:
+    async def test_slow_refresh_serves_saved_data_and_runs_only_once(
+        self, client, app_context, token, monkeypatch
+    ):
+        from app.web import api
+
+        monkeypatch.setattr(api, "CACHE_RESPONSE_WAIT", 0.01)
+        saved = {"days": [{"date": "2026-09-30"}], "week": 0}
+        await app_context.cache.put(1, "diary:0", saved)
+        release = asyncio.Event()
+        calls = 0
+
+        async def slow(*args, **kwargs):
+            nonlocal calls
+            calls += 1
+            await release.wait()
+            return []
+
+        monkeypatch.setattr(app_context.diary, "fetch_diary", slow)
+        for _ in range(2):
+            response = await asyncio.wait_for(
+                client.get(f"{BASE}/api/diary", params={"token": token, "refresh": "1"}),
+                timeout=1,
+            )
+            body = await response.json()
+            assert body["data"] == saved
+            assert body["stale"] is True
+            assert body["refreshing"] is True
+        assert calls == 1
+        tasks = list(app_context.cache_refreshes.values())
+        assert len(tasks) == 1
+        release.set()
+        await asyncio.gather(*tasks)
+        response = await client.get(f"{BASE}/api/diary", params={"token": token})
+        body = await response.json()
+        assert body["stale"] is False
+        assert body["data"]["days"] == []
+
+    async def test_background_refresh_does_not_restore_previous_child_cache(
+        self, client, app_context, token, monkeypatch
+    ):
+        from dataclasses import replace
+        from app.web import api
+
+        monkeypatch.setattr(api, "CACHE_RESPONSE_WAIT", 0.01)
+        await app_context.cache.put(1, "diary:0", {"days": [], "week": 0})
+        release = asyncio.Event()
+
+        async def slow(*args, **kwargs):
+            await release.wait()
+            return []
+
+        monkeypatch.setattr(app_context.diary, "fetch_diary", slow)
+        await client.get(f"{BASE}/api/diary", params={"token": token, "refresh": "1"})
+        tasks = list(app_context.cache_refreshes.values())
+        user = await app_context.users.get(1)
+        await app_context.users.save(replace(user, selected_student_id=99))
+        await app_context.cache.clear(1)
+        release.set()
+        await asyncio.gather(*tasks)
+        assert await app_context.cache.get(1, "diary:0") is None
+
     @pytest.mark.parametrize("section", ["diary", "homework", "marks"])
     async def test_real_week_outage_preserves_saved_data(
         self, client, app_context, token, monkeypatch, section

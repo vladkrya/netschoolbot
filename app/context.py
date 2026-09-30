@@ -8,8 +8,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from .db.crypto import PasswordCipher
 from .db.engine import Database
@@ -42,6 +43,7 @@ class AppContext:
     pool: SessionPool
     diary: DiaryService
     watchers: WatcherRegistry
+    cache_refreshes: dict[tuple, asyncio.Task] = field(default_factory=dict)
 
     @classmethod
     async def create(cls, settings: Settings, notifier: Notifier | None = None) -> "AppContext":
@@ -88,9 +90,17 @@ class AppContext:
     async def shutdown(self) -> None:
         """Аккуратно закрыть всё, что открыли. Порядок важен."""
         await self.watchers.stop_all()
+        await self.stop_cache_refreshes()
         await self.pool.close_all()
         await self.db.close()
         logger.info("Приложение остановлено")
+
+    async def stop_cache_refreshes(self) -> None:
+        tasks = list(self.cache_refreshes.values())
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        self.cache_refreshes.clear()
 
 
 def password_cipher(settings: Settings) -> PasswordCipher:
