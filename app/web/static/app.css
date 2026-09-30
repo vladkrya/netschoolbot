@@ -183,6 +183,7 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 
 .panel { display: none; padding: 12px 12px 20px; }
 .panel.active { display: block; animation: panel-in .25s var(--ease); }
+#panel-day { min-height: calc(100dvh - var(--header-h) - var(--nav-h) - 12px); }
 @keyframes panel-in { from { opacity: 0; transform: translateY(8px); } }
 
 /* Карточки въезжают лесенкой — список «собирается», а не появляется разом. */

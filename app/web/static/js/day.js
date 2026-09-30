@@ -128,13 +128,12 @@ function lessonCard(lesson, index, progress) {
         <span class="lc-subject">${esc(lesson.subject)}</span>
         <span class="lc-marks">${marks}</span>
       </div>
-      ${lesson.topic ? `<div class="lc-meta"><span>${esc(lesson.topic)}</span></div>` : ''}
       ${lesson.homework.length ? `<div class="lc-badges">
         <span class="hw-badge" data-hw-badge>Д/З</span>
         ${hasFiles ? `<span class="hw-badge clip">${ICONS.clip}</span>` : ''}
       </div>` : ''}
-      <div class="lc-bottom"><span>${esc(time)}</span><span>${esc(lessonStatus(lesson, state.date))}</span></div>
       ${progress ? `<div class="lesson-progress-label">${esc(progress.label)}</div><div class="lesson-progress"><span style="width:${Math.max(0, Math.min(100, progress.percent))}%"></span></div>` : ''}
+      <div class="lc-bottom"><span>${esc(time)}</span><span>${esc(lessonStatus(lesson, state.date))}</span></div>
     </div>`;
 }
 

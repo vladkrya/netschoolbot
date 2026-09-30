@@ -10,6 +10,7 @@ from __future__ import annotations
 import datetime as dt
 import logging
 import re
+from dataclasses import replace
 from typing import Any
 
 from ..domain.models import normalize
@@ -199,7 +200,18 @@ def lessons_from_day(day: Any, *, today: dt.date | None = None) -> list[Lesson]:
             )
         )
 
-    lessons.sort(key=lambda item: (item.number or 0, item.start))
+    # Сетевой город иногда отдаёт текущий урок с номером 1 вместо его
+    # номера в расписании. При повторяющихся номерах восстанавливаем
+    # последовательность по времени, сохраняя пропущенные номера уроков.
+    numbers = [item.number for item in lessons]
+    if len(set(numbers)) != len(numbers) and all(item.start for item in lessons):
+        lessons.sort(key=lambda item: (item.start, item.number or 0))
+        previous = 0
+        for index, item in enumerate(lessons):
+            previous = max(item.number or 0, previous + 1)
+            lessons[index] = replace(item, number=previous)
+    else:
+        lessons.sort(key=lambda item: (item.number or 0, item.start))
     return lessons
 
 

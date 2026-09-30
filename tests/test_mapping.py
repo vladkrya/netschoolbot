@@ -401,6 +401,23 @@ class TestLessons:
         lessons = lessons_from_day(day([raw]), today=dt.date(2026, 3, 2))
         assert lessons[0].number == 1
 
+    def test_current_lesson_with_duplicate_number_keeps_chronological_position(self):
+        first = lesson([assignment(mark=5)], subject="Русский язык", number=1)
+        first.start, first.end = dt.time(8), dt.time(8, 40)
+        second = lesson([], subject="Литература", number=2)
+        second.start, second.end = dt.time(8, 55), dt.time(9, 35)
+        current = lesson([assignment(mark=None, content="Упр. 7")], subject="Информатика", number=1)
+        current.start, current.end = dt.time(13, 30), dt.time(14, 10)
+        fifth = lesson([], subject="История", number=5)
+        fifth.start, fifth.end = dt.time(12, 35), dt.time(13, 15)
+
+        lessons = lessons_from_day(day([first, current, second, fifth]), today=dt.date(2026, 3, 2))
+
+        assert [item.number for item in lessons] == [1, 2, 5, 6]
+        assert [item.subject for item in lessons] == ["Русский язык", "Литература", "История", "Информатика"]
+        assert lessons[0].marks[0].mark == "5"
+        assert lessons[-1].homework[0].text == "Упр. 7"
+
     def test_diary_days_include_lessons(self):
         days = diary_days([day([lesson([assignment()])])], today=dt.date(2026, 3, 2))
         assert len(days[0].lessons) == 1
