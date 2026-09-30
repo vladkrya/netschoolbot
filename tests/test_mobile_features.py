@@ -626,7 +626,7 @@ class TestAbsences:
         await users.save(make_user())
         await marks.replace_absences(1, {"a", "b"})
         await marks.replace_absences(1, {"b", "c"})
-        assert await marks.load_absences(1) == {"b", "c"}
+        assert await marks.load_absences(1) == {"a", "b", "c"}
         await marks.forget_all(1)
         assert await marks.load_absences(1) == set()
 

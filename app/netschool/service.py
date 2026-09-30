@@ -466,10 +466,10 @@ async def _collect_weeks(
             if current > today and "409" in str(exc):
                 logger.debug("Будущие недели закончились на %s", current)
                 break
-            # Одна недоступная неделя не должна лишать данных за остальные.
-            logger.warning("Не удалось получить неделю с %s: %s", current, exc)
-            current += dt.timedelta(days=7)
-            continue
+            # Неполный ответ нельзя выдавать за успешный: он затрёт кэш
+            # и историю уведомлений. Вызывающий код отдаст сохранённые
+            # данные, а фоновая проверка оставит прежнее состояние.
+            raise
 
         for day in getattr(diary, "schedule", None) or []:
             day_date = getattr(day, "day", None)

@@ -123,7 +123,7 @@ class TestFetch:
         marks = await service.fetch_marks(user, weeks_back=1, weeks_forward=0, today=today)
         assert len(marks) == 1
 
-    async def test_failed_week_does_not_lose_others(self, service, users):
+    async def test_failed_week_rejects_incomplete_diary(self, service, users):
         user = make_user()
         await users.save(user)
         today = dt.date(2026, 3, 4)
@@ -133,8 +133,24 @@ class TestFetch:
             client.week_payloads[monday] = [day(today)]
             client.week_errors[monday - dt.timedelta(days=7)] = Exception("боль")
 
-        marks = await service.fetch_marks(user, weeks_back=1, weeks_forward=0, today=today)
-        assert len(marks) == 1
+        with pytest.raises(NetSchoolError):
+            await service.fetch_marks(user, weeks_back=1, weeks_forward=0, today=today)
+
+    async def test_outage_is_retried_instead_of_returning_empty_diary(
+        self, service, users, monkeypatch
+    ):
+        import app.netschool.service as module
+
+        monkeypatch.setattr(module.asyncio, "sleep", _no_sleep)
+        user = make_user()
+        await users.save(user)
+        today = dt.date(2026, 3, 4)
+        async with service._pool.acquire(user) as client:
+            client.week_errors[_monday_of(today)] = Exception("503 Service Unavailable")
+        with pytest.raises(NetSchoolError) as caught:
+            await service.fetch_diary(user, weeks_back=0, weeks_forward=0, today=today)
+        assert caught.value.reason is Reason.SERVER_UNAVAILABLE
+        assert len(client.weeks_requested) == module.RETRY_ATTEMPTS
 
     async def test_409_stops_future_weeks(self, service, users):
         user = make_user()

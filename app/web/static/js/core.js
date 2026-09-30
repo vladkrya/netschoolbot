@@ -86,6 +86,9 @@ export async function api(path, options = {}) {
     error.reason = payload.reason;
     throw error;
   }
+  if (payload.stale) {
+    banner('Дневник сейчас недоступен. Показаны сохранённые данные.');
+  }
   return payload;
 }
 

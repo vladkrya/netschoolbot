@@ -186,6 +186,19 @@ class TestMarkState:
         await marks.mark_mail_seen(1, {2, 3})
         assert await marks.seen_mail_ids(1) == {1, 2, 3}
 
+    async def test_missing_items_do_not_erase_notification_history(self, users, marks):
+        await users.save(make_user())
+        await marks.replace_homework(1, {"hw"}, {"hw"})
+        observed = await marks.observed_homework(1)
+        await marks.replace_absences(1, {"absence"})
+        await marks.replace_homework(1, set())
+        await marks.replace_absences(1, set())
+        assert await marks.load_homework(1) == {"hw"}
+        assert await marks.observed_homework(1) == observed
+        assert await marks.load_absences(1) == {"absence"}
+        await marks.forget_all(1)
+        assert await marks.load_absences(1) == set()
+
 
 class TestMiniapp:
     async def test_token_is_reused(self, users, miniapp):

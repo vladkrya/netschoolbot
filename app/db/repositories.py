@@ -340,20 +340,18 @@ class MarkStateRepository:
     async def replace_homework(
         self, telegram_id: int, identities: set[str], observed_new: set[str] | None = None
     ) -> None:
-        """Обновить слежение, сохранив время обнаружения существующих заданий."""
+        """Запомнить задания и время обнаружения, не забывая пропавшие из окна.
+
+        Отсутствие задания в ответе не означает, что оно новое при следующем
+        появлении. История сбрасывается явно через forget_all.
+        """
         observed_new = observed_new or set()
         async with self._db.transaction() as db:
             cursor = await db.execute(
                 "SELECT identity FROM tracked_homework WHERE telegram_id = ?", (telegram_id,)
             )
             existing = {row[0] for row in await cursor.fetchall()}
-            removed = existing - identities
             added = identities - existing
-            if removed:
-                await db.executemany(
-                    "DELETE FROM tracked_homework WHERE telegram_id = ? AND identity = ?",
-                    [(telegram_id, identity) for identity in removed],
-                )
             if added:
                 await db.executemany(
                     """INSERT INTO tracked_homework (telegram_id, identity, first_seen_at)
@@ -382,18 +380,13 @@ class MarkStateRepository:
         return {row["identity"] for row in rows}
 
     async def replace_absences(self, telegram_id: int, identities: set[str]) -> None:
-        """Запомнить виденные отметки посещаемости; ушедшие из окна дневника забываются."""
+        """Запомнить виденные отметки, включая временно пропавшие из ответа."""
         async with self._db.transaction() as db:
             cursor = await db.execute(
                 "SELECT identity FROM tracked_absences WHERE telegram_id = ?", (telegram_id,)
             )
             existing = {row[0] for row in await cursor.fetchall()}
-            removed, added = existing - identities, identities - existing
-            if removed:
-                await db.executemany(
-                    "DELETE FROM tracked_absences WHERE telegram_id = ? AND identity = ?",
-                    [(telegram_id, identity) for identity in removed],
-                )
+            added = identities - existing
             if added:
                 await db.executemany(
                     "INSERT INTO tracked_absences (telegram_id, identity) VALUES (?, ?)",

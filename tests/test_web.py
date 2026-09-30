@@ -357,6 +357,48 @@ class TestErrors:
 
 
 class TestCache:
+    @pytest.mark.parametrize("section", ["diary", "homework", "marks"])
+    async def test_real_week_outage_preserves_saved_data(
+        self, client, app_context, token, monkeypatch, section
+    ):
+        from app.netschool.service import DiaryService, _monday_of, msk_today
+        from app.netschool.session import SessionPool
+        from tests.test_service import DiaryClient, day, _no_sleep
+        import app.netschool.service as module
+
+        monkeypatch.setattr(module.asyncio, "sleep", _no_sleep)
+        pool = SessionPool(
+            app_context.settings.netschool, app_context.sessions,
+            client_factory=lambda url, proxy: DiaryClient(url, proxy),
+        )
+        app_context.diary = DiaryService(pool, app_context.users)
+        user = await app_context.users.get(1)
+        today = msk_today()
+        async with pool.acquire(user) as school:
+            school.week_payloads[_monday_of(today)] = [day(today)]
+        try:
+            params = {"token": token, "refresh": "1"}
+            initial = await client.get(f"{BASE}/api/{section}", params=params)
+            saved = (await initial.json())["data"]
+            cached_before = await app_context.cache.get(
+                1, "marks:year" if section == "marks" else "diary:0" if section == "diary" else section
+            )
+            school.week_errors[_monday_of(today)] = Exception("503 Service Unavailable")
+            response = await client.get(f"{BASE}/api/{section}", params=params)
+            body = await response.json()
+            assert response.status == 200
+            assert body["stale"] is True
+            assert body["reason"] == "server"
+            assert body["data"] == saved
+            cached_after = await app_context.cache.get(
+                1, "marks:year" if section == "marks" else "diary:0" if section == "diary" else section
+            )
+            assert cached_after == cached_before
+            school.week_errors.clear()
+            recovered = await client.get(f"{BASE}/api/{section}", params=params)
+            assert (await recovered.json())["stale"] is False
+        finally:
+            await pool.close_all()
     async def test_second_request_uses_cache(self, client, app_context, token):
         app_context.diary.marks = [record(0)]
         await client.get(f"{BASE}/api/marks", params={"token": token})

@@ -612,6 +612,46 @@ class TestRecentEvents:
         assert diary.diary_calls == 3
 
 
+class TestOutageRecovery:
+    async def test_disappearing_records_do_not_notify_again_after_restart(
+        self, users, marks, diary, notifier
+    ):
+        from app.domain.models import ApiMode, NotificationPrefs
+        from app.netschool.service import msk_today
+
+        user = make_user(api_mode=ApiMode.MOBILE, notifications=NotificationPrefs(absences=True))
+        await users.save(user)
+        today = msk_today()
+        old = HomeworkRecord("Алгебра", today, "Домашняя работа", "№278")
+        diary.marks = [record(date=today)]
+        diary.homework = [old]
+        diary.absent = [(today, "Алгебра", 1, "Б")]
+
+        def new_watcher():
+            return UserWatcher(1, users=users, state=marks, diary=diary, notifier=notifier)
+
+        watcher = new_watcher()
+        await watcher.run_once()  # Исходная молчаливая сверка.
+        diary.error = NetSchoolError(Reason.SERVER_UNAVAILABLE, "503")
+        await watcher.run_once()
+        assert await marks.load_homework(1) == {old.identity}
+        diary.error = None
+        diary.homework = []
+        diary.absent = []
+        await watcher.run_once()  # Сервер временно вернул пустые разделы.
+
+        fresh = HomeworkRecord("Алгебра", today, "Домашняя работа", "№279")
+        diary.homework = [old, fresh]
+        diary.absent = [(today, "Алгебра", 1, "Б"), (today, "Физика", 2, "Б")]
+        await new_watcher().run_once()  # История переживает перезапуск проверки.
+        assert notifier.homework == [fresh]
+        assert len(notifier.absences) == 1
+        assert notifier.absences[0].subject == "Физика"
+        await new_watcher().run_once()
+        assert notifier.homework == [fresh]
+        assert len(notifier.absences) == 1
+
+
 class TestApiSwitchDoesNotFakeDeletions:
     async def test_stale_keys_after_switch_never_become_deleted_marks(
         self, users, marks, watcher, diary, notifier

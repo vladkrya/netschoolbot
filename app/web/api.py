@@ -31,7 +31,8 @@ routes = web.RouteTableDef()
 # между приложением и подключёнными к нему библиотеками.
 CONTEXT = web.AppKey("context", AppContext)
 BOT = web.AppKey("bot", object)
-USER = web.RequestKey("netschool_user", User)
+# AppKey предназначен для Application; Request хранит строковые ключи.
+USER = "netschool_user"
 
 
 def context(request: web.Request) -> AppContext:
