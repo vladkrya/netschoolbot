@@ -28,8 +28,10 @@ function switchTab(name) {
   document.querySelectorAll('.panel').forEach((panel) => {
     panel.classList.toggle('active', panel.id === `panel-${name}`);
   });
-  document.querySelectorAll('.nav-item').forEach((item) => {
-    item.classList.toggle('active', item.dataset.tab === name);
+  document.querySelectorAll('.nav-item').forEach((item, index) => {
+    const active = item.dataset.tab === name;
+    item.classList.toggle('active', active);
+    if (active) $('bottomNav').style.setProperty('--i', index);
   });
   // Полоса под шапкой (дата, поиск) — своя у каждой вкладки.
   document.querySelectorAll('.subbar').forEach((bar) => {
@@ -110,13 +112,108 @@ function bindPullToRefresh() {
   }, { passive: true });
 }
 
-function initChrome() {
-  document.querySelectorAll('.nav-item').forEach((item) => {
-    item.addEventListener('click', () => {
+// Панель вкладок как в iOS 26: палец на панели — линза раздувается в каплю
+// и едет за ним, растягиваясь от скорости; на каждом новом пункте щелчок.
+// Отпустил — открывается вкладка под пальцем.
+function initNav() {
+  const nav = $('bottomNav');
+  const items = [...nav.querySelectorAll('.nav-item')];
+  let drag = null;
+  let relax = 0;
+  let lastRelease = 0;
+
+  const geometry = () => {
+    const rect = nav.getBoundingClientRect();
+    return { left: rect.left + 4, inner: rect.width - 8, cell: (rect.width - 8) / items.length };
+  };
+  const indexAt = (x) => {
+    const { left, cell } = geometry();
+    return Math.max(0, Math.min(items.length - 1, Math.floor((x - left) / cell)));
+  };
+  const follow = (x) => {
+    const { left, inner, cell } = geometry();
+    const pos = Math.max(0, Math.min(inner - cell, x - left - cell / 2));
+    nav.style.setProperty('--x', `${pos}px`);
+  };
+  const hover = (index) => items.forEach((item, i) => item.classList.toggle('hover', i === index));
+  const stretch = (speed) => {
+    const extra = Math.min(speed * 0.18, 0.3);
+    nav.style.setProperty('--sx', (1.22 + extra).toFixed(3));
+    nav.style.setProperty('--sy', (1.18 - extra / 2).toFixed(3));
+    clearTimeout(relax);
+    relax = setTimeout(() => {
+      nav.style.removeProperty('--sx');
+      nav.style.removeProperty('--sy');
+    }, 90);
+  };
+
+  // Касание текущей вкладки — лёгкий толчок, новой — щелчок выбора.
+  const activate = (tab, silent) => {
+    if (!silent) {
+      if (tab === state.tab) tap('soft');
+      else select();
+    }
+    // Повторное касание тоже переключает: закрывает экраны поверх и листает вверх.
+    switchTab(tab);
+  };
+
+  nav.addEventListener('pointerdown', (event) => {
+    if (event.button !== 0 || drag) return;
+    try {
+      nav.setPointerCapture(event.pointerId);
+    } catch {
+      /* без захвата палец за краем панели просто теряется */
+    }
+    const index = indexAt(event.clientX);
+    drag = { id: event.pointerId, index, moved: false, x: event.clientX, t: event.timeStamp };
+    follow(event.clientX);
+    hover(index);
+    nav.classList.add('dragging');
+  });
+
+  nav.addEventListener('pointermove', (event) => {
+    if (!drag || event.pointerId !== drag.id) return;
+    const dt = Math.max(1, event.timeStamp - drag.t);
+    stretch(Math.abs(event.clientX - drag.x) / dt);
+    drag.x = event.clientX;
+    drag.t = event.timeStamp;
+    follow(event.clientX);
+    const index = indexAt(event.clientX);
+    if (index !== drag.index) {
+      drag.index = index;
+      drag.moved = true;
+      hover(index);
       select();
-      switchTab(item.dataset.tab);
+    }
+  });
+
+  const release = (event, commit) => {
+    if (!drag || event.pointerId !== drag.id) return;
+    const { index, moved } = drag;
+    drag = null;
+    clearTimeout(relax);
+    ['--sx', '--sy'].forEach((name) => nav.style.removeProperty(name));
+    nav.classList.remove('dragging');
+    hover(-1);
+    lastRelease = performance.now();
+    // Если вели пальцем, щелчки уже были на каждом пункте — лишний не нужен.
+    if (commit) activate(items[index].dataset.tab, moved);
+  };
+  nav.addEventListener('pointerup', (event) => release(event, true));
+  nav.addEventListener('pointercancel', (event) => release(event, false));
+  nav.addEventListener('lostpointercapture', (event) => release(event, false));
+
+  // Клик после касания уже обработан выше; сюда доходит клавиатура.
+  items.forEach((item) => {
+    item.addEventListener('click', () => {
+      if (performance.now() - lastRelease < 500) return;
+      activate(item.dataset.tab, false);
     });
   });
+}
+
+function initChrome() {
+  initNav();
   $('menuBtn').addEventListener('click', openDrawer);
   $('drawerShade').addEventListener('click', closeDrawer);
   $('bellBtn').addEventListener('click', openAnnouncements);

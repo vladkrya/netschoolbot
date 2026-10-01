@@ -45,7 +45,8 @@ export function applyAccent(color = currentAccent()) {
   if (initData && tg) {
     try {
       tg.setHeaderColor?.(color);
-      tg.setBottomBarColor?.(dark);
+      // Панель вкладок теперь стеклянная и парит над фоном — низ Telegram в цвет фона.
+      tg.setBottomBarColor?.('bg_color');
     } catch {
       /* старый клиент Telegram — просто без покраски */
     }
