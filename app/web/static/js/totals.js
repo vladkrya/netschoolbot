@@ -15,7 +15,9 @@ export async function loadTotals(force = false) {
   if (!state.grades || force) {
     container.innerHTML = skeleton(8);
     try {
-      const { data } = await api(`/api/marks${force ? '?refresh=1' : ''}`);
+      const { data } = await api(`/api/marks${force ? '?refresh=1' : ''}`, {
+        onFresh: (fresh) => { state.grades = fresh.data; },
+      });
       state.grades = data;
     } catch (error) {
       container.innerHTML = errorCard(error, 'totalsRetry');

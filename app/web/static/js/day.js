@@ -29,9 +29,12 @@ export async function ensureWeek(iso, force = false) {
   if (!force && loadedWeeks.has(offset)) return;
   if (pending.has(offset)) return pending.get(offset);
 
-  const request = api(`/api/diary?week=${offset}${force ? '&refresh=1' : ''}`)
-    .then(({ data }) => {
-      for (const day of data.days || []) days.set(day.date, day);
+  const keep = ({ data }) => {
+    for (const day of data.days || []) days.set(day.date, day);
+  };
+  const request = api(`/api/diary?week=${offset}${force ? '&refresh=1' : ''}`, { onFresh: keep })
+    .then((payload) => {
+      keep(payload);
       // Окно — неделя до и после: соседние недели тоже уже на руках.
       for (const shift of [-1, 0, 1]) loadedWeeks.add(offset + shift);
     })

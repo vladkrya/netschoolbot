@@ -244,11 +244,12 @@ async def manifest(request: web.Request) -> web.Response:
         "lang": "ru",
         "icons": [
             {
-                "src": f"{base}/static/icon.svg",
-                "sizes": "any",
-                "type": "image/svg+xml",
+                "src": f"{base}/static/icon-{size}.png",
+                "sizes": f"{size}x{size}",
+                "type": "image/png",
                 "purpose": "any maskable",
             }
+            for size in (192, 512)
         ],
     }
     return web.json_response(payload, content_type="application/manifest+json")

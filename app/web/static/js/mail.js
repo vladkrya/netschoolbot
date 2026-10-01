@@ -22,7 +22,9 @@ export async function loadMail(force = false) {
   if (!state.mail || force) {
     container.innerHTML = skeleton();
     try {
-      const { data } = await api(`/api/mail${force ? '?refresh=1' : ''}`);
+      const { data } = await api(`/api/mail${force ? '?refresh=1' : ''}`, {
+        onFresh: (fresh) => { state.mail = fresh.data; },
+      });
       state.mail = data;
     } catch (error) {
       container.innerHTML = errorCard(error, 'mailRetry');

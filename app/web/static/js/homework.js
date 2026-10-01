@@ -12,7 +12,9 @@ export async function loadHomework(force = false) {
   if (!state.homework || force) {
     container.innerHTML = skeleton();
     try {
-      const { data } = await api(`/api/homework${force ? '?refresh=1' : ''}`);
+      const { data } = await api(`/api/homework${force ? '?refresh=1' : ''}`, {
+        onFresh: (fresh) => { state.homework = fresh.data; },
+      });
       state.homework = data;
     } catch (error) {
       container.innerHTML = errorCard(error, 'hwRetry');

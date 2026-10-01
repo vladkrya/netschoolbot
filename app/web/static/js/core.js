@@ -59,15 +59,27 @@ export function banner(text, isError) {
 }
 
 const REQUEST_TIMEOUT_MS = 75000;
+// Кэш моложе минуты — его только что получили со школьного сервера,
+// перепроверять незачем.
+const REVALIDATE_AFTER_S = 60;
+const STALE_TEXT = 'Сервер дневника сейчас недоступен. Показаны сохранённые данные.';
 let staleShown = false;
+// Пути, которые за этот запуск уже сверили со школьным сервером.
+const revalidated = new Set();
+
+function staleBanner(show) {
+  if (show) {
+    staleShown = true;
+    banner(STALE_TEXT);
+  } else if (staleShown) {
+    // Свежий ответ пришёл — плашка о сохранённых данных больше не правда.
+    staleShown = false;
+    banner('');
+  }
+}
 
 /** Запрос к API с удостоверением личности и разбором ошибки. */
-export async function api(path, options = {}) {
-  if (demo) {
-    // Демо: данные выдумывает браузер, сервер не участвует.
-    const { demoApi } = await import('./demo.js');
-    return demoApi(path, options);
-  }
+async function request(path, options = {}) {
   // Для FormData браузер сам ставит Content-Type с границей частей.
   const isForm = typeof FormData !== 'undefined' && options.body instanceof FormData;
   const headers = { ...(isForm ? {} : { 'Content-Type': 'application/json' }), ...(options.headers || {}) };
@@ -80,10 +92,11 @@ export async function api(path, options = {}) {
   // бесконечно. Сервер сам отвечает не дольше минуты при обновлении.
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const { onFresh, ...init } = options;
   let response;
   try {
     response = await fetch(base + path, {
-      ...options, headers, cache: 'no-store', signal: controller.signal,
+      ...init, headers, cache: 'no-store', signal: controller.signal,
     });
   } catch (error) {
     const failure = new Error(error.name === 'AbortError'
@@ -106,16 +119,63 @@ export async function api(path, options = {}) {
     error.reason = payload.reason;
     throw error;
   }
-  if (payload.stale) {
-    staleShown = true;
-    banner(payload.refreshing
-      ? 'Показаны сохранённые данные. Обновление идёт в фоне.'
-      : 'Дневник сейчас недоступен. Показаны сохранённые данные.');
-  } else if (staleShown && 'data' in payload) {
-    // Свежий ответ пришёл — плашка о сохранённых данных больше не правда.
-    staleShown = false;
-    banner('');
+  return payload;
+}
+
+const withRefresh = (path) => `${path}${path.includes('?') ? '&' : '?'}refresh=1`;
+
+/** Сверить показанные сохранённые данные со школьным сервером.
+ *  Новое — отдаём в onFresh и сообщаем экранам событием netschool:fresh. */
+async function revalidate(path, shown, onFresh) {
+  revalidated.add(path);
+  let fresh;
+  try {
+    fresh = await request(withRefresh(path));
+  } catch {
+    revalidated.delete(path);
+    staleBanner(true);
+    return;
   }
+  // Школьный сервер не ответил — на экране остаются сохранённые данные.
+  if (fresh.stale) {
+    revalidated.delete(path);
+    staleBanner(true);
+    return;
+  }
+  staleBanner(false);
+  if (JSON.stringify(fresh.data) === JSON.stringify(shown.data)) return;
+  onFresh(fresh);
+  document.dispatchEvent(new CustomEvent('netschool:fresh', { detail: path }));
+}
+
+/** Запрос к API. Сохранённые сервером данные показываются сразу; если
+ *  передан onFresh, устаревшие тут же сверяются со школьным сервером. */
+export async function api(path, options = {}) {
+  if (demo) {
+    // Демо: данные выдумывает браузер, сервер не участвует.
+    const { demoApi } = await import('./demo.js');
+    return demoApi(path, options);
+  }
+  let payload = await request(path, options);
+
+  const outdated = payload.stale || (payload.age ?? 0) > REVALIDATE_AFTER_S;
+  const canRevalidate = !options.method && !path.includes('refresh=1') && !revalidated.has(path);
+  if (outdated && canRevalidate) {
+    if (options.onFresh) {
+      revalidate(path, payload, options.onFresh);
+      return payload;
+    }
+    // Экрану без перерисовки отдаём сразу свежее, если сервер успевает.
+    if (payload.stale) {
+      try {
+        payload = await request(withRefresh(path));
+      } catch {
+        /* остаётся сохранённое */
+      }
+    }
+  }
+  if (payload.stale && !payload.refreshing) staleBanner(true);
+  else if ('data' in payload && !payload.stale) staleBanner(false);
   return payload;
 }
 

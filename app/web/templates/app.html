@@ -6,8 +6,10 @@
 <meta name="theme-color" content="#4a6fae">
 <title>{{ school or "Дневник" }}</title>
 {% if not demo %}<link rel="manifest" href="{{ base }}/manifest.webmanifest?token={{ token }}">{% endif %}
-<link rel="icon" href="{{ base }}/static/icon.svg">
-<link rel="apple-touch-icon" href="{{ base }}/static/icon.svg">
+<link rel="icon" type="image/png" href="{{ base }}/static/icon-192.png">
+<!-- PNG, а не SVG: iOS не берёт SVG для иконки на домашнем экране и
+     оставляет пустую плитку. -->
+<link rel="apple-touch-icon" href="{{ base }}/static/apple-touch-icon.png">
 <link rel="stylesheet" href="{{ base }}/static/v{{ version }}/app.css">
 <!-- До app.js: приложению нужен Telegram.WebApp уже при старте, чтобы
      забрать initData до первого запроса. Копия у нас, а не с telegram.org:

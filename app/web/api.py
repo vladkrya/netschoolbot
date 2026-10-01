@@ -300,7 +300,10 @@ async def _cached(request: web.Request, section: str, producer, *, cacheable=lam
         # и каждое открытие приложения шло в школьный сервер.
         now_utc = dt.datetime.now(dt.timezone.utc).replace(tzinfo=None)
         if now_utc - updated < fresh_for:
-            return web.json_response({"ok": True, "data": payload, "stale": False})
+            # Возраст кэша нужен приложению: при входе оно показывает сохранённое
+            # сразу, а заметно устаревшее тут же перепроверяет у школьного сервера.
+            age = max(0, int((now_utc - updated).total_seconds()))
+            return web.json_response({"ok": True, "data": payload, "stale": False, "age": age})
 
     task = _refresh_cached_section(app, user, section, producer, cacheable)
     if cached is not None:

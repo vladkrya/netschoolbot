@@ -565,14 +565,14 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
   pointer-events: none;
 }
 /* Капля: крупнее панели, почти прозрачная, с яркой кромкой и отсветом
-   снизу, как у настоящего стекла. Растягивается по ходу движения. */
+   снизу, как у настоящего стекла. Положение и растяжение каждый кадр
+   задаёт app.js, поэтому переходов на них нет. Своего backdrop-filter у неё
+   тоже нет: внутри стеклянной панели WebKit рисовал его с двоением. */
 .bottom-nav.dragging .nav-glider {
   z-index: 2;
   translate: var(--x, 0) 0;
   scale: var(--sx, 1.22) var(--sy, 1.18);
-  background: rgba(255, 255, 255, .07);
-  -webkit-backdrop-filter: saturate(170%) brightness(1.08);
-  backdrop-filter: saturate(170%) brightness(1.08);
+  background: rgba(255, 255, 255, .1);
   box-shadow:
     0 8px 22px rgba(15, 25, 45, .22),
     0 0 0 .5px rgba(15, 25, 45, .14),
@@ -580,10 +580,8 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
     inset 0 1.5px 1px rgba(255, 255, 255, .9),
     inset 0 -8px 14px rgba(255, 255, 255, .16),
     inset 0 2px 10px rgba(15, 25, 45, .08);
-  transition:
-    translate .2s cubic-bezier(.2, .8, .3, 1),
-    scale .25s cubic-bezier(.34, 1.45, .5, 1),
-    background-color .2s, box-shadow .2s;
+  transition: background-color .2s, box-shadow .2s;
+  will-change: translate, scale;
 }
 .nav-item {
   position: relative;
@@ -608,7 +606,8 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .nav-item .ico { display: flex; transition: transform .3s cubic-bezier(.34, 1.45, .5, 1); }
 .nav-item.active { color: var(--primary); opacity: 1; font-weight: 600; }
 .nav-item.active .ico { animation: bounce .45s var(--ease); }
-/* Пункт под пальцем «увеличен» линзой. */
+/* Пункт под каплей «увеличен» линзой, прежняя вкладка гаснет. */
+.bottom-nav.dragging .nav-item.active:not(.hover) { color: var(--text); opacity: .72; }
 .nav-item.hover { color: var(--primary); opacity: 1; }
 .nav-item.hover .ico { transform: translateY(-1px) scale(1.18); }
 @keyframes bounce { 40% { transform: translateY(-4px) scale(1.12); } }

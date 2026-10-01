@@ -18,8 +18,8 @@ self.addEventListener('push', (event) => {
   event.waitUntil(
     self.registration.showNotification(payload.title || 'Сетевой город', {
       body: payload.body || '',
-      icon: '/static/icon.svg',
-      badge: '/static/icon.svg',
+      icon: '/static/icon-192.png',
+      badge: '/static/icon-192.png',
       data: { url: payload.url || '/' },
       tag: 'netschool',
       renotify: true,
