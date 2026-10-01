@@ -109,6 +109,26 @@
     demo: {{ (demo or false) | tojson }}
   };
 </script>
-<script src="{{ base }}/static/v{{ version }}/js/app.js" type="module"></script>
+<script>
+  // Cloudflare иногда не достукивается до сервера (522), и обрыв любого
+  // модуля ломал всё приложение. Пробуем перезагрузить страницу пару раз.
+  function netschoolBootFailed() {
+    var tries = 0;
+    try { tries = Number(sessionStorage.getItem('bootRetries') || 0); } catch (e) {}
+    if (tries < 2) {
+      try { sessionStorage.setItem('bootRetries', String(tries + 1)); } catch (e) {}
+      setTimeout(function () { location.reload(); }, 1500 * (tries + 1));
+      return;
+    }
+    try { sessionStorage.removeItem('bootRetries'); } catch (e) {}
+    var el = document.getElementById('banner');
+    if (el) {
+      el.textContent = 'Не удалось загрузить приложение. Закройте и откройте его снова.';
+      el.classList.add('error');
+      el.hidden = false;
+    }
+  }
+</script>
+<script src="{{ base }}/static/v{{ version }}/js/app.js" type="module" onerror="netschoolBootFailed()"></script>
 </body>
 </html>

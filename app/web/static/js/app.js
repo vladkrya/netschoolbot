@@ -154,4 +154,6 @@ async function start() {
   }
 }
 
+// Модули загрузились — счётчик перезагрузок из app.html больше не нужен.
+try { sessionStorage.removeItem('bootRetries'); } catch { /* приватный режим */ }
 start();
