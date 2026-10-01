@@ -11,6 +11,9 @@ from __future__ import annotations
 import asyncio
 import datetime as dt
 import logging
+import mimetypes
+import re
+from urllib.parse import quote
 from dataclasses import asdict, replace
 
 from aiohttp import web
@@ -37,6 +40,9 @@ USER = "netschool_user"
 
 # Не задерживаем показ сохранённых данных ожиданием школьного сервера.
 CACHE_RESPONSE_WAIT = 0.2
+# Обновление жестом — человек явно просит свежие данные и видит индикатор,
+# поэтому ждём школьный сервер всерьёз. Меньше таймаута запроса в браузере.
+REFRESH_RESPONSE_WAIT = 60
 
 
 def _cache_owner(user: User) -> tuple:
@@ -298,7 +304,10 @@ async def _cached(request: web.Request, section: str, producer, *, cacheable=lam
 
     task = _refresh_cached_section(app, user, section, producer, cacheable)
     if cached is not None:
-        completed, _ = await asyncio.wait({task}, timeout=CACHE_RESPONSE_WAIT)
+        # Раньше и обновление жестом получало кэш через 0,2 с, а экран после
+        # фоновой загрузки не перерисовывался — «обновление» ничего не меняло.
+        wait = REFRESH_RESPONSE_WAIT if request.query.get("refresh") else CACHE_RESPONSE_WAIT
+        completed, _ = await asyncio.wait({task}, timeout=wait)
         if not completed:
             return web.json_response(
                 {"ok": True, "data": cached[0], "stale": True, "refreshing": True}
@@ -628,14 +637,32 @@ async def attachment(request: web.Request) -> web.Response:
 
     app, user = context(request), current_user(request)
     payload = await app.diary.download_attachment(user, attachment_id)
+    # Без имени и типа файл сохранялся как «attachment-123» без расширения,
+    # и телефон не понимал, что это docx или pdf.
+    name = _attachment_name(request.query.get("name", ""), attachment_id)
+    content_type = mimetypes.guess_type(name)[0] or "application/octet-stream"
     return web.Response(
         body=payload,
         headers={
-            # Имя файла не подставляем из данных школы: оно приходит извне и
-            # в заголовке требует отдельного экранирования.
-            "Content-Disposition": f'attachment; filename="attachment-{attachment_id}"'
+            "Content-Type": content_type,
+            "Content-Disposition": _content_disposition(name),
         },
     )
+
+
+_UNSAFE_NAME = re.compile(r'[\x00-\x1f\x7f/\\"]+')
+
+
+def _attachment_name(raw: str, attachment_id: int) -> str:
+    """Имя файла для скачивания: из ссылки, без путей и управляющих символов."""
+    name = _UNSAFE_NAME.sub("_", raw).strip(" .")[:200]
+    return name or f"attachment-{attachment_id}"
+
+
+def _content_disposition(name: str) -> str:
+    """Заголовок с именем в UTF-8 (RFC 6266) и ASCII-запасным для старых клиентов."""
+    fallback = name.encode("ascii", "replace").decode().replace("?", "_")
+    return f"attachment; filename=\"{fallback}\"; filename*=UTF-8''{quote(name, safe='')}"
 
 
 @routes.post("/api/student")

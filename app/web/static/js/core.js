@@ -58,6 +58,9 @@ export function banner(text, isError) {
   el.hidden = !text;
 }
 
+const REQUEST_TIMEOUT_MS = 75000;
+let staleShown = false;
+
 /** Запрос к API с удостоверением личности и разбором ошибки. */
 export async function api(path, options = {}) {
   if (demo) {
@@ -73,7 +76,24 @@ export async function api(path, options = {}) {
   if (initData) headers['X-Telegram-Init-Data'] = initData;
   if (token) headers['X-Netschool-Token'] = token;
 
-  const response = await fetch(base + path, { ...options, headers, cache: 'no-store' });
+  // Без предела запрос к зависшему школьному серверу крутил загрузку
+  // бесконечно. Сервер сам отвечает не дольше минуты при обновлении.
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  let response;
+  try {
+    response = await fetch(base + path, {
+      ...options, headers, cache: 'no-store', signal: controller.signal,
+    });
+  } catch (error) {
+    const failure = new Error(error.name === 'AbortError'
+      ? 'Сервер школы долго не отвечает. Попробуйте обновить чуть позже.'
+      : 'Нет связи с сервером. Проверьте интернет.');
+    failure.reason = 'server';
+    throw failure;
+  } finally {
+    clearTimeout(timer);
+  }
 
   let payload;
   try {
@@ -87,20 +107,28 @@ export async function api(path, options = {}) {
     throw error;
   }
   if (payload.stale) {
+    staleShown = true;
     banner(payload.refreshing
       ? 'Показаны сохранённые данные. Обновление идёт в фоне.'
       : 'Дневник сейчас недоступен. Показаны сохранённые данные.');
+  } else if (staleShown && 'data' in payload) {
+    // Свежий ответ пришёл — плашка о сохранённых данных больше не правда.
+    staleShown = false;
+    banner('');
   }
   return payload;
 }
 
 /** Ссылка на вложение: браузер качает её сам, заголовок туда не положить. */
-export function attachmentUrl(id) {
+export function attachmentUrl(id, name = '') {
   if (demo) return '#';
   const credential = initData
     ? `tgWebAppData=${encodeURIComponent(initData)}`
     : `token=${encodeURIComponent(token)}`;
-  return `${base}/api/attachment/${id}?${credential}`;
+  // Имя нужно серверу для заголовка: без него файл сохранялся как
+  // «attachment-123» без расширения и не открывался как docx или pdf.
+  const filename = name ? `&name=${encodeURIComponent(name)}` : '';
+  return `${base}/api/attachment/${id}?${credential}${filename}`;
 }
 
 export function attachmentsHtml(items) {
@@ -108,7 +136,7 @@ export function attachmentsHtml(items) {
   return items
     .map(
       (item) =>
-        `<a class="attach" href="${attachmentUrl(item.id)}" target="_blank" rel="noopener">${ICONS.clip} ${esc(item.name)}</a>`
+        `<a class="attach" href="${attachmentUrl(item.id, item.name)}" target="_blank" rel="noopener">${ICONS.clip} ${esc(item.name)}</a>`
     )
     .join('');
 }

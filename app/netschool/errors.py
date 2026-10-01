@@ -63,7 +63,10 @@ _AUTH_MARKERS = (
 _SERVER_MARKERS = (
     "timeout", "temporarily unavailable", "service unavailable",
     "all connection attempts failed", "server disconnected", "connection refused",
-    "502", "503", "504",
+    # httpx пишет «Server error '500 Internal Server Error'»; 500 у школьного
+    # сервера — такой же временный сбой, а считался «неизвестной ошибкой»,
+    # без повтора и без сохранённых данных.
+    "500", "502", "503", "504", "internal server error",
 )
 _ESIA_MARKERS = ("esia", "gosuslugi", "госуслуг")
 _RATE_MARKERS = ("429", "too many requests")
@@ -136,6 +139,12 @@ def wrap(exc: Exception, *, context: str = "") -> NetSchoolError:
     if reason is Reason.MFA and str(exc):
         # У MFA-ошибок текст библиотеки уже написан для человека.
         message = str(exc)
-    if context:
+    if reason is Reason.UNKNOWN:
+        # Иначе за общим «Не удалось получить данные» не видно настоящей причины.
+        logger.warning(
+            "Неизвестная ошибка «Сетевого города» в %s: %s: %s",
+            context or "запросе", type(exc).__name__, exc,
+        )
+    elif context:
         logger.debug("Ошибка «Сетевого города» (%s) в %s: %s", reason.value, context, exc)
     return NetSchoolError(reason, message, cause=exc)

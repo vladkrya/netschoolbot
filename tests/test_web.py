@@ -364,6 +364,7 @@ class TestCache:
         from app.web import api
 
         monkeypatch.setattr(api, "CACHE_RESPONSE_WAIT", 0.01)
+        monkeypatch.setattr(api, "REFRESH_RESPONSE_WAIT", 0.01)
         saved = {"days": [{"date": "2026-09-30"}], "week": 0}
         await app_context.cache.put(1, "diary:0", saved)
         release = asyncio.Event()
@@ -395,6 +396,26 @@ class TestCache:
         assert body["stale"] is False
         assert body["data"]["days"] == []
 
+    async def test_pull_to_refresh_waits_for_fresh_data(
+        self, client, app_context, token, monkeypatch
+    ):
+        from app.web import api
+
+        # Обычное открытие отдаёт кэш сразу, а жест обновления ждёт школу:
+        # раньше он тоже получал старое через 0,2 с, и экран не менялся.
+        monkeypatch.setattr(api, "CACHE_RESPONSE_WAIT", 0.01)
+        await app_context.cache.put(1, "diary:0", {"days": [{"date": "2026-09-30"}], "week": 0})
+
+        async def slow(*args, **kwargs):
+            await asyncio.sleep(0.1)
+            return []
+
+        monkeypatch.setattr(app_context.diary, "fetch_diary", slow)
+        response = await client.get(f"{BASE}/api/diary", params={"token": token, "refresh": "1"})
+        body = await response.json()
+        assert body["stale"] is False
+        assert body["data"]["days"] == []
+
     async def test_background_refresh_does_not_restore_previous_child_cache(
         self, client, app_context, token, monkeypatch
     ):
@@ -402,6 +423,7 @@ class TestCache:
         from app.web import api
 
         monkeypatch.setattr(api, "CACHE_RESPONSE_WAIT", 0.01)
+        monkeypatch.setattr(api, "REFRESH_RESPONSE_WAIT", 0.01)
         await app_context.cache.put(1, "diary:0", {"days": [], "week": 0})
         release = asyncio.Event()
 
@@ -614,6 +636,21 @@ class TestTelegramMiniApp:
             f"{BASE}/api/attachment/1", params={"tgWebAppData": self.init_data(1)}
         )
         assert response.status == 200
+
+    async def test_attachment_keeps_name_and_type(self, client, users):
+        # Без имени файл сохранялся как «attachment-1» и не открывался как docx.
+        await users.save(make_user())
+        response = await client.get(
+            f"{BASE}/api/attachment/1",
+            params={"tgWebAppData": self.init_data(1), "name": "../ССП \"1\".docx"},
+        )
+        assert response.status == 200
+        assert response.headers["Content-Type"] == (
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        )
+        disposition = response.headers["Content-Disposition"]
+        assert "filename*=UTF-8''_%D0%A1%D0%A1%D0%9F%20_1_.docx" in disposition
+        assert 'filename="____ _1_.docx"' in disposition
 
 
 class TestDiaryScreen:

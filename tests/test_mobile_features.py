@@ -329,6 +329,19 @@ class TestTotals:
         assert table["История"]["terms"] == {"q1": {"mark": "зач", "average": None}}
         assert set(table) == {"Алгебра", "История"}
 
+    def test_status_codes_are_not_marks(self):
+        from app.netschool.mapping import totals_from_mobile
+
+        # Так /totals отвечает в начале года: статус вместо оценки. В таблице
+        # «Итогов» стояли «PointSystem» и «NotExamined».
+        rows = [{"subjectId": 10, "termTotals": [
+            {"term": {"name": "1 четверть"}, "markCode": "PointSystem", "avgMark": 5.0},
+            {"term": {"name": "2 четверть"}, "markCode": "NotExamined", "avgMark": None},
+        ], "yearTotals": [{"period": {"periodType": "Year"}, "markCode": "NotExamined"}]}]
+        assert totals_from_mobile(rows, {10: "Алгебра"}) == {
+            "Алгебра": {"terms": {"q1": {"mark": "", "average": 5.0}}, "year": "", "final": ""}
+        }
+
     def test_year_and_final_are_told_apart(self):
         from app.netschool.mapping import totals_from_mobile
 

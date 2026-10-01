@@ -19,6 +19,10 @@ class TestClassify:
             ("403 Forbidden", Reason.AUTH),
             ("Read timeout", Reason.SERVER_UNAVAILABLE),
             ("503 Service Unavailable", Reason.SERVER_UNAVAILABLE),
+            # Школьный сервер падал с 500, и приложение писало «Не удалось
+            # получить данные» вместо повтора и сохранённых данных.
+            ("Server error '500 Internal Server Error' for url '/webapi/context'", Reason.SERVER_UNAVAILABLE),
+            ("/users: сервер ответил 500", Reason.SERVER_UNAVAILABLE),
             ("All connection attempts failed", Reason.SERVER_UNAVAILABLE),
             ("Server disconnected", Reason.SERVER_UNAVAILABLE),
             ("429 Too Many Requests", Reason.RATE_LIMIT),

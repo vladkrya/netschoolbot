@@ -291,12 +291,19 @@ def quarter_key_of_term(name: Any) -> str | None:
     return None
 
 
+# Служебные значения `markCode` в `/totals`: статус периода, а не отметка.
+# `NotExamined` — оценки ещё нет, `PointSystem` — итог считается по среднему.
+# В таблице «Итогов» они стояли вместо оценок.
+_STATUS_CODE = re.compile(r"^[A-Z][a-z]+(?:[A-Z][a-z]+)+$|^(?:None|Null|NotSet)$")
+
+
 def _mark_code(value: Any) -> str:
     if value is None or isinstance(value, bool):
         return ""
     if isinstance(value, float) and value.is_integer():
         return str(int(value))
-    return str(value).strip()
+    text = str(value).strip()
+    return "" if _STATUS_CODE.match(text) else text
 
 
 def _number(value: Any) -> float | None:
