@@ -85,7 +85,10 @@ class TestPages:
         """
         response = await client.get(f"{BASE}/")
         assert response.status == 200
-        assert "telegram-web-app.js" in await response.text()
+        text = await response.text()
+        assert "telegram-web-app.js" in text
+        # Без VPN telegram.org заблокирован, а скрипт в head держит отрисовку.
+        assert "src=\"https://telegram.org" not in text
 
     async def test_index_with_token_renders_app(self, client, token):
         response = await client.get(f"{BASE}/", params={"token": token})
