@@ -4,7 +4,7 @@ Telegram-бот и PWA для «Сетевого города. Образова�
 оценках, их изменениях и удалениях, домашние задания, расписание, школьная
 почта и статистика.
 
-Домен: **https://ns2.ikrya.ru** (через Cloudflare). Прежние `ns.ikrya.ru` и `netschool.ikrya.ru` работают параллельно для уже открытых ссылок и установленных PWA.
+Домен: **https://ns.ikrya.ru** (ВМ yavds в Yandex Cloud, без Cloudflare — см. «Адрес на yavds»). Прежние `ns2.ikrya.ru` и `netschool.ikrya.ru` работают параллельно для уже открытых ссылок и установленных PWA.
 
 ## Что это за версия
 
@@ -108,16 +108,15 @@ nginx -t && systemctl reload nginx
 
 Веб слушает `127.0.0.1:8283`. Проверка живости — `GET /health`.
 
-### Резервные адреса на yavds
+### Адрес на yavds
 
 Когда мобильный интернет урезают до белых списков, Cloudflare и vdsru не
-открываются, а адреса Yandex Cloud — могут открываться. Поэтому то же приложение
-доступно на `https://yavds.ikrya.ru` и `https://yavds2.ikrya.ru` (разные ВМ и
-подсети). На vdsru экземпляры `deploy/systemd/miniapp-mirror@.service`
-(`miniapp-mirror@yavds.ikrya.ru`, `miniapp-mirror@yavds2.ikrya.ru`) пробрасывают
-порт 8283 на каждый сервер, там nginx из `deploy/nginx/yavds*.ikrya.ru.conf`.
-В `.env` бота `NETSCHOOL_MIRROR_URL` — адрес, который бот показывает кнопкой
-«Резервный адрес» в `/app_install` и `/app_reset`.
+открываются. Поэтому приложение отдаётся с ВМ yavds в Yandex Cloud: адреса
+`https://ns.ikrya.ru` (основной, DNS без Cloudflare) и `https://yavds.ikrya.ru`.
+На vdsru `miniapp-mirror@yavds.ikrya.ru` (`deploy/systemd/miniapp-mirror@.service`)
+пробрасывает порт 8283 на yavds, там nginx из `deploy/nginx/ns.ikrya.ru.conf` и
+`deploy/nginx/yavds.ikrya.ru.conf`. `NETSCHOOL_MIRROR_URL` в `.env` добавляет
+кнопку «Резервный адрес» в `/app_install` и `/app_reset`.
 
 Приложение отдаётся с корня домена. Старые ссылки `/mini/netschool/...`
 переадресуются на те же пути от корня.
@@ -194,7 +193,7 @@ python -m pytest
 
 ## Лицензия
 
-Личный проект. Данные учеников хранятся на вашем сервере; веб-трафик `ns2.ikrya.ru` проходит через Cloudflare.
+Личный проект. Данные учеников хранятся на вашем сервере; веб-трафик `ns.ikrya.ru` идёт через ВМ yavds в Yandex Cloud, `ns2.ikrya.ru` — через Cloudflare.
 
 
 <!-- Security scan triggered at 2026-09-04 13:03:20 -->
