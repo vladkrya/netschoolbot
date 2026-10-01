@@ -99,8 +99,15 @@ def marks_from_day(day: Any) -> list[MarkRecord]:
     return records
 
 
-def homework_from_day(day: Any, *, today: dt.date | None = None) -> list[HomeworkRecord]:
-    """Домашние задания одного дня дневника, отфильтрованные по актуальности."""
+def homework_from_day(
+    day: Any, *, today: dt.date | None = None, only_current: bool = True
+) -> list[HomeworkRecord]:
+    """Домашние задания одного дня дневника.
+
+    `only_current` оставляет только актуальные — для списка «Д/З» и
+    уведомлений. Урокам в дневнике нужны все: иначе прошлые дни недели
+    показывались без домашки.
+    """
     day_date = _as_date(_attr(day, "day"))
     if day_date is None:
         return []
@@ -124,7 +131,7 @@ def homework_from_day(day: Any, *, today: dt.date | None = None) -> list[Homewor
                 continue
 
             due = _as_date(_attr(assignment, "deadline")) or day_date
-            if not earliest <= due <= latest:
+            if only_current and not earliest <= due <= latest:
                 continue
 
             records.append(
@@ -168,7 +175,7 @@ def lessons_from_day(day: Any, *, today: dt.date | None = None) -> list[Lesson]:
         return []
 
     all_marks = marks_from_day(day)
-    all_homework = homework_from_day(day, today=today)
+    all_homework = homework_from_day(day, today=today, only_current=False)
 
     lessons: list[Lesson] = []
     for position, raw in enumerate(_attr(day, "lessons", []) or []):

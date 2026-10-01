@@ -160,6 +160,15 @@ class TestHomework:
         )
         assert records == []
 
+    def test_past_lessons_keep_their_homework(self):
+        # В дневнике вторник был пустым, а среда — с домашкой: фильтр
+        # актуальности для списка «Д/З» срезал задания и у прошлых уроков.
+        old = self.TODAY - dt.timedelta(days=2)
+        raw = day([lesson([assignment(content="Упр. 7", deadline=old)])], date=old)
+        (item,) = lessons_from_day(raw, today=self.TODAY)
+        assert [h.text for h in item.homework] == ["Упр. 7"]
+        assert homework_from_day(raw, today=self.TODAY) == []
+
     def test_empty_content_without_attachments_is_skipped(self):
         records = homework_from_day(
             day([lesson([assignment(content="")])]), today=self.TODAY
