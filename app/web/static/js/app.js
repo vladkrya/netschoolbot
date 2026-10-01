@@ -123,27 +123,39 @@ function initNav() {
   let lastRelease = 0;
 
   const geometry = () => {
-    const rect = nav.getBoundingClientRect();
-    return { left: rect.left + 4, inner: rect.width - 8, cell: (rect.width - 8) / items.length };
+    // Отступ 4px внутри рамки — как у .nav-glider в app.css.
+    const left = nav.getBoundingClientRect().left + nav.clientLeft + 4;
+    const inner = nav.clientWidth - 8;
+    return { left, inner, cell: inner / items.length };
   };
   const indexAt = (x) => {
     const { left, cell } = geometry();
     return Math.max(0, Math.min(items.length - 1, Math.floor((x - left) / cell)));
   };
+  // Капля шире ячейки (см. --sx в app.css), поэтому у краёв её центр
+  // держим дальше от края: раздутая, она доходит ровно до кромки панели.
+  const BASE_SX = 1.22;
+  let scaleX = BASE_SX;
+  let lastX = 0;
   const follow = (x) => {
+    lastX = x;
     const { left, inner, cell } = geometry();
-    const pos = Math.max(0, Math.min(inner - cell, x - left - cell / 2));
+    const inset = Math.max(0, (cell * (scaleX - 1)) / 2 - 4);
+    const pos = Math.max(inset, Math.min(inner - cell - inset, x - left - cell / 2));
     nav.style.setProperty('--x', `${pos}px`);
   };
   const hover = (index) => items.forEach((item, i) => item.classList.toggle('hover', i === index));
   const stretch = (speed) => {
     const extra = Math.min(speed * 0.18, 0.3);
-    nav.style.setProperty('--sx', (1.22 + extra).toFixed(3));
+    scaleX = BASE_SX + extra;
+    nav.style.setProperty('--sx', scaleX.toFixed(3));
     nav.style.setProperty('--sy', (1.18 - extra / 2).toFixed(3));
     clearTimeout(relax);
     relax = setTimeout(() => {
+      scaleX = BASE_SX;
       nav.style.removeProperty('--sx');
       nav.style.removeProperty('--sy');
+      if (drag) follow(lastX);
     }, 90);
   };
 
@@ -192,6 +204,7 @@ function initNav() {
     const { index, moved } = drag;
     drag = null;
     clearTimeout(relax);
+    scaleX = BASE_SX;
     ['--sx', '--sy'].forEach((name) => nav.style.removeProperty(name));
     nav.classList.remove('dragging');
     hover(-1);
