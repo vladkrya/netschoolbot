@@ -96,9 +96,17 @@ class WebSettings:
     login_code_ttl: int
     cache_fresh_seconds: int
 
+    # Резервный адрес того же приложения: сервер, до которого доходят и
+    # тогда, когда мобильный интернет урезан до белых списков.
+    mirror_url: str = ""
+
     @property
     def miniapp_url(self) -> str:
         return f"{self.public_url}{self.miniapp_path}"
+
+    @property
+    def mirror_miniapp_url(self) -> str:
+        return f"{self.mirror_url}{self.miniapp_path}" if self.mirror_url else ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -195,7 +203,9 @@ def load_settings(*, require_bot_token: bool = True) -> Settings:
         )
 
     public_url = (_env("NETSCHOOL_PUBLIC_URL") or "https://ns.ikrya.ru").rstrip("/")
-    miniapp_path = "/" + _env("NETSCHOOL_MINIAPP_PATH", "/mini/netschool").strip("/")
+    # Пустой путь — приложение с корня домена. Иначе "/" давал бы "//" в ссылках.
+    miniapp_path = _env("NETSCHOOL_MINIAPP_PATH").strip("/")
+    miniapp_path = f"/{miniapp_path}" if miniapp_path else ""
 
     # Секрета для подписи сессий здесь нет намеренно. Он был нужен Flask,
     # который подписывал им cookie сессии; в текущем веб-слое авторизация
@@ -230,6 +240,7 @@ def load_settings(*, require_bot_token: bool = True) -> Settings:
             host=_env("NETSCHOOL_WEB_HOST", "127.0.0.1"),
             port=_env_int("NETSCHOOL_WEB_PORT", 8283),
             public_url=public_url,
+            mirror_url=_env("NETSCHOOL_MIRROR_URL").rstrip("/"),
             miniapp_path=miniapp_path,
             token_ttl=_env_int("NETSCHOOL_MINIAPP_TOKEN_TTL", 900),
             login_code_ttl=_env_int("NETSCHOOL_LOGIN_CODE_TTL", 600),

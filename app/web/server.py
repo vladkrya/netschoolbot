@@ -4,8 +4,8 @@ aiohttp вместо Flask + flask-socketio + eventlet в отдельном п�
 живёт в том же event loop, что и бот, и они делят один пул сессий
 «Сетевого города» и одно соединение с базой.
 
-Всё приложение монтируется подприложением под своим префиксом (по
-умолчанию `/mini/netschool`). Это не косметика: страница строит ссылки на
+Приложение отдаётся с корня домена либо, если задан NETSCHOOL_MINIAPP_PATH,
+подприложением под этим префиксом. Это не косметика: страница строит ссылки на
 статику и API от этого префикса, и когда маршруты висели в корне, браузер
 получал 404 на CSS, JS и на каждый запрос данных — работал только голый
 HTML-каркас.
@@ -35,6 +35,10 @@ STATIC_DIR = Path(__file__).parent / "static"
 STATIC_VERSION = str(int(time.time()))
 
 page_routes = web.RouteTableDef()
+
+# Прежний адрес приложения. Ссылки на него остались в чатах, на домашних
+# экранах и в подписках на push, поэтому он по-прежнему ведёт в приложение.
+LEGACY_PREFIX = "/mini/netschool"
 
 
 def create_app(context: AppContext, bot=None) -> web.Application:
@@ -67,6 +71,7 @@ def create_app(context: AppContext, bot=None) -> web.Application:
     prefix = context.settings.web.miniapp_path.rstrip("/")
     if not prefix:
         # Приложение отдаётся с корня домена — вложенность не нужна.
+        inner.middlewares.insert(0, _legacy_prefix_middleware)
         inner.router.add_get("/health", health)
         return inner
 
@@ -112,6 +117,28 @@ def _make_redirect_middleware(prefix: str):
         return await handler(request)
 
     return redirect
+
+
+@web.middleware
+async def _legacy_prefix_middleware(request: web.Request, handler):
+    """Старые адреса `/mini/netschool/...` ведут на те же пути от корня.
+
+    Service worker отдаётся на месте, а не переадресацией: браузер не
+    обновляет его по редиректу, и вместе с ним отвалились бы push-подписки
+    уже установленных приложений.
+    """
+    path = request.path
+    if path != LEGACY_PREFIX and not path.startswith(LEGACY_PREFIX + "/"):
+        return await handler(request)
+    if path == f"{LEGACY_PREFIX}/sw.js":
+        return await service_worker(request)
+    target = path[len(LEGACY_PREFIX):] or "/"
+    if request.query_string:
+        target = f"{target}?{request.query_string}"
+    # 307 сохраняет метод и тело: устаревший JS шлёт и POST-запросы к API.
+    if request.method in ("GET", "HEAD"):
+        raise web.HTTPFound(target)
+    raise web.HTTPTemporaryRedirect(target)
 
 
 async def health(request: web.Request) -> web.Response:

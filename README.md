@@ -108,6 +108,18 @@ nginx -t && systemctl reload nginx
 
 Веб слушает `127.0.0.1:8283`. Проверка живости — `GET /health`.
 
+### Резервный адрес на yavds
+
+Когда мобильный интернет урезают до белых списков, Cloudflare и vdsru не
+открываются, а Yandex Cloud — открывается. Поэтому то же приложение доступно
+на `https://yavds.ikrya.ru`: на vdsru `deploy/systemd/yavds-miniapp-tunnel.service`
+пробрасывает порт 8283 на yavds, там nginx из `deploy/nginx/yavds.ikrya.ru.conf`.
+В `.env` бота — `NETSCHOOL_MIRROR_URL=https://yavds.ikrya.ru`: тогда в
+`/app_install` и `/app_reset` появляется кнопка «Резервный адрес».
+
+Приложение отдаётся с корня домена. Старые ссылки `/mini/netschool/...`
+переадресуются на те же пути от корня.
+
 ### Доступ к школьным серверам через yavds
 
 На сервере бота `deploy/systemd/asurso-socks.service` держит локальный SOCKS5

@@ -108,6 +108,36 @@ class TestPages:
         assert response.status == 302
         assert response.headers["Location"] == f"{BASE}/"
 
+    async def test_root_app_serves_legacy_prefix(self, app_context, token):
+        # Приложение переехало с /mini/netschool в корень, а старые ссылки
+        # остались в чатах и на домашних экранах.
+        from dataclasses import replace
+
+        settings = replace(app_context.settings, web=replace(app_context.settings.web, miniapp_path=""))
+        root_context = replace(app_context, settings=settings)
+        client = TestClient(TestServer(create_app(root_context)))
+        await client.start_server()
+        try:
+            response = await client.get("/", params={"token": token})
+            assert response.status == 200
+            assert '/static/v' in await response.text()
+
+            response = await client.get(
+                "/mini/netschool", params={"token": token}, allow_redirects=False
+            )
+            assert response.status == 302
+            assert response.headers["Location"] == f"/?token={token}"
+
+            response = await client.post("/mini/netschool/api/x?a=1", allow_redirects=False)
+            assert response.status == 307
+            assert response.headers["Location"] == "/api/x?a=1"
+
+            # Service worker на месте: иначе отвалились бы push-подписки.
+            response = await client.get("/mini/netschool/sw.js")
+            assert response.status == 200
+        finally:
+            await client.close()
+
     async def test_manifest_keeps_token_in_start_url(self, client, token):
         response = await client.get(f"{BASE}/manifest.webmanifest", params={"token": token})
         payload = await response.json(content_type=None)

@@ -52,6 +52,14 @@ async def miniapp_url(app: AppContext, user: User) -> str:
     return f"{app.settings.web.miniapp_url}/?token={token}"
 
 
+def mirror_url(app: AppContext, url: str) -> str:
+    """Та же ссылка на резервном адресе, если он настроен."""
+    web = app.settings.web
+    if not url or not web.mirror_url:
+        return ""
+    return web.mirror_miniapp_url + url[len(web.miniapp_url):]
+
+
 @router.message(CommandStart())
 @router.message(Command("menu"))
 async def show_menu(message: Message, user: User, app: AppContext) -> None:
@@ -231,14 +239,20 @@ async def install_miniapp(message: Message, user: User, app: AppContext) -> None
         await reply(message, hint)
         return
     url = await miniapp_url(app, user)
+    mirror = mirror_url(app, url)
+    mirror_hint = (
+        "Если мобильный интернет урезан и основной адрес не открывается — "
+        "установите с резервного.\n\n"
+    ) if mirror else ""
     await message.answer(
         "🌐 <b>Установка на телефон</b>\n\n"
         "Откройте ссылку в браузере и выберите «Добавить на домашний экран» — "
         "дневник появится отдельной иконкой и будет работать без Telegram.\n\n"
+        f"{mirror_hint}"
         "⚠️ Ссылка персональная: по ней открывается ваш дневник. "
         "Если она утекла — <code>/app_reset</code>.",
         parse_mode="HTML",
-        reply_markup=keyboards.miniapp_external(url),
+        reply_markup=keyboards.miniapp_external(url, mirror),
     )
 
 
@@ -263,7 +277,7 @@ async def miniapp_reset(message: Message, user: User, app: AppContext) -> None:
     url = f"{app.settings.web.miniapp_url}/?token={token}"
     await message.answer(
         "🔄 Старая ссылка отозвана, прежние перестали работать. Новая:",
-        reply_markup=keyboards.miniapp_external(url),
+        reply_markup=keyboards.miniapp_external(url, mirror_url(app, url)),
     )
 
 

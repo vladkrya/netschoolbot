@@ -134,15 +134,17 @@ def demo(proxied_url: str, direct_url: str) -> InlineKeyboardMarkup:
     )
 
 
-def miniapp_external(url: str) -> InlineKeyboardMarkup:
+def miniapp_external(url: str, mirror_url: str = "") -> InlineKeyboardMarkup:
     """Обычная ссылка — для установки приложения на домашний экран.
 
     Внутри Telegram установить PWA нельзя: для этого страницу нужно открыть
-    в самом браузере.
+    в самом браузере. Резервный адрес — для мобильного интернета по белым
+    спискам, когда основной домен не открывается.
     """
-    return InlineKeyboardMarkup(
-        inline_keyboard=[[InlineKeyboardButton(text="🌐 Открыть в браузере", url=url)]]
-    )
+    rows = [[InlineKeyboardButton(text="🌐 Открыть в браузере", url=url)]]
+    if mirror_url:
+        rows.append([InlineKeyboardButton(text="🛟 Резервный адрес", url=mirror_url)])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def api_modes(user: User, mobile_available: bool) -> InlineKeyboardMarkup:

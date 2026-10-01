@@ -117,6 +117,15 @@ class TestProxyHosts:
 
 
 class TestUrls:
+    def test_miniapp_is_served_from_root_by_default(self, monkeypatch):
+        monkeypatch.setenv("NETSCHOOL_BOT_TOKEN", "123:abc")
+        monkeypatch.setenv("NETSCHOOL_PUBLIC_URL", "https://example.ru")
+        monkeypatch.delenv("NETSCHOOL_MINIAPP_PATH", raising=False)
+        monkeypatch.setenv("NETSCHOOL_MIRROR_URL", "https://mirror.ru/")
+        web = load_settings().web
+        assert web.miniapp_url == "https://example.ru"
+        assert web.mirror_miniapp_url == "https://mirror.ru"
+
     def test_miniapp_url_is_composed(self, monkeypatch):
         monkeypatch.setenv("NETSCHOOL_BOT_TOKEN", "123:abc")
         monkeypatch.setenv("NETSCHOOL_PUBLIC_URL", "https://example.ru/")

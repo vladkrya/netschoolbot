@@ -1,0 +1,15 @@
+[Unit]
+Description=Reverse tunnel: miniapp port 8283 to Yandex VM (backup address)
+After=network-online.target netschoolbot.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/ssh -N -T -R 127.0.0.1:8283:127.0.0.1:8283 -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o ExitOnForwardFailure=yes -o ConnectTimeout=10 -o ServerAliveInterval=20 -o ServerAliveCountMax=3 -i /root/.ssh/asurso_proxy_ed25519 vlad@yavds.ikrya.ru
+Restart=always
+RestartSec=10
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
