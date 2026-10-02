@@ -2,11 +2,12 @@
 'use strict';
 
 import {
-  $, ABSENCES, api, errorCard, esc, formatAverage, isAbsence, isoToday, dayMonth,
+  $, ABSENCES, api, avgClass, errorCard, esc, formatAverage, isAbsence, isoToday, dayMonth,
   shortDate, skeleton, state, weightedAverage,
 } from './core.js';
 import { markBox, openMark } from './details.js';
 import { pushScreen } from './screens.js';
+import { select, tap } from './haptics.js';
 
 const SHORT = { q1: '1/4', q2: '2/4', q3: '3/4', q4: '4/4' };
 
@@ -26,6 +27,12 @@ export async function loadTotals(force = false) {
     }
   }
   render();
+}
+
+/** Цвет выставленной оценки: «5» — зелёный … «2» — красный. */
+function markGrade(mark) {
+  const digit = String(mark || '').match(/[2-5]/);
+  return digit ? `g${digit[0]}` : '';
 }
 
 function quarterMarks(subject, key) {
@@ -51,10 +58,11 @@ function render() {
             // Выставленная оценка за четверть важнее расчётного среднего.
             const official = subject.totals?.terms?.[q.key]?.mark;
             const avg = weightedAverage(quarterMarks(subject, q.key));
-            return `<button class="tt-cell ${official ? 'official' : ''}" data-subject="${index}" data-q="${q.key}">${official ? esc(official) : formatAverage(avg)}</button>`;
+            const grade = official ? markGrade(official) : avg == null ? '' : avgClass(avg);
+            return `<button class="tt-cell ${official ? 'official' : ''} ${grade}" data-subject="${index}" data-q="${q.key}">${official ? esc(official) : formatAverage(avg)}</button>`;
           })
           .join('')}
-        ${hasYear ? `<div class="tt-cell official">${esc(subject.totals?.year || '')}</div>` : ''}
+        ${hasYear ? `<div class="tt-cell official ${markGrade(subject.totals?.year)}">${esc(subject.totals?.year || '')}</div>` : ''}
       </div>`);
 
   const container = $('totalsContent');
@@ -127,7 +135,7 @@ function openSubject(subject, key) {
       ${subject.teacher ? `<div class="muted small" style="margin-top:8px">Учитель: <span class="link">${esc(subject.teacher)}</span></div>` : ''}
     </div>
     <div class="card">
-      <div class="avg-line"><span>Средний балл ученика:</span><strong>${formatAverage(avg)}</strong></div>
+      <div class="avg-line"><span>Средний балл ученика:</span><strong class="${avg == null ? '' : avgClass(avg)}">${formatAverage(avg)}</strong></div>
       <div class="muted small class-avg" data-class-avg hidden></div>
       ${official || yearMark || finalMark ? `<div class="muted small">${[
         official ? `Оценка за четверть: <strong>${esc(official)}</strong>` : '',
@@ -141,11 +149,22 @@ function openSubject(subject, key) {
     <div class="card">
       <div class="card-title">Результаты учебного периода</div>
       ${tiles ? `<div class="tiles">${tiles}</div>` : '<div class="empty">Оценок пока нет</div>'}
+    </div>
+    <div class="card whatif">
+      <div class="card-title">Калькулятор: если получить ещё</div>
+      <div class="whatif-weights">Вес
+        ${[1, 2, 3, 4].map((w) => `<button class="chip" data-weight="${w}">${w}</button>`).join('')}</div>
+      <div class="whatif-add">${[5, 4, 3, 2]
+        .map((value) => `<button class="mark-box mark m${value}" data-add="${value}">${value}</button>`).join('')}</div>
+      <div class="whatif-list"></div>
+      <div class="whatif-result"></div>
+      <div class="muted small whatif-goals"></div>
     </div>`;
 
   body.querySelectorAll('[data-mark]').forEach((tile) =>
     tile.addEventListener('click', () => openMark(marks[Number(tile.dataset.mark)], subject.subject))
   );
+  bindWhatIf(body.querySelector('.whatif'), marks, `${subject.subject}|${key}`);
 
   if (state.grades.mobile) loadClassAverage(body, subject.subject, key);
 }
@@ -162,4 +181,80 @@ async function loadClassAverage(body, subject, key) {
   } catch {
     // Строка необязательная: без неё экран остаётся полным.
   }
+}
+
+/* ─────────────────────── Калькулятор «что если» ─────────────────────── */
+
+// Свои оценки по предмету и четверти — живут до перезагрузки страницы,
+// чтобы можно было выйти из предмета и вернуться к тем же прикидкам.
+const whatIf = new Map();
+
+function bindWhatIf(card, marks, id) {
+  if (!whatIf.has(id)) whatIf.set(id, { weight: 1, extra: [] });
+  const plan = whatIf.get(id);
+
+  const render = () => {
+    card.querySelectorAll('[data-weight]').forEach((chip) =>
+      chip.classList.toggle('active', Number(chip.dataset.weight) === plan.weight));
+
+    card.querySelector('.whatif-list').innerHTML = plan.extra
+      .map((item, index) => `<button class="whatif-item" data-remove="${index}" aria-label="Убрать">
+          <span class="mark-box mark m${item.mark}">${item.mark}</span>
+          <span>вес ${item.weight}</span><span class="x">×</span>
+        </button>`)
+      .join('') || '<div class="muted small">Нажмите оценку, чтобы добавить её к настоящим</div>';
+
+    const before = weightedAverage(marks);
+    const after = weightedAverage([...marks, ...plan.extra]);
+    const delta = before != null && after != null ? after - before : 0;
+    card.querySelector('.whatif-result').innerHTML = plan.extra.length
+      ? `<span>Средний балл станет:</span><span><strong class="${after == null ? '' : avgClass(after)}">${formatAverage(after)}</strong>${
+        Math.abs(delta) >= 0.005
+          ? `<span class="whatif-delta ${delta > 0 ? 'up' : 'down'}">${delta > 0 ? '+' : '−'}${Math.abs(delta).toFixed(2).replace('.', ',')}</span>`
+          : ''}</span>`
+      : '';
+
+    const all = [...marks, ...plan.extra];
+    card.querySelector('.whatif-goals').innerHTML = [5, 4]
+      .map((target) => {
+        const needed = neededMarks(all, target - 0.5, 5, plan.weight);
+        const text = needed === 0 ? 'уже выходит'
+          : needed == null ? 'не набрать' : `ещё ${needed} × «5» с весом ${plan.weight}`;
+        return `До «${target}»: ${text}`;
+      })
+      .join(' · ');
+  };
+
+  card.addEventListener('click', (event) => {
+    const weight = event.target.closest('[data-weight]');
+    const add = event.target.closest('[data-add]');
+    const remove = event.target.closest('[data-remove]');
+    if (weight) {
+      plan.weight = Number(weight.dataset.weight);
+      select();
+    } else if (add) {
+      plan.extra.push({ mark: add.dataset.add, weight: plan.weight });
+      tap();
+    } else if (remove) {
+      plan.extra.splice(Number(remove.dataset.remove), 1);
+      tap('soft');
+    } else {
+      return;
+    }
+    render();
+  });
+  render();
+}
+
+/** Сколько оценок `value` с весом `weight` нужно, чтобы среднее дошло до `target`. */
+function neededMarks(marks, target, value, weight) {
+  const current = weightedAverage(marks);
+  if (current != null && current >= target) return 0;
+  const extra = [];
+  // Предел на случай недостижимой цели.
+  while (extra.length < 100) {
+    extra.push({ mark: value, weight });
+    if (weightedAverage([...marks, ...extra]) >= target) return extra.length;
+  }
+  return null;
 }

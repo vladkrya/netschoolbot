@@ -92,7 +92,7 @@ export function openLesson(lesson, iso) {
 
   const marks = realMarks(lesson.marks);
   body.querySelectorAll('[data-mark]').forEach((el) =>
-    el.addEventListener('click', () => openMark(marks[Number(el.dataset.mark)], lesson.subject))
+    el.addEventListener('click', () => openMark(marks[Number(el.dataset.mark)], lesson.subject, lesson.topic))
   );
   body.querySelectorAll('[data-hw]').forEach((el) =>
     el.addEventListener('click', () => openHomework(lesson.homework[Number(el.dataset.hw)], lesson.topic))
@@ -117,13 +117,27 @@ export function openHomework(item, topic = '') {
     </div>`;
 }
 
-export function openMark(mark, subject) {
+/** Текст, который на самом деле тема, а не повтор оценки или типа работы. */
+function realTopic(text, mark) {
+  const value = String(text ?? '').trim();
+  if (!value) return '';
+  const same = [mark.mark, mark.type, mark.title, 'Оценка'].map((item) => String(item ?? '').trim().toLowerCase());
+  return same.includes(value.toLowerCase()) ? '' : value;
+}
+
+export function openMark(mark, subject, lessonTopic = '') {
   const body = pushScreen(mark.type || 'Оценка', forDate(mark.date));
+  // Тема — это тема урока; название работы показываем отдельно, если оно
+  // есть и не совпадает с ней. Раньше в «Тему» шло что попало, вплоть до
+  // самой оценки, когда у работы не было названия.
+  const topic = realTopic(lessonTopic || mark.lesson_topic, mark);
+  const work = realTopic(mark.topic, mark);
   body.innerHTML = `
     <div class="detail">
       <h2>${esc(subject || mark.subject)}</h2>
-      <div class="detail-label">Тема</div>
-      <div class="detail-text">${esc(mark.topic ?? mark.title) || '<span class="muted">—Не указана—</span>'}</div>
+      <div class="detail-label">Тема урока</div>
+      <div class="detail-text">${esc(topic) || '<span class="muted">—Не указана—</span>'}</div>
+      ${work && work !== topic ? `<div class="detail-label">Работа</div><div class="detail-text">${esc(work)}</div>` : ''}
       <div class="muted small">Вес задания ${esc(mark.weight || 1)}</div>
       <div class="grade-row ${isAbsence(mark.mark) ? 'absence' : ''}">
         <span>${isAbsence(mark.mark) ? esc(absenceText(mark.mark)) : 'Оценка'}</span>

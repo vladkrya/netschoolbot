@@ -20,6 +20,11 @@
   --yellow: #f2c94c;
   --red: #e5484d;
   --mark-bg: #f6f8fb;
+  /* Оценки от «2» до «5»: от красного к зелёному. */
+  --g2: #d93a3f;
+  --g3: #e07b16;
+  --g4: #86a91c;
+  --g5: #2f9e4f;
 
   /* Стекло (Liquid Glass): заливка, блик по кромке, тень и «линза». */
   --glass: rgba(255, 255, 255, .5);
@@ -54,6 +59,10 @@
   --border: #2d3748;
   --primary: #6f9be0;
   --mark-bg: #151b25;
+  --g2: #f0686c;
+  --g3: #f0a040;
+  --g4: #b5d14a;
+  --g5: #4cc76a;
   --glass: rgba(52, 62, 80, .55);
   --glass-2: rgba(30, 38, 51, .45);
   --glass-edge: rgba(255, 255, 255, .12);
@@ -76,6 +85,10 @@
     --border: #2d3748;
     --primary: #6f9be0;
     --mark-bg: #151b25;
+    --g2: #f0686c;
+    --g3: #f0a040;
+    --g4: #b5d14a;
+    --g5: #4cc76a;
     --glass: rgba(52, 62, 80, .55);
     --glass-2: rgba(30, 38, 51, .45);
     --glass-edge: rgba(255, 255, 255, .12);
@@ -491,6 +504,11 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .tt-cell { width: 52px; flex: none; text-align: center; font-size: 14px; padding: 14px 0; }
 .tt-cell.now { color: var(--primary); }
 .tt-cell.official { font-weight: 700; }
+.tt-cell.g2 { color: var(--g2); }
+.tt-cell.g3 { color: var(--g3); }
+.tt-cell.g4 { color: var(--g4); }
+.tt-cell.g5 { color: var(--g5); }
+.tt-cell.g2, .tt-cell.g3, .tt-cell.g4, .tt-cell.g5 { font-weight: 600; }
 .class-avg { margin: -6px 0 8px; text-align: right; }
 .year-pill { margin-left: 6px; padding: 2px 6px; border-radius: 5px; background: var(--primary); color: #fff; font-size: 11px; }
 
@@ -506,14 +524,26 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .dist { display: flex; height: 36px; border-radius: 4px; overflow: hidden; margin-bottom: 8px; animation: grow .6s var(--ease) both; transform-origin: left; }
 @keyframes grow { from { transform: scaleX(0); } }
 .dist-part { display: flex; align-items: center; justify-content: center; color: #fff; font-size: 14px; }
-.dist-part.d5 { background: var(--head-2); }
-.dist-part.d4 { background: var(--bar); }
-.dist-part.d3 { background: #d8a33a; }
-.dist-part.d2 { background: var(--red); }
+.dist-part.d5 { background: var(--g5); }
+.dist-part.d4 { background: var(--g4); }
+.dist-part.d3 { background: var(--g3); }
+.dist-part.d2 { background: var(--g2); }
 .empty-dist { align-items: center; justify-content: center; color: var(--text2); background: var(--card-2); font-size: 13px; }
 .tiles { display: flex; flex-wrap: wrap; gap: 12px; }
 .tile { display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 12px; color: var(--text2); }
 .tile .mark-box { border-color: var(--green); background: color-mix(in srgb, var(--green) 25%, var(--card)); }
+.tile .mark-box.m2, .grade-row .mark-box.m2, .whatif .mark-box.m2 { --c: var(--g2); }
+.tile .mark-box.m3, .grade-row .mark-box.m3, .whatif .mark-box.m3 { --c: var(--g3); }
+.tile .mark-box.m4, .grade-row .mark-box.m4, .whatif .mark-box.m4 { --c: var(--g4); }
+.tile .mark-box.m5, .grade-row .mark-box.m5, .whatif .mark-box.m5 { --c: var(--g5); }
+.tile .mark-box:is(.m2, .m3, .m4, .m5), .grade-row .mark-box:is(.m2, .m3, .m4, .m5), .whatif .mark-box:is(.m2, .m3, .m4, .m5) {
+  border-color: var(--c);
+  background: color-mix(in srgb, var(--c) 22%, var(--card));
+}
+.avg-line strong.g2 { color: var(--g2); }
+.avg-line strong.g3 { color: var(--g3); }
+.avg-line strong.g4 { color: var(--g4); }
+.avg-line strong.g5 { color: var(--g5); }
 .tile.absence .mark-box { border-color: var(--border); background: color-mix(in srgb, var(--green) 45%, #fff); color: var(--text2); }
 
 /* ──────────────────────────── Почта ──────────────────────────── */
@@ -723,9 +753,10 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .calc-result { margin-top: 12px; font-size: 15px; }
 .calc-result strong { font-size: 20px; }
 .avg { display: inline-block; min-width: 44px; padding: 2px 8px; border-radius: 8px; color: #fff; text-align: center; background: var(--primary); }
-.avg.g5 { background: #4caf50; }
-.avg.g3 { background: #d8a33a; }
-.avg.g2 { background: var(--red); }
+.avg.g5 { background: var(--g5); }
+.avg.g4 { background: var(--g4); }
+.avg.g3 { background: var(--g3); }
+.avg.g2 { background: var(--g2); }
 .task-icon { color: var(--text2); display: flex; }
 .clip { display: flex; color: var(--text2); }
 .tile-weight, .tile-date { line-height: 1.2; }
@@ -917,3 +948,47 @@ body::after {
   -webkit-mask-image: linear-gradient(to top, #000 45%, transparent);
   mask-image: linear-gradient(to top, #000 45%, transparent);
 }
+
+/* «Что если»: свои оценки в итогах по предмету. */
+.whatif-add { display: flex; gap: 8px; margin: 4px 0 10px; }
+.whatif-add .mark-box { flex: 1; height: 40px; cursor: pointer; }
+.whatif-weights { display: flex; align-items: center; gap: 6px; margin-bottom: 10px; font-size: 13px; color: var(--text2); }
+.whatif-weights .chip { padding: 4px 12px; }
+.whatif-list { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.whatif-item { position: relative; display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 11px; color: var(--text2); }
+.whatif-item .mark-box { border-style: dashed; }
+.whatif-item .x { position: absolute; top: -6px; right: -6px; width: 18px; height: 18px; border-radius: 50%; background: var(--text2); color: var(--card); font-size: 12px; line-height: 18px; text-align: center; }
+.whatif-result { display: flex; justify-content: space-between; align-items: center; font-weight: 600; }
+.whatif-result strong { font-size: 22px; }
+.whatif-result strong.g2 { color: var(--g2); }
+.whatif-result strong.g3 { color: var(--g3); }
+.whatif-result strong.g4 { color: var(--g4); }
+.whatif-result strong.g5 { color: var(--g5); }
+.whatif-delta { font-size: 13px; font-weight: 500; margin-left: 6px; }
+.whatif-delta.up { color: var(--g5); }
+.whatif-delta.down { color: var(--g2); }
+
+/* Свайп «назад» от левого края (swipeback.js). */
+.screen.swiping { animation: none; transition: none; }
+.screen.leaving { animation: none; transition: transform .22s var(--ease); }
+.back-arrow {
+  position: fixed;
+  left: -44px;
+  top: 50%;
+  z-index: 60;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text);
+  background: var(--card);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, .25);
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(0, -50%) scale(.8);
+  transition: opacity .15s, background-color .15s, color .15s;
+}
+.back-arrow.show { opacity: 1; }
+.back-arrow.armed { background: var(--primary); color: #fff; }

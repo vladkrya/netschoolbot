@@ -49,6 +49,11 @@ export function hasScreens() {
   return stack.length > 0;
 }
 
+/** Верхний экран стека — его уводит свайп «назад». */
+export function topScreen() {
+  return stack[stack.length - 1] || null;
+}
+
 /** Внешний обработчик «назад» для случаев вне стека (вкладка, меню). */
 let fallbackBack = () => false;
 
@@ -57,9 +62,14 @@ export function setFallbackBack(handler) {
   syncBackButton();
 }
 
+/** Есть ли куда возвращаться: экран, шторка, меню или не «День». */
+export function canGoBack() {
+  return stack.length > 0 || fallbackBack(true);
+}
+
 export function syncBackButton() {
   if (!tg?.BackButton) return;
-  if (stack.length || fallbackBack(true)) tg.BackButton.show();
+  if (canGoBack()) tg.BackButton.show();
   else tg.BackButton.hide();
 }
 

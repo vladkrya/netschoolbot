@@ -4,6 +4,23 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
 <meta name="theme-color" content="#4a6fae">
+<!-- iPhone, приложение с домашнего экрана: страница во весь экран, под
+     строкой состояния, а не под голубой полосой цвета theme-color. Отступ
+     сверху даёт safe-area-inset-top (см. --safe-top в app.css). -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<script>
+  // Цвет шапки известен только из localStorage. Ставим его в theme-color
+  // до первой отрисовки: Safari красит полосу сверху по первому значению,
+  // и выбранный цвет шапки не совпадал с голубым по умолчанию.
+  try {
+    var accent = localStorage.getItem('ns-accent');
+    if (/^#[0-9a-f]{6}$/i.test(accent || '')) {
+      document.querySelector('meta[name="theme-color"]').setAttribute('content', accent);
+    }
+  } catch (e) {}
+</script>
 <title>{{ school or "Дневник" }}</title>
 {% if not demo %}<link rel="manifest" href="{{ base }}/manifest.webmanifest?token={{ token }}">{% endif %}
 <link rel="icon" type="image/png" href="{{ base }}/static/icon-192.png">

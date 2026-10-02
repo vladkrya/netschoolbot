@@ -173,8 +173,10 @@ function mark(subject, date, type, topic, value, weight) {
   const numeric = Number(value);
   return {
     subject,
-    title: `${type} ${topic}`.trim(),
-    topic,
+    title: type,
+    // Как у настоящего API: у работы на уроке названия обычно нет, тема — урока.
+    topic: '',
+    lesson_topic: topic,
     type,
     date,
     mark: value,

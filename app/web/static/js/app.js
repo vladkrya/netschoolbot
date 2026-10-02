@@ -12,6 +12,7 @@ import { ICONS } from './icons.js';
 import { applyStoredTheme, closeDrawer, isDrawerOpen, loadProfile, openDrawer } from './profile.js';
 import { closeSheet, initSheet } from './sheet.js';
 import { clearScreens, handleBack, hasScreens, setFallbackBack } from './screens.js';
+import { initSwipeBack } from './swipeback.js';
 import { initIosHaptics, notify, tap } from './haptics.js';
 
 const TABS = {
@@ -307,6 +308,7 @@ async function start() {
   initHomework();
   initChrome();
   bindPullToRefresh();
+  initSwipeBack();
   setFallbackBack(fallbackBack);
 
   $('topTitle').textContent = student || school || 'Дневник';

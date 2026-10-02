@@ -10,6 +10,8 @@ import {
   parseIso, skeleton, state, WEEKDAYS, WEEKDAYS_FULL, weekdayIndex, weekOffsetOf,
 } from './core.js';
 import { ICONS } from './icons.js';
+import { canGoBack } from './screens.js';
+import { EDGE_PX } from './swipeback.js';
 import { lessonStatus, markBox, openHomework, openLesson, realMarks } from './details.js';
 import { closeSheet, openSheet } from './sheet.js';
 import { select, tap } from './haptics.js';
@@ -227,7 +229,8 @@ function bindSwipe() {
     const touch = event.touches[0];
     startX = touch.clientX;
     startY = touch.clientY;
-    tracking = true;
+    // От самого края — жест «назад», если есть куда, а не листание дней.
+    tracking = startX > EDGE_PX || !canGoBack();
   }, { passive: true });
   area.addEventListener('touchend', (event) => {
     if (!tracking) return;

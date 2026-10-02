@@ -401,11 +401,16 @@ async def marks(request: web.Request) -> web.Response:
         teachers: dict[str, dict[str, int]] = {}
         # Отметки посещаемости: {предмет: {четверть: {код: сколько}}}.
         absences: dict[str, dict[str, dict[str, int]]] = {}
+        # Тема урока к каждой оценке: экран оценки показывает её как «Тему».
+        # Ключ — сама запись: номер урока бывает перенумерован (см. mapping).
+        lesson_topics: dict = {}
         for day in days:
             key = quarter_of(day.day)
             for record in day.marks:
                 by_subject.setdefault(record.subject, []).append(record)
             for lesson in day.lessons:
+                for record in lesson.marks if lesson.topic else ():
+                    lesson_topics[record] = lesson.topic
                 counts = lessons.setdefault(lesson.subject, {}).setdefault(
                     key or "", {"total": 0, "done": 0}
                 )
@@ -441,7 +446,11 @@ async def marks(request: web.Request) -> web.Response:
                     # Общая функция, а не свой набор полей: своя копия уже
                     # разошлась с остальными и потеряла четверть.
                     "marks": [
-                        _mark_to_json(r) for r in sorted(items, key=lambda r: r.date)
+                        {
+                            **_mark_to_json(r),
+                            "lesson_topic": lesson_topics.get(r, ""),
+                        }
+                        for r in sorted(items, key=lambda r: r.date)
                     ],
                     "lessons": lessons.get(subject, {}),
                     "absences": absences.get(subject, {}),
