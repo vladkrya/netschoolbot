@@ -297,10 +297,28 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .lc-marks .mark-box { animation: pop .4s var(--ease) both; animation-delay: .15s; }
 @keyframes pop { 0% { transform: scale(.4); opacity: 0; } 70% { transform: scale(1.12); } }
 .lc-top { display: flex; align-items: flex-start; gap: 8px; }
-.lc-num { color: var(--text); font-size: 17px; }
+/* Номер урока — плашка в цвет акцента, а не цифра с пробелами перед названием. */
+.lc-num {
+  flex: none;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: var(--card-2);
+  box-shadow: inset 0 0 0 1px var(--border);
+  color: var(--primary);
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.lc-num:empty { display: none; }
 .lc-subject { flex: 1; font-size: 17px; color: var(--text); }
 .lc-marks { display: flex; gap: 6px; }
-.lc-meta { display: flex; flex-direction: column; gap: 3px; margin: 6px 0 0 25px; color: var(--text2); font-size: 13px; }
+.lc-meta { display: flex; flex-direction: column; gap: 3px; margin: 6px 0 0 32px; color: var(--text2); font-size: 13px; }
 .lesson-progress-label { margin-top: 9px; font-size: 12px; color: var(--primary); }
 .lesson-progress { height: 4px; margin-top: 5px; background: var(--border); border-radius: 4px; overflow: hidden; }
 .lesson-progress span { display: block; height: 100%; background: var(--primary); border-radius: inherit; }
@@ -376,7 +394,9 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .screen-subtitle { font-size: 12px; opacity: .8; }
 .screen-body { padding: 12px; }
 
-.lesson-head .lesson-title { display: flex; gap: 8px; font-size: 18px; }
+.lesson-head .lesson-title { display: flex; align-items: center; gap: 8px; font-size: 18px; }
+.sched-lesson { display: flex; align-items: center; gap: 8px; }
+.sched-lesson .lc-num { min-width: 22px; height: 22px; font-size: 12px; border-radius: 7px; }
 
 .info-strip {
   display: flex;
@@ -868,4 +888,32 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
     overflow: hidden;
   }
   .sheet-close { background: var(--lens); box-shadow: inset 0 1px 0 var(--lens-shine); }
+}
+
+/* Невидимая подпись к переключателю поверх кнопки: настоящее касание по ней
+   даёт тактильный щелчок в Safari на iPhone (см. haptics.js). */
+.haptic-hit {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  border-radius: inherit;
+  cursor: inherit;
+}
+[data-hw-badge] { position: relative; z-index: 4; }
+.haptic-hit input { position: absolute; opacity: 0; visibility: hidden; pointer-events: none; width: 0; height: 0; margin: 0; }
+
+/* Под парящей панелью вкладок контент постепенно размывается и тает,
+   как у края прокрутки в iOS 26. */
+body::after {
+  content: '';
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  z-index: 39;
+  height: calc(var(--nav-h) + 24px);
+  pointer-events: none;
+  background: linear-gradient(to top, color-mix(in srgb, var(--bg) 70%, transparent), transparent);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  -webkit-mask-image: linear-gradient(to top, #000 45%, transparent);
+  mask-image: linear-gradient(to top, #000 45%, transparent);
 }

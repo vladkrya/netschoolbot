@@ -65,7 +65,7 @@ function render(monday) {
           ? `<button class="sched-toggle" data-toggle="${iso}">${lessons.length} ${lessonsWord(lessons.length)} ${open ? '▴' : '▾'}</button>`
           : '<div class="muted small sched-toggle">Уроков нет</div>'}
         ${open ? `<div class="sched-list">
-            ${lessons.map((l) => `<div class="sched-lesson">${esc(l.number ?? '')}. ${esc(l.subject)}</div>`).join('')}
+            ${lessons.map((l) => `<div class="sched-lesson"><span class="lc-num">${esc(l.number ?? '')}</span><span>${esc(l.subject)}</span></div>`).join('')}
             <button class="btn outline" data-goto="${iso}">Перейти ко дню</button>
           </div>` : ''}
       </div>`);

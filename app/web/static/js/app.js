@@ -12,7 +12,7 @@ import { ICONS } from './icons.js';
 import { applyStoredTheme, closeDrawer, isDrawerOpen, loadProfile, openDrawer } from './profile.js';
 import { closeSheet, initSheet } from './sheet.js';
 import { clearScreens, handleBack, hasScreens, setFallbackBack } from './screens.js';
-import { notify, select, tap } from './haptics.js';
+import { initIosHaptics, notify, select, tap } from './haptics.js';
 
 const TABS = {
   day: loadDay,
@@ -143,7 +143,7 @@ function initNav() {
     if (!drag) return;
     const { left, inner, cell } = geometry();
     const target = drag.x - left - cell / 2;
-    drag.v = (drag.v + (target - drag.pos) * 0.32) * 0.58;
+    drag.v = (drag.v + (target - drag.pos) * 0.32) * 0.5;
     drag.pos += drag.v;
     const extra = Math.min(Math.abs(drag.v) * 0.012, 0.32);
     drag.sx += (BASE_SX + extra - drag.sx) * 0.35;
@@ -176,10 +176,14 @@ function initNav() {
 
   nav.addEventListener('pointerdown', (event) => {
     if (event.button !== 0 || drag) return;
-    try {
-      nav.setPointerCapture(event.pointerId);
-    } catch {
-      /* без захвата палец за краем панели просто теряется */
+    // Палец и так «захвачен» элементом под ним, а клик по нему нужен
+    // подписи-переключателю для щелчка в Safari. Захват — только для мыши.
+    if (event.pointerType === 'mouse') {
+      try {
+        nav.setPointerCapture(event.pointerId);
+      } catch {
+        /* без захвата курсор за краем панели просто теряется */
+      }
     }
     const { cell } = geometry();
     const current = Math.max(0, items.findIndex((item) => item.dataset.tab === state.tab));
@@ -245,6 +249,7 @@ function initFresh() {
 
 function initChrome() {
   initNav();
+  initIosHaptics();
   initFresh();
   $('menuBtn').addEventListener('click', openDrawer);
   $('drawerShade').addEventListener('click', closeDrawer);
