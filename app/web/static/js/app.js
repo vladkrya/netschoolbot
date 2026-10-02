@@ -12,7 +12,7 @@ import { ICONS } from './icons.js';
 import { applyStoredTheme, closeDrawer, isDrawerOpen, loadProfile, openDrawer } from './profile.js';
 import { closeSheet, initSheet } from './sheet.js';
 import { clearScreens, handleBack, hasScreens, setFallbackBack } from './screens.js';
-import { initIosHaptics, notify, select, tap } from './haptics.js';
+import { initIosHaptics, notify, tap } from './haptics.js';
 
 const TABS = {
   day: loadDay,
@@ -96,8 +96,12 @@ function bindPullToRefresh() {
     pulled = event.touches[0].clientY - startY;
     // Отклик в момент, когда жест «взвёлся» — как у нативного pull-to-refresh.
     if (before <= 80 && pulled > 80) tap('medium');
-    indicator.classList.toggle('show', pulled > 30);
-    indicator.textContent = pulled > 80 ? 'Отпустите, чтобы обновить' : 'Потяните, чтобы обновить';
+    // Страницу трогаем, только когда что-то правда меняется: правка DOM
+    // на каждое движение пальца мешала Safari засчитать касание тапом.
+    const show = pulled > 30;
+    if (indicator.classList.contains('show') !== show) indicator.classList.toggle('show', show);
+    const text = pulled > 80 ? 'Отпустите, чтобы обновить' : 'Потяните, чтобы обновить';
+    if (show && indicator.textContent !== text) indicator.textContent = text;
   }, { passive: true });
   document.addEventListener('touchend', async () => {
     if (startY == null) return;
@@ -154,12 +158,14 @@ function initNav() {
     nav.style.setProperty('--sx', drag.sx.toFixed(3));
     nav.style.setProperty('--sy', sy.toFixed(3));
 
-    const index = indexAt(drag.pos + cell / 2, cell);
+    // Щелчок — когда в новый пункт входит палец, а не капля: та вылетает из
+    // прежней вкладки и пролетала бы мимо соседних, щёлкая на каждой.
+    const index = indexAt(drag.x - left, cell);
     if (index !== drag.index) {
       drag.index = index;
       drag.moved = true;
       hover(index);
-      select();
+      tap('light');
     }
     frame = requestAnimationFrame(step);
   };
@@ -167,42 +173,70 @@ function initNav() {
   // Касание текущей вкладки — лёгкий толчок, новой — щелчок выбора.
   const activate = (tab, silent) => {
     if (!silent) {
-      if (tab === state.tab) tap('soft');
-      else select();
+      // Ощутимый удар, а не еле слышный «щелчок выбора».
+      tap(tab === state.tab ? 'light' : 'medium');
     }
     // Повторное касание тоже переключает: закрывает экраны поверх и листает вверх.
     switchTab(tab);
   };
 
-  nav.addEventListener('pointerdown', (event) => {
-    if (event.button !== 0 || drag) return;
-    // Палец и так «захвачен» элементом под ним, а клик по нему нужен
-    // подписи-переключателю для щелчка в Safari. Захват — только для мыши.
-    if (event.pointerType === 'mouse') {
+  // Капля появляется, только когда палец повели или задержали: на быстрый
+  // тап страница не меняется, и Safari честно доставляет клик подписи-
+  // переключателю (иначе iOS не щёлкает). Тап переключает обычный click.
+  const HOLD_MS = 180;
+  const MOVE_PX = 6;
+  let pending = null;
+  let holdTimer = 0;
+
+  const begin = () => {
+    clearTimeout(holdTimer);
+    if (!pending) return;
+    // Палец и так «захвачен» элементом под ним; мышь захватываем, только
+    // когда начали тянуть, — иначе клик ушёл бы панели, а не пункту.
+    if (pending.mouse) {
       try {
-        nav.setPointerCapture(event.pointerId);
+        nav.setPointerCapture(pending.id);
       } catch {
         /* без захвата курсор за краем панели просто теряется */
       }
     }
-    const { cell } = geometry();
+    const { left, cell } = geometry();
     const current = Math.max(0, items.findIndex((item) => item.dataset.tab === state.tab));
+    const under = indexAt(pending.x - left, cell);
     // Капля вырастает из линзы текущей вкладки и плывёт к пальцу.
     drag = {
-      id: event.pointerId, x: event.clientX, pos: current * cell, v: 0, sx: 1,
-      index: current, moved: false,
+      id: pending.id, x: pending.x, pos: current * cell, v: 0, sx: 1,
+      index: under, moved: false,
     };
-    hover(current);
+    pending = null;
+    hover(under);
     nav.classList.add('dragging');
     cancelAnimationFrame(frame);
     frame = requestAnimationFrame(step);
+  };
+
+  nav.addEventListener('pointerdown', (event) => {
+    if (event.button !== 0 || drag || pending) return;
+    pending = { id: event.pointerId, x: event.clientX, startX: event.clientX, mouse: event.pointerType === 'mouse' };
+    holdTimer = setTimeout(begin, HOLD_MS);
   });
 
   nav.addEventListener('pointermove', (event) => {
-    if (drag && event.pointerId === drag.id) drag.x = event.clientX;
+    if (pending && event.pointerId === pending.id) {
+      pending.x = event.clientX;
+      if (Math.abs(event.clientX - pending.startX) > MOVE_PX) begin();
+    } else if (drag && event.pointerId === drag.id) {
+      drag.x = event.clientX;
+    }
   });
 
   const release = (event, commit) => {
+    if (pending && event.pointerId === pending.id) {
+      // Быстрый тап: всё сделает click по пункту.
+      clearTimeout(holdTimer);
+      pending = null;
+      return;
+    }
     if (!drag || event.pointerId !== drag.id) return;
     const { x, moved } = drag;
     drag = null;
@@ -220,7 +254,7 @@ function initNav() {
   nav.addEventListener('pointercancel', (event) => release(event, false));
   nav.addEventListener('lostpointercapture', (event) => release(event, false));
 
-  // Клик после касания уже обработан выше; сюда доходит клавиатура.
+  // Тап и клавиатура. Клик сразу после перетаскивания уже обработан выше.
   items.forEach((item) => {
     item.addEventListener('click', () => {
       if (performance.now() - lastRelease < 500) return;
