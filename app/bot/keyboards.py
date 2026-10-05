@@ -8,7 +8,7 @@ from aiogram.types import (
     WebAppInfo,
 )
 
-from ..domain.models import ApiMode, User
+from ..domain.models import TIMEZONES, ApiMode, User, timezone_label
 
 
 def settings_menu(user: User) -> InlineKeyboardMarkup:
@@ -24,6 +24,7 @@ def settings_menu(user: User) -> InlineKeyboardMarkup:
         [toggle("Домашние задания", user.notifications.homework, "homework")],
         [toggle("Школьная почта", user.notifications.mail, "mail")],
         [toggle("Сводка по понедельникам", user.notifications.weekly_summary, "weekly")],
+        [toggle("Вечером — сводка на завтра", user.notifications.evening_summary, "evening")],
         # Отметки посещаемости есть только в мобильном API.
         *(
             [[toggle("Новые пропуски", user.notifications.absences, "absences")]]
@@ -39,6 +40,12 @@ def settings_menu(user: User) -> InlineKeyboardMarkup:
             InlineKeyboardButton(
                 text=f"🌙 Тихие часы: {user.quiet_hours.as_text()}",
                 callback_data="settings:quiet",
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text=f"🕰 Часовой пояс: {timezone_label(user.timezone)}",
+                callback_data="settings:timezone",
             )
         ],
     ]
@@ -60,6 +67,18 @@ def interval_choices() -> InlineKeyboardMarkup:
         for minutes, label in options
     ]
     rows = [buttons[i : i + 3] for i in range(0, len(buttons), 3)]
+    rows.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="settings:open")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def timezones(user: User) -> InlineKeyboardMarkup:
+    buttons = [
+        InlineKeyboardButton(
+            text=f"{'✅ ' if key == user.timezone else ''}{city}", callback_data=f"tz:{key}"
+        )
+        for key, city in TIMEZONES
+    ]
+    rows = [buttons[i : i + 2] for i in range(0, len(buttons), 2)]
     rows.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="settings:open")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 

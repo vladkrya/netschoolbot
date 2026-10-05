@@ -11,7 +11,42 @@ import datetime as dt
 from dataclasses import dataclass, field, replace
 from enum import Enum
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+
+
+DEFAULT_TIMEZONE = "Europe/Moscow"
+
+# Пояса регионов, где работает «Сетевой город»: город — для подписи кнопки.
+TIMEZONES: tuple[tuple[str, str], ...] = (
+    ("Europe/Kaliningrad", "Калининград"),
+    ("Europe/Moscow", "Москва"),
+    ("Europe/Samara", "Самара"),
+    ("Asia/Yekaterinburg", "Екатеринбург"),
+    ("Asia/Omsk", "Омск"),
+    ("Asia/Novosibirsk", "Новосибирск"),
+    ("Asia/Krasnoyarsk", "Красноярск"),
+    ("Asia/Irkutsk", "Иркутск"),
+    ("Asia/Yakutsk", "Якутск"),
+    ("Asia/Vladivostok", "Владивосток"),
+    ("Asia/Magadan", "Магадан"),
+    ("Asia/Kamchatka", "Камчатка"),
+)
+
+
+def zone(name: str) -> dt.tzinfo:
+    """Пояс по имени; неизвестное имя — Москва, а не падение проверки."""
+    try:
+        return ZoneInfo(name or DEFAULT_TIMEZONE)
+    except (ZoneInfoNotFoundError, ValueError):
+        return ZoneInfo(DEFAULT_TIMEZONE)
+
+
+def timezone_label(name: str) -> str:
+    for key, city in TIMEZONES:
+        if key == name:
+            return city
+    return name
 
 
 # Границы пользовательского интервала проверки. Живут в домене, а не в
@@ -112,6 +147,8 @@ class NotificationPrefs:
     homework: bool = True
     mail: bool = False
     weekly_summary: bool = False
+    # Вечером — расписание и задания на следующий учебный день.
+    evening_summary: bool = False
     # Новые пропуски — только мобильный режим: в веб-дневнике отметок посещаемости нет.
     absences: bool = False
 
@@ -177,6 +214,8 @@ class User:
     filters: Filters = field(default_factory=Filters)
     quiet_hours: QuietHours = field(default_factory=QuietHours)
     api_mode: ApiMode = ApiMode.WEB
+    # Часовой пояс IANA: регионы разные, а тихие часы и «сегодня» — местные.
+    timezone: str = DEFAULT_TIMEZONE
     created_at: dt.datetime | None = None
     updated_at: dt.datetime | None = None
 
@@ -198,6 +237,17 @@ class User:
         он застревал бы в цикле «войдите заново».
         """
         return self.api_mode
+
+    @property
+    def tz(self) -> dt.tzinfo:
+        return zone(self.timezone)
+
+    def now(self) -> dt.datetime:
+        """Местное время пользователя."""
+        return dt.datetime.now(self.tz)
+
+    def today(self) -> dt.date:
+        return self.now().date()
 
     @property
     def label(self) -> str:

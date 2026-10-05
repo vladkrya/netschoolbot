@@ -61,6 +61,7 @@ const NOTIFY_LABELS = {
   homework: 'Домашние задания',
   mail: 'Школьная почта',
   weekly_summary: 'Сводка по понедельникам',
+  evening_summary: 'Вечером — сводка на завтра',
   absences: 'Новые пропуски',
 };
 
@@ -70,6 +71,61 @@ const MOBILE_ONLY = new Set(['absences']);
 function toggle(key, label, on) {
   return `<label class="switch-row"><span>${label}</span>
       <input type="checkbox" class="switch" data-notify="${key}" ${on ? 'checked' : ''}></label>`;
+}
+
+const timeFormat = new Intl.DateTimeFormat('ru-RU', {
+  day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
+});
+
+function when(iso) {
+  return iso ? timeFormat.format(new Date(iso)) : '—';
+}
+
+/** Что с фоновой проверкой: когда прошла, чем кончилась, когда следующая. */
+function statusLine(status) {
+  if (!status) return '';
+  const failing = status.last_error_at && (!status.last_ok_at || status.last_error_at > status.last_ok_at);
+  const rows = [`Последняя успешная проверка: ${when(status.last_ok_at)}`];
+  if (failing) rows.push(`Ошибка ${when(status.last_error_at)}: ${esc(status.last_error)}`);
+  if (status.running && status.next_check_at) rows.push(`Следующая: ${when(status.next_check_at)}`);
+  if (status.queued) rows.push(`Ждут отправки: ${status.queued}`);
+  return `<div class="muted small sync-status ${failing ? 'failing' : ''}">${rows.join('<br>')}</div>`;
+}
+
+function timezoneSelect(data) {
+  if (!data.timezones) return '';
+  const options = data.timezones
+    .map((tz) => `<option value="${tz.id}" ${tz.id === data.timezone ? 'selected' : ''}>${esc(tz.name)}</option>`)
+    .join('');
+  return `<label class="field-label">Часовой пояс
+      <select class="field" id="timezoneSelect">${options}</select></label>`;
+}
+
+const HISTORY_ICONS = { new: '🆕', changed: '✏️', deleted: '🗑' };
+
+async function openHistory() {
+  closeDrawer();
+  const screen = pushScreen('История оценок');
+  screen.innerHTML = '<div class="muted small">Загрузка…</div>';
+  try {
+    const { data } = await api('/api/history');
+    if (!data.items.length) {
+      screen.innerHTML = '<div class="empty muted">Пока пусто: изменения появятся после следующих проверок.</div>';
+      return;
+    }
+    screen.innerHTML = `<div class="history-list">${data.items.map((item) => {
+      const value = item.kind === 'changed'
+        ? `${esc(item.old)} → <b>${esc(item.new)}</b>`
+        : item.kind === 'deleted' ? `<s>${esc(item.mark)}</s>` : `<b>${esc(item.mark)}</b>`;
+      const date = item.date.split('-').reverse().slice(0, 2).join('.');
+      return `<div class="history-item">
+          <div class="history-head"><span>${HISTORY_ICONS[item.kind] || ''} ${esc(item.subject)}</span><span class="history-mark">${value}</span></div>
+          <div class="muted small">${esc(item.title)} · за ${date} · замечено ${when(item.seen)}</div>
+        </div>`;
+    }).join('')}</div>`;
+  } catch (error) {
+    screen.innerHTML = `<div class="muted small">${esc(error.message)}</div>`;
+  }
 }
 
 function pushSection() {
@@ -139,6 +195,7 @@ function render() {
     <section class="drawer-section">
       <div class="drawer-heading">Дополнительно</div>
       <button class="drawer-link" id="drawerCalc">${ICONS.calc} Калькулятор баллов</button>
+      <button class="drawer-link" id="drawerHistory">${ICONS.clock} История оценок</button>
     </section>
     <section class="drawer-section">
       <div class="drawer-heading">Оформление</div>
@@ -159,6 +216,8 @@ function render() {
         .map(([key, label]) => toggle(key, label, data.notifications[key]))
         .join('')}
       <div class="muted small">Проверка каждые ${data.interval_minutes} мин</div>
+      ${statusLine(data.status)}
+      ${timezoneSelect(data)}
     </section>
     ${pushSection()}
     ${demoSection()}
@@ -215,6 +274,23 @@ function bindDrawer() {
     const screen = pushScreen('Калькулятор баллов');
     screen.innerHTML = '<div id="calcContent"></div>';
     loadCalc();
+  });
+  $('drawerHistory').addEventListener('click', () => { tap(); openHistory(); });
+  $('timezoneSelect')?.addEventListener('change', async (event) => {
+    select();
+    const previous = state.profile.timezone;
+    try {
+      await api('/api/settings/timezone', {
+        method: 'POST',
+        body: JSON.stringify({ timezone: event.target.value }),
+      });
+      state.profile.timezone = event.target.value;
+      notify('success');
+    } catch (error) {
+      notify('error');
+      event.target.value = previous;
+      banner(error.message, true);
+    }
   });
   $('pushBtn')?.addEventListener('click', (event) => enablePush(event.currentTarget));
   $('pwaOpen')?.addEventListener('click', openInBrowser);

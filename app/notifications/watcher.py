@@ -15,18 +15,22 @@ from __future__ import annotations
 
 import asyncio
 import datetime as dt
+import json
 import logging
 import time
 from collections.abc import Callable
 from typing import Protocol
 
 from ..db.repositories import MarkStateRepository, UserRepository
-from ..domain.models import ApiMode, User
+from ..domain import formatting
+from ..domain.models import ApiMode, MarkKind, NotificationPrefs, User
 from ..domain.records import AbsenceRecord, HomeworkRecord, MarkEvent, RecentEvents
 from ..netschool.errors import NetSchoolError, Reason
 from ..netschool.mapping import absences_from_days, is_placeholder_name
-from ..netschool.service import DiaryService, TokenState, msk_now, msk_today
+from ..netschool.service import DiaryService, TokenState
 from .diff import confirm_deletions, diff_homework, diff_marks
+from .digests import DigestKind, evening_period, previous_week, weekly_period
+from .outbox import OutboxKind, decode, encode, mark_to_dict
 
 logger = logging.getLogger("netschoolbot.watcher")
 
@@ -54,6 +58,25 @@ ABSENCE_NOTIFY_DAYS = 7
 TOKEN_CHECK_INTERVAL = 6 * 3600.0
 
 
+# Отложенное уведомление живёт в очереди не дольше этого: утренняя досылка
+# после тихих часов укладывается, а недельной давности новость уже не нужна.
+OUTBOX_MAX_AGE = dt.timedelta(days=2)
+OUTBOX_MAX_ATTEMPTS = 20
+
+
+def _local_now(user: User) -> dt.datetime:
+    """Местное время пользователя. Отдельной функцией — чтобы тесты могли его подменить."""
+    return user.now()
+
+
+def _mark_event_wanted(event: MarkEvent, prefs: NotificationPrefs) -> bool:
+    if event.kind is MarkKind.NEW:
+        return prefs.grades
+    if event.kind is MarkKind.CHANGED:
+        return prefs.changes
+    return prefs.deletes
+
+
 class Notifier(Protocol):
     """Куда уходят уведомления. Позволяет тестировать цикл без Telegram."""
 
@@ -66,6 +89,8 @@ class Notifier(Protocol):
     async def send_token_expiring(self, user: User, expires_at: dt.datetime) -> None: ...
 
     async def send_error(self, user: User, error: NetSchoolError) -> None: ...
+
+    async def send_text(self, user: User, text: str) -> None: ...
 
 
 class UserWatcher:
@@ -117,7 +142,10 @@ class UserWatcher:
         try:
             await self._check(user)
         except NetSchoolError as exc:
-            return await self._handle_error(user, exc)
+            delay = await self._handle_error(user, exc)
+            await self._record_status(ok=False, error=exc.user_message, delay=delay)
+            await self._flush_outbox(user)
+            return delay
         except asyncio.CancelledError:
             raise
         except Exception as exc:
@@ -125,12 +153,19 @@ class UserWatcher:
             # молча перестал бы получать уведомления, как это бывало раньше.
             logger.exception("Сбой проверки для %s", self._user_id)
             self._backoff = min(max(self._backoff * 2, 60.0), MAX_BACKOFF)
+            await self._record_status(ok=False, error=f"Внутренняя ошибка: {exc}", delay=self._backoff)
+            await self._flush_outbox(user)
             return self._backoff
 
+        # Очередь разбирается после проверки, а не только при новых событиях:
+        # так после тихих часов или сбоя Telegram отложенное уходит само.
+        await self._flush_outbox(user)
         await self._check_token(user)
+        await self._send_digests(user)
 
         self._backoff = 0.0
         self._reported_reason = None
+        await self._record_status(ok=True, delay=float(user.check_interval))
         return float(user.check_interval)
 
     async def _check(self, user: User) -> None:
@@ -146,51 +181,150 @@ class UserWatcher:
         known = await self._state.load_marks(user.telegram_id)
         first_run = not await self._state.has_history(user.telegram_id)
 
-        result = diff_marks(
-            known,
-            marks,
-            filters=user.filters,
-            first_run=first_run,
-            notify_new=user.notifications.grades,
-            notify_changes=user.notifications.changes,
-            notify_deletes=user.notifications.deletes,
-        )
+        # Сравнение — по всем видам событий: история нужна целиком, а что из
+        # неё слать, решают настройки уведомлений ниже.
+        result = diff_marks(known, marks, filters=user.filters, first_run=first_run)
 
         if result.pending_deletes:
             confirmed = await self._confirm_deletes(user, result.pending_deletes)
             result.events.extend(confirm_deletions(result, confirmed))
 
-        # Состояние сохраняется до отправки: если Telegram сейчас недоступен,
-        # повторный запуск не пришлёт те же оценки ещё раз.
-        await self._state.replace_marks(user.telegram_id, result.tracked)
         known_homework = await self._state.load_homework(user.telegram_id)
         fresh_homework, all_homework = diff_homework(
             known_homework, homework, first_run=first_run
         )
-        await self._state.replace_homework(
-            user.telegram_id, all_homework, {item.identity for item in fresh_homework}
+        absences, fresh_absences = await self._diff_absences(user, days, first_run=first_run)
+
+        prefs = user.notifications
+        mark_events = [e for e in result.events if _mark_event_wanted(e, prefs)]
+        outbox: list[tuple[str, str]] = []
+        if mark_events:
+            outbox.append((OutboxKind.MARKS.value, encode(OutboxKind.MARKS, mark_events)))
+        if fresh_homework and prefs.homework:
+            outbox.append((OutboxKind.HOMEWORK.value, encode(OutboxKind.HOMEWORK, fresh_homework)))
+        if fresh_absences and prefs.absences:
+            outbox.append((OutboxKind.ABSENCES.value, encode(OutboxKind.ABSENCES, fresh_absences)))
+        history = [
+            (
+                event.kind.value,
+                json.dumps(mark_to_dict(event.record), ensure_ascii=False),
+                event.old_mark,
+                event.new_mark,
+            )
+            for event in result.events
+        ]
+
+        # Состояние и очередь — одной транзакцией: повторная проверка не
+        # пришлёт то же самое ещё раз, а недоставленное не потеряется.
+        await self._state.save_check(
+            user.telegram_id,
+            tracked=result.tracked,
+            homework=all_homework,
+            observed_new_homework={item.identity for item in fresh_homework},
+            absences=absences,
+            outbox=outbox,
+            history=history,
+            # Базовая сверка завершена только после сохранения всех разделов.
+            baseline_done=first_run,
         )
         self._note_full_sync(events)
-        fresh_absences = await self._track_absences(user, days, first_run=first_run)
-        if first_run:
-            # Базовая сверка завершена только после сохранения всех разделов.
-            await self._state.mark_baseline_pending(user.telegram_id, False)
 
-        if self._is_quiet(user):
-            if result.events or fresh_homework or fresh_absences:
-                logger.info(
-                    "Тихие часы у %s: отложено событий %s",
-                    user.telegram_id,
-                    len(result.events) + len(fresh_homework) + len(fresh_absences),
-                )
+    async def _flush_outbox(self, user: User) -> None:
+        """Отправить накопленные уведомления, кроме тихих часов.
+
+        Неудачная отправка остаётся в очереди до следующего прохода; слишком
+        старое или безнадёжное удаляется, чтобы не прислать вчерашнюю
+        оценку как новость через неделю.
+        """
+        rows = await self._state.pending_outbox(user.telegram_id)
+        if not rows:
             return
+        if self._is_quiet(user):
+            logger.info("Тихие часы у %s: в очереди %s", user.telegram_id, len(rows))
+            return
+        now = dt.datetime.now(dt.timezone.utc).replace(tzinfo=None)
+        for row in rows:
+            created = dt.datetime.fromisoformat(row["created_at"])
+            if now - created > OUTBOX_MAX_AGE or row["attempts"] >= OUTBOX_MAX_ATTEMPTS:
+                logger.warning(
+                    "Уведомление %s для %s не доставлено и снято с очереди", row["id"], user.telegram_id
+                )
+                await self._state.ack_outbox(row["id"])
+                continue
+            try:
+                kind = OutboxKind(row["kind"])
+                items = decode(kind, row["payload"])
+            except (ValueError, KeyError, TypeError) as exc:
+                logger.warning("Повреждённое уведомление %s: %s", row["id"], exc)
+                await self._state.ack_outbox(row["id"])
+                continue
+            try:
+                await self._send(user, kind, items)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # noqa: BLE001 — любой сбой доставки = попробовать позже
+                logger.info("Уведомление для %s отложено: %s", user.telegram_id, exc)
+                await self._state.fail_outbox(row["id"], str(exc) or type(exc).__name__)
+                # Порядок важен: следующее не отправляем раньше предыдущего.
+                return
+            await self._state.ack_outbox(row["id"])
 
-        if result.events:
-            await self._notifier.send_mark_events(user, result.events)
-        if fresh_homework and user.notifications.homework:
-            await self._notifier.send_homework(user, fresh_homework)
-        if fresh_absences and user.notifications.absences:
-            await self._notifier.send_absences(user, fresh_absences)
+    async def _send(self, user: User, kind: OutboxKind, items: list) -> None:
+        if kind is OutboxKind.MARKS:
+            await self._notifier.send_mark_events(user, items)
+        elif kind is OutboxKind.HOMEWORK:
+            await self._notifier.send_homework(user, items)
+        elif kind is OutboxKind.ABSENCES:
+            await self._notifier.send_absences(user, items)
+
+    async def _send_digests(self, user: User) -> None:
+        """Вечерняя сводка на завтра и недельная по понедельникам.
+
+        Сбой сводки не трогает проверку оценок: отметка о периоде ставится
+        только после отправки, поэтому следующий проход попробует снова.
+        """
+        if self._is_quiet(user):
+            return
+        now = _local_now(user)
+        jobs = []
+        if user.notifications.evening_summary and (period := evening_period(now)):
+            jobs.append((DigestKind.EVENING, period))
+        if user.notifications.weekly_summary and (period := weekly_period(now)):
+            jobs.append((DigestKind.WEEKLY, period))
+        for kind, period in jobs:
+            if await self._state.digest_period(user.telegram_id, kind.value) == period:
+                continue
+            try:
+                text = await self._digest_text(user, kind, dt.date.fromisoformat(period))
+                if text:
+                    await self._notifier.send_text(user, text)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # noqa: BLE001 — сводка вторична
+                logger.info("Сводка %s для %s не отправлена: %s", kind.value, user.telegram_id, exc)
+                continue
+            await self._state.set_digest_period(user.telegram_id, kind.value, period)
+
+    async def _digest_text(self, user: User, kind: DigestKind, day: dt.date) -> str | None:
+        if kind is DigestKind.EVENING:
+            days = await self._diary.fetch_period(user, day, day, today=_local_now(user).date())
+            found = next((d for d in days if d.day == day), None)
+            return formatting.evening_summary(found, day, tz=user.tz)
+        start, end = previous_week(day)
+        days = await self._diary.fetch_period(user, start, end, today=day)
+        week = [r for d in days for r in d.marks if start <= r.date <= end]
+        return formatting.weekly_summary(week, start, end)
+
+    async def _record_status(self, *, ok: bool, delay: float, error: str = "") -> None:
+        next_at = dt.datetime.now(dt.timezone.utc).replace(tzinfo=None) + dt.timedelta(seconds=delay)
+        try:
+            await self._state.set_watch_status(
+                self._user_id, ok=ok, error=error, next_check_at=next_at
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001 — статус вторичен по отношению к проверке
+            logger.debug("Статус проверки %s не записан: %s", self._user_id, exc)
 
     async def _check_token(self, user: User) -> None:
         """Продлить мобильный токен или заранее предупредить, что он истекает.
@@ -228,24 +362,24 @@ class UserWatcher:
         await self._notifier.send_token_expiring(user, check.expires_at)
         await self._state.set_token_warned(user.telegram_id, dt.datetime.now())
 
-    async def _track_absences(
+    async def _diff_absences(
         self, user: User, days: list, *, first_run: bool
-    ) -> list[AbsenceRecord]:
-        """Отметки посещаемости, которых ещё не видели.
+    ) -> tuple[set[str] | None, list[AbsenceRecord]]:
+        """Все виденные отметки посещаемости и те, которых ещё не видели.
 
         Только мобильный режим: в веб-дневнике отметок нет. Состояние
         обновляется всегда, даже при выключенных уведомлениях, — тогда
         включение тумблера не выдаст старые пропуски за новые.
         """
         if user.effective_api_mode is not ApiMode.MOBILE:
-            return []
+            return None, []
         current = absences_from_days(days)
         known = await self._state.load_absences(user.telegram_id)
-        await self._state.replace_absences(user.telegram_id, {a.identity for a in current})
+        identities = {a.identity for a in current}
         if first_run:
-            return []
-        earliest = msk_today() - dt.timedelta(days=ABSENCE_NOTIFY_DAYS)
-        return [a for a in current if a.identity not in known and a.date >= earliest]
+            return identities, []
+        earliest = _local_now(user).date() - dt.timedelta(days=ABSENCE_NOTIFY_DAYS)
+        return identities, [a for a in current if a.identity not in known and a.date >= earliest]
 
     def _full_sync_due(self, events: RecentEvents) -> bool:
         """Нужно ли сверять дневник целиком.
@@ -332,7 +466,7 @@ class UserWatcher:
         return self._backoff
 
     def _is_quiet(self, user: User) -> bool:
-        return user.quiet_hours.covers(msk_now().time())
+        return user.quiet_hours.covers(_local_now(user).time())
 
 
 class WatcherRegistry:

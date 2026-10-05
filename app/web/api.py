@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import datetime as dt
+import json
 import logging
 import mimetypes
 import re
@@ -21,11 +22,11 @@ from aiohttp import web
 
 from ..context import AppContext
 from ..domain import formatting
-from ..domain.models import ApiMode, User, normalize
+from ..domain.models import TIMEZONES, ApiMode, User, normalize
+from ..notifications.outbox import mark_from_dict
 from ..domain.records import DiaryDay, clean_content
 from ..netschool.errors import NetSchoolError, Reason
 from ..domain.periods import QUARTER_KEYS, quarter_of, quarters
-from ..netschool.service import msk_today
 from .telegram_auth import InitDataError, verify_init_data
 
 logger = logging.getLogger("netschoolbot.web")
@@ -330,9 +331,15 @@ async def _cached(request: web.Request, section: str, producer, *, cacheable=lam
     return web.json_response({"ok": True, "data": payload, "stale": False})
 
 
+def _utc_iso(moment: dt.datetime | None) -> str | None:
+    """Время из базы (UTC без пояса) — в ISO с «Z», чтобы браузер показал местное."""
+    return moment.isoformat(timespec="seconds") + "Z" if moment else None
+
+
 @routes.get("/api/profile")
 async def profile(request: web.Request) -> web.Response:
-    user = current_user(request)
+    app, user = context(request), current_user(request)
+    status = await app.state.watch_status(user.telegram_id)
     return web.json_response(
         {
             "ok": True,
@@ -349,6 +356,16 @@ async def profile(request: web.Request) -> web.Response:
                 "interval_minutes": user.check_interval // 60,
                 "quiet_hours": user.quiet_hours.as_text(),
                 "enabled": user.enabled,
+                "timezone": user.timezone,
+                "timezones": [{"id": key, "name": city} for key, city in TIMEZONES],
+                "status": {
+                    "running": user.telegram_id in app.watchers.running,
+                    "last_ok_at": _utc_iso(status.last_ok_at),
+                    "last_error_at": _utc_iso(status.last_error_at),
+                    "last_error": status.last_error,
+                    "next_check_at": _utc_iso(status.next_check_at),
+                    "queued": status.queued,
+                },
             },
         }
     )
@@ -371,7 +388,7 @@ async def diary(request: web.Request) -> web.Response:
     offset = max(-30, min(30, offset))
 
     async def produce(app: AppContext, user: User):
-        today = msk_today() + dt.timedelta(weeks=offset)
+        today = user.today() + dt.timedelta(weeks=offset)
         days = await app.diary.fetch_diary(user, weeks_back=1, weeks_forward=1, today=today)
         teachers = await _teachers(app, user, days)
         observed = await app.state.observed_homework(user.telegram_id)
@@ -392,7 +409,7 @@ async def marks(request: web.Request) -> web.Response:
     """
 
     async def produce(app: AppContext, user: User):
-        today = msk_today()
+        today = user.today()
         year = quarters(today)
         now_quarter = next((q for q in year if q.covers(today)), year[0])
         days = await app.diary.fetch_period(user, year[0].start, now_quarter.end, today=today)
@@ -704,7 +721,8 @@ async def switch_student(request: web.Request) -> web.Response:
 
 
 NOTIFICATION_KEYS = (
-    "grades", "changes", "deletes", "homework", "mail", "weekly_summary", "absences",
+    "grades", "changes", "deletes", "homework", "mail", "weekly_summary", "evening_summary",
+    "absences",
 )
 
 
@@ -722,6 +740,53 @@ async def notification_settings(request: web.Request) -> web.Response:
     prefs = replace(user.notifications, **{key: bool(body.get("value"))})
     updated = await app.users.save(replace(user, notifications=prefs))
     return web.json_response({"ok": True, "data": asdict(updated.notifications)})
+
+
+@routes.post("/api/settings/timezone")
+async def timezone_settings(request: web.Request) -> web.Response:
+    app, user = context(request), current_user(request)
+    try:
+        body = await request.json()
+    except ValueError:
+        return json_error("Некорректный запрос")
+    name = str(body.get("timezone") or "")
+    if name not in {key for key, _ in TIMEZONES}:
+        return json_error("Неизвестный часовой пояс")
+    await app.users.save(replace(user, timezone=name))
+    # «Сегодня» сдвинулось — сохранённые окна дневника посчитаны от старого.
+    await app.cache.clear(user.telegram_id)
+    return web.json_response({"ok": True, "data": {"timezone": name}})
+
+
+@routes.get("/api/history")
+async def mark_history(request: web.Request) -> web.Response:
+    """Что происходило с оценками: новые, исправленные, удалённые."""
+    app, user = context(request), current_user(request)
+    try:
+        before = int(request.query["before"]) if "before" in request.query else None
+    except ValueError:
+        before = None
+    rows = await app.state.mark_history(user.telegram_id, limit=50, before_id=before)
+    items = []
+    for row in rows:
+        try:
+            record = mark_from_dict(json.loads(row["payload"]))
+        except (ValueError, KeyError, TypeError):
+            continue
+        items.append(
+            {
+                "id": row["id"],
+                "kind": row["kind"],
+                "subject": record.subject,
+                "date": record.date.isoformat(),
+                "title": record.title,
+                "mark": record.mark,
+                "old": row["old_mark"],
+                "new": row["new_mark"],
+                "seen": row["created_at"].replace(" ", "T") + "Z",
+            }
+        )
+    return web.json_response({"ok": True, "data": {"items": items}})
 
 
 THEMES = ("auto", "light", "dark")

@@ -19,9 +19,11 @@ from ...domain.models import (
     ApiMode,
     MIN_CHECK_INTERVAL,
     NotificationPrefs,
+    TIMEZONES,
     QuietHours,
     User,
     clamp_interval,
+    timezone_label,
 )
 from .. import keyboards
 from .common import reply, report_error, require_school
@@ -42,6 +44,7 @@ TOGGLES = {
     "homework": "homework",
     "mail": "mail",
     "weekly": "weekly_summary",
+    "evening": "evening_summary",
     "absences": "absences",
 }
 
@@ -211,6 +214,40 @@ def _parse_time(raw: str) -> dt.time | None:
         except ValueError:
             continue
     return None
+
+
+@router.message(Command("timezone"))
+async def timezone_command(message: Message, user: User) -> None:
+    await message.answer(
+        "🕰 Где вы? От пояса зависят тихие часы, сводки и «сегодня» в дневнике.",
+        reply_markup=keyboards.timezones(user),
+    )
+
+
+@router.callback_query(F.data == "settings:timezone")
+async def choose_timezone(callback: CallbackQuery, user: User) -> None:
+    await callback.answer()
+    if callback.message:
+        await callback.message.edit_text(
+            "🕰 Где вы? От пояса зависят тихие часы, сводки и «сегодня» в дневнике.",
+            reply_markup=keyboards.timezones(user),
+        )
+
+
+@router.callback_query(F.data.startswith("tz:"))
+async def set_timezone(callback: CallbackQuery, user: User, app: AppContext) -> None:
+    name = callback.data.split(":", 1)[1]
+    if name not in {key for key, _ in TIMEZONES}:
+        await callback.answer("Не знаю такого пояса")
+        return
+    updated = await app.users.save(replace(user, timezone=name))
+    await callback.answer(f"Часовой пояс: {timezone_label(name)}")
+    if callback.message:
+        await callback.message.edit_text(
+            "⚙️ <b>Настройки</b>",
+            parse_mode="HTML",
+            reply_markup=keyboards.settings_menu(updated),
+        )
 
 
 @router.callback_query(F.data == "settings:child")

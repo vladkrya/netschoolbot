@@ -168,6 +168,58 @@ MIGRATIONS: list[str] = [
         updated_at  TEXT    NOT NULL DEFAULT (datetime('now'))
     );
     """,
+    # 8 — надёжная доставка и история.
+    #
+    # outbox: уведомления, записанные той же транзакцией, что и состояние
+    # слежения. Раньше состояние сохранялось до отправки, и сбой Telegram
+    # или тихие часы съедали сообщение навсегда.
+    # mark_history: всё, что случалось с оценками, — даже если уведомление
+    # выключено или не дошло.
+    # watch_status: когда проверка последний раз прошла и чем закончилась.
+    """
+    CREATE TABLE outbox (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        telegram_id INTEGER NOT NULL REFERENCES users(telegram_id) ON DELETE CASCADE,
+        kind        TEXT    NOT NULL,
+        payload     TEXT    NOT NULL,
+        created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+        attempts    INTEGER NOT NULL DEFAULT 0,
+        last_error  TEXT
+    );
+    CREATE INDEX idx_outbox_user ON outbox(telegram_id, id);
+
+    CREATE TABLE mark_history (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        telegram_id INTEGER NOT NULL REFERENCES users(telegram_id) ON DELETE CASCADE,
+        kind        TEXT    NOT NULL,
+        payload     TEXT    NOT NULL,
+        old_mark    TEXT    NOT NULL DEFAULT '',
+        new_mark    TEXT    NOT NULL DEFAULT '',
+        created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX idx_mark_history_user ON mark_history(telegram_id, id);
+
+    CREATE TABLE watch_status (
+        telegram_id   INTEGER PRIMARY KEY REFERENCES users(telegram_id) ON DELETE CASCADE,
+        last_ok_at    TEXT,
+        last_error_at TEXT,
+        last_error    TEXT,
+        next_check_at TEXT
+    );
+    """,
+    # 9 — часовой пояс, вечерняя сводка и отметки о разосланных сводках
+    # (`period` — неделя или день, за который сводка уже ушла).
+    """
+    ALTER TABLE users ADD COLUMN timezone TEXT NOT NULL DEFAULT 'Europe/Moscow';
+    ALTER TABLE users ADD COLUMN evening_summary INTEGER NOT NULL DEFAULT 0;
+
+    CREATE TABLE digests_sent (
+        telegram_id INTEGER NOT NULL REFERENCES users(telegram_id) ON DELETE CASCADE,
+        kind        TEXT    NOT NULL,
+        period      TEXT    NOT NULL,
+        PRIMARY KEY (telegram_id, kind)
+    );
+    """,
 ]
 
 

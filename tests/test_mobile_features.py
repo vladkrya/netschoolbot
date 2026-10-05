@@ -506,7 +506,10 @@ class TestAbsences:
     @pytest.fixture(autouse=True)
     def _today(self, monkeypatch):
         # Уведомляем только о свежих уроках, поэтому «сегодня» фиксируем.
-        monkeypatch.setattr("app.notifications.watcher.msk_today", lambda: self.TODAY)
+        monkeypatch.setattr(
+            "app.notifications.watcher._local_now",
+            lambda user: dt.datetime.combine(self.TODAY, dt.time(12)),
+        )
 
     @staticmethod
     def _user(**kwargs):

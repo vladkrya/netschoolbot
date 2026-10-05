@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import json
 import logging
 
 from aiogram import F, Router
@@ -11,9 +12,9 @@ from aiogram.types import CallbackQuery, Message, ReplyKeyboardRemove
 
 from ...context import AppContext
 from ...domain import formatting
-from ...domain.models import User, normalize
+from ...domain.models import MarkKind, User, normalize
+from ...notifications.outbox import mark_from_dict
 from ...netschool.errors import NetSchoolError
-from ...netschool.service import msk_today
 from .. import keyboards
 from .common import reply, report_error, require_school
 
@@ -80,14 +81,14 @@ async def homework(message: Message, user: User, app: AppContext) -> None:
         await reply(message, hint)
         return
     try:
-        today = msk_today()
+        today = user.today()
         wanted = set(next_school_days(today))
         items = await app.diary.fetch_homework(user, weeks_back=0, weeks_forward=1, today=today)
     except NetSchoolError as exc:
         await report_error(message, exc)
         return
     relevant = [item for item in items if item.due_date in wanted]
-    await reply(message, formatting.homework_list(relevant, "📚 <b>Домашние задания</b>"))
+    await reply(message, formatting.homework_list(relevant, "📚 <b>Домашние задания</b>", tz=user.tz))
 
 
 @router.message(Command("rasp"))
@@ -97,34 +98,15 @@ async def schedule(message: Message, user: User, app: AppContext) -> None:
         await reply(message, hint)
         return
     try:
-        today = msk_today()
+        today = user.today()
         wanted = set(next_school_days(today))
         days = await app.diary.fetch_diary(user, weeks_back=0, weeks_forward=1, today=today)
     except NetSchoolError as exc:
         await report_error(message, exc)
         return
 
-    # fetch_diary отдаёт доменные дни без уроков — расписание берём из
-    # исходной структуры, поэтому запрашиваем его отдельным вызовом.
     relevant = [day for day in days if day.day in wanted]
-    if not relevant:
-        await reply(message, "🗓 На ближайшие дни расписания нет.")
-        return
-    lines = ["🗓 <b>Расписание</b>"]
-    for day in sorted(relevant, key=lambda d: d.day):
-        lines.append(f"\n📅 <b>{formatting.date_label(day.day)}</b>")
-        subjects = [item.subject for item in day.homework] or [
-            record.subject for record in day.marks
-        ]
-        if not subjects:
-            lines.append("— нет данных")
-            continue
-        seen: list[str] = []
-        for subject in subjects:
-            if subject not in seen:
-                seen.append(subject)
-        lines.extend(f"• {formatting.esc(subject)}" for subject in seen)
-    await reply(message, "\n".join(lines))
+    await reply(message, formatting.schedule(relevant, "🗓 <b>Расписание</b>"))
 
 
 @router.message(Command("grades"))
@@ -195,7 +177,7 @@ async def week_summary(message: Message, user: User, app: AppContext) -> None:
     if hint := require_school(user):
         await reply(message, hint)
         return
-    today = msk_today()
+    today = user.today()
     start = today - dt.timedelta(days=today.weekday())
     try:
         records = await app.diary.fetch_marks(user, weeks_back=1, weeks_forward=0, today=today)
@@ -285,14 +267,23 @@ async def miniapp_reset(message: Message, user: User, app: AppContext) -> None:
 async def status(message: Message, user: User, app: AppContext) -> None:
     watching = user.telegram_id in app.watchers.running
     tracked = len(await app.state.load_marks(user.telegram_id))
-    lines = [
-        "📡 <b>Состояние</b>",
-        "",
-        f"• Проверка оценок: {'идёт ✅' if watching else 'не запущена'}",
-        f"• Интервал: {user.check_interval // 60} мин",
-        f"• Оценок под наблюдением: {tracked}",
-        f"• Школа: {formatting.esc(user.school.name or '—')}",
-    ]
+    info = await app.state.watch_status(user.telegram_id)
+    text = formatting.watch_status(user, info, running=watching, tracked=tracked)
     if await app.state.is_baseline_pending(user.telegram_id):
-        lines.append("• Первая проверка после переноса пройдёт молча")
-    await reply(message, "\n".join(lines))
+        text += "\n• Первая проверка после переноса пройдёт молча"
+    await reply(message, text)
+
+
+@router.message(Command("history"))
+async def history(message: Message, user: User, app: AppContext) -> None:
+    """Что происходило с оценками — даже если уведомление выключено или не дошло."""
+    rows = await app.state.mark_history(user.telegram_id, limit=30)
+    entries = []
+    for row in rows:
+        try:
+            record = mark_from_dict(json.loads(row["payload"]))
+            seen = dt.datetime.fromisoformat(row["created_at"])
+        except (ValueError, KeyError, TypeError):
+            continue
+        entries.append((MarkKind(row["kind"]), record, row["old_mark"], row["new_mark"], seen))
+    await reply(message, formatting.mark_history(entries, tz=user.tz))

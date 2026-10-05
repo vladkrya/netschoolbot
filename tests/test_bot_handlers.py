@@ -134,7 +134,7 @@ class TestMenu:
         from app.domain.records import HomeworkRecord
 
         user = await users.save(make_user())
-        today = menu.msk_today()
+        today = user.today()
         app.diary.homework = [
             HomeworkRecord("Алгебра", d, "ДЗ", "Упр. 1")
             for d in menu.next_school_days(today)

@@ -44,6 +44,7 @@ class FakeNotifier:
         self.absences = []
         self.token_warnings = []
         self.errors = []
+        self.texts = []
 
     async def send_mark_events(self, user, events):
         self.mark_events.extend(events)
@@ -59,6 +60,9 @@ class FakeNotifier:
 
     async def send_error(self, user, error):
         self.errors.append(error)
+
+    async def send_text(self, user, text):
+        self.texts.append(text)
 
 
 class FakeDiary:
@@ -292,7 +296,7 @@ class TestQuietHours:
 
         # Полночь — внутри окна 22:00–07:00.
         monkeypatch.setattr(
-            module, "msk_now", lambda: dt.datetime(2026, 3, 2, 0, 30)
+            module, "_local_now", lambda user: dt.datetime(2026, 3, 2, 0, 30)
         )
         await users.save(make_user(quiet_hours=QuietHours(dt.time(22), dt.time(7))))
         diary.marks = [record(0)]
@@ -301,12 +305,30 @@ class TestQuietHours:
         await watcher.run_once()
         assert notifier.mark_events == []
 
+    async def test_queued_during_quiet_hours_sent_in_the_morning(
+        self, users, watcher, diary, notifier, monkeypatch
+    ):
+        import app.notifications.watcher as module
+
+        now = {"value": dt.datetime(2026, 3, 2, 0, 30)}
+        monkeypatch.setattr(module, "_local_now", lambda user: now["value"])
+        await users.save(make_user(quiet_hours=QuietHours(dt.time(22), dt.time(7))))
+        diary.marks = [record(0)]
+        await watcher.run_once()
+        diary.marks = [record(0), record(1)]
+        await watcher.run_once()
+        assert notifier.mark_events == []
+
+        now["value"] = dt.datetime(2026, 3, 2, 7, 30)
+        await watcher.run_once()
+        assert len(notifier.mark_events) == 1
+
     async def test_state_still_advances_during_quiet_hours(
         self, users, marks, watcher, diary, monkeypatch
     ):
         import app.notifications.watcher as module
 
-        monkeypatch.setattr(module, "msk_now", lambda: dt.datetime(2026, 3, 2, 0, 30))
+        monkeypatch.setattr(module, "_local_now", lambda user: dt.datetime(2026, 3, 2, 0, 30))
         await users.save(make_user(quiet_hours=QuietHours(dt.time(22), dt.time(7))))
         diary.marks = [record(0)]
         await watcher.run_once()
@@ -316,7 +338,7 @@ class TestQuietHours:
     async def test_outside_quiet_hours_sends(self, users, watcher, diary, notifier, monkeypatch):
         import app.notifications.watcher as module
 
-        monkeypatch.setattr(module, "msk_now", lambda: dt.datetime(2026, 3, 2, 12, 0))
+        monkeypatch.setattr(module, "_local_now", lambda user: dt.datetime(2026, 3, 2, 12, 0))
         await users.save(make_user(quiet_hours=QuietHours(dt.time(22), dt.time(7))))
         diary.marks = [record(0)]
         await watcher.run_once()
@@ -394,27 +416,86 @@ class TestErrors:
         diary.error = None
         assert await watcher.run_once() == 300.0
 
-    async def test_state_saved_before_sending(self, users, marks, diary, notifier):
-        """Падение отправки не должно приводить к повторной рассылке."""
+    async def test_failed_delivery_is_retried_once(self, users, marks, diary, notifier):
+        """Сбой Telegram откладывает уведомление, а не теряет и не дублирует его."""
 
         class Failing(FakeNotifier):
             async def send_mark_events(self, user, events):
                 raise RuntimeError("Telegram недоступен")
 
-        failing = Failing()
-        from app.notifications.watcher import UserWatcher
-
         await users.save(make_user())
-        watcher = UserWatcher(1, users=users, state=marks, diary=diary, notifier=failing)
+        watcher = UserWatcher(1, users=users, state=marks, diary=diary, notifier=Failing())
         diary.marks = [record(0)]
         await watcher.run_once()
         diary.marks = [record(0), record(1)]
-        await watcher.run_once()  # падает внутри, но состояние уже сохранено
+        await watcher.run_once()  # отправка падает, событие остаётся в очереди
+        assert len(await marks.pending_outbox(1)) == 1
 
         good = FakeNotifier()
         watcher = UserWatcher(1, users=users, state=marks, diary=diary, notifier=good)
         await watcher.run_once()
-        assert good.mark_events == []
+        await watcher.run_once()
+        assert [e.record.subject for e in good.mark_events] == ["Предмет 1"]
+        assert await marks.pending_outbox(1) == []
+
+    async def test_status_records_success_and_error(self, users, marks, watcher, diary):
+        await users.save(make_user())
+        diary.marks = [record(0)]
+        await watcher.run_once()
+        status = await marks.watch_status(1)
+        assert status.last_ok_at is not None and status.next_check_at is not None
+
+        diary.error = NetSchoolError(Reason.SERVER_UNAVAILABLE, "Сервер школы недоступен")
+        await watcher.run_once()
+        status = await marks.watch_status(1)
+        assert status.last_error_at is not None
+        assert status.last_error
+
+
+class TestOutbox:
+    async def test_stale_items_are_dropped(self, users, marks, watcher, diary, notifier):
+        from app.notifications.outbox import OutboxKind, encode
+
+        await users.save(make_user())
+        await marks.save_check(
+            1, tracked={}, homework=set(), observed_new_homework=set(), absences=None,
+            outbox=[(OutboxKind.MARKS.value, encode(OutboxKind.MARKS, []))],
+            history=[], baseline_done=False,
+        )
+        await marks._db.execute("UPDATE outbox SET created_at = '2000-01-01 00:00:00'")
+        diary.marks = [record(0)]
+        await watcher.run_once()
+        assert await marks.pending_outbox(1) == []
+        assert notifier.mark_events == []
+
+    async def test_roundtrip_homework_and_absences(self):
+        from app.domain.records import AbsenceRecord, Attachment
+        from app.notifications.outbox import OutboxKind, decode, encode
+
+        hw = HomeworkRecord(
+            subject="Алгебра", due_date=dt.date(2026, 3, 3), assignment_type="ДЗ",
+            text="№1", attachments=(Attachment(7, "a.pdf"),),
+            published_at=dt.datetime(2026, 3, 2, 15, 0), topic="Дроби",
+        )
+        absence = AbsenceRecord("Физика", dt.date(2026, 3, 2), 3, "Б")
+        assert decode(OutboxKind.HOMEWORK, encode(OutboxKind.HOMEWORK, [hw])) == [hw]
+        assert decode(OutboxKind.ABSENCES, encode(OutboxKind.ABSENCES, [absence])) == [absence]
+
+
+class TestHistory:
+    async def test_history_keeps_events_with_notifications_off(
+        self, users, marks, watcher, diary, notifier
+    ):
+        from app.domain.models import NotificationPrefs
+
+        await users.save(make_user(notifications=NotificationPrefs(grades=False, changes=False)))
+        diary.marks = [record(0)]
+        await watcher.run_once()
+        diary.marks = [record(0, value="4"), record(1)]
+        await watcher.run_once()
+        assert notifier.mark_events == []
+        kinds = sorted(row["kind"] for row in await marks.mark_history(1))
+        assert kinds == ["changed", "new"]
 
 
 class TestRegistry:
@@ -673,3 +754,60 @@ class TestApiSwitchDoesNotFakeDeletions:
 
         assert notifier.mark_events == []
         assert set((await marks.load_marks(1))) == {r.identity for r in diary.marks}
+
+
+class TestDigests:
+    @staticmethod
+    def _at(monkeypatch, moment):
+        import app.notifications.watcher as module
+
+        monkeypatch.setattr(module, "_local_now", lambda user: moment)
+
+    async def test_evening_summary_sent_once(self, users, watcher, diary, notifier, monkeypatch):
+        from app.domain.models import NotificationPrefs
+
+        # Воскресенье, 20:00 — сводка на понедельник 2 марта.
+        self._at(monkeypatch, dt.datetime(2026, 3, 1, 20, 0))
+        await users.save(make_user(notifications=NotificationPrefs(evening_summary=True)))
+        diary.homework = [HomeworkRecord("Алгебра", dt.date(2026, 3, 2), "ДЗ", "№ 5")]
+        await watcher.run_once()
+        await watcher.run_once()
+        assert len(notifier.texts) == 1
+        assert "Алгебра" in notifier.texts[0] and "№ 5" in notifier.texts[0]
+
+    async def test_no_evening_summary_before_saturday(self, users, watcher, diary, notifier, monkeypatch):
+        from app.domain.models import NotificationPrefs
+
+        # Пятница вечер: завтра суббота — рано.
+        self._at(monkeypatch, dt.datetime(2026, 3, 6, 20, 0))
+        await users.save(make_user(notifications=NotificationPrefs(evening_summary=True)))
+        diary.homework = [HomeworkRecord("Алгебра", dt.date(2026, 3, 9), "ДЗ", "№ 5")]
+        await watcher.run_once()
+        assert notifier.texts == []
+
+    async def test_weekly_summary_on_monday(self, users, watcher, diary, notifier, monkeypatch):
+        from app.domain.models import NotificationPrefs
+
+        self._at(monkeypatch, dt.datetime(2026, 3, 9, 9, 0))
+        await users.save(make_user(notifications=NotificationPrefs(weekly_summary=True)))
+        diary.marks = [record(0, date=dt.date(2026, 3, 4))]
+        await watcher.run_once()
+        await watcher.run_once()
+        assert len(notifier.texts) == 1
+        assert "Сводка за неделю" in notifier.texts[0]
+
+    async def test_disabled_by_default(self, users, watcher, diary, notifier, monkeypatch):
+        self._at(monkeypatch, dt.datetime(2026, 3, 9, 20, 0))
+        await users.save(make_user())
+        await watcher.run_once()
+        assert notifier.texts == []
+
+
+class TestTimezone:
+    def test_unknown_zone_falls_back_to_moscow(self):
+        user = make_user(timezone="Mars/Olympus")
+        assert str(user.tz) == "Europe/Moscow"
+
+    async def test_timezone_persists(self, users):
+        await users.save(make_user(timezone="Asia/Novosibirsk"))
+        assert (await users.get(1)).timezone == "Asia/Novosibirsk"

@@ -30,6 +30,8 @@ COMMANDS = [
     BotCommand(command="settings", description="Настройки"),
     BotCommand(command="profile", description="Профиль"),
     BotCommand(command="status", description="Состояние проверки"),
+    BotCommand(command="history", description="История изменений оценок"),
+    BotCommand(command="timezone", description="Часовой пояс"),
     BotCommand(command="child", description="Переключить ребёнка"),
     BotCommand(command="changeapi", description="Сменить API: веб или мобильное"),
     BotCommand(command="login", description="Войти в «Сетевой город»"),

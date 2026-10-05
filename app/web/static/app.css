@@ -1026,3 +1026,11 @@ body::after {
 }
 .back-arrow.show { opacity: 1; }
 .back-arrow.armed { background: var(--primary); color: #fff; }
+
+/* Статус проверки и история оценок (меню ☰). */
+.sync-status { margin-top: 6px; line-height: 1.5; }
+.sync-status.failing { color: var(--red); }
+.history-list { display: flex; flex-direction: column; gap: 8px; padding: 12px 16px; }
+.history-item { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 10px 12px; }
+.history-head { display: flex; justify-content: space-between; gap: 12px; font-weight: 600; }
+.history-mark { white-space: nowrap; }

@@ -241,6 +241,9 @@ export async function demoApi(path, options = {}) {
       interval_minutes: 5,
       quiet_hours: 'Отключены',
       enabled: true,
+      timezone: 'Europe/Moscow',
+      timezones: [{ id: 'Europe/Moscow', name: 'Москва' }],
+      status: { running: true, last_ok_at: new Date().toISOString(), queued: 0 },
     });
   }
 
@@ -353,6 +356,18 @@ export async function demoApi(path, options = {}) {
   if (route === '/api/student') {
     saveDemoConfig({ child: Number(body.id) || 0 });
     return ok({ name: cfg.children[Number(body.id)] || cfg.student });
+  }
+
+  if (route === '/api/history') {
+    const items = daysBetween(iso(mondayOffset(-1)), todayIso(), cfg)
+      .flatMap((d) => d.lessons.flatMap((l) => l.marks.map((m) => ({ ...m, subject: l.subject, date: d.date }))))
+      .slice(-15)
+      .reverse()
+      .map((m, id) => ({
+        id, kind: 'new', subject: m.subject, date: m.date, title: m.title || m.type || '',
+        mark: m.mark ?? m.value ?? '', old: '', new: '', seen: `${m.date}T15:00:00Z`,
+      }));
+    return ok({ items });
   }
 
   if (route === '/api/pwa-link') {

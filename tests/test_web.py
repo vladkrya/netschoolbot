@@ -315,6 +315,33 @@ class TestNewFeatures:
         assert (await response.json())["data"]["mail"] is True
         assert (await users.get(1)).notifications.mail is True
 
+    async def test_timezone_is_validated_and_saved(self, client, users, token):
+        url = f"{BASE}/api/settings/timezone"
+        bad = await client.post(url, params={"token": token}, json={"timezone": "Mars/Base"})
+        assert (await bad.json())["ok"] is False
+        await client.post(url, params={"token": token}, json={"timezone": "Asia/Omsk"})
+        assert (await users.get(1)).timezone == "Asia/Omsk"
+
+    async def test_history_and_status_in_profile(self, client, app_context, token):
+        import json as _json
+
+        from app.notifications.outbox import mark_to_dict
+        from tests.test_watcher import record
+
+        await app_context.state.save_check(
+            1, tracked={}, homework=set(), observed_new_homework=set(), absences=None,
+            outbox=[], history=[("changed", _json.dumps(mark_to_dict(record(0))), "3", "5")],
+            baseline_done=False,
+        )
+        await app_context.state.set_watch_status(1, ok=True)
+        history = await (await client.get(f"{BASE}/api/history", params={"token": token})).json()
+        item = history["data"]["items"][0]
+        assert (item["kind"], item["old"], item["new"]) == ("changed", "3", "5")
+        assert item["seen"].endswith("Z")
+        profile = await (await client.get(f"{BASE}/api/profile", params={"token": token})).json()
+        assert profile["data"]["status"]["last_ok_at"].endswith("Z")
+        assert profile["data"]["timezone"] == "Europe/Moscow"
+
     async def test_prefs_are_shared_and_merged(self, client, token):
         url = f"{BASE}/api/prefs"
         assert (await (await client.get(url, params={"token": token})).json())["data"] == {}

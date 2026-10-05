@@ -11,8 +11,10 @@ import datetime as dt
 import html
 from collections import Counter
 
-from .models import ApiMode, MarkKind, User
+from .models import DEFAULT_TIMEZONE, ApiMode, MarkKind, User, timezone_label, zone
 from .records import AbsenceRecord, HomeworkRecord, MarkEvent, MarkRecord, parse_mark_float
+
+MSK = zone(DEFAULT_TIMEZONE)
 
 WEEKDAYS = ("Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс")
 
@@ -101,13 +103,13 @@ def mark_events_digest(events: list[MarkEvent]) -> str:
     return "\n".join(lines)
 
 
-def homework_digest(items: list[HomeworkRecord]) -> str:
+def homework_digest(items: list[HomeworkRecord], *, tz: dt.tzinfo = MSK) -> str:
     lines = [f"📚 <b>Новые домашние задания</b> ({len(items)})", ""]
     for item in sorted(items, key=lambda h: (h.due_date, h.subject)):
         suffix = f" ({files_label(len(item.attachments))})" if item.attachments else ""
         text = esc(item.text) or "—"
         lines.append(
-            f"• {item.due_date:%d.%m} — {esc(item.subject)}: {text}{suffix}{published_label(item)}"
+            f"• {item.due_date:%d.%m} — {esc(item.subject)}: {text}{suffix}{published_label(item, tz)}"
         )
     return "\n".join(lines)
 
@@ -120,11 +122,11 @@ def absences_digest(items: list[AbsenceRecord]) -> str:
     return "\n".join(lines)
 
 
-def token_expiring(expires_at: dt.datetime) -> str:
+def token_expiring(expires_at: dt.datetime, *, tz: dt.tzinfo = MSK) -> str:
     """Предупреждение: мобильный доступ скоро истечёт, автоматически продлить не вышло."""
     moment = expires_at
     if moment.tzinfo is not None:
-        moment = moment.astimezone(dt.timezone(dt.timedelta(hours=3)))
+        moment = moment.astimezone(tz)
     return "\n".join(
         [
             "⏳ <b>Мобильный доступ скоро истечёт</b>",
@@ -137,17 +139,17 @@ def token_expiring(expires_at: dt.datetime) -> str:
     )
 
 
-def published_label(item: HomeworkRecord) -> str:
+def published_label(item: HomeworkRecord, tz: dt.tzinfo = MSK) -> str:
     """` · опубл. 29.09 09:34` — только в мобильном API, где время известно."""
     if item.published_at is None:
         return ""
     moment = item.published_at
     if moment.tzinfo is not None:
-        moment = moment.astimezone(dt.timezone(dt.timedelta(hours=3)))
+        moment = moment.astimezone(tz)
     return f" <i>· опубл. {moment:%d.%m %H:%M}</i>"
 
 
-def homework_list(items: list[HomeworkRecord], header: str) -> str:
+def homework_list(items: list[HomeworkRecord], header: str, *, tz: dt.tzinfo = MSK) -> str:
     if not items:
         return f"{header}\n\nЗаданий нет."
     lines = [header, ""]
@@ -157,7 +159,7 @@ def homework_list(items: list[HomeworkRecord], header: str) -> str:
             current_date = item.due_date
             lines.append(f"\n📅 <b>{date_label(item.due_date)}</b>")
         suffix = f" ({files_label(len(item.attachments))})" if item.attachments else ""
-        lines.append(f"• {esc(item.subject)}: {esc(item.text) or '—'}{suffix}{published_label(item)}")
+        lines.append(f"• {esc(item.subject)}: {esc(item.text) or '—'}{suffix}{published_label(item, tz)}")
     return "\n".join(lines)
 
 
@@ -257,6 +259,28 @@ def weekly_summary(records: list[MarkRecord], start: dt.date, end: dt.date) -> s
     return "\n".join(lines)
 
 
+def _clock(value: object) -> str:
+    """Время урока: в записях оно строкой «09:00», в старых данных — `time`."""
+    if hasattr(value, "strftime"):
+        return value.strftime("%H:%M")
+    return str(value or "")
+
+
+def _lesson_lines(lessons: list) -> list[str]:
+    ordered = sorted(
+        lessons, key=lambda l: (getattr(l, "number", None) or 0, _clock(getattr(l, "start", "")))
+    )
+    lines = []
+    for index, lesson in enumerate(ordered, start=1):
+        number = getattr(lesson, "number", None) or index
+        start, end = _clock(getattr(lesson, "start", "")), _clock(getattr(lesson, "end", ""))
+        when = f"{start}–{end} " if start and end else ""
+        room = getattr(lesson, "room", None)
+        where = f" (каб. {esc(room)})" if room else ""
+        lines.append(f"{number}. {when}{esc(getattr(lesson, 'subject', '—'))}{where}")
+    return lines
+
+
 def schedule(days: list, header: str) -> str:
     """Расписание уроков. `days` — объекты с полями day и lessons."""
     filled = [day for day in days if getattr(day, "lessons", None)]
@@ -266,17 +290,93 @@ def schedule(days: list, header: str) -> str:
     lines = [header]
     for day in sorted(filled, key=lambda d: d.day):
         lines.append(f"\n📅 <b>{date_label(day.day)}</b>")
-        lessons = sorted(
-            day.lessons,
-            key=lambda l: (getattr(l, "number", None) or 0, getattr(l, "start", None) or dt.time()),
+        lines.extend(_lesson_lines(day.lessons))
+    return "\n".join(lines)
+
+
+def evening_summary(day: object | None, when: dt.date, *, tz: dt.tzinfo = MSK) -> str | None:
+    """Сводка на завтра: уроки и задания. None — сказать нечего (каникулы)."""
+    lessons = list(getattr(day, "lessons", None) or [])
+    homework = list(getattr(day, "homework", None) or [])
+    if not lessons and not homework:
+        return None
+    lines = [f"🌙 <b>Завтра, {date_label(when)}</b>"]
+    if lessons:
+        lines.append("")
+        lines.extend(_lesson_lines(lessons))
+    lines.append("")
+    if homework:
+        lines.append("📚 <b>Задано</b>")
+        for item in sorted(homework, key=lambda h: (h.lesson_number or 0, h.subject)):
+            suffix = f" ({files_label(len(item.attachments))})" if item.attachments else ""
+            lines.append(f"• {esc(item.subject)}: {esc(item.text) or '—'}{suffix}")
+    else:
+        lines.append("📚 Заданий на завтра нет.")
+    return "\n".join(lines)
+
+
+def _local(moment: dt.datetime | None, tz: dt.tzinfo) -> str:
+    """UTC из базы — в местное время пользователя."""
+    if moment is None:
+        return "—"
+    return moment.replace(tzinfo=dt.timezone.utc).astimezone(tz).strftime("%d.%m %H:%M")
+
+
+def watch_status(user: User, status: object, *, running: bool, tracked: int) -> str:
+    """Текст /status: что с проверкой на самом деле, а не только «задача есть»."""
+    tz = user.tz
+    last_ok = getattr(status, "last_ok_at", None)
+    last_error_at = getattr(status, "last_error_at", None)
+    failing = last_error_at is not None and (last_ok is None or last_error_at > last_ok)
+    if not user.enabled:
+        state = "выключена 🔕"
+    elif not running:
+        state = "не запущена ⚠️"
+    elif failing:
+        state = "ошибка ⚠️"
+    else:
+        state = "идёт ✅"
+    lines = [
+        "📡 <b>Состояние</b>",
+        "",
+        f"• Проверка оценок: {state}",
+        f"• Последняя успешная: {_local(last_ok, tz)}",
+    ]
+    if failing:
+        lines.append(f"• Последняя ошибка: {_local(last_error_at, tz)} — {esc(status.last_error)}")
+    if running and getattr(status, "next_check_at", None):
+        lines.append(f"• Следующая попытка: {_local(status.next_check_at, tz)}")
+    queued = getattr(status, "queued", 0)
+    if queued:
+        lines.append(f"• Ждут отправки: {queued} (тихие часы или сбой Telegram)")
+    lines += [
+        f"• Интервал: {user.check_interval // 60} мин",
+        f"• Оценок под наблюдением: {tracked}",
+        f"• Школа: {esc(user.school.name or '—')}",
+        f"• Часовой пояс: {esc(timezone_label(user.timezone))}",
+    ]
+    return "\n".join(lines)
+
+
+HISTORY_ICONS = {MarkKind.NEW: "🆕", MarkKind.CHANGED: "✏️", MarkKind.DELETED: "🗑"}
+
+
+def mark_history(entries: list[tuple[MarkKind, MarkRecord, str, str, dt.datetime]], *, tz: dt.tzinfo = MSK) -> str:
+    """История изменений оценок: (вид, оценка, было, стало, когда замечено в UTC)."""
+    if not entries:
+        return "🕘 <b>История оценок</b>\n\nПока пусто: изменения появятся после следующих проверок."
+    lines = ["🕘 <b>История оценок</b>", ""]
+    for kind, record, old, new, seen in entries:
+        if kind is MarkKind.CHANGED:
+            value = f"{esc(old)} → <b>{esc(new)}</b>"
+        elif kind is MarkKind.DELETED:
+            value = f"<s>{esc(record.mark)}</s>"
+        else:
+            value = f"<b>{esc(record.mark)}</b>"
+        lines.append(
+            f"{HISTORY_ICONS[kind]} {_local(seen, tz)} · {esc(record.subject)}: {value}"
+            f" <i>(за {record.date:%d.%m})</i>"
         )
-        for index, lesson in enumerate(lessons, start=1):
-            start = getattr(lesson, "start", None)
-            end = getattr(lesson, "end", None)
-            when = f"{start:%H:%M}–{end:%H:%M} " if start and end else ""
-            room = getattr(lesson, "room", None)
-            where = f" (каб. {esc(room)})" if room else ""
-            lines.append(f"{index}. {when}{esc(getattr(lesson, 'subject', '—'))}{where}")
     return "\n".join(lines)
 
 

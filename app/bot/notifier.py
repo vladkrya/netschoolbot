@@ -59,7 +59,7 @@ class TelegramNotifier:
     async def send_homework(self, user: User, items: list[HomeworkRecord]) -> None:
         if not items:
             return
-        await self._send(user, formatting.homework_digest(items))
+        await self._send(user, formatting.homework_digest(items, tz=user.tz))
         await self._push_notify(
             user,
             "Новые задания",
@@ -77,7 +77,7 @@ class TelegramNotifier:
         )
 
     async def send_token_expiring(self, user: User, expires_at: dt.datetime) -> None:
-        await self._send(user, formatting.token_expiring(expires_at))
+        await self._send(user, formatting.token_expiring(expires_at, tz=user.tz))
 
     async def _push_notify(self, user: User, title: str, body: str) -> None:
         """Отправить push, не давая его сбою повлиять на Telegram."""
@@ -87,6 +87,9 @@ class TelegramNotifier:
             await self._push.send(user.telegram_id, title, body)
         except Exception as exc:  # noqa: BLE001
             logger.debug("Push для %s не ушёл: %s", user.telegram_id, exc)
+
+    async def send_text(self, user: User, text: str) -> None:
+        await self._send(user, text)
 
     async def send_error(self, user: User, error: NetSchoolError) -> None:
         await self._send(user, f"⚠️ {formatting.esc(error.user_message)}")
@@ -103,8 +106,9 @@ class TelegramNotifier:
             )
         except TelegramRetryAfter as exc:
             if not retry:
+                # Ошибка наверх: уведомление останется в очереди до следующего прохода.
                 logger.warning("Повторное ограничение частоты для %s", user.telegram_id)
-                return
+                raise
             await asyncio.sleep(exc.retry_after + 1)
             await self._send_part(user, text, retry=False)
         except TelegramForbiddenError:

@@ -12,12 +12,13 @@ import datetime as dt
 import json
 import logging
 import secrets
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from typing import Any
 
 import aiosqlite
 
 from ..domain.models import (
+    DEFAULT_TIMEZONE,
     ApiMode,
     Credentials,
     Filters,
@@ -111,8 +112,8 @@ class UserRepository:
                     login_type, login, password, student_name, selected_student_id,
                     check_interval, notify_grades, notify_changes, notify_deletes,
                     notify_homework, notify_mail, weekly_summary, notify_absences,
-                    quiet_start, quiet_end, api_mode, updated_at
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    quiet_start, quiet_end, api_mode, timezone, evening_summary, updated_at
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(telegram_id) DO UPDATE SET
                     enabled = excluded.enabled,
                     display_name = excluded.display_name,
@@ -134,6 +135,8 @@ class UserRepository:
                     quiet_start = excluded.quiet_start,
                     quiet_end = excluded.quiet_end,
                     api_mode = excluded.api_mode,
+                    timezone = excluded.timezone,
+                    evening_summary = excluded.evening_summary,
                     updated_at = excluded.updated_at
                 """,
                 (
@@ -158,6 +161,8 @@ class UserRepository:
                     user.quiet_hours.start.strftime("%H:%M") if user.quiet_hours.start else None,
                     user.quiet_hours.end.strftime("%H:%M") if user.quiet_hours.end else None,
                     user.api_mode.value,
+                    user.timezone,
+                    int(user.notifications.evening_summary),
                     now,
                 ),
             )
@@ -246,6 +251,7 @@ class UserRepository:
                 homework=bool(row["notify_homework"]),
                 mail=bool(row["notify_mail"]),
                 weekly_summary=bool(row["weekly_summary"]),
+                evening_summary=bool(row["evening_summary"]),
                 absences=bool(row["notify_absences"]),
             ),
             filters=Filters(
@@ -260,8 +266,71 @@ class UserRepository:
                 start=_parse_time(row["quiet_start"]), end=_parse_time(row["quiet_end"])
             ),
             api_mode=ApiMode.parse(row["api_mode"]),
+            timezone=row["timezone"] or DEFAULT_TIMEZONE,
             created_at=_parse_dt(row["created_at"]),
             updated_at=_parse_dt(row["updated_at"]),
+        )
+
+
+HISTORY_LIMIT = 500
+
+
+@dataclass(frozen=True, slots=True)
+class WatchStatus:
+    """Исход фоновых проверок; время — в UTC."""
+
+    last_ok_at: dt.datetime | None = None
+    last_error_at: dt.datetime | None = None
+    last_error: str = ""
+    next_check_at: dt.datetime | None = None
+    queued: int = 0
+
+
+def _utc_now_text() -> str:
+    return dt.datetime.now(dt.timezone.utc).replace(tzinfo=None).isoformat(timespec="seconds")
+
+
+async def _write_marks(
+    db: aiosqlite.Connection, telegram_id: int, tracked: dict[str, TrackedMark]
+) -> None:
+    await db.execute("DELETE FROM tracked_marks WHERE telegram_id = ?", (telegram_id,))
+    if tracked:
+        await db.executemany(
+            """INSERT INTO tracked_marks (telegram_id, identity, payload, missing_streak)
+               VALUES (?,?,?,?)""",
+            [
+                (telegram_id, identity, _record_to_json(item.record), item.missing_streak)
+                for identity, item in tracked.items()
+            ],
+        )
+
+
+async def _write_homework(
+    db: aiosqlite.Connection, telegram_id: int, identities: set[str], observed_new: set[str]
+) -> None:
+    cursor = await db.execute(
+        "SELECT identity FROM tracked_homework WHERE telegram_id = ?", (telegram_id,)
+    )
+    existing = {row[0] for row in await cursor.fetchall()}
+    added = identities - existing
+    if added:
+        await db.executemany(
+            """INSERT INTO tracked_homework (telegram_id, identity, first_seen_at)
+               VALUES (?, ?, CASE WHEN ? THEN datetime('now') END)""",
+            [(telegram_id, identity, int(identity in observed_new)) for identity in added],
+        )
+
+
+async def _write_absences(db: aiosqlite.Connection, telegram_id: int, identities: set[str]) -> None:
+    cursor = await db.execute(
+        "SELECT identity FROM tracked_absences WHERE telegram_id = ?", (telegram_id,)
+    )
+    existing = {row[0] for row in await cursor.fetchall()}
+    added = identities - existing
+    if added:
+        await db.executemany(
+            "INSERT INTO tracked_absences (telegram_id, identity) VALUES (?, ?)",
+            [(telegram_id, identity) for identity in added],
         )
 
 
@@ -320,16 +389,7 @@ class MarkStateRepository:
     async def replace_marks(self, telegram_id: int, tracked: dict[str, TrackedMark]) -> None:
         """Заменить состояние целиком, одной транзакцией."""
         async with self._db.transaction() as db:
-            await db.execute("DELETE FROM tracked_marks WHERE telegram_id = ?", (telegram_id,))
-            if tracked:
-                await db.executemany(
-                    """INSERT INTO tracked_marks (telegram_id, identity, payload, missing_streak)
-                       VALUES (?,?,?,?)""",
-                    [
-                        (telegram_id, identity, _record_to_json(item.record), item.missing_streak)
-                        for identity, item in tracked.items()
-                    ],
-                )
+            await _write_marks(db, telegram_id, tracked)
 
     async def load_homework(self, telegram_id: int) -> set[str]:
         rows = await self._db.fetch_all(
@@ -345,19 +405,8 @@ class MarkStateRepository:
         Отсутствие задания в ответе не означает, что оно новое при следующем
         появлении. История сбрасывается явно через forget_all.
         """
-        observed_new = observed_new or set()
         async with self._db.transaction() as db:
-            cursor = await db.execute(
-                "SELECT identity FROM tracked_homework WHERE telegram_id = ?", (telegram_id,)
-            )
-            existing = {row[0] for row in await cursor.fetchall()}
-            added = identities - existing
-            if added:
-                await db.executemany(
-                    """INSERT INTO tracked_homework (telegram_id, identity, first_seen_at)
-                       VALUES (?, ?, CASE WHEN ? THEN datetime('now') END)""",
-                    [(telegram_id, identity, int(identity in observed_new)) for identity in added],
-                )
+            await _write_homework(db, telegram_id, identities, observed_new or set())
 
     async def token_warned_at(self, telegram_id: int) -> dt.datetime | None:
         """Когда предупредили об истечении мобильного токена. None — не предупреждали."""
@@ -382,16 +431,145 @@ class MarkStateRepository:
     async def replace_absences(self, telegram_id: int, identities: set[str]) -> None:
         """Запомнить виденные отметки, включая временно пропавшие из ответа."""
         async with self._db.transaction() as db:
-            cursor = await db.execute(
-                "SELECT identity FROM tracked_absences WHERE telegram_id = ?", (telegram_id,)
-            )
-            existing = {row[0] for row in await cursor.fetchall()}
-            added = identities - existing
-            if added:
+            await _write_absences(db, telegram_id, identities)
+
+    async def save_check(
+        self,
+        telegram_id: int,
+        *,
+        tracked: dict[str, TrackedMark],
+        homework: set[str],
+        observed_new_homework: set[str],
+        absences: set[str] | None,
+        outbox: list[tuple[str, str]],
+        history: list[tuple[str, str, str, str]],
+        baseline_done: bool,
+    ) -> None:
+        """Итог одной проверки — одной транзакцией.
+
+        Состояние слежения и уведомления о найденных изменениях пишутся
+        вместе: либо запомнили и поставили в очередь, либо ни то ни другое.
+        `outbox` — пары (вид, JSON), `history` — (вид, JSON оценки, было, стало).
+        """
+        async with self._db.transaction() as db:
+            await _write_marks(db, telegram_id, tracked)
+            await _write_homework(db, telegram_id, homework, observed_new_homework)
+            if absences is not None:
+                await _write_absences(db, telegram_id, absences)
+            if outbox:
                 await db.executemany(
-                    "INSERT INTO tracked_absences (telegram_id, identity) VALUES (?, ?)",
-                    [(telegram_id, identity) for identity in added],
+                    "INSERT INTO outbox (telegram_id, kind, payload) VALUES (?, ?, ?)",
+                    [(telegram_id, kind, payload) for kind, payload in outbox],
                 )
+            if history:
+                await db.executemany(
+                    """INSERT INTO mark_history (telegram_id, kind, payload, old_mark, new_mark)
+                       VALUES (?, ?, ?, ?, ?)""",
+                    [(telegram_id, *row) for row in history],
+                )
+                # История — не архив навсегда: последних записей хватает,
+                # чтобы восстановить пропущенное.
+                await db.execute(
+                    """DELETE FROM mark_history WHERE telegram_id = ? AND id NOT IN (
+                           SELECT id FROM mark_history WHERE telegram_id = ?
+                           ORDER BY id DESC LIMIT ?)""",
+                    (telegram_id, telegram_id, HISTORY_LIMIT),
+                )
+            if baseline_done:
+                await db.execute(
+                    "UPDATE users SET baseline_pending = 0 WHERE telegram_id = ?", (telegram_id,)
+                )
+
+    async def pending_outbox(self, telegram_id: int) -> list[aiosqlite.Row]:
+        """Неотправленные уведомления в порядке появления."""
+        return await self._db.fetch_all(
+            """SELECT id, kind, payload, created_at, attempts FROM outbox
+               WHERE telegram_id = ? ORDER BY id""",
+            (telegram_id,),
+        )
+
+    async def ack_outbox(self, item_id: int) -> None:
+        await self._db.execute("DELETE FROM outbox WHERE id = ?", (item_id,))
+
+    async def fail_outbox(self, item_id: int, error: str) -> None:
+        await self._db.execute(
+            "UPDATE outbox SET attempts = attempts + 1, last_error = ? WHERE id = ?",
+            (error[:500], item_id),
+        )
+
+    async def mark_history(
+        self, telegram_id: int, *, limit: int = 50, before_id: int | None = None
+    ) -> list[aiosqlite.Row]:
+        """Последние изменения оценок, новые сверху."""
+        return await self._db.fetch_all(
+            """SELECT id, kind, payload, old_mark, new_mark, created_at FROM mark_history
+               WHERE telegram_id = ? AND id < ? ORDER BY id DESC LIMIT ?""",
+            (telegram_id, before_id if before_id is not None else 2**62, limit),
+        )
+
+    async def set_watch_status(
+        self,
+        telegram_id: int,
+        *,
+        ok: bool,
+        error: str = "",
+        next_check_at: dt.datetime | None = None,
+    ) -> None:
+        """Запомнить исход проверки: для /status и экрана профиля."""
+        now = _utc_now_text()
+        next_text = next_check_at.isoformat(timespec="seconds") if next_check_at else None
+        if ok:
+            sql = """INSERT INTO watch_status (telegram_id, last_ok_at, next_check_at)
+                     VALUES (?, ?, ?)
+                     ON CONFLICT(telegram_id) DO UPDATE SET
+                         last_ok_at = excluded.last_ok_at,
+                         next_check_at = excluded.next_check_at"""
+            params: tuple = (telegram_id, now, next_text)
+        else:
+            sql = """INSERT INTO watch_status (telegram_id, last_error_at, last_error, next_check_at)
+                     VALUES (?, ?, ?, ?)
+                     ON CONFLICT(telegram_id) DO UPDATE SET
+                         last_error_at = excluded.last_error_at,
+                         last_error = excluded.last_error,
+                         next_check_at = excluded.next_check_at"""
+            params = (telegram_id, now, error[:500], next_text)
+        try:
+            await self._db.execute(sql, params)
+        except aiosqlite.IntegrityError:
+            # Пользователя уже удалили, а проверка ещё доходила круг.
+            pass
+
+    async def digest_period(self, telegram_id: int, kind: str) -> str:
+        """За какой период сводка этого вида ушла последней; "" — ни разу."""
+        row = await self._db.fetch_one(
+            "SELECT period FROM digests_sent WHERE telegram_id = ? AND kind = ?",
+            (telegram_id, kind),
+        )
+        return row["period"] if row else ""
+
+    async def set_digest_period(self, telegram_id: int, kind: str, period: str) -> None:
+        await self._db.execute(
+            """INSERT INTO digests_sent (telegram_id, kind, period) VALUES (?, ?, ?)
+               ON CONFLICT(telegram_id, kind) DO UPDATE SET period = excluded.period""",
+            (telegram_id, kind, period),
+        )
+
+    async def watch_status(self, telegram_id: int) -> WatchStatus:
+        row = await self._db.fetch_one(
+            """SELECT last_ok_at, last_error_at, last_error, next_check_at,
+                      (SELECT COUNT(*) FROM outbox WHERE telegram_id = ?) AS queued
+               FROM watch_status WHERE telegram_id = ?""",
+            (telegram_id, telegram_id),
+        )
+        if row is None:
+            return WatchStatus()
+        return WatchStatus(
+            last_ok_at=_parse_dt(row["last_ok_at"]),
+            last_error_at=_parse_dt(row["last_error_at"]),
+            last_error=row["last_error"] or "",
+            next_check_at=_parse_dt(row["next_check_at"]),
+            queued=int(row["queued"] or 0),
+        )
 
     async def observed_homework(self, telegram_id: int) -> dict[str, str]:
         rows = await self._db.fetch_all(
@@ -418,7 +596,10 @@ class MarkStateRepository:
     async def forget_all(self, telegram_id: int) -> None:
         """Сбросить слежение — например при смене школы или ученика."""
         async with self._db.transaction() as db:
-            for table in ("tracked_marks", "tracked_homework", "seen_mail", "tracked_absences"):
+            for table in (
+                "tracked_marks", "tracked_homework", "seen_mail", "tracked_absences",
+                "outbox", "mark_history",
+            ):
                 await db.execute(f"DELETE FROM {table} WHERE telegram_id = ?", (telegram_id,))
 
 
