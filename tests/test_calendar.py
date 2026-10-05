@@ -26,7 +26,7 @@ def test_lessons_become_events_in_utc():
     assert "SUMMARY:1. Алгебра" in text
     assert "LOCATION:каб. 21" in text
     # Запятые и точки с запятой экранируются.
-    assert "№ 1\\, 2\; стр. 5" in text.replace("\r\n ", "")
+    assert r"№ 1\, 2\; стр. 5" in text.replace("\r\n ", "")
     # Урок без времени в календарь не попадает.
     assert "Без времени" not in text
     assert text.count("BEGIN:VEVENT") == 1
