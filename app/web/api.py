@@ -22,6 +22,7 @@ from aiohttp import web
 
 from ..context import AppContext
 from ..domain import formatting
+from ..domain.calendar import build_ics
 from ..domain.models import TIMEZONES, ApiMode, User, normalize
 from ..notifications.outbox import mark_from_dict
 from ..domain.records import DiaryDay, clean_content
@@ -541,6 +542,49 @@ async def _user_periods(app: AppContext, user: User, today: dt.date) -> tuple[li
     if found:
         return found, "school"
     return periods(today), "default"
+
+
+CALENDAR_FRESH = dt.timedelta(hours=1)
+
+
+@routes.get("/api/calendar.ics")
+async def calendar_feed(request: web.Request) -> web.Response:
+    """Подписка на расписание в календаре телефона (по личной ссылке с токеном).
+
+    Календари переспрашивают сами, поэтому ответ хранится час, а при
+    недоступной школе отдаётся последний удачный.
+    """
+    app, user = context(request), current_user(request)
+    cached = await app.cache.get(user.telegram_id, "calendar")
+    now_utc = dt.datetime.now(dt.timezone.utc).replace(tzinfo=None)
+    if cached is not None and now_utc - cached[1] < CALENDAR_FRESH:
+        text = cached[0]
+    else:
+        try:
+            days = await app.diary.fetch_diary(user, weeks_back=1, weeks_forward=3, today=user.today())
+            text = build_ics(days, user.tz, name=f"Уроки · {user.label}")
+            await app.cache.put(user.telegram_id, "calendar", text)
+        except NetSchoolError:
+            if cached is None:
+                raise
+            text = cached[0]
+    return web.Response(
+        text=text,
+        content_type="text/calendar",
+        charset="utf-8",
+        headers={"Content-Disposition": 'inline; filename="raspisanie.ics"'},
+    )
+
+
+@routes.get("/api/calendar-link")
+async def calendar_link(request: web.Request) -> web.Response:
+    """Адрес подписки: webcal:// открывает календарь телефона сразу."""
+    app, user = context(request), current_user(request)
+    token = await app.miniapp.issue_token(user.telegram_id)
+    url = f"{app.settings.web.miniapp_url}/api/calendar.ics?token={token}"
+    return web.json_response(
+        {"ok": True, "data": {"url": url, "webcal": "webcal://" + url.split("://", 1)[1]}}
+    )
 
 
 @routes.get("/api/subject")

@@ -380,6 +380,21 @@ class TestNewFeatures:
         keys = (await (await client.get(url, params={"token": token})).json())["data"]["keys"]
         assert keys == []
 
+    async def test_calendar_feed(self, client, app_context, token):
+        from app.domain.records import DiaryDay, Lesson
+
+        async def fetch_diary(user, **kwargs):
+            return [DiaryDay(day=dt.date(2026, 10, 6), lessons=[
+                Lesson(number=1, subject="Алгебра", start="08:00", end="08:40"),
+            ])]
+
+        app_context.diary.fetch_diary = fetch_diary
+        response = await client.get(f"{BASE}/api/calendar.ics", params={"token": token})
+        assert response.content_type == "text/calendar"
+        assert "SUMMARY:1. Алгебра" in await response.text()
+        link = await (await client.get(f"{BASE}/api/calendar-link", params={"token": token})).json()
+        assert link["data"]["webcal"].startswith("webcal://")
+
     async def test_prefs_are_shared_and_merged(self, client, token):
         url = f"{BASE}/api/prefs"
         assert (await (await client.get(url, params={"token": token})).json())["data"] == {}

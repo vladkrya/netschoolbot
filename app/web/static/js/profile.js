@@ -102,6 +102,39 @@ function timezoneSelect(data) {
       <select class="field" id="timezoneSelect">${options}</select></label>`;
 }
 
+async function openCalendar() {
+  closeDrawer();
+  const screen = pushScreen('Расписание в календаре');
+  screen.innerHTML = '<div class="muted small">Загрузка…</div>';
+  try {
+    const { data } = await api('/api/calendar-link');
+    screen.innerHTML = `<div class="card">
+        <p>Уроки с временем, кабинетом и заданиями появятся в календаре телефона
+        и будут обновляться сами — примерно раз в три часа.</p>
+        <button class="btn" id="calAdd">Добавить в календарь</button>
+        <button class="btn outline" id="calCopy">Скопировать ссылку</button>
+        <p class="muted small">Ссылка личная, как и ссылка на приложение. Если она утекла —
+        /app_reset в боте выпустит новую.</p>
+      </div>`;
+    $('calAdd').addEventListener('click', () => {
+      tap();
+      if (tg?.openLink) tg.openLink(data.webcal);
+      else window.location.href = data.webcal;
+    });
+    $('calCopy').addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(data.url);
+        notify('success');
+        banner('Ссылка скопирована — вставьте её в «Добавить календарь по ссылке»');
+      } catch {
+        prompt('Скопируйте ссылку', data.url);
+      }
+    });
+  } catch (error) {
+    screen.innerHTML = `<div class="muted small">${esc(error.message)}</div>`;
+  }
+}
+
 const HISTORY_ICONS = { new: '🆕', changed: '✏️', deleted: '🗑' };
 
 async function openHistory() {
@@ -260,6 +293,7 @@ function render() {
       <div class="drawer-heading">Дополнительно</div>
       <button class="drawer-link" id="drawerCalc">${ICONS.calc} Калькулятор баллов</button>
       <button class="drawer-link" id="drawerHistory">${ICONS.clock} История оценок</button>
+      ${demo ? '' : `<button class="drawer-link" id="drawerCalendar">${ICONS.calendar} Расписание в календаре</button>`}
     </section>
     <section class="drawer-section">
       <div class="drawer-heading">Оформление</div>
@@ -341,6 +375,7 @@ function bindDrawer() {
     loadCalc();
   });
   $('drawerHistory').addEventListener('click', () => { tap(); openHistory(); });
+  $('drawerCalendar')?.addEventListener('click', () => { tap(); openCalendar(); });
   $('timezoneSelect')?.addEventListener('change', async (event) => {
     select();
     const previous = state.profile.timezone;
