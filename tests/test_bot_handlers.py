@@ -143,6 +143,28 @@ class TestMenu:
         await menu.homework(message, user, app)
         assert "Алгебра" in message.texts
 
+    async def test_homework_done_toggle_syncs_with_app(self, app, users, marks):
+        from app.domain.records import HomeworkRecord
+
+        user = await users.save(make_user())
+        day = menu.next_school_days(user.today())[0]
+        item = HomeworkRecord("Алгебра", day, "ДЗ", "Упр. 1")
+        app.diary.homework = [item]
+        message = FakeMessage()
+        await menu.homework(message, user, app)
+        markup = message.answers[-1][1]["reply_markup"]
+        assert markup.inline_keyboard[0][0].text.startswith("⬜")
+
+        message.reply_markup = markup
+        callback = FakeCallback(f"hwdone:{item.key}", message)
+        await menu.toggle_homework_done(callback, user, app)
+        assert await marks.done_homework(1) == {item.key}
+        assert markup.inline_keyboard[0][0].text.startswith("✅")
+
+        again = FakeMessage()
+        await menu.homework(again, user, app)
+        assert "✅ Алгебра" in again.texts
+
     async def test_netschool_error_is_shown_readably(self, app, users):
         user = await users.save(make_user())
         app.diary.error = NetSchoolError(Reason.AUTH, "Сессия истекла. Войдите: /login")

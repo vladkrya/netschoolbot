@@ -71,6 +71,20 @@ def interval_choices() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
+# Кнопок «выполнено» не больше этого: длинная клавиатура закрывает чат.
+HOMEWORK_BUTTONS = 12
+
+
+def homework_done(items: list, done: set[str]) -> InlineKeyboardMarkup | None:
+    """Кнопка на каждое задание: нажал — отметилось выполненным, и в приложении тоже."""
+    rows = []
+    for item in items[:HOMEWORK_BUTTONS]:
+        mark = "✅" if item.key in done else "⬜"
+        label = f"{mark} {item.subject} · {item.due_date:%d.%m}"
+        rows.append([InlineKeyboardButton(text=label[:60], callback_data=f"hwdone:{item.key}")])
+    return InlineKeyboardMarkup(inline_keyboard=rows) if rows else None
+
+
 def timezones(user: User) -> InlineKeyboardMarkup:
     buttons = [
         InlineKeyboardButton(

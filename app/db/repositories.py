@@ -593,12 +593,30 @@ class MarkStateRepository:
             [(telegram_id, mid) for mid in message_ids],
         )
 
+    async def done_homework(self, telegram_id: int) -> set[str]:
+        rows = await self._db.fetch_all(
+            "SELECT homework_key FROM homework_done WHERE telegram_id = ?", (telegram_id,)
+        )
+        return {row["homework_key"] for row in rows}
+
+    async def set_homework_done(self, telegram_id: int, key: str, done: bool) -> None:
+        if done:
+            await self._db.execute(
+                "INSERT OR IGNORE INTO homework_done (telegram_id, homework_key) VALUES (?, ?)",
+                (telegram_id, key),
+            )
+        else:
+            await self._db.execute(
+                "DELETE FROM homework_done WHERE telegram_id = ? AND homework_key = ?",
+                (telegram_id, key),
+            )
+
     async def forget_all(self, telegram_id: int) -> None:
         """Сбросить слежение — например при смене школы или ученика."""
         async with self._db.transaction() as db:
             for table in (
                 "tracked_marks", "tracked_homework", "seen_mail", "tracked_absences",
-                "outbox", "mark_history",
+                "outbox", "mark_history", "homework_done",
             ):
                 await db.execute(f"DELETE FROM {table} WHERE telegram_id = ?", (telegram_id,))
 

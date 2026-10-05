@@ -149,7 +149,9 @@ def published_label(item: HomeworkRecord, tz: dt.tzinfo = MSK) -> str:
     return f" <i>· опубл. {moment:%d.%m %H:%M}</i>"
 
 
-def homework_list(items: list[HomeworkRecord], header: str, *, tz: dt.tzinfo = MSK) -> str:
+def homework_list(
+    items: list[HomeworkRecord], header: str, *, tz: dt.tzinfo = MSK, done: set[str] | None = None
+) -> str:
     if not items:
         return f"{header}\n\nЗаданий нет."
     lines = [header, ""]
@@ -159,7 +161,8 @@ def homework_list(items: list[HomeworkRecord], header: str, *, tz: dt.tzinfo = M
             current_date = item.due_date
             lines.append(f"\n📅 <b>{date_label(item.due_date)}</b>")
         suffix = f" ({files_label(len(item.attachments))})" if item.attachments else ""
-        lines.append(f"• {esc(item.subject)}: {esc(item.text) or '—'}{suffix}{published_label(item, tz)}")
+        bullet = "✅" if done and item.key in done else "•"
+        lines.append(f"{bullet} {esc(item.subject)}: {esc(item.text) or '—'}{suffix}{published_label(item, tz)}")
     return "\n".join(lines)
 
 

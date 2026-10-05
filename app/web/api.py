@@ -227,6 +227,7 @@ def _homework_to_json(item, observed: dict[str, str] | None = None) -> dict:
         "published_at": item.published_at.isoformat() if item.published_at else "",
         "weight": item.weight,
         "topic": item.topic,
+        "key": item.key,
     }
 
 
@@ -575,10 +576,45 @@ async def announcements(request: web.Request) -> web.Response:
     return await _cached(request, "announcements", produce)
 
 
+_HOMEWORK_KEY = re.compile(r"^[0-9a-f]{16}$")
+
+
+@routes.get("/api/homework/done")
+async def homework_done(request: web.Request) -> web.Response:
+    """Отметки «выполнено» — отдельно от кэша заданий: меняются чаще."""
+    app, user = context(request), current_user(request)
+    keys = sorted(await app.state.done_homework(user.telegram_id))
+    return web.json_response({"ok": True, "data": {"keys": keys}})
+
+
+@routes.post("/api/homework/done")
+async def set_homework_done(request: web.Request) -> web.Response:
+    app, user = context(request), current_user(request)
+    try:
+        body = await request.json()
+    except ValueError:
+        return json_error("Некорректный запрос")
+    key = str(body.get("key") or "")
+    if not _HOMEWORK_KEY.match(key):
+        return json_error("Некорректное задание")
+    await app.state.set_homework_done(user.telegram_id, key, bool(body.get("done")))
+    return web.json_response({"ok": True, "data": {"key": key, "done": bool(body.get("done"))}})
+
+
 @routes.get("/api/homework")
 async def homework(request: web.Request) -> web.Response:
+    # Прошедшие задания — отдельным окном: обычно нужны «сейчас и вперёд».
+    past = request.query.get("past") == "1"
+
     async def produce(app: AppContext, user: User):
-        items = await app.diary.fetch_homework(user, weeks_back=0, weeks_forward=2)
+        if past:
+            today = user.today()
+            items = await app.diary.fetch_period(
+                user, today - dt.timedelta(weeks=4), today - dt.timedelta(days=1), today=today
+            )
+            items = [record for day in items for record in day.homework]
+        else:
+            items = await app.diary.fetch_homework(user, weeks_back=0, weeks_forward=2)
         observed = await app.state.observed_homework(user.telegram_id)
         return {
             # Та же форма, что у заданий внутри урока: экран задания один,
@@ -589,7 +625,7 @@ async def homework(request: web.Request) -> web.Response:
             ]
         }
 
-    return await _cached(request, "homework", produce)
+    return await _cached(request, "homework:past" if past else "homework", produce)
 
 
 @routes.get("/api/mail")

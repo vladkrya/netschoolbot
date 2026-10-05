@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import hashlib
 import re
 from dataclasses import dataclass, field
 from typing import Any
@@ -139,6 +140,11 @@ class HomeworkRecord:
             self.text,
             attachments,
         )
+
+    @property
+    def key(self) -> str:
+        """Короткий отпечаток identity: влезает в callback_data Telegram и в адрес."""
+        return hashlib.sha1(self.identity.encode()).hexdigest()[:16]
 
 
 @dataclass(frozen=True, slots=True)

@@ -1034,3 +1034,15 @@ body::after {
 .history-item { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 10px 12px; }
 .history-head { display: flex; justify-content: space-between; gap: 12px; font-weight: 600; }
 .history-mark { white-space: nowrap; }
+
+/* «Д/З»: фильтры и отметка «выполнено». */
+.hw-filters { margin-top: 8px; }
+.hw-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.hw-check {
+  flex: none; width: 28px; height: 28px; border-radius: 50%;
+  border: 2px solid var(--border); background: transparent; color: #fff;
+  font-size: 16px; font-weight: 700; line-height: 1; display: grid; place-items: center;
+}
+.hw-check.on { background: var(--g5); border-color: var(--g5); }
+.hw-card.done .hw-subject, .hw-card.done .hw-text { opacity: .55; }
+.hw-card.done .hw-text { text-decoration: line-through; }

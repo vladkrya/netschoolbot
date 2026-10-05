@@ -87,8 +87,41 @@ async def homework(message: Message, user: User, app: AppContext) -> None:
     except NetSchoolError as exc:
         await report_error(message, exc)
         return
-    relevant = [item for item in items if item.due_date in wanted]
-    await reply(message, formatting.homework_list(relevant, "📚 <b>Домашние задания</b>", tz=user.tz))
+    relevant = sorted(
+        (item for item in items if item.due_date in wanted),
+        key=lambda h: (h.due_date, h.lesson_number or 0, h.subject),
+    )
+    done = await app.state.done_homework(user.telegram_id)
+    text = formatting.homework_list(relevant, "📚 <b>Домашние задания</b>", tz=user.tz, done=done)
+    parts = formatting.split_message(text)
+    for index, part in enumerate(parts):
+        last = index == len(parts) - 1
+        await message.answer(
+            part,
+            parse_mode="HTML",
+            reply_markup=keyboards.homework_done(relevant, done) if last else None,
+        )
+
+
+@router.callback_query(F.data.startswith("hwdone:"))
+async def toggle_homework_done(callback: CallbackQuery, user: User, app: AppContext) -> None:
+    """Отметить задание выполненным прямо из /dz.
+
+    Список не перезапрашивается у школы: клавиатура уже несёт подписи,
+    достаточно перевернуть галочку у нажатой кнопки.
+    """
+    key = callback.data.split(":", 1)[1]
+    done = key not in await app.state.done_homework(user.telegram_id)
+    await app.state.set_homework_done(user.telegram_id, key, done)
+    await callback.answer("Выполнено ✅" if done else "Снята отметка")
+    markup = callback.message.reply_markup if callback.message else None
+    if markup is None:
+        return
+    for row in markup.inline_keyboard:
+        for button in row:
+            if button.callback_data == callback.data:
+                button.text = ("✅" if done else "⬜") + button.text[1:]
+    await callback.message.edit_reply_markup(reply_markup=markup)
 
 
 @router.message(Command("rasp"))

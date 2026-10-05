@@ -223,6 +223,13 @@ const MAIL = [
   { id: 3, subject: 'Экскурсия в музей', author: 'Летописцев Хронос Архивович', text: 'В субботу идём в краеведческий музей, сбор у школы в 10:00.', days: 15, read: true },
 ];
 
+/** Стабильный ключ задания в демо: на сервере это отпечаток записи. */
+function demoKey(text) {
+  let hash = 0;
+  for (const char of text) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
+  return hash.toString(16).padStart(8, '0').repeat(2);
+}
+
 export async function demoApi(path, options = {}) {
   // Небольшая задержка — чтобы в демо были видны анимации загрузки.
   await new Promise((resolve) => setTimeout(resolve, 250));
@@ -284,12 +291,24 @@ export async function demoApi(path, options = {}) {
     });
   }
 
+  if (route === '/api/homework/done') {
+    if (options.method === 'POST') {
+      const done = new Set(cfg.done || []);
+      if (body.done) done.add(body.key);
+      else done.delete(body.key);
+      saveDemoConfig({ done: [...done] });
+      return ok({ key: body.key, done: Boolean(body.done) });
+    }
+    return ok({ keys: cfg.done || [] });
+  }
+
   if (route === '/api/homework') {
-    const start = mondayOffset(0);
-    const end = mondayOffset(3);
+    const past = url.searchParams.get('past') === '1';
+    const start = past ? mondayOffset(-4) : mondayOffset(0);
+    const end = past ? new Date() : mondayOffset(3);
     const items = daysBetween(iso(start), iso(end), cfg)
       .flatMap((d) => d.homework)
-      .map((h) => ({ ...h, label: '' }));
+      .map((h) => ({ ...h, label: '', key: h.key || demoKey(`${h.date}|${h.subject}|${h.text}`) }));
     return ok({ items });
   }
 

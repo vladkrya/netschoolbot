@@ -369,6 +369,17 @@ class TestNewFeatures:
         assert profile["data"]["status"]["last_ok_at"].endswith("Z")
         assert profile["data"]["timezone"] == "Europe/Moscow"
 
+    async def test_homework_done_roundtrip(self, client, token):
+        url = f"{BASE}/api/homework/done"
+        bad = await client.post(url, params={"token": token}, json={"key": "../x", "done": True})
+        assert (await bad.json())["ok"] is False
+        await client.post(url, params={"token": token}, json={"key": "0123456789abcdef", "done": True})
+        keys = (await (await client.get(url, params={"token": token})).json())["data"]["keys"]
+        assert keys == ["0123456789abcdef"]
+        await client.post(url, params={"token": token}, json={"key": "0123456789abcdef", "done": False})
+        keys = (await (await client.get(url, params={"token": token})).json())["data"]["keys"]
+        assert keys == []
+
     async def test_prefs_are_shared_and_merged(self, client, token):
         url = f"{BASE}/api/prefs"
         assert (await (await client.get(url, params={"token": token})).json())["data"] == {}

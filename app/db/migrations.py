@@ -220,6 +220,16 @@ MIGRATIONS: list[str] = [
         PRIMARY KEY (telegram_id, kind)
     );
     """,
+    # 10 — отметки «задание выполнено», общие для бота и приложения.
+    # `homework_key` — короткий отпечаток HomeworkRecord.identity.
+    """
+    CREATE TABLE homework_done (
+        telegram_id  INTEGER NOT NULL REFERENCES users(telegram_id) ON DELETE CASCADE,
+        homework_key TEXT    NOT NULL,
+        done_at      TEXT    NOT NULL DEFAULT (datetime('now')),
+        PRIMARY KEY (telegram_id, homework_key)
+    );
+    """,
 ]
 
 
