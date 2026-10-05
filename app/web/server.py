@@ -43,7 +43,7 @@ LEGACY_PREFIX = "/mini/netschool"
 
 def create_app(context: AppContext, bot=None) -> web.Application:
     """Собрать сервер: подприложение под префиксом плюс проверка живости."""
-    inner = web.Application(middlewares=[api.error_middleware, api.auth_middleware])
+    inner = web.Application(middlewares=[caldav.root_discovery, api.error_middleware, api.auth_middleware])
     inner[CONTEXT] = context
     inner[BOT] = bot
     async def stop_refreshes(app):
@@ -85,7 +85,7 @@ def create_app(context: AppContext, bot=None) -> web.Application:
         inner.router.add_get("/health", health)
         return inner
 
-    outer = web.Application(middlewares=[_make_redirect_middleware(prefix)])
+    outer = web.Application(middlewares=[caldav.root_discovery, _make_redirect_middleware(prefix)])
     outer[CONTEXT] = context
     outer.add_subapp(prefix, inner)
 

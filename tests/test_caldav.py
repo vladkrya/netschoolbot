@@ -108,6 +108,11 @@ async def test_discovery_and_real_calendar_query(calendar_client):
     assert response.status == 308
     assert response.headers['Location'] == BASE + '/caldav/'
     body = '<D:propfind xmlns:D="DAV:"><D:prop><D:current-user-principal/></D:prop></D:propfind>'
+    response = await client.request('PROPFIND', '/', auth=auth, data=body, headers={'Depth': '0'})
+    assert response.status == 207, await response.text()
+    assert BASE + '/caldav/ns1/' in await response.text()
+    response = await client.request('PROPFIND', '/')
+    assert response.status == 401
     response = await client.request('PROPFIND', BASE + '/caldav/', auth=auth, data=body, headers={'Depth': '0'})
     assert response.status == 207, await response.text()
     assert BASE + '/caldav/ns1/' in await response.text()
@@ -116,6 +121,7 @@ async def test_discovery_and_real_calendar_query(calendar_client):
     assert 'DTSTART:' in next(iter(objects(root).values()))[1]
     status = await client.get(BASE + '/api/caldav-account', headers={'X-Netschool-Token': token})
     data = (await status.json())['data']
+    assert data['account_url'].endswith(BASE + '/caldav/ns1/')
     assert data['last_sync_at'] and not data['last_error']
     assert 'password' not in data
     assert status.headers['Cache-Control'] == 'no-store'
@@ -233,7 +239,7 @@ async def test_root_path_discovery_and_reading(app_context, tmp_path):
     try:
         password = await app_context.caldav.accounts.create(1)
         await app_context.caldav.sync(1)
-        response = await client.request('PROPFIND', '/.well-known/caldav', auth=BasicAuth('ns1', password),
+        response = await client.request('PROPFIND', '/', auth=BasicAuth('ns1', password),
                                        data='<D:propfind xmlns:D="DAV:"><D:prop><D:current-user-principal/></D:prop></D:propfind>',
                                        headers={'Depth': '0'})
         assert response.status == 207

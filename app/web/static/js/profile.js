@@ -128,11 +128,12 @@ async function openCalendar() {
       ${data.connected ? `<p>${data.last_sync_at ? 'Расписание опубликовано.' : 'Готовим расписание — оно появится после первой успешной проверки школы.'}</p>
         ${data.last_error ? `<p class="muted small">${esc(data.last_error)}</p>` : ''}
         ${field('Сервер', data.server, 'calServer')}
+        ${field('Account URL', data.account_url, 'calAccountUrl')}
         ${field('Логин', data.login, 'calLogin')}
         ${password ? `${field('Пароль', password, 'calPassword')}<p class="muted small">Сохраните пароль: повторно он не показывается.</p>` : '<p class="muted small">Если пароль потерян, выпустите новый и обновите его в настройках календарного аккаунта.</p>'}
         <p><b>На iPhone:</b> Настройки → Приложения → Календарь → Учётные записи календаря →
         Добавить учётную запись → Другое → Учётная запись CalDAV.</p>
-        <p>Введите сервер, логин и пароль выше. Используйте SSL. Описание — «Школьное расписание».</p>
+        <p>Введите сервер, логин и пароль выше. Используйте SSL. Путь аккаунта определяется автоматически. Если Calendar просит Account URL, скопируйте его выше. Описание можно выбрать любое.</p>
         <button class="btn outline" id="calStatus">Обновить статус</button>
         <button class="btn outline" id="calRefresh">Проверить расписание сейчас</button>` : ''}
       ${data.available === false ? '' : `<button class="btn" id="calCreate">${data.connected ? 'Выпустить новый пароль' : 'Создать доступ CalDAV'}</button>`}
@@ -146,6 +147,7 @@ async function openCalendar() {
       </details>`;
     if (data.connected) {
       $('calServer').onclick = () => copy(data.server);
+      $('calAccountUrl').onclick = () => copy(data.account_url);
       $('calLogin').onclick = () => copy(data.login);
       if (password) $('calPassword').onclick = () => copy(password);
       $('calStatus').onclick = load;

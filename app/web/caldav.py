@@ -12,6 +12,15 @@ async def discovery(request):
     raise web.HTTPPermanentRedirect(location=app.settings.web.miniapp_path.rstrip('/') + '/caldav/')
 
 
+@web.middleware
+async def root_discovery(request, handler):
+    # Некоторые клиенты начинают обнаружение с корня сайта, минуя well-known.
+    # Перенаправление сохраняет метод и тело PROPFIND; обычный GET открывает PWA.
+    if request.path == '/' and request.method in {'PROPFIND', 'OPTIONS'}:
+        return await discovery(request)
+    return await handler(request)
+
+
 @routes.route('*', '/caldav')
 async def slash(request):
     raise web.HTTPPermanentRedirect(location=context(request).settings.web.miniapp_path.rstrip('/') + '/caldav/')
@@ -66,6 +75,7 @@ async def account(request):
     row = await service.accounts.get(user.telegram_id) if service else None
     return web.json_response({'ok': True, 'data': {
         'server': app.settings.web.miniapp_url + '/caldav/',
+        'account_url': app.settings.web.miniapp_url + f'/caldav/ns{user.telegram_id}/',
         'login': f'ns{user.telegram_id}', 'connected': bool(row), 'available': service is not None,
         'interval_minutes': app.settings.caldav_interval // 60,
         'last_sync_at': row['last_sync_at'] if row else None,
