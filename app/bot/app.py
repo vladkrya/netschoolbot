@@ -36,6 +36,7 @@ COMMANDS = [
     BotCommand(command="changeapi", description="Сменить API: веб или мобильное"),
     BotCommand(command="login", description="Войти в «Сетевой город»"),
     BotCommand(command="logout", description="Выйти"),
+    BotCommand(command="delete_data", description="Удалить мои данные"),
     BotCommand(command="cancel", description="Отменить текущий диалог"),
 ]
 

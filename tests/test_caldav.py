@@ -260,3 +260,14 @@ async def test_child_switch_during_school_request_does_not_publish_old_data(cale
     app.diary.fetch_diary.side_effect = switch_and_return
     await app.caldav.sync(1)
     assert objects(await query(client, auth)) == before
+
+
+async def test_full_deletion_removes_calendar_storage(calendar_client):
+    client, app, token, auth = calendar_client
+    await app.delete_user_data(1)
+    assert await app.users.get(1) is None
+    assert await app.miniapp.resolve_token(token) is None
+    from app.caldav.rights import PUBLISHER
+    result = await app.caldav.call('PROPFIND', '/ns1/', PUBLISHER)
+    assert result['status'] == 404
+    assert await app.users.get(2) is not None

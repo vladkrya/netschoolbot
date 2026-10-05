@@ -55,6 +55,7 @@ class Login(StatesGroup):
     school_query = State()
     school_choice = State()
     method = State()
+    remember = State()
     username = State()
     password = State()
     otp = State()
@@ -227,7 +228,7 @@ async def retry_search(callback: CallbackQuery, state: FSMContext) -> None:
 
 
 @router.callback_query(Login.school_choice, F.data.startswith("school:"))
-async def choose_school(callback: CallbackQuery, state: FSMContext) -> None:
+async def choose_school(callback: CallbackQuery, state: FSMContext, user: User) -> None:
     await callback.answer()
     data = await state.get_data()
     names: list[str] = data.get("schools") or []
@@ -240,28 +241,66 @@ async def choose_school(callback: CallbackQuery, state: FSMContext) -> None:
 
     await state.update_data(school=school)
     await state.set_state(Login.method)
+    markup = keyboards.login_methods()
+    if (user.credentials.remember and user.credentials.login and user.credentials.password
+            and user.school.url == data.get("url") and user.school.name == school):
+        markup.inline_keyboard.insert(1, [InlineKeyboardButton(
+            text="🔐 Войти с сохранёнными данными", callback_data="login:saved")])
     await reply(
         callback,
         f"🔐 <b>Шаг 3 из 3.</b> Школа: {formatting.esc(school)}\n\nКак будете входить?",
-        reply_markup=keyboards.login_methods(),
+        reply_markup=markup,
     )
 
 
-@router.callback_query(Login.method, F.data == "login:password")
-async def ask_username(callback: CallbackQuery, state: FSMContext) -> None:
+@router.callback_query(Login.method, F.data == "login:saved")
+async def login_saved(callback: CallbackQuery, state: FSMContext, user: User, app: AppContext) -> None:
     await callback.answer()
-    await state.update_data(login_type=LoginType.PASSWORD.value)
-    await state.set_state(Login.username)
-    await reply(callback, "👤 Пришлите логин от «Сетевого города».", reply_markup=_cancel_keyboard())
+    data = await state.get_data()
+    if (not user.credentials.remember or not user.credentials.login or not user.credentials.password
+            or user.school.url != data.get("url") or user.school.name != data.get("school")):
+        await reply(callback, "Сохранённых данных для этой школы нет. Выберите другой способ входа.")
+        return
+    await state.update_data(login_type=user.credentials.login_type.value,
+                            login=user.credentials.login, remember=True)
+    await state.set_state(Login.password)
+    await _login_with_password(callback.message, state, user, app, user.credentials.password)
 
 
-@router.callback_query(Login.method, F.data == "login:esia")
-async def ask_esia_username(callback: CallbackQuery, state: FSMContext) -> None:
+@router.callback_query(Login.method, F.data.in_({"login:password", "login:esia"}))
+async def ask_save_credentials(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
-    await state.update_data(login_type=LoginType.ESIA.value)
+    login_type = LoginType.ESIA if callback.data == "login:esia" else LoginType.PASSWORD
+    await state.update_data(login_type=login_type.value)
+    await state.set_state(Login.remember)
+    explanation = (
+        "При следующем входе можно будет использовать сохранённые данные. "
+        "Подтверждение Госуслуг всё равно может потребоваться."
+        if login_type.is_gosuslugi else
+        "С сохранёнными данными бот сможет войти снова, когда сессия истечёт."
+    )
+    await reply(callback,
+        "🔒 Сохранить логин и пароль для следующих входов?\n\n"
+        + explanation + "\n\nЕсли не сохранять — текущая сессия останется для дневника "
+        "и уведомлений, а после её истечения понадобится /login. "
+        "Сохранённые данные доступны серверу бота.",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Не сохранять логин и пароль", callback_data="login:remember:no")],
+            [InlineKeyboardButton(text="Сохранить логин и пароль", callback_data="login:remember:yes")],
+            [InlineKeyboardButton(text="❌ Отмена", callback_data="login:cancel")],
+        ]))
+
+
+@router.callback_query(Login.remember, F.data.in_({"login:remember:yes", "login:remember:no"}))
+async def choose_save_credentials(callback: CallbackQuery, state: FSMContext) -> None:
+    await callback.answer()
+    await state.update_data(remember=callback.data.endswith(":yes"))
     await state.set_state(Login.username)
-    await reply(callback, "👤 Пришлите логин Госуслуг (телефон, СНИЛС или почту).",
-                reply_markup=_cancel_keyboard())
+    data = await state.get_data()
+    text = ("👤 Пришлите логин Госуслуг (телефон, СНИЛС или почту)."
+            if LoginType.parse(data.get("login_type")).is_gosuslugi else
+            "👤 Пришлите логин от «Сетевого города».")
+    await reply(callback, text, reply_markup=_cancel_keyboard())
 
 
 @router.message(Login.username)
@@ -285,20 +324,32 @@ async def receive_password(
     except Exception as exc:  # noqa: BLE001 — прав на удаление может не быть
         logger.debug("Не удалось удалить сообщение с паролем: %s", exc)
 
+    await _login_with_password(message, state, user, app, password)
+
+
+async def _login_with_password(message, state, user, app, password: str) -> None:
+    async with app.login_attempt(user.telegram_id):
+        await _password_attempt(message, state, user, app, password)
+
+
+async def _password_attempt(message, state, user, app, password: str) -> None:
     data = await state.get_data()
     login_type = LoginType.parse(data.get("login_type"))
+    attempt = secrets.token_hex(8)
+    await state.update_data(password_attempt=attempt)
     notice = await message.answer("⏳ Вхожу…")
 
     candidate = replace(
         user,
         school=School(url=data.get("url", ""), name=data.get("school", "")),
         credentials=Credentials(
-            login_type=login_type, login=data.get("login", ""), password=password
+            login_type=login_type, login=data.get("login", ""), password=password,
+            remember=bool(data.get("remember", False))
         ),
     )
 
     try:
-        await _perform_login(candidate, app, message, login_type)
+        payload = await _perform_login(candidate, app, message, login_type)
     except NetSchoolError as exc:
         await notice.delete()
         hint = (
@@ -311,14 +362,18 @@ async def receive_password(
         return
 
     await notice.delete()
+    if (await state.get_data()).get("password_attempt") != attempt:
+        return
     await state.clear()
+    if payload:
+        await app.sessions.save(candidate.telegram_id, payload)
     await _finish_login(candidate, app, message)
 
 
 async def _perform_login(
     user: User, app: AppContext, message: Message, login_type: LoginType
-) -> None:
-    """Выполнить вход и сохранить сессию в пуле."""
+) -> str | None:
+    """Выполнить вход и вернуть сессию для сохранения после проверки попытки."""
     from netschoolpy import NetSchool
 
     proxy = app.settings.netschool.proxy_for(user.school.url)
@@ -351,8 +406,7 @@ async def _perform_login(
         except Exception as exc:  # noqa: BLE001
             logger.debug("Не удалось закрыть клиент после входа: %s", exc)
 
-    if payload:
-        await app.sessions.save(user.telegram_id, payload)
+    return payload
 
 
 def _make_otp_callback(message: Message, telegram_id: int):
@@ -415,6 +469,11 @@ async def receive_otp(message: Message) -> None:
 
 @router.callback_query(Login.method, F.data == "login:qr")
 async def login_by_qr(callback: CallbackQuery, state: FSMContext, user: User, app: AppContext) -> None:
+    async with app.login_attempt(user.telegram_id):
+        await _qr_attempt(callback, state, user, app)
+
+
+async def _qr_attempt(callback: CallbackQuery, state: FSMContext, user: User, app: AppContext) -> None:
     await callback.answer()
     data = await state.get_data()
     url, school = data.get("url", ""), data.get("school", "")
@@ -429,7 +488,7 @@ async def login_by_qr(callback: CallbackQuery, state: FSMContext, user: User, ap
     candidate = replace(
         user,
         school=School(url=url, name=school),
-        credentials=Credentials(login_type=LoginType.ESIA_QR),
+        credentials=Credentials(login_type=LoginType.ESIA_QR, remember=False),
     )
     ttl = app.settings.netschool.qr_login_ttl
     notice = await callback.message.answer("📱 Готовлю QR-код…")

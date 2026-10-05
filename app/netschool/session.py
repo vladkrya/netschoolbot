@@ -85,7 +85,8 @@ class SessionPool:
         async with self._registry_lock:
             entry = self._entries.pop(telegram_id, None)
         if entry is not None:
-            await _close_client(entry.client)
+            async with entry.lock:
+                await _close_client(entry.client)
         if forget_saved:
             await self._sessions.drop(telegram_id)
 
@@ -174,7 +175,7 @@ class SessionPool:
 
             return await MobileNetSchool.from_web(web, client_secret=secret)
         except Exception as exc:
-            if user.credentials.login_type.is_gosuslugi or not user.credentials.usable:
+            if not user.credentials.can_relogin:
                 raise wrap(exc, context=f"мобильный токен {user.telegram_id}") from exc
             logger.info("Код из веб-сессии %s не получен (%s), вход по паролю", user.telegram_id, exc)
         client = self._new_client(user, ApiMode.MOBILE)
@@ -272,7 +273,7 @@ class SessionPool:
                 Reason.AUTH,
                 "Сессия Госуслуг истекла. Войдите заново: /login",
             )
-        if not user.credentials.usable:
+        if not user.credentials.can_relogin:
             raise NetSchoolError(Reason.AUTH, "Логин или пароль не сохранены. Войдите: /login")
         try:
             await client.login(

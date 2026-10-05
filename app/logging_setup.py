@@ -8,6 +8,10 @@ Telegram подвешивал ту самую задачу, которая пы�
 from __future__ import annotations
 
 import asyncio
+import copy
+import html
+import re
+import uuid
 import logging
 import logging.handlers
 from pathlib import Path
@@ -22,12 +26,63 @@ DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 TELEGRAM_QUEUE_SIZE = 100
 
 
+# Аргументы логов могут содержать URL, учётные данные и школьные ответы.
+# Выводим статический шаблон операции, тип ошибки и расположение в коде.
+_PLACEHOLDER = re.compile(r"%(?:\([^)]+\))?[#0 +\-]*\d*(?:\.\d+)?[diouxXeEfFgGcrsa%]")
+
+
+def _safe_message(record: logging.LogRecord) -> str:
+    if not record.name.startswith("netschoolbot"):
+        return "Событие внешней библиотеки"
+    template = str(record.msg)
+    # Все сообщения приложения используют статический шаблон и отдельные args.
+    if record.args:
+        template = _PLACEHOLDER.sub(lambda m: "%" if m.group() == "%%" else "[скрыто]", template)
+        values = record.args.values() if isinstance(record.args, dict) else record.args
+        types = [type(v).__name__ for v in values if isinstance(v, BaseException)]
+        if types:
+            template += " | " + ", ".join(types)
+    return template
+
+
+class SafeFormatter(logging.Formatter):
+    """Без текста исключения, исходных строк кода и динамических параметров."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        if not hasattr(record, "event_id"):
+            record.event_id = uuid.uuid4().hex[:12]
+        safe = copy.copy(record)
+        safe.msg = _safe_message(record)
+        safe.args = ()
+        safe.exc_text = None  # Чужой formatter мог уже закэшировать сырой traceback.
+        safe.stack_info = None
+        result = super().format(safe)
+        if record.levelno >= logging.ERROR:
+            result += f"\nСобытие: {record.event_id}"
+        return result
+
+    def formatException(self, exc_info) -> str:
+        _, exc, tb = exc_info
+        lines = [f"Ошибка: {type(exc).__name__}"]
+        while tb is not None:
+            code = tb.tb_frame.f_code
+            lines.append(f"  {Path(code.co_filename).name}:{tb.tb_lineno} ({code.co_name})")
+            tb = tb.tb_next
+        return "\n".join(lines)
+
+
+class AdminFormatter(SafeFormatter):
+    def formatException(self, exc_info) -> str:
+        return f"Ошибка: {type(exc_info[1]).__name__}"
+
+
 class TelegramHandler(logging.Handler):
     """Кладёт запись в очередь; отправкой занимается отдельная задача."""
 
     def __init__(self, queue: asyncio.Queue[str], level: int = logging.ERROR) -> None:
         super().__init__(level)
         self._queue = queue
+        self.setFormatter(AdminFormatter(LOG_FORMAT, DATE_FORMAT))
 
     def emit(self, record: logging.LogRecord) -> None:
         try:
@@ -49,7 +104,7 @@ def setup_logging(settings: Settings) -> asyncio.Queue[str]:
     for existing in list(root.handlers):
         root.removeHandler(existing)
 
-    formatter = logging.Formatter(LOG_FORMAT, DATE_FORMAT)
+    formatter = SafeFormatter(LOG_FORMAT, DATE_FORMAT)
 
     console = logging.StreamHandler()
     console.setFormatter(formatter)
@@ -67,7 +122,6 @@ def setup_logging(settings: Settings) -> asyncio.Queue[str]:
     queue: asyncio.Queue[str] = asyncio.Queue(maxsize=TELEGRAM_QUEUE_SIZE)
     if settings.telegram.logging_enabled and settings.telegram.admin_id:
         telegram = TelegramHandler(queue)
-        telegram.setFormatter(formatter)
         root.addHandler(telegram)
 
     # Чужие библиотеки многословны: их отладка нам не нужна.
@@ -83,7 +137,7 @@ async def drain_to_telegram(queue: asyncio.Queue[str], bot, admin_id: int) -> No
     while True:
         message = await queue.get()
         try:
-            await bot.send_message(admin_id, f"<pre>{message}</pre>", parse_mode="HTML")
+            await bot.send_message(admin_id, f"<pre>{html.escape(message)}</pre>", parse_mode="HTML")
         except asyncio.CancelledError:
             raise
         except Exception as exc:  # noqa: BLE001

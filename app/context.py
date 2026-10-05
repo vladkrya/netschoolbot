@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass, field
+from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -49,6 +50,7 @@ class AppContext:
     watchers: WatcherRegistry
     cache_refreshes: dict[tuple, asyncio.Task] = field(default_factory=dict)
     caldav: CaldavService | None = None
+    login_tasks: dict[int, set[asyncio.Task]] = field(default_factory=dict)
 
     @classmethod
     async def create(cls, settings: Settings, notifier: Notifier | None = None) -> "AppContext":
@@ -67,12 +69,14 @@ class AppContext:
         db = Database(settings.db_path)
         await db.connect()
 
-        users = UserRepository(db, password_cipher(settings))
+        cipher = password_cipher(settings)
+        users = UserRepository(db, cipher)
         await _import_legacy_if_empty(settings, db, users)
         rewritten = await users.encrypt_stored_passwords()
         if rewritten:
             logger.info("Зашифровано паролей в базе: %s", rewritten)
-        sessions = SessionRepository(db)
+        sessions = SessionRepository(db, cipher)
+        await sessions.encrypt_stored_sessions()
         pool = SessionPool(settings.netschool, sessions)
         state = MarkStateRepository(db)
         diary = DiaryService(pool, users)
@@ -100,6 +104,35 @@ class AppContext:
         await self.db.close()
         logger.info("Приложение остановлено")
 
+    @asynccontextmanager
+    async def login_attempt(self, telegram_id: int):
+        task = asyncio.current_task()
+        tasks = self.login_tasks.setdefault(telegram_id, set())
+        tasks.add(task)
+        try:
+            yield
+        finally:
+            tasks.discard(task)
+            if not tasks:
+                self.login_tasks.pop(telegram_id, None)
+
+    async def delete_user_data(self, telegram_id: int) -> None:
+        logins = list(self.login_tasks.get(telegram_id, ()))
+        for task in logins:
+            task.cancel()
+        if logins:
+            await asyncio.gather(*logins, return_exceptions=True)
+        await self.watchers.stop(telegram_id)
+        tasks = [task for key, task in list(self.cache_refreshes.items()) if key[0] == telegram_id]
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+        if self.caldav is not None:
+            await self.caldav.delete_user(telegram_id)
+        await self.pool.invalidate(telegram_id, forget_saved=True)
+        await self.users.delete(telegram_id)
+
     async def stop_cache_refreshes(self) -> None:
         tasks = list(self.cache_refreshes.values())
         for task in tasks:
@@ -112,7 +145,7 @@ def password_cipher(settings: Settings) -> PasswordCipher:
     cipher = PasswordCipher(settings.secret_key)
     if not cipher.enabled:
         logger.warning(
-            "NETSCHOOL_SECRET_KEY не задан — пароли хранятся в базе открытым текстом"
+            "NETSCHOOL_SECRET_KEY не задан — пароли и сессии хранятся в базе открытым текстом"
         )
     return cipher
 
@@ -127,7 +160,10 @@ async def _import_legacy_if_empty(settings: Settings, db: Database, users: UserR
     Условие намеренно узкое: переносим, только если пользователей нет вообще
     и рядом лежат файлы старой версии. Повторно ничего не произойдёт.
     """
+    if await db.fetch_one("SELECT 1 FROM app_metadata WHERE key = 'legacy_import_completed'"):
+        return
     if await users.all_ids():
+        await db.execute("INSERT OR REPLACE INTO app_metadata VALUES ('legacy_import_completed', '1')")
         return
 
     legacy_users_file = settings.data_dir / "netschool_users" / "netschool_users.json"
@@ -142,9 +178,11 @@ async def _import_legacy_if_empty(settings: Settings, db: Database, users: UserR
         settings.data_dir,
         users=users,
         state=MarkStateRepository(db),
-        sessions=SessionRepository(db),
+        sessions=SessionRepository(db, password_cipher(settings)),
         miniapp=MiniappRepository(db, login_code_ttl=settings.web.login_code_ttl),
     )
     report = await importer.run()
+    if await users.all_ids():
+        await db.execute("INSERT OR REPLACE INTO app_metadata VALUES ('legacy_import_completed', '1')")
     for line in report.as_text().splitlines():
         logger.info("Перенос: %s", line)

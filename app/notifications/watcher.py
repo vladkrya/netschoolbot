@@ -154,7 +154,7 @@ class UserWatcher:
             # молча перестал бы получать уведомления, как это бывало раньше.
             logger.exception("Сбой проверки для %s", self._user_id)
             self._backoff = min(max(self._backoff * 2, 60.0), MAX_BACKOFF)
-            await self._record_status(ok=False, error=f"Внутренняя ошибка: {exc}", delay=self._backoff)
+            await self._record_status(ok=False, error=f"Внутренняя ошибка: {type(exc).__name__}", delay=self._backoff)
             await self._flush_outbox(user)
             return self._backoff
 
@@ -276,7 +276,7 @@ class UserWatcher:
                 raise
             except Exception as exc:  # noqa: BLE001 — любой сбой доставки = попробовать позже
                 logger.info("Уведомление для %s отложено: %s", user.telegram_id, exc)
-                await self._state.fail_outbox(row["id"], str(exc) or type(exc).__name__)
+                await self._state.fail_outbox(row["id"], type(exc).__name__)
                 # Порядок важен: следующее не отправляем раньше предыдущего.
                 return
             await self._state.ack_outbox(row["id"])

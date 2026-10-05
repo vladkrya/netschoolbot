@@ -115,8 +115,8 @@ class UserRepository:
                     check_interval, notify_grades, notify_changes, notify_deletes,
                     notify_homework, notify_mail, weekly_summary, notify_absences,
                     quiet_start, quiet_end, api_mode, timezone, evening_summary, notify_schedule,
-                    updated_at
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    updated_at, remember_credentials
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(telegram_id) DO UPDATE SET
                     enabled = excluded.enabled,
                     display_name = excluded.display_name,
@@ -125,6 +125,7 @@ class UserRepository:
                     login_type = excluded.login_type,
                     login = excluded.login,
                     password = excluded.password,
+                    remember_credentials = excluded.remember_credentials,
                     student_name = excluded.student_name,
                     selected_student_id = excluded.selected_student_id,
                     check_interval = excluded.check_interval,
@@ -150,8 +151,8 @@ class UserRepository:
                     user.school.url,
                     user.school.name,
                     user.credentials.login_type.value,
-                    user.credentials.login,
-                    self._cipher.encrypt(user.credentials.password),
+                    user.credentials.login if user.credentials.remember else "",
+                    self._cipher.encrypt(user.credentials.password) if user.credentials.remember else "",
                     user.student_name,
                     user.selected_student_id,
                     clamp_interval(user.check_interval),
@@ -169,11 +170,15 @@ class UserRepository:
                     int(user.notifications.evening_summary),
                     int(user.notifications.schedule),
                     now,
+                    int(user.credentials.remember),
                 ),
             )
             await self._replace_students(db, user)
             await self._replace_filters(db, user)
-        return replace(user, updated_at=dt.datetime.fromisoformat(now))
+        credentials = user.credentials
+        if not credentials.remember:
+            credentials = replace(credentials, login="", password="")
+        return replace(user, credentials=credentials, updated_at=dt.datetime.fromisoformat(now))
 
     async def encrypt_stored_passwords(self) -> int:
         """Зашифровать пароли, сохранённые открытым текстом или старым ключом.
@@ -197,7 +202,9 @@ class UserRepository:
 
     async def delete(self, telegram_id: int) -> None:
         """Полное удаление пользователя. Связанные записи уходят по CASCADE."""
-        await self._db.execute("DELETE FROM users WHERE telegram_id = ?", (telegram_id,))
+        async with self._db.transaction() as db:
+            await db.execute("INSERT OR REPLACE INTO app_metadata (key, value) VALUES ('legacy_import_completed', '1')")
+            await db.execute("DELETE FROM users WHERE telegram_id = ?", (telegram_id,))
 
     async def _replace_students(self, db: aiosqlite.Connection, user: User) -> None:
         await db.execute("DELETE FROM students WHERE telegram_id = ?", (user.telegram_id,))
@@ -242,6 +249,7 @@ class UserRepository:
                 login_type=LoginType.parse(row["login_type"]),
                 login=row["login"],
                 password=self._cipher.decrypt(row["password"]),
+                remember=bool(row["remember_credentials"]),
             ),
             student_name=row["student_name"],
             selected_student_id=row["selected_student_id"],
@@ -667,14 +675,22 @@ class MarkStateRepository:
 class SessionRepository:
     """Сохранённые сессии «Сетевого города»."""
 
-    def __init__(self, db: Database) -> None:
+    def __init__(self, db: Database, cipher: PasswordCipher = NO_ENCRYPTION) -> None:
         self._db = db
+        self._cipher = cipher
+
+    async def encrypt_stored_sessions(self) -> int:
+        rows = await self._db.fetch_all("SELECT telegram_id, payload FROM netschool_sessions")
+        updates = [(self._cipher.rewrite(r["payload"]), r["telegram_id"])
+                   for r in rows if self._cipher.needs_rewrite(r["payload"])]
+        await self._db.execute_many("UPDATE netschool_sessions SET payload = ? WHERE telegram_id = ?", updates)
+        return len(updates)
 
     async def load(self, telegram_id: int) -> str | None:
         row = await self._db.fetch_one(
             "SELECT payload FROM netschool_sessions WHERE telegram_id = ?", (telegram_id,)
         )
-        return row["payload"] if row else None
+        return self._cipher.decrypt(row["payload"]) if row else None
 
     async def save(self, telegram_id: int, payload: str) -> None:
         await self._db.execute(
@@ -682,7 +698,7 @@ class SessionRepository:
                VALUES (?, ?, datetime('now'))
                ON CONFLICT(telegram_id) DO UPDATE SET
                    payload = excluded.payload, updated_at = excluded.updated_at""",
-            (telegram_id, payload),
+            (telegram_id, self._cipher.encrypt(payload)),
         )
 
     async def drop(self, telegram_id: int) -> None:

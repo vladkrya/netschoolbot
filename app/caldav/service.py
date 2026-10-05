@@ -93,6 +93,14 @@ class CaldavService:
             raise RuntimeError(f'CalDAV PROPFIND: {response["status"]}')
         return False
 
+    async def delete_user(self, telegram_id):
+        # Ждём публикацию, уже выполняющуюся в потоке Radicale.
+        async with self.sync_lock:
+            await self.accounts.revoke(telegram_id)
+            result = await self.call('DELETE', f'/ns{telegram_id}/', PUBLISHER)
+            if result['status'] not in (200, 204, 404):
+                raise RuntimeError('Не удалось удалить календарь CalDAV')
+
     async def sync(self, telegram_id):
         async with self.sync_lock:
             if not await self.accounts.get(telegram_id):

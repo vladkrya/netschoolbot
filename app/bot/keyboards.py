@@ -58,6 +58,7 @@ def settings_menu(user: User) -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text=f"🔌 API: {user.effective_api_mode.title}", callback_data="settings:api")]
     )
     rows.append([InlineKeyboardButton(text="🚪 Выйти из школы", callback_data="settings:logout")])
+    rows.append([InlineKeyboardButton(text="🗑 Удалить мои данные", callback_data="settings:delete")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -123,9 +124,9 @@ def subjects(names: list[str], *, prefix: str = "subject") -> InlineKeyboardMark
 def login_methods() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="🔑 Логин и пароль", callback_data="login:password")],
-            [InlineKeyboardButton(text="🏛 Госуслуги", callback_data="login:esia")],
-            [InlineKeyboardButton(text="📱 QR-код Госуслуг", callback_data="login:qr")],
+            [InlineKeyboardButton(text="📱 QR-код Госуслуг (рекомендуется)", callback_data="login:qr", style="primary")],
+            [InlineKeyboardButton(text="🔑 Логин и пароль школы", callback_data="login:password")],
+            [InlineKeyboardButton(text="🏛 Госуслуги: логин и пароль", callback_data="login:esia")],
             [InlineKeyboardButton(text="❌ Отмена", callback_data="login:cancel")],
         ]
     )

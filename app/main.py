@@ -53,11 +53,12 @@ async def run_import(settings: Settings, source: str) -> int:
     db = Database(settings.db_path)
     await db.connect()
     try:
+        cipher = password_cipher(settings)
         importer = LegacyImporter(
             Path(source),
-            users=UserRepository(db, password_cipher(settings)),
+            users=UserRepository(db, cipher),
             state=MarkStateRepository(db),
-            sessions=SessionRepository(db),
+            sessions=SessionRepository(db, cipher),
             miniapp=MiniappRepository(db),
         )
         report = await importer.run()

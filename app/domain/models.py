@@ -191,12 +191,17 @@ class Credentials:
     login_type: LoginType
     login: str = ""
     password: str = ""
+    remember: bool = True
+
+    @property
+    def can_relogin(self) -> bool:
+        return self.remember and not self.login_type.is_gosuslugi and bool(self.login and self.password)
 
     @property
     def usable(self) -> bool:
-        if self.login_type.is_gosuslugi:
-            # Вход по Госуслугам живёт на сохранённой сессии; логин/пароль
-            # нужны только для автоповтора при обычном входе.
+        if self.login_type.is_gosuslugi or not self.remember:
+            # Госуслуги и вход без сохранения пароля работают на сессии.
+            # После её истечения понадобится ручной вход.
             return True
         return bool(self.login and self.password)
 

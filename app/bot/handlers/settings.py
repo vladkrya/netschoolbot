@@ -344,6 +344,35 @@ async def logout(event: Message | CallbackQuery, user: User, app: AppContext) ->
     await reply(event, "🚪 Вы вышли. Ссылка на приложение отозвана. Войти заново: /login")
 
 
+@router.callback_query(F.data == "settings:delete")
+@router.message(Command("delete_data"))
+async def ask_delete_data(event: Message | CallbackQuery) -> None:
+    if isinstance(event, CallbackQuery):
+        await event.answer()
+    await reply(event,
+        "🗑 Удалить все ваши данные из бота?\n\n"
+        "Будут удалены профиль, логин и пароль, сессии, оценки, история, кэш "
+        "и серверный календарь. Уведомления остановятся, ссылки перестанут работать.\n\n"
+        "Это не удалит сообщения из Telegram, данные в школе, локальные копии "
+        "на ваших устройствах и ранее созданные резервные копии сервера.",
+        reply_markup=keyboards.confirm("delete_data", yes="Удалить мои данные"))
+
+
+@router.callback_query(F.data == "confirm:delete_data")
+async def delete_data(callback: CallbackQuery, user: User, app: AppContext, state: FSMContext) -> None:
+    await callback.answer()
+    await state.clear()
+    from .auth import _PENDING_OTP
+    pending = _PENDING_OTP.get(user.telegram_id)
+    if pending is not None and not pending.done():
+        pending.cancel()
+    await app.delete_user_data(user.telegram_id)
+    if callback.message:
+        await callback.message.edit_reply_markup(reply_markup=None)
+    await reply(callback, "🗑 Ваши данные удалены из рабочей базы и серверного календаря. "
+                "Уведомления остановлены. Начать заново: /login")
+
+
 @router.callback_query(F.data == "confirm:cancel")
 async def cancel(callback: CallbackQuery) -> None:
     await callback.answer("Отменено")

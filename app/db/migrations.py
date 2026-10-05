@@ -252,6 +252,13 @@ MIGRATIONS: list[str] = [
         last_error TEXT
     );
     """,
+    # 13 — явный выбор сохранения логина и пароля. Старые записи сохраняем.
+    """
+    ALTER TABLE users ADD COLUMN remember_credentials INTEGER NOT NULL DEFAULT 1;
+    CREATE TABLE app_metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+    INSERT INTO app_metadata (key, value)
+        SELECT 'legacy_import_completed', '1' WHERE EXISTS (SELECT 1 FROM users);
+    """,
 ]
 
 
