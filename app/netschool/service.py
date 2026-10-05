@@ -151,6 +151,19 @@ class DiaryService:
         }
         return totals_from_mobile(rows, names)
 
+    async def fetch_terms(self, user: User) -> list[dict[str, Any]] | None:
+        """Учебные периоды школы с датами (`/terms`). Только мобильный режим."""
+        if user.effective_api_mode is not ApiMode.MOBILE:
+            return None
+
+        async def call(client: Any) -> Any:
+            if not hasattr(client, "terms"):
+                return None
+            return await client.terms()
+
+        payload = await self._mobile_only(user, call, "Учебные периоды")
+        return [t for t in payload if isinstance(t, dict)] if isinstance(payload, list) else None
+
     async def fetch_subject_stats(
         self, user: User, subject: str, quarter: str
     ) -> dict[str, Any] | None:

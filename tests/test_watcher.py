@@ -136,6 +136,9 @@ class FakeDiary:
     async def fetch_period(self, user, start, end, **kwargs):
         return await self.fetch_diary(user)
 
+    async def fetch_terms(self, user):
+        return getattr(self, "terms", None)
+
     async def fetch_teachers(self, user, wanted):
         return {subject: "Учитель" for subject in wanted}
 

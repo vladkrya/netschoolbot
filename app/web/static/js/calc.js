@@ -6,6 +6,7 @@
 'use strict';
 
 import { $, api, avgClass, errorCard, esc, skeleton, state } from './core.js';
+import { neededMarks, thresholdsFor, thresholdsText } from './grading.js';
 
 const MARKS = [5, 4, 3, 2];
 const MARK_LABELS = { 5: 'Отлично', 4: 'Хорошо', 3: 'Удовлетв.', 2: 'Неудовл.' };
@@ -26,7 +27,7 @@ export async function loadCalc(force = false) {
   if (!state.calc) {
     state.calc = {
       subject: state.grades.subjects[0]?.subject || '',
-      quarter: state.grades.current_quarter || 'q1',
+      quarter: state.grades.current_quarter || state.grades.quarters?.[0]?.key || 'q1',
       counts: null,
     };
   }
@@ -57,21 +58,9 @@ function average(counts) {
   return { count: total, value: sum / total };
 }
 
-/** Сколько пятёрок подряд нужно, чтобы дотянуть до цели. */
-function neededFives(counts, target) {
-  const { count, value } = average(counts);
-  if (value !== null && value >= target) return 0;
-  let extra = 0;
-  let sum = MARKS.reduce((acc, mark) => acc + mark * (counts[mark] || 0), 0);
-  let total = count;
-  // Предел на случай недостижимой цели: пятёрками нельзя дотянуть до 5.5.
-  while (extra < 100) {
-    extra += 1;
-    sum += 5;
-    total += 1;
-    if (sum / total >= target) return extra;
-  }
-  return null;
+/** Количества как оценки с весом: тот же расчёт, что в «Итогах». */
+function asMarks(counts) {
+  return MARKS.filter((mark) => counts[mark]).map((mark) => ({ mark, weight: counts[mark] }));
 }
 
 function render() {
@@ -85,12 +74,17 @@ function render() {
     )
     .join('');
 
-  const quarters = [['q1', '1 четв.'], ['q2', '2 четв.'], ['q3', '3 четв.'], ['q4', '4 четв.']]
+  // Периоды — те же, что в таблице «Итогов»: четверти, триместры или полугодия школы.
+  const periods = state.grades.quarters?.length
+    ? state.grades.quarters
+    : ['q1', 'q2', 'q3', 'q4'].map((key, i) => ({ key, label: `${i + 1} четверть` }));
+  const quarters = periods
     .map(
-      ([key, label]) =>
-        `<button class="chip ${state.calc.quarter === key ? 'active' : ''}" data-q="${key}">${label}</button>`
+      ({ key, label }) =>
+        `<button class="chip ${state.calc.quarter === key ? 'active' : ''}" data-q="${key}">${esc(label)}</button>`
     )
     .join('');
+  const thresholds = thresholdsFor(state.calc.subject);
 
   const rows = MARKS.map(
     (mark) => `<div class="calc-row">
@@ -103,12 +97,12 @@ function render() {
 
   const goals = [4, 5]
     .map((target) => {
-      const needed = neededFives(counts, target - 0.5);
+      const needed = neededMarks(asMarks(counts), thresholds[target]);
       const text =
         needed === 0
           ? 'уже достигнуто'
           : needed === null
-            ? 'недостижимо в этой четверти'
+            ? 'недостижимо'
             : `ещё ${needed} ${plural(needed, 'пятёрка', 'пятёрки', 'пятёрок')}`;
       return `<div class="row"><span class="label">До «${target}»</span><span>${text}</span></div>`;
     })
@@ -124,7 +118,7 @@ function render() {
       <div class="card-title">Оценки с учётом веса</div>
       ${rows}
       <div class="calc-result">
-        Средний балл: <strong class="avg ${avgClass(stats.value)}">${stats.value ? stats.value.toFixed(2) : '—'}</strong>
+        Средний балл: <strong class="avg ${avgClass(stats.value, thresholds)}">${stats.value ? stats.value.toFixed(2) : '—'}</strong>
         <span class="muted small"> · суммарный вес ${stats.count}</span>
       </div>
     </div>
@@ -132,8 +126,8 @@ function render() {
       <div class="card-title">Что нужно, чтобы вышло</div>
       ${goals}
       <p class="muted small" style="margin-top:8px">
-        Округление считается по правилу «от 4,5 — пятёрка». Веса берутся из журнала,
-        значения можно править вручную.
+        Пороги как в «Итогах»: ${esc(thresholdsText(state.calc.subject))}.
+        Веса берутся из журнала, значения можно править вручную.
       </p>
     </div>`;
 

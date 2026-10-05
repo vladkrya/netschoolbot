@@ -14,6 +14,7 @@ from dataclasses import replace
 from typing import Any
 
 from ..domain.models import normalize
+from ..domain.periods import term_key
 from ..domain.records import (
     AbsenceRecord,
     Attachment,
@@ -283,19 +284,12 @@ def recent_events_from(payload: Any) -> RecentEvents:
     return RecentEvents(keys=frozenset(keys), marks=marks, homework=homework)
 
 
-_TERM_NUMBER = re.compile(r"(\d)\s*четверт", re.IGNORECASE)
-
-
 def quarter_key_of_term(name: Any) -> str | None:
-    """Ключ четверти (`q1`…`q4`) по названию периода мобильного API.
+    """Ключ периода по названию из мобильного API: «1 четверть» → `q1`, «2 полугодие» → `h2`.
 
-    «1 четверть» → `q1`. Полугодия и триместры к четвертям таблицы не
-    привязываются — для них None, и такой период в таблицу не попадает.
+    Имя осталось от времён, когда таблица знала только четверти.
     """
-    match = _TERM_NUMBER.search(str(name or ""))
-    if match and 1 <= int(match.group(1)) <= 4:
-        return f"q{match.group(1)}"
-    return None
+    return term_key(name)
 
 
 # Служебные значения `markCode` в `/totals`: статус периода, а не отметка.

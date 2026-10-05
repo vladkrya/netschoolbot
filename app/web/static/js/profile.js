@@ -6,6 +6,7 @@ import { $, api, banner, demo, esc, initData, pushEnabled, state, tg } from './c
 import { ACCENTS, currentAccent, saveAccent } from './appearance.js';
 import { ICONS } from './icons.js';
 import { loadCalc } from './calc.js';
+import { loadTotals } from './totals.js';
 import { pushScreen, syncBackButton } from './screens.js';
 import { notify, select, tap } from './haptics.js';
 import { getPref, setPref } from './prefs.js';
@@ -128,6 +129,69 @@ async function openHistory() {
   }
 }
 
+const SCHEMES = [
+  ['auto', 'Как в школе'],
+  ['quarters', 'Четверти'],
+  ['trimesters', 'Триместры'],
+  ['halves', 'Полугодия'],
+];
+const SCHEME_PERIODS = {
+  quarters: ['1 четверть', '2 четверть', '3 четверть', '4 четверть'],
+  trimesters: ['1 триместр', '2 триместр', '3 триместр'],
+  halves: ['1 полугодие', '2 полугодие'],
+};
+const SCHEME_STARTS = {
+  quarters: ['09-01', '11-01', '01-09', '04-01'],
+  trimesters: ['09-01', '12-01', '03-01'],
+  halves: ['09-01', '01-09'],
+};
+
+/** «MM-DD» ↔ дата поля ввода: год любой, нужен только месяц и день. */
+const toInput = (md) => {
+  const [month] = md.split('-').map(Number);
+  return `${month >= 9 ? 2026 : 2027}-${md}`;
+};
+const fromInput = (value) => value.slice(5);
+
+function periodsSection(data) {
+  const setting = data.periods || { scheme: 'auto' };
+  const scheme = setting.scheme || 'auto';
+  const options = SCHEMES.map(([key, label]) =>
+    `<option value="${key}" ${key === scheme ? 'selected' : ''}>${label}</option>`).join('');
+  const hint = scheme === 'auto'
+    ? (data.api_mode === 'mobile'
+      ? 'Границы берутся из «Сетевого города».'
+      : 'Веб-API не отдаёт границы периодов: используются обычные четверти. Выберите схему, если у вашей школы иначе.')
+    : '';
+  const starts = setting.starts || SCHEME_STARTS[scheme] || [];
+  const dates = scheme === 'auto' ? '' : SCHEME_PERIODS[scheme]
+    .map((label, i) => `<label class="field-label period-start">${label} — с
+        <input class="field" type="date" data-period-start="${i}" value="${toInput(starts[i])}"></label>`)
+    .join('');
+  return `<section class="drawer-section">
+      <div class="drawer-heading">Учебные периоды</div>
+      <select class="field" id="periodScheme">${options}</select>
+      ${hint ? `<div class="muted small">${hint}</div>` : ''}
+      ${dates}
+    </section>`;
+}
+
+async function savePeriods(setting) {
+  try {
+    await api('/api/prefs', { method: 'POST', body: JSON.stringify({ periods: setting }) });
+    state.profile.periods = setting;
+    // «Итоги» и калькулятор посчитаны по старым границам.
+    state.grades = null;
+    state.calc = null;
+    notify('success');
+    if (state.tab === 'totals') loadTotals(true);
+  } catch (error) {
+    notify('error');
+    banner(error.message, true);
+  }
+  render();
+}
+
 function pushSection() {
   // Внутри Telegram web push недоступен: уведомления браузера работают только
   // у сайта, открытого в самом браузере или установленного на экран «Домой».
@@ -219,6 +283,7 @@ function render() {
       ${statusLine(data.status)}
       ${timezoneSelect(data)}
     </section>
+    ${demo ? '' : periodsSection(data)}
     ${pushSection()}
     ${demoSection()}
     <div class="drawer-foot muted small">Дневник «Сетевого города»</div>`;
@@ -292,6 +357,17 @@ function bindDrawer() {
       banner(error.message, true);
     }
   });
+  $('periodScheme')?.addEventListener('change', (event) => {
+    select();
+    savePeriods({ scheme: event.target.value });
+  });
+  body.querySelectorAll('[data-period-start]').forEach((input) =>
+    input.addEventListener('change', () => {
+      const values = [...body.querySelectorAll('[data-period-start]')].map((el) => fromInput(el.value));
+      if (values.some((v) => !/^\d{2}-\d{2}$/.test(v))) return;
+      savePeriods({ scheme: state.profile.periods.scheme, starts: values });
+    })
+  );
   $('pushBtn')?.addEventListener('click', (event) => enablePush(event.currentTarget));
   $('pwaOpen')?.addEventListener('click', openInBrowser);
   if (demo) bindDemo();

@@ -9,8 +9,14 @@ import { markBox, openMark } from './details.js';
 import { pushScreen } from './screens.js';
 import { select, tap } from './haptics.js';
 import { getPref, setPref } from './prefs.js';
+import {
+  formatThreshold, neededMarks, thresholdPrefs, thresholdsFor, validThresholds,
+} from './grading.js';
 
 const SHORT = { q1: '1/4', q2: '2/4', q3: '3/4', q4: '4/4' };
+const SCHEME_TITLE = { q: 'Четверти', t: 'Триместры', h: 'Полугодия' };
+
+const shortLabel = (q) => q.short || SHORT[q.key] || q.key;
 
 export async function loadTotals(force = false) {
   const container = $('totalsContent');
@@ -46,8 +52,8 @@ function render() {
   // Годовая оценка есть только в мобильном режиме, где итоги приходят с сервера.
   const hasYear = data.subjects.some((subject) => subject.totals?.year);
   const head = `<div class="tt-row tt-head">
-      <div class="tt-subject">Четверти <span class="year-pill">${esc(data.year || '')}</span></div>
-      ${quarters.map((q) => `<div class="tt-cell ${q.key === data.current_quarter ? 'now' : ''}">${SHORT[q.key]}</div>`).join('')}
+      <div class="tt-subject">${SCHEME_TITLE[quarters[0]?.key?.[0]] || 'Периоды'} <span class="year-pill">${esc(data.year || '')}</span></div>
+      ${quarters.map((q) => `<div class="tt-cell ${q.key === data.current_quarter ? 'now' : ''}">${shortLabel(q)}</div>`).join('')}
       ${hasYear ? '<div class="tt-cell">Год</div>' : ''}
     </div>`;
 
@@ -115,7 +121,7 @@ function openSubject(subject, key) {
   const segments = lessons.total
     ? `<div class="progress">${Array.from({ length: lessons.total }, (_, i) =>
         `<span class="seg ${i < lessons.done ? 'done' : ''}" style="--i:${i}"></span>`).join('')}</div>
-       <div class="progress-caption"><span>${esc(quarter?.label || SHORT[key])} ${lessons.done}/${lessons.total}</span>
+       <div class="progress-caption"><span>${esc(quarter?.label || SHORT[key] || '')} ${lessons.done}/${lessons.total}</span>
        <span>Осталось ${left} ${left === 1 ? 'урок' : [2, 3, 4].includes(left % 10) && ![12, 13, 14].includes(left % 100) ? 'урока' : 'уроков'}</span></div>`
     : `<div class="muted small">${esc(quarter?.label || '')}</div>`;
 
@@ -139,7 +145,7 @@ function openSubject(subject, key) {
       <div class="avg-line"><span>Средний балл ученика:</span><strong data-avg class="${avg == null ? '' : avgClass(avg, thresholdsFor(subject.subject))}">${formatAverage(avg)}</strong></div>
       <div class="muted small class-avg" data-class-avg hidden></div>
       ${official || yearMark || finalMark ? `<div class="muted small">${[
-        official ? `Оценка за четверть: <strong>${esc(official)}</strong>` : '',
+        official ? `Оценка за ${esc((quarter?.label || 'период').replace(/^\d+\s*/, ''))}: <strong>${esc(official)}</strong>` : '',
         yearMark ? `Годовая: <strong>${esc(yearMark)}</strong>` : '',
         finalMark ? `Итоговая: <strong>${esc(finalMark)}</strong>` : '',
       ].filter(Boolean).join(' · ')}</div>` : ''}
@@ -347,26 +353,6 @@ function bindWhatIf(card, marks, id, subjectName) {
 // С какого среднего ставится «5», «4», «3». Общие пороги на все предметы,
 // у отдельных предметов могут быть свои: { all: {5, 4, 3}, subjects: { «Алгебра»: {…} } }.
 
-/** Пороги без ошибок: числа от 1 до 5, и «5» строго выше «4», «4» выше «3». */
-function validThresholds(value) {
-  if (!value || typeof value !== 'object') return null;
-  const t = { 5: Number(value[5]), 4: Number(value[4]), 3: Number(value[3]) };
-  const ok = [5, 4, 3].every((g) => Number.isFinite(t[g]) && t[g] >= 1 && t[g] <= 5) && t[5] > t[4] && t[4] > t[3];
-  return ok ? t : null;
-}
-
-function thresholdPrefs() {
-  const saved = getPref('thresholds');
-  const subjects = saved?.subjects && typeof saved.subjects === 'object' ? saved.subjects : {};
-  return { all: validThresholds(saved?.all), subjects };
-}
-
-function thresholdsFor(subject) {
-  const prefs = thresholdPrefs();
-  return validThresholds(prefs.subjects[subject]) || prefs.all || DEFAULT_THRESHOLDS;
-}
-
-const formatThreshold = (value) => String(value).replace('.', ',');
 
 function bindThresholds(card, subject, onChange) {
   const editor = card.querySelector('.thr-editor');
@@ -444,17 +430,4 @@ function bindThresholds(card, subject, onChange) {
     if (event.key === 'Enter') input.blur();
   }));
   renderLine();
-}
-
-/** Сколько оценок `value` с весом `weight` нужно, чтобы среднее дошло до `target`. */
-function neededMarks(marks, target, value, weight) {
-  const current = weightedAverage(marks);
-  if (current != null && current >= target) return 0;
-  const extra = [];
-  // Предел на случай недостижимой цели.
-  while (extra.length < 100) {
-    extra.push({ mark: value, weight });
-    if (weightedAverage([...marks, ...extra]) >= target) return extra.length;
-  }
-  return null;
 }

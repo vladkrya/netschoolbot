@@ -26,7 +26,16 @@ from ..domain.models import TIMEZONES, ApiMode, User, normalize
 from ..notifications.outbox import mark_from_dict
 from ..domain.records import DiaryDay, clean_content
 from ..netschool.errors import NetSchoolError, Reason
-from ..domain.periods import QUARTER_KEYS, quarter_of, quarters
+from ..domain.periods import (
+    PERIOD_KEYS,
+    SCHEME_BOUNDS,
+    PeriodScheme,
+    Quarter,
+    period_of,
+    periods,
+    periods_from_terms,
+    quarter_of,
+)
 from .telegram_auth import InitDataError, verify_init_data
 
 logger = logging.getLogger("netschoolbot.web")
@@ -357,6 +366,8 @@ async def profile(request: web.Request) -> web.Response:
                 "quiet_hours": user.quiet_hours.as_text(),
                 "enabled": user.enabled,
                 "timezone": user.timezone,
+                "periods": (await app.miniapp.prefs(user.telegram_id)).get("periods")
+                or {"scheme": "auto"},
                 "timezones": [{"id": key, "name": city} for key, city in TIMEZONES],
                 "status": {
                     "running": user.telegram_id in app.watchers.running,
@@ -410,8 +421,12 @@ async def marks(request: web.Request) -> web.Response:
 
     async def produce(app: AppContext, user: User):
         today = user.today()
-        year = quarters(today)
-        now_quarter = next((q for q in year if q.covers(today)), year[0])
+        year, source = await _user_periods(app, user, today)
+        now_quarter = next((q for q in year if q.covers(today)), None)
+        if now_quarter is None:
+            # Каникулы между периодами или лето — последний начавшийся.
+            started = [q for q in year if q.start <= today]
+            now_quarter = started[-1] if started else year[0]
         days = await app.diary.fetch_period(user, year[0].start, now_quarter.end, today=today)
 
         by_subject: dict[str, list] = {}
@@ -423,7 +438,7 @@ async def marks(request: web.Request) -> web.Response:
         # Ключ — сама запись: номер урока бывает перенумерован (см. mapping).
         lesson_topics: dict = {}
         for day in days:
-            key = quarter_of(day.day)
+            key = period_of(day.day, year)
             for record in day.marks:
                 by_subject.setdefault(record.subject, []).append(record)
             for lesson in day.lessons:
@@ -466,6 +481,7 @@ async def marks(request: web.Request) -> web.Response:
                     "marks": [
                         {
                             **_mark_to_json(r),
+                            "quarter": period_of(r.date, year),
                             "lesson_topic": lesson_topics.get(r, ""),
                         }
                         for r in sorted(items, key=lambda r: r.date)
@@ -489,13 +505,41 @@ async def marks(request: web.Request) -> web.Response:
             "mobile": user.effective_api_mode is ApiMode.MOBILE,
             "has_totals": bool(totals),
             "quarters": [
-                {"key": q.key, "label": q.label, "start": q.start.isoformat(), "end": q.end.isoformat()}
+                {
+                    "key": q.key,
+                    "label": q.label,
+                    "short": q.short,
+                    "start": q.start.isoformat(),
+                    "end": q.end.isoformat(),
+                }
                 for q in year
             ],
+            # Откуда взяты границы: school — из «Сетевого города», custom —
+            # свои даты, default — общепринятые.
+            "periods_source": source,
             "year": f"{year[0].start.year}/{year[0].start.year + 1}",
         }
 
     return await _cached(request, "marks:year", produce)
+
+
+async def _user_periods(app: AppContext, user: User, today: dt.date) -> tuple[list[Quarter], str]:
+    """Периоды для «Итогов»: свои даты, периоды школы или общепринятые."""
+    setting = (await app.miniapp.prefs(user.telegram_id)).get("periods") or {}
+    scheme_name = setting.get("scheme") or "auto"
+    if scheme_name != "auto":
+        scheme = PeriodScheme(scheme_name)
+        starts = setting.get("starts")
+        parsed = [tuple(int(x) for x in item.split("-")) for item in starts] if starts else None
+        return periods(today, scheme, parsed), "custom" if parsed else "default"
+    try:
+        terms = await app.diary.fetch_terms(user)
+    except NetSchoolError:
+        terms = None
+    found = periods_from_terms(terms or [], today)
+    if found:
+        return found, "school"
+    return periods(today), "default"
 
 
 @routes.get("/api/subject")
@@ -508,7 +552,7 @@ async def subject_stats(request: web.Request) -> web.Response:
     """
     subject = (request.query.get("subject") or "").strip()[:120]
     quarter = (request.query.get("quarter") or "").strip()
-    if not subject or quarter not in QUARTER_KEYS:
+    if not subject or quarter not in PERIOD_KEYS:
         return json_error("Не указан предмет или четверть")
     if current_user(request).effective_api_mode is not ApiMode.MOBILE:
         return web.json_response({"ok": True, "data": {"available": False}, "stale": False})
@@ -840,6 +884,44 @@ def _clean_thresholds(value: Any) -> dict[str, Any] | None:
     return result
 
 
+_MONTH_DAY = re.compile(r"^(\d{2})-(\d{2})$")
+
+
+def _clean_periods(value: Any) -> dict[str, Any] | None:
+    """Схема учебного года и, по желанию, свои даты начала периодов («MM-DD»)."""
+    if not isinstance(value, dict):
+        return None
+    scheme = value.get("scheme")
+    if scheme == "auto":
+        return {"scheme": "auto"}
+    try:
+        bounds = SCHEME_BOUNDS[PeriodScheme(scheme)]
+    except ValueError:
+        return None
+    starts = value.get("starts")
+    if not starts:
+        return {"scheme": scheme}
+    if not isinstance(starts, list) or len(starts) != len(bounds):
+        return None
+    dates = []
+    for item in starts:
+        match = _MONTH_DAY.match(str(item))
+        if not match:
+            return None
+        month, day = int(match.group(1)), int(match.group(2))
+        try:
+            # Високосный год: 29 февраля допустимо.
+            dt.date(2028, month, day)
+        except ValueError:
+            return None
+        dates.append((month, day))
+    # Учебный год идёт с сентября: порядок проверяем по «учебному» месяцу.
+    order = [((m - 9) % 12, d) for m, d in dates]
+    if order != sorted(order) or len(set(order)) != len(order):
+        return None
+    return {"scheme": scheme, "starts": [f"{m:02d}-{d:02d}" for m, d in dates]}
+
+
 @routes.get("/api/prefs")
 async def get_prefs(request: web.Request) -> web.Response:
     """Тема, цвет шапки и веса калькулятора — общие для Telegram и сайта."""
@@ -870,6 +952,13 @@ async def save_prefs(request: web.Request) -> web.Response:
         if weights is None:
             return json_error("Некорректные веса")
         changes["weights"] = weights
+    if "periods" in body:
+        setting = _clean_periods(body["periods"])
+        if setting is None:
+            return json_error("Некорректные учебные периоды")
+        changes["periods"] = setting
+        # Таблица «Итогов» посчитана по старым границам.
+        await app.cache.clear(user.telegram_id)
     if "thresholds" in body:
         thresholds = _clean_thresholds(body["thresholds"])
         if thresholds is None:

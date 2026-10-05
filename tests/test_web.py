@@ -281,6 +281,33 @@ class TestData:
         assert algebra["lessons"]["q1"]["total"] == 1
         assert [q["key"] for q in data["quarters"]] == ["q1", "q2", "q3", "q4"]
 
+    async def test_marks_use_chosen_scheme(self, client, app_context, token):
+        bad = await client.post(
+            f"{BASE}/api/prefs", params={"token": token},
+            json={"periods": {"scheme": "halves", "starts": ["01-09", "09-01"]}},
+        )
+        assert (await bad.json())["ok"] is False
+        saved = await client.post(
+            f"{BASE}/api/prefs", params={"token": token},
+            json={"periods": {"scheme": "trimesters"}},
+        )
+        assert (await saved.json())["ok"] is True
+        data = (await (await client.get(f"{BASE}/api/marks", params={"token": token})).json())["data"]
+        assert [q["key"] for q in data["quarters"]] == ["t1", "t2", "t3"]
+        assert data["quarters"][0]["short"] == "1/3"
+
+    async def test_marks_use_school_terms_when_known(self, client, app_context, token):
+        year = 2026 if dt.date.today().month >= 9 else 2025
+        app_context.diary.terms = [
+            {"name": f"{n} полугодие", "startDate": start, "endDate": end}
+            for n, start, end in (
+                (1, f"{year}-09-01", f"{year}-12-27"), (2, f"{year + 1}-01-10", f"{year + 1}-05-25"),
+            )
+        ]
+        data = (await (await client.get(f"{BASE}/api/marks", params={"token": token})).json())["data"]
+        assert [q["key"] for q in data["quarters"]] == ["h1", "h2"]
+        assert data["periods_source"] == "school"
+
     async def test_announcements(self, client, app_context, token):
         app_context.diary.announcements = [{"title": "Собрание", "text": "В 18:00"}]
         response = await client.get(f"{BASE}/api/announcements", params={"token": token})

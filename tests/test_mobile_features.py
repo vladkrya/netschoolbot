@@ -312,7 +312,7 @@ class TestTotals:
         from app.netschool.mapping import quarter_key_of_term
 
         assert [quarter_key_of_term(n) for n in ("1 четверть", "4 Четверть", "1 полугодие", "", None, "5 четверть")] == [
-            "q1", "q4", None, None, None, None,
+            "q1", "q4", "h1", None, None, None,
         ]
 
     def test_table_is_built_from_totals_response(self):
@@ -321,8 +321,13 @@ class TestTotals:
         table = totals_from_mobile(TOTALS, {s["id"]: s["name"] for s in SUBJECTS})
 
         assert table["Алгебра"] == {
-            # Четвертные с оценкой и с одним лишь средним; полугодие в таблицу не идёт.
-            "terms": {"q1": {"mark": "4", "average": 4.33}, "q2": {"mark": "", "average": 4.5}},
+            # Четвертные с оценкой и с одним лишь средним; полугодие — своим ключом,
+            # оно нужно школам, где год делится на полугодия.
+            "terms": {
+                "q1": {"mark": "4", "average": 4.33},
+                "q2": {"mark": "", "average": 4.5},
+                "h1": {"mark": "4", "average": 4.4},
+            },
             "year": "4",
             "final": "",
         }
