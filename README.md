@@ -260,5 +260,3 @@ python -m pytest
 ## Лицензия
 
 Личный проект. Данные учеников хранятся на вашем сервере; веб-трафик `ns.ikrya.ru` идёт через ВМ yavds в Yandex Cloud, `ns2.ikrya.ru` — через Cloudflare.
-
-
