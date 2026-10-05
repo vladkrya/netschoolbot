@@ -90,6 +90,7 @@ async def app(db, users, marks, sessions, miniapp, cache):
             blocked_host_ttl=600, qr_login_ttl=60, fallback_proxy="",
         ),
         debug=False,
+        caldav_enabled=False,
     )
     context = AppContext(
         settings=settings, db=db, users=users, state=marks, sessions=sessions,

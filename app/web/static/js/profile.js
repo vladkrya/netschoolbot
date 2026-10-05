@@ -3,7 +3,7 @@
 'use strict';
 
 import { $, api, banner, demo, esc, initData, pushEnabled, state, tg } from './core.js';
-import { ACCENTS, currentAccent, saveAccent } from './appearance.js';
+import { ACCENTS, currentAccent, saveAccent, syncChromeColor } from './appearance.js';
 import { ICONS } from './icons.js';
 import { loadCalc } from './calc.js';
 import { loadTotals } from './totals.js';
@@ -27,6 +27,7 @@ export function applyStoredTheme() {
   const theme = currentTheme();
   if (theme === 'auto') document.documentElement.removeAttribute('data-theme');
   else document.documentElement.setAttribute('data-theme', theme);
+  syncChromeColor();
 }
 
 export function isDrawerOpen() {
@@ -107,33 +108,82 @@ async function openCalendar() {
   closeDrawer();
   const screen = pushScreen('Расписание в календаре');
   screen.innerHTML = '<div class="muted small">Загрузка…</div>';
-  try {
-    const { data } = await api('/api/calendar-link');
+  let password = '';
+  const copy = async (value) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      notify('success');
+      banner('Скопировано');
+    } catch { prompt('Скопируйте значение', value); }
+  };
+  const render = (data) => {
+    const field = (label, value, id) => `<label class="field-label">${label}
+      <input class="field" readonly value="${esc(value)}" autocomplete="off" spellcheck="false"></label>
+      <button class="btn outline" id="${id}">Скопировать ${label.toLowerCase()}</button>`;
     screen.innerHTML = `<div class="card">
-        <p>Уроки с временем, кабинетом и заданиями появятся в календаре телефона
-        и будут обновляться сами — примерно раз в три часа.</p>
-        <button class="btn" id="calAdd">Добавить в календарь</button>
-        <button class="btn outline" id="calCopy">Скопировать ссылку</button>
-        <p class="muted small">Ссылка личная, как и ссылка на приложение. Если она утекла —
-        /app_reset в боте выпустит новую.</p>
-      </div>`;
-    $('calAdd').addEventListener('click', () => {
-      tap();
-      if (tg?.openLink) tg.openLink(data.webcal);
-      else window.location.href = data.webcal;
-    });
-    $('calCopy').addEventListener('click', async () => {
+      ${data.available === false ? '<p>CalDAV сейчас отключён на сервере. Можно использовать подписку по ссылке ниже.</p>' : `<p>Подключите календарный аккаунт один раз. Уроки, кабинеты и задания будут
+      появляться в штатном календаре; замены и отмены будут обновляться автоматически.</p>
+      <p class="muted small">Бот проверяет расписание примерно каждые ${data.interval_minutes} минут. Телефон получает изменения
+      при следующей синхронизации. Календарь доступен только для чтения.</p>`}
+      ${data.connected ? `<p>${data.last_sync_at ? 'Расписание опубликовано.' : 'Готовим расписание — оно появится после первой успешной проверки школы.'}</p>
+        ${data.last_error ? `<p class="muted small">${esc(data.last_error)}</p>` : ''}
+        ${field('Сервер', data.server, 'calServer')}
+        ${field('Логин', data.login, 'calLogin')}
+        ${password ? `${field('Пароль', password, 'calPassword')}<p class="muted small">Сохраните пароль: повторно он не показывается.</p>` : '<p class="muted small">Если пароль потерян, выпустите новый и обновите его в настройках календарного аккаунта.</p>'}
+        <p><b>На iPhone:</b> Настройки → Приложения → Календарь → Учётные записи календаря →
+        Добавить учётную запись → Другое → Учётная запись CalDAV.</p>
+        <p>Введите сервер, логин и пароль выше. Используйте SSL. Описание — «Школьное расписание».</p>
+        <button class="btn outline" id="calStatus">Обновить статус</button>
+        <button class="btn outline" id="calRefresh">Проверить расписание сейчас</button>` : ''}
+      ${data.available === false ? '' : `<button class="btn" id="calCreate">${data.connected ? 'Выпустить новый пароль' : 'Создать доступ CalDAV'}</button>`}
+      ${data.connected ? '<button class="btn outline" id="calRevoke">Отключить доступ</button>' : ''}
+      <p class="muted small">Выход через /logout отзывает доступ. Отключение доступа останавливает
+      синхронизацию; уже сохранённые события удаляются вместе с аккаунтом на телефоне.</p>
+      </div>
+      <details class="card"><summary>Подписка по ссылке .ics</summary>
+        <p>Альтернативный способ: добавьте ссылку как подписной календарь. Простое открытие файла не создаёт подписку.</p>
+        <button class="btn outline" id="calCopyIcs">Скопировать ссылку .ics</button>
+      </details>`;
+    if (data.connected) {
+      $('calServer').onclick = () => copy(data.server);
+      $('calLogin').onclick = () => copy(data.login);
+      if (password) $('calPassword').onclick = () => copy(password);
+      $('calStatus').onclick = load;
+      $('calRefresh').onclick = async () => {
+        try {
+          await api('/api/caldav-sync', { method: 'POST' });
+          banner('Проверяем расписание. Через некоторое время обновите статус.');
+        } catch (error) { banner(error.message, true); }
+      };
+      $('calRevoke').onclick = async () => {
+        if (!confirm('Отключить доступ календарного аккаунта к расписанию?')) return;
+        try {
+          await api('/api/caldav-account', { method: 'DELETE' });
+          password = '';
+          await load();
+        } catch (error) { banner(error.message, true); }
+      };
+    }
+    if ($('calCreate')) $('calCreate').onclick = async () => {
+      if (data.connected && !confirm('Старый пароль перестанет работать. Выпустить новый?')) return;
+      const button = $('calCreate');
+      button.disabled = true;
       try {
-        await navigator.clipboard.writeText(data.url);
-        notify('success');
-        banner('Ссылка скопирована — вставьте её в «Добавить календарь по ссылке»');
-      } catch {
-        prompt('Скопируйте ссылку', data.url);
-      }
-    });
-  } catch (error) {
-    screen.innerHTML = `<div class="muted small">${esc(error.message)}</div>`;
-  }
+        const result = await api('/api/caldav-account', { method: 'POST' });
+        password = result.data.password;
+        render(result.data);
+      } catch (error) { banner(error.message, true); button.disabled = false; }
+    };
+    $('calCopyIcs').onclick = async () => {
+      try { const result = await api('/api/calendar-link'); await copy(result.data.url); }
+      catch (error) { banner(error.message, true); }
+    };
+  };
+  const load = async () => {
+    try { const { data } = await api('/api/caldav-account'); render(data); }
+    catch (error) { screen.innerHTML = `<div class="muted small">${esc(error.message)}</div>`; }
+  };
+  await load();
 }
 
 const HISTORY_ICONS = { new: '🆕', changed: '✏️', deleted: '🗑' };

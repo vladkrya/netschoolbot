@@ -36,11 +36,10 @@ export function applyAccent(color = currentAccent()) {
   root.setProperty('--head', color);
   root.setProperty('--head-2', dark);
   root.setProperty('--bar', shade(color, 0.12));
-  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', color);
+  syncChromeColor();
   // Шапка и нижняя панель самого Telegram — в тон приложению.
   if (initData && tg) {
     try {
-      tg.setHeaderColor?.(color);
       // Панель вкладок теперь стеклянная и парит над фоном — низ Telegram в цвет фона.
       tg.setBottomBarColor?.('bg_color');
     } catch {
@@ -48,6 +47,30 @@ export function applyAccent(color = currentAccent()) {
     }
   }
 }
+
+/** Цвет системной области совпадает с шапкой поверх фона текущей темы. */
+export function syncChromeColor() {
+  const styles = getComputedStyle(document.documentElement);
+  const head = styles.getPropertyValue('--head').trim();
+  const bg = styles.getPropertyValue('--bg').trim();
+  if (![head, bg].every((value) => /^#[0-9a-f]{6}$/i.test(value))) return;
+  const glass = CSS.supports('background', 'color-mix(in srgb, red 50%, transparent)')
+    && (CSS.supports('backdrop-filter', 'blur(1px)') || CSS.supports('-webkit-backdrop-filter', 'blur(1px)'));
+  const channels = [1, 3, 5].map((offset) => {
+    const foreground = parseInt(head.slice(offset, offset + 2), 16);
+    const background = parseInt(bg.slice(offset, offset + 2), 16);
+    return Math.round(glass ? foreground * 0.8 + background * 0.2 : foreground);
+  });
+  const color = `#${channels.map((value) => value.toString(16).padStart(2, '0')).join('')}`;
+  document.documentElement.style.setProperty('--chrome-head', color);
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', color);
+  if (initData && tg) {
+    try { tg.setHeaderColor?.(color); } catch { /* старый клиент */ }
+  }
+}
+
+// В режиме «как в системе» оформление меняется без перезапуска приложения.
+window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', syncChromeColor);
 
 export function saveAccent(color) {
   setPref('accent', color);

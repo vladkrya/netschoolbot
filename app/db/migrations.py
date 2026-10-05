@@ -242,6 +242,16 @@ MIGRATIONS: list[str] = [
         PRIMARY KEY (telegram_id, day)
     );
     """,
+    # 12 — отдельные отзываемые пароли CalDAV, только хэш случайного секрета.
+    """
+    CREATE TABLE caldav_accounts (
+        telegram_id INTEGER PRIMARY KEY REFERENCES users(telegram_id) ON DELETE CASCADE,
+        password_hash TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        last_sync_at TEXT,
+        last_error TEXT
+    );
+    """,
 ]
 
 

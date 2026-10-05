@@ -11,6 +11,10 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .caldav.service import CaldavService
 
 from .db.crypto import PasswordCipher
 from .db.engine import Database
@@ -44,6 +48,7 @@ class AppContext:
     diary: DiaryService
     watchers: WatcherRegistry
     cache_refreshes: dict[tuple, asyncio.Task] = field(default_factory=dict)
+    caldav: CaldavService | None = None
 
     @classmethod
     async def create(cls, settings: Settings, notifier: Notifier | None = None) -> "AppContext":

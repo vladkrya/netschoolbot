@@ -12,6 +12,8 @@ import datetime as dt
 import json
 import logging
 import secrets
+import hashlib
+import hmac
 from dataclasses import dataclass, replace
 from typing import Any
 
@@ -923,3 +925,45 @@ def _record_from_json(payload: str) -> MarkRecord | None:
         # Повреждённая запись не должна ронять весь цикл проверки.
         logger.warning("Не удалось прочитать сохранённую оценку: %s", exc)
         return None
+
+
+class CaldavRepository:
+    def __init__(self, db: Database) -> None:
+        self._db = db
+
+    async def create(self, telegram_id: int) -> str:
+        password = secrets.token_urlsafe(32)
+        digest = hashlib.sha256(password.encode()).hexdigest()
+        await self._db.execute(
+            "INSERT INTO caldav_accounts (telegram_id, password_hash) VALUES (?, ?) "
+            "ON CONFLICT(telegram_id) DO UPDATE SET password_hash=excluded.password_hash, created_at=datetime('now')",
+            (telegram_id, digest),
+        )
+        return password
+
+    async def get(self, telegram_id: int) -> dict | None:
+        row = await self._db.fetch_one("SELECT * FROM caldav_accounts WHERE telegram_id=?", (telegram_id,))
+        return dict(row) if row else None
+
+    async def authenticate(self, login: str, password: str) -> int | None:
+        if not login.startswith('ns') or not login[2:].isascii() or not login[2:].isdigit() or len(login) > 22:
+            return None
+        telegram_id = int(login[2:])
+        row = await self.get(telegram_id)
+        digest = hashlib.sha256(password.encode()).hexdigest()
+        if row and hmac.compare_digest(row['password_hash'], digest):
+            return telegram_id
+        return None
+
+    async def revoke(self, telegram_id: int) -> None:
+        await self._db.execute("DELETE FROM caldav_accounts WHERE telegram_id=?", (telegram_id,))
+
+    async def ids(self) -> list[int]:
+        rows = await self._db.fetch_all("SELECT telegram_id FROM caldav_accounts ORDER BY telegram_id")
+        return [row['telegram_id'] for row in rows]
+
+    async def synced(self, telegram_id: int, error: str = '') -> None:
+        if error:
+            await self._db.execute("UPDATE caldav_accounts SET last_error=? WHERE telegram_id=?", (error, telegram_id))
+        else:
+            await self._db.execute("UPDATE caldav_accounts SET last_sync_at=datetime('now'), last_error=NULL WHERE telegram_id=?", (telegram_id,))

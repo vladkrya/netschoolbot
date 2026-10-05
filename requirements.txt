@@ -29,3 +29,6 @@ cryptography>=42.0
 
 # Конфигурация
 python-dotenv>=1.0.0
+
+# CalDAV (встроенный WSGI-сервер календарей)
+radicale==3.8.1

@@ -23,7 +23,7 @@ import jinja2
 from aiohttp import web
 
 from ..context import AppContext
-from . import api
+from . import api, caldav
 from .api import BOT, CONTEXT
 
 logger = logging.getLogger("netschoolbot.web")
@@ -57,6 +57,15 @@ def create_app(context: AppContext, bot=None) -> web.Application:
         autoescape=True,
     )
 
+    if context.settings.caldav_enabled:
+        from ..caldav.service import CaldavService
+        context.caldav = CaldavService(context)
+        async def calendar_lifecycle(app):
+            context.caldav.start()
+            yield
+            await context.caldav.close()
+        inner.cleanup_ctx.append(calendar_lifecycle)
+    inner.add_routes(caldav.routes)
     inner.add_routes(api.routes)
     inner.add_routes(page_routes)
     # Те же файлы под путём с версией. Модули JS импортируют друг друга
@@ -72,6 +81,7 @@ def create_app(context: AppContext, bot=None) -> web.Application:
     if not prefix:
         # Приложение отдаётся с корня домена — вложенность не нужна.
         inner.middlewares.insert(0, _legacy_prefix_middleware)
+        inner.router.add_route("*", "/.well-known/caldav", caldav.discovery)
         inner.router.add_get("/health", health)
         return inner
 
@@ -81,6 +91,7 @@ def create_app(context: AppContext, bot=None) -> web.Application:
 
     # Проверка живости остаётся в корне: ею пользуются systemd и мониторинг,
     # которым незачем знать про префикс приложения.
+    outer.router.add_route("*", "/.well-known/caldav", caldav.discovery)
     outer.router.add_get("/health", health)
     return outer
 

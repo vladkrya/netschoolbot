@@ -328,6 +328,8 @@ async def logout(event: Message | CallbackQuery, user: User, app: AppContext) ->
     await app.state.forget_all(user.telegram_id)
     await app.cache.clear(user.telegram_id)
     await app.miniapp.revoke_tokens(user.telegram_id)
+    from ...db.repositories import CaldavRepository
+    await CaldavRepository(app.db).revoke(user.telegram_id)
     await app.users.save(
         replace(
             user,

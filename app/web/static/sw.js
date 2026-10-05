@@ -10,7 +10,7 @@
 
 const CACHE = 'ns-offline-v1';
 // Вложения и служебные запросы не храним: большие и бессмысленные без сети.
-const SKIP = [/\/api\/attachment\//, /\/api\/push\//, /\/api\/pwa-link/];
+const SKIP = [/\/api\/attachment\//, /\/api\/push\//, /\/api\/pwa-link/, /\/api\/caldav-/];
 
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', (event) => event.waitUntil((async () => {

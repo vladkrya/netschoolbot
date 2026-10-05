@@ -11,14 +11,24 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <script>
-  // Цвет шапки известен только из localStorage. Ставим его в theme-color
-  // до первой отрисовки: Safari красит полосу сверху по первому значению,
-  // и выбранный цвет шапки не совпадал с голубым по умолчанию.
+  // Системная область получает цвет шапки уже до первой отрисовки.
   try {
+    var theme = localStorage.getItem('ns-theme');
+    var dark = theme === 'dark' || (theme !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
+    if (theme === 'dark' || theme === 'light') document.documentElement.setAttribute('data-theme', theme);
     var accent = localStorage.getItem('ns-accent');
-    if (/^#[0-9a-f]{6}$/i.test(accent || '')) {
-      document.querySelector('meta[name="theme-color"]').setAttribute('content', accent);
-    }
+    if (!/^#[0-9a-f]{6}$/i.test(accent || '')) accent = '#4a6fae';
+    var bg = dark ? '#141a22' : '#eef1f6';
+    var glass = CSS.supports('background', 'color-mix(in srgb, red 50%, transparent)')
+      && (CSS.supports('backdrop-filter', 'blur(1px)') || CSS.supports('-webkit-backdrop-filter', 'blur(1px)'));
+    var chrome = '#' + [1, 3, 5].map(function(offset) {
+      var foreground = parseInt(accent.slice(offset, offset + 2), 16);
+      var background = parseInt(bg.slice(offset, offset + 2), 16);
+      return Math.round(glass ? foreground * .8 + background * .2 : foreground).toString(16).padStart(2, '0');
+    }).join('');
+    document.documentElement.style.setProperty('--head', accent);
+    document.documentElement.style.setProperty('--chrome-head', chrome);
+    document.querySelector('meta[name="theme-color"]').setAttribute('content', chrome);
   } catch (e) {}
 </script>
 <title>{{ school or "Дневник" }}</title>

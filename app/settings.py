@@ -154,6 +154,8 @@ class Settings:
     debug: bool
     # Ключ(и) Fernet для паролей в базе, через запятую; пусто — без шифрования.
     secret_key: str = ""
+    caldav_enabled: bool = True
+    caldav_interval: int = 1800
 
     @property
     def logs_dir(self) -> Path:
@@ -268,4 +270,6 @@ def load_settings(*, require_bot_token: bool = True) -> Settings:
         ),
         debug=_env_bool("DEBUG_MODE", False),
         secret_key=_env("NETSCHOOL_SECRET_KEY"),
+        caldav_enabled=_env_bool("NETSCHOOL_CALDAV_ENABLED", True),
+        caldav_interval=max(300, _env_int("NETSCHOOL_CALDAV_INTERVAL", 1800)),
     )

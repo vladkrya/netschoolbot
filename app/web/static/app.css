@@ -872,12 +872,12 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 
 /* ─────────────────────── Стекло повсюду ─────────────────────── */
 
-/* Шапка, полоса вкладки и шапка экранов — тонированное стекло: карточки,
-   уезжающие под них, видны размытыми. Только там, где есть и color-mix,
+/* Системная область и шапки — один цвет поверх фона темы. Полосы вкладок
+   сохраняют тонированное стекло. Только там, где есть и color-mix,
    и размытие — иначе остаются сплошные цвета выше. */
 @supports (background: color-mix(in srgb, red 50%, transparent)) and ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .app-header, .screen-head {
-    background: color-mix(in srgb, var(--head) 80%, transparent);
+    background: var(--chrome-head, color-mix(in srgb, var(--head) 80%, var(--bg)));
     -webkit-backdrop-filter: blur(20px) saturate(180%);
     backdrop-filter: blur(20px) saturate(180%);
     box-shadow: 0 2px 14px rgba(0, 0, 0, .14), inset 0 -1px 0 rgba(255, 255, 255, .16);
