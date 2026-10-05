@@ -1,0 +1,143 @@
+#!/usr/bin/env bash
+# Серверная часть выкладки. Запускается из deploy/deploy.sh: bash -s -- <commit>.
+#
+# Порядок: копия базы → новый код и зависимости → перезапуск → проверка
+# /health. Если что-то упало после переключения кода — откат на прежний
+# коммит, а если миграция успела изменить схему — и база из копии: прежний
+# код с новой схемой не стартует.
+set -Eeuo pipefail
+
+TARGET="${1:?нужен коммит}"
+APP=/opt/netschoolbot
+PY="$APP/venv/bin/python"
+cd "$APP"
+
+PREV="$(git rev-parse HEAD)"
+STEP="подготовка"
+SWITCHED=0
+BACKUP=""
+
+DB="$APP/data/netschoolbot.sqlite3"
+
+step() { STEP="$1"; echo "▶ $1"; }
+
+# Копия и восстановление — встроенным Python без кода приложения: на сервере
+# может стоять версия, где инструмента резервных копий ещё нет.
+db_tool() {
+  "$PY" - "$@" <<'PY'
+import sqlite3, sys
+action, *paths = sys.argv[1:]
+def ro(path):
+    return sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+if action == "schema":
+    print(ro(paths[0]).execute("PRAGMA user_version").fetchone()[0])
+elif action in ("copy", "restore"):
+    src, dst = paths
+    source = ro(src)
+    if action == "restore":
+        assert source.execute("PRAGMA integrity_check").fetchone()[0] == "ok", "копия повреждена"
+    target = sqlite3.connect(dst)
+    source.backup(target)
+    target.close()
+    if action == "copy":
+        check = ro(dst)
+        assert check.execute("PRAGMA integrity_check").fetchone()[0] == "ok", "копия повреждена"
+        print(dst, check.execute("SELECT COUNT(*) FROM users").fetchone()[0], "пользователей")
+PY
+}
+notify() { "$PY" -m app.tools.notify_admin "$1" >/dev/null 2>&1 || true; }
+
+health() {
+  for _ in $(seq 1 15); do
+    sleep 2
+    systemctl is-active --quiet netschoolbot || continue
+    "$PY" - <<'PY' && return 0
+import sys, urllib.request
+try:
+    sys.exit(0 if urllib.request.urlopen("http://127.0.0.1:8283/health", timeout=3).status == 200 else 1)
+except Exception:
+    sys.exit(1)
+PY
+  done
+  return 1
+}
+
+install_units() {
+  install -m 644 deploy/systemd/netschoolbot.service /etc/systemd/system/
+  if [ -f deploy/systemd/netschoolbot-backup.timer ]; then
+    install -m 644 deploy/systemd/netschoolbot-backup.service deploy/systemd/netschoolbot-backup.timer /etc/systemd/system/
+  fi
+  systemctl daemon-reload
+}
+
+install_deps() {
+  if [ -f constraints.txt ]; then
+    "$APP/venv/bin/pip" install -q -r requirements.txt -c constraints.txt
+  else
+    "$APP/venv/bin/pip" install -q -r requirements.txt
+  fi
+}
+
+rollback() {
+  local code=$?
+  trap - ERR
+  local log
+  log="$(journalctl -u netschoolbot -n 25 --no-pager 2>/dev/null | tail -25 || true)"
+  echo "✖ Шаг «$STEP» не удался (код $code)"
+  if [ "$SWITCHED" = 1 ]; then
+    echo "↩ Откат на $PREV"
+    systemctl stop netschoolbot || true
+    git reset -q --hard "$PREV"
+    if [ -n "$BACKUP" ] && [ "$(db_tool schema "$DB" || echo x)" != "$(db_tool schema "$BACKUP" || echo y)" ]; then
+      echo "↩ Схема базы изменилась — возвращаю копию $BACKUP"
+      rm -f "$DB-wal" "$DB-shm"
+      db_tool restore "$BACKUP" "$DB" || echo "!! База не восстановлена — нужна ручная проверка"
+    fi
+    install_deps || true
+    install_units || true
+    systemctl start netschoolbot || true
+    if health; then ROLLED="откат на ${PREV:0:7} прошёл, бот работает"; else ROLLED="ОТКАТ ТОЖЕ НЕ ПОДНЯЛСЯ — нужен ручной вход"; fi
+  else
+    ROLLED="код на сервере не менялся"
+  fi
+  notify "❌ Выкладка ${TARGET:0:7} упала на шаге «$STEP»: $ROLLED.
+
+$log"
+  echo "$ROLLED"
+  exit 1
+}
+trap rollback ERR
+
+step "Получение кода"
+git fetch -q origin main
+[ "$(git rev-parse origin/main)" = "$TARGET" ] || { echo "origin/main не совпадает с $TARGET"; false; }
+if [ "$PREV" = "$TARGET" ]; then echo "Уже выложено: $TARGET"; exit 0; fi
+
+step "Резервная копия базы"
+mkdir -p "$APP/data/backups"
+BACKUP="$APP/data/backups/netschoolbot-predeploy-$(date +%Y%m%d-%H%M%S).sqlite3"
+db_tool copy "$DB" "$BACKUP"
+# Копии перед выкладкой копятся отдельно от ежедневных: оставляем пять последних.
+ls -1t "$APP"/data/backups/netschoolbot-predeploy-*.sqlite3 2>/dev/null | tail -n +6 | xargs -r rm -f
+
+step "Переключение на ${TARGET:0:7}"
+SWITCHED=1
+git merge -q --ff-only "$TARGET"
+
+step "Зависимости"
+install_deps
+
+step "Юниты systemd"
+install_units
+# Копия до установки таймера снималась вручную — теперь по расписанию.
+systemctl enable --now netschoolbot-backup.timer >/dev/null 2>&1 || true
+
+step "Перезапуск"
+systemctl restart netschoolbot
+
+step "Проверка /health"
+health
+
+trap - ERR
+echo "✔ Выложено ${TARGET:0:7} ($(git log -1 --format=%s))"
+notify "✅ Выложено ${TARGET:0:7}: $(git log -1 --format=%s)"

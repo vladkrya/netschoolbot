@@ -24,7 +24,7 @@ Exception`, гасивших ошибки на месте возникновен
 | Хранилище | JSON-файлы и общий словарь в памяти | SQLite с транзакциями и WAL |
 | Запрос из PWA | `asyncio.run()` на каждый HTTP-запрос | общий event loop, сессии переиспользуются |
 | Вёрстка | 6400 строк HTML/CSS/JS в Python-строках | шаблоны и статика отдельными файлами |
-| Тесты | нет | 310 |
+| Тесты | нет | ~590 |
 | Веб-панель | терминал с PTY и файловый менеджер с корнем `/` | убрана |
 
 Выстраданные обходы чужих багов перенесены как есть — это знание о том, как
@@ -51,7 +51,7 @@ app/
     ├── templates/       разметка страницы
     └── static/js/       модули экранов: дневник, оценки, ДЗ,
                          почта, калькулятор, профиль
-tests/                   310 тестов
+tests/                   тесты (python -m pytest)
 ```
 
 Ключевое разделение: `notifications/diff.py` не знает ни про сеть, ни про
@@ -61,9 +61,9 @@ Telegram, ни про базу. Именно поэтому логику уве�
 ## Установка
 
 ```bash
-git clone https://github.com/vkrya/netschoolbot.git /opt/netschoolbot
+git clone https://git.dc09.xyz/ikrya/netschoolbot.git /opt/netschoolbot
 cd /opt/netschoolbot
-python3 -m venv venv && ./venv/bin/pip install -r requirements.txt
+python3 -m venv venv && ./venv/bin/pip install -r requirements.txt -c constraints.txt
 cp .env.example .env && nano .env
 ./venv/bin/python -m app.tools.vapid   # ключи для push, если нужны
 ./venv/bin/python -m app.main
@@ -92,19 +92,52 @@ cp .env.example .env && nano .env
 
 ```bash
 cp deploy/systemd/netschoolbot.service /etc/systemd/system/
-systemctl daemon-reload && systemctl enable --now netschoolbot
-
-cp deploy/nginx/ns2.ikrya.ru.bootstrap.conf /etc/nginx/sites-available/ns2.ikrya.ru
-ln -s /etc/nginx/sites-available/ns2.ikrya.ru /etc/nginx/sites-enabled/
-nginx -t && systemctl reload nginx
-certbot certonly --webroot -w /var/www/certbot -d ns2.ikrya.ru
-cp deploy/nginx/ns2.ikrya.ru.conf /etc/nginx/sites-available/ns2.ikrya.ru
-nginx -t && systemctl reload nginx
+cp deploy/systemd/netschoolbot-backup.{service,timer} /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now netschoolbot netschoolbot-backup.timer
 ```
 
-В `.env` укажите `NETSCHOOL_PUBLIC_URL=https://ns2.ikrya.ru` и перезапустите
-`netschoolbot`. DNS-запись `ns2` должна быть проксирована Cloudflare. Старые
-домены остаются настроенными, чтобы прежние ссылки продолжали открываться.
+nginx для основного адреса — `deploy/nginx/ns.ikrya.ru.conf` (см. «Адрес на yavds»).
+Прежние `ns2.ikrya.ru` (через Cloudflare) и `netschool.ikrya.ru` настроены
+файлами из `deploy/nginx/`, чтобы старые ссылки продолжали открываться.
+
+### Выкладка
+
+GitHub больше не используется, выкладка — скриптом с машины разработчика:
+
+```bash
+deploy/deploy.sh
+```
+
+Он прогоняет тесты (упавшие — выкладки нет), пушит `main` в `dc09` и на
+сервере: снимает копию базы, переключает код, ставит зависимости по
+`constraints.txt`, обновляет юниты systemd, перезапускает службу и ждёт
+`200` от `/health`. Если что-то упало после переключения — откат на
+прежний коммит, а если миграция успела изменить схему, то и база из
+снятой копии. Итог приходит админу в Telegram с названием упавшего шага
+и хвостом журнала.
+
+### Резервные копии
+
+`netschoolbot-backup.timer` раз в сутки снимает копию базы в `data/backups/`
+(online backup SQLite — корректно при работающем боте), проверяет её
+(`integrity_check`, версия схемы, число пользователей) и хранит 14 последних.
+Перед каждой выкладкой — отдельная копия `netschoolbot-predeploy-*`.
+
+```bash
+./venv/bin/python -m app.tools.backup                 # копия сейчас
+./venv/bin/python -m app.tools.backup --verify FILE   # проверить копию
+systemctl stop netschoolbot && ./venv/bin/python -m app.tools.backup --restore FILE
+```
+
+В копии нет ключа шифрования паролей — он в `.env`. Храните `.env` отдельно:
+без него восстановленная база заставит всех заново пройти `/login`.
+
+### Зависимости
+
+`requirements.txt` — что нужно, `constraints.txt` — точные версии, снятые с
+работающего сервера. Обновление: поднять версию в `constraints.txt`, прогнать
+тесты, выложить.
 
 Веб слушает `127.0.0.1:8283`. Проверка живости — `GET /health`.
 
@@ -166,9 +199,28 @@ NETSCHOOL_SECRET_KEY=<вывод python -c "from cryptography.fernet import Fern
 | `/app_reset` | перевыпустить ссылку, отозвав старую |
 | `/settings`, `/interval` | настройки |
 | `/child` | переключение между детьми |
-| `/status`, `/profile` | состояние проверки и профиль |
+| `/status`, `/profile` | последняя проверка, ошибка, следующая попытка; профиль |
+| `/history` | история изменений оценок: новые, исправленные, удалённые |
+| `/timezone` | часовой пояс: тихие часы, сводки и «сегодня» — по местному времени |
 
 Школы по умолчанию нет: регион и школу каждый выбирает сам при `/login`.
+
+## Уведомления
+
+Изменения оценок, новые задания и пропуски пишутся в очередь `outbox` той же
+транзакцией, что и состояние слежения, и отправляются из неё с повторами.
+Сбой Telegram откладывает сообщение, а не теряет; в тихие часы очередь копится
+и уходит утром. Устаревшее больше двух суток снимается с очереди.
+
+Сводки (включаются в настройках): по понедельникам — за прошлую неделю,
+вечером — расписание и задания на следующий учебный день.
+
+## Учебные периоды
+
+«Итоги» делятся на четверти, триместры или полугодия. Границы: свои даты из
+меню ☰ → «Учебные периоды», иначе настоящие периоды школы из мобильного API,
+иначе общепринятые даты. Калькулятор баллов и «что если» считают по одним и
+тем же порогам оценок.
 
 ## Разработка
 

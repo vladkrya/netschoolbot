@@ -1,0 +1,13 @@
+[Unit]
+Description=Резервная копия базы бота «Сетевого города»
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/netschoolbot
+EnvironmentFile=-/opt/netschoolbot/.env
+ExecStart=/opt/netschoolbot/venv/bin/python -m app.tools.backup --keep 14
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/netschoolbot/data
