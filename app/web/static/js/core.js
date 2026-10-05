@@ -42,9 +42,13 @@ export function markClass(mark) {
   return digit ? `mark m${digit[0]}` : 'mark';
 }
 
-export function avgClass(value) {
-  const rounded = Math.round(Number(value) || 0);
-  return rounded >= 5 ? 'g5' : rounded === 4 ? 'g4' : rounded === 3 ? 'g3' : 'g2';
+/** С какого среднего ставится оценка — обычное правило «от 4,5 — пятёрка». */
+export const DEFAULT_THRESHOLDS = { 5: 4.5, 4: 3.5, 3: 2.5 };
+
+/** Цвет среднего балла по оценке, которая из него выходит. */
+export function avgClass(value, thresholds = DEFAULT_THRESHOLDS) {
+  const avg = Number(value) || 0;
+  return avg >= thresholds[5] ? 'g5' : avg >= thresholds[4] ? 'g4' : avg >= thresholds[3] ? 'g3' : 'g2';
 }
 
 export function skeleton(count = 5) {

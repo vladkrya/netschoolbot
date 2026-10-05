@@ -969,6 +969,16 @@ body::after {
   text-align: center;
 }
 .whatif-custom.invalid { border-color: var(--g2); }
+.thr { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
+.thr-line { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.thr-edit { flex: none; font-size: 13px; color: var(--primary); }
+.thr-editor { margin-top: 10px; }
+.thr-inputs { display: flex; gap: 8px; margin-top: 10px; }
+.thr-field { flex: 1; display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--text2); }
+.thr-field .whatif-custom { width: 100%; }
+.thr-error { margin-top: 6px; color: var(--g2); }
+.thr-error:empty { display: none; }
+.thr-actions { display: flex; gap: 8px; }
 .whatif-weights { flex-wrap: wrap; }
 .whatif-chips { display: contents; }
 .wchip { position: relative; display: inline-flex; }

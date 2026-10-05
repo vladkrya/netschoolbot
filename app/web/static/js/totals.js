@@ -2,7 +2,7 @@
 'use strict';
 
 import {
-  $, ABSENCES, api, avgClass, errorCard, esc, formatAverage, isAbsence, isoToday, dayMonth,
+  $, ABSENCES, DEFAULT_THRESHOLDS, api, avgClass, errorCard, esc, formatAverage, isAbsence, isoToday, dayMonth,
   shortDate, skeleton, state, weightedAverage,
 } from './core.js';
 import { markBox, openMark } from './details.js';
@@ -59,7 +59,7 @@ function render() {
             // Выставленная оценка за четверть важнее расчётного среднего.
             const official = subject.totals?.terms?.[q.key]?.mark;
             const avg = weightedAverage(quarterMarks(subject, q.key));
-            const grade = official ? markGrade(official) : avg == null ? '' : avgClass(avg);
+            const grade = official ? markGrade(official) : avg == null ? '' : avgClass(avg, thresholdsFor(subject.subject));
             return `<button class="tt-cell ${official ? 'official' : ''} ${grade}" data-subject="${index}" data-q="${q.key}">${official ? esc(official) : formatAverage(avg)}</button>`;
           })
           .join('')}
@@ -136,7 +136,7 @@ function openSubject(subject, key) {
       ${subject.teacher ? `<div class="muted small" style="margin-top:8px">Учитель: <span class="link">${esc(subject.teacher)}</span></div>` : ''}
     </div>
     <div class="card">
-      <div class="avg-line"><span>Средний балл ученика:</span><strong class="${avg == null ? '' : avgClass(avg)}">${formatAverage(avg)}</strong></div>
+      <div class="avg-line"><span>Средний балл ученика:</span><strong data-avg class="${avg == null ? '' : avgClass(avg, thresholdsFor(subject.subject))}">${formatAverage(avg)}</strong></div>
       <div class="muted small class-avg" data-class-avg hidden></div>
       ${official || yearMark || finalMark ? `<div class="muted small">${[
         official ? `Оценка за четверть: <strong>${esc(official)}</strong>` : '',
@@ -163,12 +163,37 @@ function openSubject(subject, key) {
       <div class="whatif-list"></div>
       <div class="whatif-result"></div>
       <div class="muted small whatif-goals"></div>
+      <div class="thr">
+        <div class="thr-line"><span class="muted small thr-text"></span>
+          <button class="thr-edit" data-thr-toggle>Пороги</button></div>
+        <div class="thr-editor" hidden>
+          <div class="chips thr-scope">
+            <button class="chip" data-scope="subject">Только этот предмет</button>
+            <button class="chip" data-scope="all">Все предметы</button>
+          </div>
+          <div class="thr-inputs">${[5, 4, 3].map((grade) => `<label class="thr-field"><span>«${grade}» от</span>
+            <input class="whatif-custom" data-thr="${grade}" inputmode="decimal" enterkeyhint="done"></label>`).join('')}</div>
+          <div class="muted small thr-error"></div>
+          <div class="thr-actions">
+            <button class="btn" data-thr-save>Сохранить</button>
+            <button class="btn outline" data-thr-reset></button>
+          </div>
+        </div>
+      </div>
     </div>`;
 
   body.querySelectorAll('[data-mark]').forEach((tile) =>
     tile.addEventListener('click', () => openMark(marks[Number(tile.dataset.mark)], subject.subject))
   );
-  bindWhatIf(body.querySelector('.whatif'), marks, `${subject.subject}|${key}`);
+  const whatIfCard = body.querySelector('.whatif');
+  const refreshWhatIf = bindWhatIf(whatIfCard, marks, `${subject.subject}|${key}`, subject.subject);
+  bindThresholds(whatIfCard, subject.subject, () => {
+    const strong = body.querySelector('[data-avg]');
+    if (avg != null) strong.className = avgClass(avg, thresholdsFor(subject.subject));
+    refreshWhatIf();
+    // Таблица под экраном тоже красится по порогам.
+    if ($('totalsContent').querySelector('.totals-table')) render();
+  });
 
   if (state.grades.mobile) loadClassAverage(body, subject.subject, key);
 }
@@ -211,7 +236,7 @@ function savedWeights() {
     : [...DEFAULT_WEIGHTS];
 }
 
-function bindWhatIf(card, marks, id) {
+function bindWhatIf(card, marks, id, subjectName) {
   const weights = savedWeights();
   if (!whatIf.has(id)) whatIf.set(id, { weight: weights[0], extra: [] });
   const plan = whatIf.get(id);
@@ -221,6 +246,7 @@ function bindWhatIf(card, marks, id) {
   const saveWeights = () => setPref('weights', weights);
 
   const render = () => {
+    const thresholds = thresholdsFor(subjectName);
     // Последний чип не убрать: без веса нечего добавлять.
     card.querySelector('.whatif-chips').innerHTML = weights
       .map((w) => `<span class="wchip"><button class="chip ${w === plan.weight ? 'active' : ''}" data-weight="${w}">${formatWeight(w)}</button>${
@@ -239,7 +265,7 @@ function bindWhatIf(card, marks, id) {
     const after = weightedAverage([...marks, ...plan.extra]);
     const delta = before != null && after != null ? after - before : 0;
     card.querySelector('.whatif-result').innerHTML = plan.extra.length
-      ? `<span>Средний балл станет:</span><span><strong class="${after == null ? '' : avgClass(after)}">${formatAverage(after)}</strong>${
+      ? `<span>Средний балл станет:</span><span><strong class="${after == null ? '' : avgClass(after, thresholds)}">${formatAverage(after)}</strong>${
         Math.abs(delta) >= 0.005
           ? `<span class="whatif-delta ${delta > 0 ? 'up' : 'down'}">${delta > 0 ? '+' : '−'}${Math.abs(delta).toFixed(2).replace('.', ',')}</span>`
           : ''}</span>`
@@ -248,7 +274,7 @@ function bindWhatIf(card, marks, id) {
     const all = [...marks, ...plan.extra];
     card.querySelector('.whatif-goals').innerHTML = [5, 4]
       .map((target) => {
-        const needed = neededMarks(all, target - 0.5, 5, plan.weight);
+        const needed = neededMarks(all, thresholds[target], 5, plan.weight);
         const text = needed === 0 ? 'уже выходит'
           : needed == null ? 'не набрать' : `ещё ${needed} × «5» с весом ${formatWeight(plan.weight)}`;
         return `До «${target}»: ${text}`;
@@ -313,6 +339,111 @@ function bindWhatIf(card, marks, id) {
     if (event.key === 'Enter') custom.blur();
   });
   render();
+  return render;
+}
+
+/* ─────────────────────── Пороги оценки за четверть ─────────────────────── */
+
+// С какого среднего ставится «5», «4», «3». Общие пороги на все предметы,
+// у отдельных предметов могут быть свои: { all: {5, 4, 3}, subjects: { «Алгебра»: {…} } }.
+
+/** Пороги без ошибок: числа от 1 до 5, и «5» строго выше «4», «4» выше «3». */
+function validThresholds(value) {
+  if (!value || typeof value !== 'object') return null;
+  const t = { 5: Number(value[5]), 4: Number(value[4]), 3: Number(value[3]) };
+  const ok = [5, 4, 3].every((g) => Number.isFinite(t[g]) && t[g] >= 1 && t[g] <= 5) && t[5] > t[4] && t[4] > t[3];
+  return ok ? t : null;
+}
+
+function thresholdPrefs() {
+  const saved = getPref('thresholds');
+  const subjects = saved?.subjects && typeof saved.subjects === 'object' ? saved.subjects : {};
+  return { all: validThresholds(saved?.all), subjects };
+}
+
+function thresholdsFor(subject) {
+  const prefs = thresholdPrefs();
+  return validThresholds(prefs.subjects[subject]) || prefs.all || DEFAULT_THRESHOLDS;
+}
+
+const formatThreshold = (value) => String(value).replace('.', ',');
+
+function bindThresholds(card, subject, onChange) {
+  const editor = card.querySelector('.thr-editor');
+  const inputs = [...card.querySelectorAll('[data-thr]')];
+  const error = card.querySelector('.thr-error');
+  const resetButton = card.querySelector('[data-thr-reset]');
+  // По умолчанию правим то, что сейчас действует: свои пороги предмета или общие.
+  let scope = validThresholds(thresholdPrefs().subjects[subject]) ? 'subject' : 'all';
+
+  const fill = () => {
+    const prefs = thresholdPrefs();
+    const own = validThresholds(prefs.subjects[subject]);
+    const shown = scope === 'subject' ? own || prefs.all || DEFAULT_THRESHOLDS : prefs.all || DEFAULT_THRESHOLDS;
+    inputs.forEach((input) => {
+      input.value = formatThreshold(shown[input.dataset.thr]);
+      input.classList.remove('invalid');
+    });
+    error.textContent = '';
+    card.querySelectorAll('[data-scope]').forEach((chip) =>
+      chip.classList.toggle('active', chip.dataset.scope === scope));
+    resetButton.textContent = scope === 'subject' ? 'Как у всех' : 'По умолчанию';
+    resetButton.hidden = scope === 'subject' ? !own : !prefs.all;
+  };
+
+  const renderLine = () => {
+    const t = thresholdsFor(subject);
+    const own = Boolean(validThresholds(thresholdPrefs().subjects[subject]));
+    card.querySelector('.thr-text').textContent =
+      `«5» от ${formatThreshold(t[5])} · «4» от ${formatThreshold(t[4])} · «3» от ${formatThreshold(t[3])}${own ? ' · свои для предмета' : ''}`;
+  };
+
+  const save = (next) => {
+    const prefs = thresholdPrefs();
+    const subjects = { ...prefs.subjects };
+    let all = prefs.all;
+    if (scope === 'subject') {
+      if (next) subjects[subject] = next;
+      else delete subjects[subject];
+    } else {
+      all = next;
+    }
+    setPref('thresholds', { ...(all ? { all } : {}), subjects });
+    renderLine();
+    fill();
+    onChange();
+  };
+
+  card.addEventListener('click', (event) => {
+    if (event.target.closest('[data-thr-toggle]')) {
+      editor.hidden = !editor.hidden;
+      if (!editor.hidden) fill();
+      select();
+    } else if (event.target.closest('[data-scope]')) {
+      scope = event.target.closest('[data-scope]').dataset.scope;
+      fill();
+      select();
+    } else if (event.target.closest('[data-thr-save]')) {
+      const values = {};
+      for (const input of inputs) values[input.dataset.thr] = Number(input.value.trim().replace(',', '.'));
+      const next = validThresholds(values);
+      inputs.forEach((input) => input.classList.toggle('invalid', !next));
+      if (!next) {
+        error.textContent = 'Числа от 1 до 5, и у «5» порог выше, чем у «4», а у «4» — выше, чем у «3».';
+        return;
+      }
+      save(next);
+      editor.hidden = true;
+      tap();
+    } else if (event.target.closest('[data-thr-reset]')) {
+      save(null);
+      tap('soft');
+    }
+  });
+  inputs.forEach((input) => input.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') input.blur();
+  }));
+  renderLine();
 }
 
 /** Сколько оценок `value` с весом `weight` нужно, чтобы среднее дошло до `target`. */

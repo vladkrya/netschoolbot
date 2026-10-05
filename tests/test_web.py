@@ -324,9 +324,24 @@ class TestNewFeatures:
         assert data == {"accent": "#a8434f", "theme": "dark", "weights": [1, 2, 1.5]}
         assert (await (await client.get(url, params={"token": token})).json())["data"] == data
 
+    async def test_grade_thresholds_are_saved(self, client, token):
+        url = f"{BASE}/api/prefs"
+        thresholds = {
+            "all": {"5": 4.6, "4": 3.6, "3": 2.6},
+            "subjects": {"Алгебра": {"5": 4.5, "4": 3.5, "3": 2.5}},
+        }
+        response = await client.post(url, params={"token": token}, json={"thresholds": thresholds})
+        assert (await response.json())["data"]["thresholds"] == thresholds
+        # Общие пороги необязательны: свои только у одного предмета.
+        only_subject = {"subjects": {"Физика": {"5": 4.7, "4": 3.7, "3": 2.7}}}
+        response = await client.post(url, params={"token": token}, json={"thresholds": only_subject})
+        assert (await response.json())["data"]["thresholds"] == only_subject
+
     async def test_bad_prefs_are_rejected(self, client, token):
         url = f"{BASE}/api/prefs"
-        for body in ({"accent": "red"}, {"theme": "pink"}, {"weights": [0]}, {"weights": "1"}, {}):
+        for body in ({"accent": "red"}, {"theme": "pink"}, {"weights": [0]}, {"weights": "1"}, {},
+                     {"thresholds": {"all": {"5": 3.5, "4": 3.5, "3": 2.5}}},
+                     {"thresholds": {"subjects": {"Алгебра": {"5": 6, "4": 3.5, "3": 2.5}}}}):
             response = await client.post(url, params={"token": token}, json=body)
             assert response.status == 400, body
 

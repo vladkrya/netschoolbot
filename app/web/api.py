@@ -742,6 +742,39 @@ def _clean_weights(value: Any) -> list[float] | None:
     return weights
 
 
+def _clean_grade_thresholds(value: Any) -> dict[str, float] | None:
+    """С какого среднего «5», «4», «3»: числа от 1 до 5 по убыванию."""
+    if not isinstance(value, dict):
+        return None
+    result: dict[str, float] = {}
+    for grade in ("5", "4", "3"):
+        number = value.get(grade)
+        if isinstance(number, bool) or not isinstance(number, (int, float)) or not 1 <= number <= 5:
+            return None
+        result[grade] = round(float(number), 2)
+    return result if result["5"] > result["4"] > result["3"] else None
+
+
+def _clean_thresholds(value: Any) -> dict[str, Any] | None:
+    """Пороги оценок: общие (`all`, необязательно) и свои у предметов (`subjects`)."""
+    if not isinstance(value, dict):
+        return None
+    result: dict[str, Any] = {}
+    if value.get("all") is not None:
+        if (common := _clean_grade_thresholds(value["all"])) is None:
+            return None
+        result["all"] = common
+    subjects = value.get("subjects") or {}
+    if not isinstance(subjects, dict) or len(subjects) > 60:
+        return None
+    result["subjects"] = {}
+    for name, item in subjects.items():
+        if not name or len(name) > 120 or (own := _clean_grade_thresholds(item)) is None:
+            return None
+        result["subjects"][name] = own
+    return result
+
+
 @routes.get("/api/prefs")
 async def get_prefs(request: web.Request) -> web.Response:
     """Тема, цвет шапки и веса калькулятора — общие для Telegram и сайта."""
@@ -772,6 +805,11 @@ async def save_prefs(request: web.Request) -> web.Response:
         if weights is None:
             return json_error("Некорректные веса")
         changes["weights"] = weights
+    if "thresholds" in body:
+        thresholds = _clean_thresholds(body["thresholds"])
+        if thresholds is None:
+            return json_error("Некорректные пороги оценок")
+        changes["thresholds"] = thresholds
     if not changes:
         return json_error("Нечего сохранять")
     data = await app.miniapp.save_prefs(user.telegram_id, changes)

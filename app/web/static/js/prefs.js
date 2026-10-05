@@ -1,13 +1,16 @@
-// Настройки, общие для миниаппа в Telegram и сайта: тема, цвет шапки, веса калькулятора.
+// Настройки, общие для миниаппа в Telegram и сайта: тема, цвет шапки, веса калькулятора
+// и пороги оценок.
 // Храним на сервере у пользователя, а в localStorage — копию, чтобы применить
 // её до первой отрисовки, не дожидаясь сети.
 'use strict';
 
 import { api, demo } from './core.js';
 
-const KEYS = { theme: 'ns-theme', accent: 'ns-accent', weights: 'ns-weights' };
-// Тема и цвет лежат строкой (их читает скрипт в <head>), веса — JSON.
-const JSON_PREFS = new Set(['weights']);
+const KEYS = {
+  theme: 'ns-theme', accent: 'ns-accent', weights: 'ns-weights', thresholds: 'ns-thresholds',
+};
+// Тема и цвет лежат строкой (их читает скрипт в <head>), остальное — JSON.
+const JSON_PREFS = new Set(['weights', 'thresholds']);
 
 function readLocal(name) {
   try {
