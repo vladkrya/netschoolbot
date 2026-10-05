@@ -34,6 +34,14 @@ class TestMinimalConfig:
         # Перенос данных не требует токена: он не ходит в Telegram.
         assert load_settings(require_bot_token=False).telegram.bot_token == ""
 
+    def test_redirect_token_is_separate_and_optional(self, monkeypatch):
+        monkeypatch.setenv("NETSCHOOL_BOT_TOKEN", "123:main")
+        assert load_settings().telegram.redirect_bot_token == ""
+        monkeypatch.setenv("NETSCHOOL_REDIRECT_BOT_TOKEN", "456:redirect")
+        settings = load_settings()
+        assert settings.telegram.bot_token == "123:main"
+        assert settings.telegram.redirect_bot_token == "456:redirect"
+
 
 class TestToleranceToExistingEnv:
     """Служба живёт с рукописным .env, который переживает обновления.

@@ -83,6 +83,7 @@ class TelegramSettings:
     log_bot_token: str = ""
     logging_enabled: bool = True
     api_proxy: str = ""
+    redirect_bot_token: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -234,6 +235,7 @@ def load_settings(*, require_bot_token: bool = True) -> Settings:
             log_bot_token=_env("LOG_BOT_TOKEN"),
             logging_enabled=_env_bool("TELEGRAM_LOGGING_ENABLED", True),
             api_proxy=_env("TELEGRAM_API_PROXY") or _env("ALL_PROXY") or _env("HTTPS_PROXY"),
+            redirect_bot_token=_env("NETSCHOOL_REDIRECT_BOT_TOKEN"),
         ),
         web=WebSettings(
             enabled=web_enabled,

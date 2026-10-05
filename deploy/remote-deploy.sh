@@ -64,6 +64,9 @@ PY
 
 install_units() {
   install -m 644 deploy/systemd/netschoolbot.service /etc/systemd/system/
+  if [ -f deploy/systemd/netschoolbot-redirect.service ]; then
+    install -m 644 deploy/systemd/netschoolbot-redirect.service /etc/systemd/system/
+  fi
   if [ -f deploy/systemd/netschoolbot-backup.timer ]; then
     install -m 644 deploy/systemd/netschoolbot-backup.service deploy/systemd/netschoolbot-backup.timer /etc/systemd/system/
   fi

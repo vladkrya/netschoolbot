@@ -101,6 +101,24 @@ nginx для основного адреса — `deploy/nginx/ns.ikrya.ru.conf`
 Прежние `ns2.ikrya.ru` (через Cloudflare) и `netschool.ikrya.ru` настроены
 файлами из `deploy/nginx/`, чтобы старые ссылки продолжали открываться.
 
+### Запасной бот @Netschool13_bot
+
+Основной @netschoolbot работает как раньше. Запасной бот отвечает на любое
+личное сообщение ссылкой и кнопкой перехода в основной бот. Он запускается
+отдельным процессом, не открывает базу и не проверяет оценки.
+
+Добавьте токен @Netschool13_bot в `.env` как `NETSCHOOL_REDIRECT_BOT_TOKEN`.
+Без него запасной сервис включать не нужно. Токены двух ботов должны отличаться.
+
+```bash
+cp deploy/systemd/netschoolbot-redirect.service /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now netschoolbot-redirect
+```
+
+Локальный запуск: `./venv/bin/python -m app.bot.redirect`.
+После обновления кода или токена перезапустите `netschoolbot-redirect`.
+
 ### Выкладка
 
 GitHub больше не используется, выкладка — скриптом с машины разработчика:
