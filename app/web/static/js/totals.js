@@ -151,9 +151,13 @@ function openSubject(subject, key) {
       ${tiles ? `<div class="tiles">${tiles}</div>` : '<div class="empty">Оценок пока нет</div>'}
     </div>
     <div class="card whatif">
-      <div class="card-title">Калькулятор: если получить ещё</div>
+      <div class="whatif-head">
+        <div class="card-title">Если получить ещё</div>
+        <button class="whatif-clear" data-clear hidden>Очистить всё</button>
+      </div>
       <div class="whatif-weights">Вес
-        ${[1, 2, 3, 4].map((w) => `<button class="chip" data-weight="${w}">${w}</button>`).join('')}</div>
+        ${WEIGHTS.map((w) => `<button class="chip" data-weight="${w}">${w}</button>`).join('')}
+        <input class="whatif-custom" inputmode="decimal" placeholder="свой" aria-label="Свой вес"></div>
       <div class="whatif-add">${[5, 4, 3, 2]
         .map((value) => `<button class="mark-box mark m${value}" data-add="${value}">${value}</button>`).join('')}</div>
       <div class="whatif-list"></div>
@@ -188,19 +192,33 @@ async function loadClassAverage(body, subject, key) {
 // Свои оценки по предмету и четверти — живут до перезагрузки страницы,
 // чтобы можно было выйти из предмета и вернуться к тем же прикидкам.
 const whatIf = new Map();
+const WEIGHTS = [1, 2, 3, 4];
+
+/** «1,5» вместо «1.5». */
+const formatWeight = (weight) => String(weight).replace('.', ',');
+
+/** Свой вес из поля: положительное число до 100, с запятой или точкой. */
+function parseWeight(text) {
+  const value = Number(String(text).trim().replace(',', '.'));
+  return Number.isFinite(value) && value > 0 && value <= 100 ? Math.round(value * 100) / 100 : null;
+}
 
 function bindWhatIf(card, marks, id) {
   if (!whatIf.has(id)) whatIf.set(id, { weight: 1, extra: [] });
   const plan = whatIf.get(id);
+  const custom = card.querySelector('.whatif-custom');
+  if (!WEIGHTS.includes(plan.weight)) custom.value = formatWeight(plan.weight);
 
   const render = () => {
     card.querySelectorAll('[data-weight]').forEach((chip) =>
       chip.classList.toggle('active', Number(chip.dataset.weight) === plan.weight));
+    custom.classList.toggle('active', !WEIGHTS.includes(plan.weight));
+    card.querySelector('[data-clear]').hidden = !plan.extra.length && WEIGHTS.includes(plan.weight);
 
     card.querySelector('.whatif-list').innerHTML = plan.extra
       .map((item, index) => `<button class="whatif-item" data-remove="${index}" aria-label="Убрать">
           <span class="mark-box mark m${item.mark}">${item.mark}</span>
-          <span>вес ${item.weight}</span><span class="x">×</span>
+          <span>вес ${formatWeight(item.weight)}</span><span class="x">×</span>
         </button>`)
       .join('') || '<div class="muted small">Нажмите оценку, чтобы добавить её к настоящим</div>';
 
@@ -219,7 +237,7 @@ function bindWhatIf(card, marks, id) {
       .map((target) => {
         const needed = neededMarks(all, target - 0.5, 5, plan.weight);
         const text = needed === 0 ? 'уже выходит'
-          : needed == null ? 'не набрать' : `ещё ${needed} × «5» с весом ${plan.weight}`;
+          : needed == null ? 'не набрать' : `ещё ${needed} × «5» с весом ${formatWeight(plan.weight)}`;
         return `До «${target}»: ${text}`;
       })
       .join(' · ');
@@ -229,9 +247,16 @@ function bindWhatIf(card, marks, id) {
     const weight = event.target.closest('[data-weight]');
     const add = event.target.closest('[data-add]');
     const remove = event.target.closest('[data-remove]');
+    const clear = event.target.closest('[data-clear]');
     if (weight) {
       plan.weight = Number(weight.dataset.weight);
+      custom.value = '';
       select();
+    } else if (clear) {
+      plan.extra = [];
+      plan.weight = 1;
+      custom.value = '';
+      tap('soft');
     } else if (add) {
       plan.extra.push({ mark: add.dataset.add, weight: plan.weight });
       tap();
@@ -242,6 +267,17 @@ function bindWhatIf(card, marks, id) {
       return;
     }
     render();
+  });
+  custom.addEventListener('input', () => {
+    const value = parseWeight(custom.value);
+    // Пустое поле возвращает вес 1, недописанное («1,») ничего не меняет.
+    if (value != null) plan.weight = value;
+    else if (!custom.value.trim()) plan.weight = 1;
+    else return;
+    render();
+  });
+  custom.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') custom.blur();
   });
   render();
 }
