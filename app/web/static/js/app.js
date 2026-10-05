@@ -1,7 +1,7 @@
 // Точка входа: вкладки как в официальном приложении, шапка, «Назад» Telegram.
 'use strict';
 
-import { $, banner, school, state, student, tg } from './core.js';
+import { $, banner, base, demo, school, state, student, tg, token } from './core.js';
 import { initDay, loadDay } from './day.js';
 import { initSchedule, loadSchedule } from './schedule.js';
 import { initHomework, loadHomework } from './homework.js';
@@ -331,6 +331,15 @@ async function start() {
   }
 }
 
+/** Service worker вне Telegram: показ сохранённого без сети и push. */
+function registerWorker() {
+  if (tg?.initData || demo || !token || !('serviceWorker' in navigator)) return;
+  navigator.serviceWorker
+    .register(`${base}/sw.js?token=${encodeURIComponent(token)}`, { scope: `${base}/` })
+    .catch(() => { /* без worker приложение работает как раньше, только без офлайна */ });
+}
+
 // Модули загрузились — счётчик перезагрузок из app.html больше не нужен.
 try { sessionStorage.removeItem('bootRetries'); } catch { /* приватный режим */ }
 start();
+registerWorker();

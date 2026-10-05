@@ -126,6 +126,11 @@ async function request(path, options = {}) {
     error.reason = payload.reason;
     throw error;
   }
+  if (response.headers.get('X-Netschool-Offline')) {
+    // Ответ из копии service worker: сети нет совсем.
+    banner('Нет связи — показаны сохранённые данные');
+    return { ...payload, offline: true, stale: false };
+  }
   return payload;
 }
 
