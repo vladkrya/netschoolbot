@@ -6,12 +6,14 @@
 """
 
 import datetime as dt
+import asyncio
 from dataclasses import replace
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
-from app.bot.handlers import menu, settings as settings_handlers
+from app.bot.handlers import auth, menu, settings as settings_handlers
 from app.bot.handlers.settings import parse_interval, parse_quiet_hours
 from app.bot.notifier import TelegramNotifier
 from app.context import AppContext
@@ -99,12 +101,103 @@ async def app(db, users, marks, sessions, miniapp, cache):
     await watchers.stop_all()
 
 
+@pytest.fixture
+async def login_state():
+    from aiogram.fsm.context import FSMContext
+    from aiogram.fsm.storage.base import StorageKey
+    from aiogram.fsm.storage.memory import MemoryStorage
+
+    storage = MemoryStorage()
+    state = FSMContext(storage, StorageKey(bot_id=1, chat_id=1, user_id=1))
+    await state.set_state(auth.Login.method)
+    await state.update_data(url="https://school.example", school="Школа 13")
+    yield state
+    await storage.close()
+
+
+class TestQrRetry:
+    @pytest.mark.parametrize("error", [asyncio.TimeoutError(), RuntimeError("ESIA QR expired")])
+    async def test_expiration_keeps_school_and_retry_logs_in(self, app, users, login_state, monkeypatch, error):
+        attempts = []
+        clients = []
+
+        class FakeClient:
+            def __init__(self, url, **kwargs):
+                self.url = url
+                self._http = SimpleNamespace(aclose=AsyncMock())
+                clients.append(self)
+
+            async def login_via_gosuslugi_qr(self, **kwargs):
+                attempts.append((self.url, kwargs["school"]))
+                await kwargs["qr_callback"](f"gosuslugi://qr-{len(attempts)}")
+                if len(attempts) == 1:
+                    raise error
+
+            def export_session(self):
+                return '{"session": "new"}'
+
+        monkeypatch.setattr("netschoolpy.NetSchool", FakeClient)
+        finish = AsyncMock()
+        monkeypatch.setattr(auth, "_finish_login", finish)
+        user = await users.get_or_create(1)
+        message = FakeMessage()
+        await auth.login_by_qr(FakeCallback("login:qr", message), login_state, user, app)
+
+        assert await login_state.get_state() == auth.Login.qr_retry.state
+        assert (await login_state.get_data())["school"] == "Школа 13"
+        button = message.answers[-1][1]["reply_markup"].inline_keyboard[0][0]
+        assert "новый QR-код" in button.text
+        assert "/login" not in message.answers[-1][0]
+
+        await auth.retry_qr(FakeCallback(button.callback_data, message), login_state, user, app)
+        assert attempts == [("https://school.example", "Школа 13")] * 2
+        assert len([text for text, _ in message.answers if text == "<фото>"]) == 2
+        assert await login_state.get_state() is None
+        assert await app.sessions.load(user.telegram_id) == '{"session": "new"}'
+        finish.assert_awaited_once()
+        for client in clients:
+            client._http.aclose.assert_awaited_once()
+
+    async def test_stale_or_busy_retry_does_not_request_new_code(self, app, users, login_state, monkeypatch):
+        await login_state.update_data(qr_attempt="new")
+        await login_state.set_state(auth.Login.qr_retry)
+        run_qr = AsyncMock()
+        monkeypatch.setattr(auth, "login_by_qr", run_qr)
+        user = await users.get_or_create(1)
+        callback = FakeCallback("login:qr_retry:old")
+        await auth.retry_qr(callback, login_state, user, app)
+        run_qr.assert_not_awaited()
+        assert "устарела" in callback.answered[-1]
+        await login_state.set_state(auth.Login.qr_pending)
+        await auth.retry_qr(FakeCallback("login:qr_retry:new"), login_state, user, app)
+        run_qr.assert_not_awaited()
+
+    async def test_cancelled_attempt_does_not_restore_login_flow(self, login_state):
+        await login_state.clear()
+        message = FakeMessage()
+        await auth._offer_qr_retry(FakeCallback(message=message), login_state, "old", "Истёк")
+        assert await login_state.get_state() is None
+        assert message.answers == []
+
+
 class TestMenu:
     async def test_greeting_before_login(self, app, users):
         user = await users.get_or_create(1)
         message = FakeMessage()
         await menu.show_menu(message, user, app)
         assert "login" in message.texts
+        assert "Вы не вошли" in message.texts
+
+    async def test_unrecognized_message_before_login(self, users):
+        message = FakeMessage("привет")
+        await menu.unrecognized_message(message, await users.get_or_create(1))
+        assert "Вы не вошли" in message.texts
+        assert "/login" in message.texts
+
+    async def test_unrecognized_message_after_login(self):
+        message = FakeMessage("привет")
+        await menu.unrecognized_message(message, make_user())
+        assert message.answers == []
 
     async def test_menu_has_no_app_button_before_login(self, app, users):
         # Кнопка мини-приложения без выбранной школы вела бы в пустоту.

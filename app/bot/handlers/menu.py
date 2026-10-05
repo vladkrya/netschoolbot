@@ -7,7 +7,7 @@ import json
 import logging
 
 from aiogram import F, Router
-from aiogram.filters import Command, CommandStart
+from aiogram.filters import Command, CommandStart, StateFilter
 from aiogram.types import CallbackQuery, Message, ReplyKeyboardRemove
 
 from ...context import AppContext
@@ -25,7 +25,8 @@ GREETING = (
     "👋 <b>Бот «Сетевого города»</b>\n\n"
     "Присылаю новые оценки, их изменения и удаления, показываю домашние "
     "задания, расписание и статистику.\n\n"
-    "Начните с /login — выберете свой регион и школу."
+    "Вы не вошли в «Сетевой город».\n\n"
+    "Войти — /login"
 )
 
 
@@ -320,3 +321,9 @@ async def history(message: Message, user: User, app: AppContext) -> None:
             continue
         entries.append((MarkKind(row["kind"]), record, row["old_mark"], row["new_mark"], seen))
     await reply(message, formatting.mark_history(entries, tz=user.tz))
+
+
+@router.message(StateFilter(None))
+async def unrecognized_message(message: Message, user: User) -> None:
+    if hint := require_school(user):
+        await reply(message, hint)

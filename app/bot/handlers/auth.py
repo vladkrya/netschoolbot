@@ -16,10 +16,12 @@ from __future__ import annotations
 import asyncio
 import io
 import logging
+import secrets
 from dataclasses import replace
 
 from aiogram import F, Router
 from aiogram.filters import Command
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import (
@@ -56,6 +58,8 @@ class Login(StatesGroup):
     username = State()
     password = State()
     otp = State()
+    qr_pending = State()
+    qr_retry = State()
 
 
 def _cancel_keyboard() -> InlineKeyboardMarkup:
@@ -414,7 +418,13 @@ async def login_by_qr(callback: CallbackQuery, state: FSMContext, user: User, ap
     await callback.answer()
     data = await state.get_data()
     url, school = data.get("url", ""), data.get("school", "")
-    await state.clear()
+    if not url or not school:
+        await state.clear()
+        await reply(callback, "Выберите регион и школу: /login")
+        return
+    attempt = secrets.token_hex(8)
+    await state.update_data(qr_attempt=attempt)
+    await state.set_state(Login.qr_pending)
 
     candidate = replace(
         user,
@@ -461,13 +471,13 @@ async def login_by_qr(callback: CallbackQuery, state: FSMContext, user: User, ap
     except asyncio.TimeoutError:
         await _delete_quietly(qr_message)
         await notice.delete()
-        await reply(callback, "⌛️ QR-код устарел. Попробуйте снова: /login")
+        await _offer_qr_retry(callback, state, attempt, "⌛️ QR-код истёк. Получите новый кнопкой ниже.")
         return
     except Exception as exc:
         await _delete_quietly(qr_message)
         await notice.delete()
         error = wrap(exc, context="QR-вход")
-        await reply(callback, f"❌ {formatting.esc(error.user_message)}\n\nПопробуйте снова: /login")
+        await _offer_qr_retry(callback, state, attempt, f"❌ {formatting.esc(error.user_message)}")
         return
     finally:
         try:
@@ -479,9 +489,38 @@ async def login_by_qr(callback: CallbackQuery, state: FSMContext, user: User, ap
 
     await _delete_quietly(qr_message)
     await notice.delete()
+    if (await state.get_data()).get("qr_attempt") != attempt:
+        return
+    await state.clear()
     if payload:
         await app.sessions.save(candidate.telegram_id, payload)
     await _finish_login(candidate, app, callback.message)
+
+
+async def _offer_qr_retry(
+    callback: CallbackQuery, state: FSMContext, attempt: str, text: str,
+) -> None:
+    if (await state.get_data()).get("qr_attempt") != attempt:
+        return
+    await state.set_state(Login.qr_retry)
+    await reply(callback, text, reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔄 Получить новый QR-код", callback_data=f"login:qr_retry:{attempt}")],
+        [InlineKeyboardButton(text="❌ Отмена", callback_data="login:cancel")],
+    ]))
+
+
+@router.callback_query(F.data.startswith("login:qr_retry:"))
+async def retry_qr(callback: CallbackQuery, state: FSMContext, user: User, app: AppContext) -> None:
+    data = await state.get_data()
+    if (await state.get_state()) != Login.qr_retry.state or data.get("qr_attempt") != callback.data.rsplit(":", 1)[-1]:
+        await callback.answer("Эта кнопка устарела или QR-код уже запрашивается.")
+        return
+    await state.set_state(Login.qr_pending)
+    try:
+        await callback.message.edit_reply_markup(reply_markup=None)
+    except TelegramBadRequest:
+        pass  # Старое сообщение могли удалить; новый код всё равно нужен.
+    await login_by_qr(callback, state, user, app)
 
 
 async def _delete_quietly(message: Message | None) -> None:
