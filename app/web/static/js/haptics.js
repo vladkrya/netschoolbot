@@ -21,7 +21,7 @@ const IOS_TAPPABLE = [
   'button.tt-cell', '.cal-day', '.cal-arrow', '.calc-btn', '.fab', '.sheet-close',
   '.swatch', '.recipient', '.drawer-link', '.sched-toggle',
   // Калькулятор «что если» в итогах по предмету.
-  '.whatif-add .mark-box', '.whatif-item', '.whatif-clear',
+  '.whatif-add .mark-box', '.whatif-item', '.whatif-clear', '.wchip-x',
   // Значок «Д/З» в карточке урока открывает домашку — своя подпись поверх.
   '[data-hw-badge]',
 ].join(',');

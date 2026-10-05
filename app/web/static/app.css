@@ -957,7 +957,7 @@ body::after {
 .whatif-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
 .whatif-clear { flex: none; font-size: 13px; color: var(--primary); }
 .whatif-custom {
-  width: 64px;
+  width: 76px;
   padding: 3px 8px;
   border-radius: 16px;
   border: 1px solid var(--border);
@@ -968,7 +968,16 @@ body::after {
   font-size: 16px;
   text-align: center;
 }
-.whatif-custom.active { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary) inset; }
+.whatif-custom.invalid { border-color: var(--g2); }
+.whatif-weights { flex-wrap: wrap; }
+.whatif-chips { display: contents; }
+.wchip { position: relative; display: inline-flex; }
+.wchip-x {
+  position: absolute; top: -6px; right: -6px;
+  width: 16px; height: 16px; border-radius: 50%;
+  background: var(--text2); color: var(--card);
+  font-size: 11px; line-height: 16px; text-align: center;
+}
 .whatif-list { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
 .whatif-item { position: relative; display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 11px; color: var(--text2); }
 .whatif-item .mark-box { border-style: dashed; }

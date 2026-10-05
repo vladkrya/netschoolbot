@@ -15,6 +15,7 @@ import mimetypes
 import re
 from urllib.parse import quote
 from dataclasses import asdict, replace
+from typing import Any
 
 from aiohttp import web
 
@@ -721,6 +722,60 @@ async def notification_settings(request: web.Request) -> web.Response:
     prefs = replace(user.notifications, **{key: bool(body.get("value"))})
     updated = await app.users.save(replace(user, notifications=prefs))
     return web.json_response({"ok": True, "data": asdict(updated.notifications)})
+
+
+THEMES = ("auto", "light", "dark")
+ACCENT_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
+
+
+def _clean_weights(value: Any) -> list[float] | None:
+    """Веса калькулятора «что если»: до 12 положительных чисел не больше 100."""
+    if not isinstance(value, list) or len(value) > 12:
+        return None
+    weights: list[float] = []
+    for item in value:
+        if isinstance(item, bool) or not isinstance(item, (int, float)) or not 0 < item <= 100:
+            return None
+        number = round(float(item), 2)
+        if number not in weights:
+            weights.append(int(number) if number.is_integer() else number)
+    return weights
+
+
+@routes.get("/api/prefs")
+async def get_prefs(request: web.Request) -> web.Response:
+    """Тема, цвет шапки и веса калькулятора — общие для Telegram и сайта."""
+    app, user = context(request), current_user(request)
+    return web.json_response({"ok": True, "data": await app.miniapp.prefs(user.telegram_id)})
+
+
+@routes.post("/api/prefs")
+async def save_prefs(request: web.Request) -> web.Response:
+    app, user = context(request), current_user(request)
+    try:
+        body = await request.json()
+    except ValueError:
+        return json_error("Некорректный запрос")
+    if not isinstance(body, dict):
+        return json_error("Некорректный запрос")
+    changes: dict[str, Any] = {}
+    if "theme" in body:
+        if body["theme"] not in THEMES:
+            return json_error("Неизвестная тема")
+        changes["theme"] = body["theme"]
+    if "accent" in body:
+        if not isinstance(body["accent"], str) or not ACCENT_RE.match(body["accent"]):
+            return json_error("Некорректный цвет")
+        changes["accent"] = body["accent"].lower()
+    if "weights" in body:
+        weights = _clean_weights(body["weights"])
+        if weights is None:
+            return json_error("Некорректные веса")
+        changes["weights"] = weights
+    if not changes:
+        return json_error("Нечего сохранять")
+    data = await app.miniapp.save_prefs(user.telegram_id, changes)
+    return web.json_response({"ok": True, "data": data})
 
 
 @routes.get("/api/pwa-link")

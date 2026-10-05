@@ -554,6 +554,31 @@ class MiniappRepository:
             (endpoint, telegram_id, p256dh, auth),
         )
 
+    async def prefs(self, telegram_id: int) -> dict[str, Any]:
+        """Настройки мини-приложения: одни и те же в Telegram и на сайте."""
+        row = await self._db.fetch_one(
+            "SELECT payload FROM web_prefs WHERE telegram_id = ?", (telegram_id,)
+        )
+        if not row:
+            return {}
+        try:
+            data = json.loads(row["payload"])
+        except ValueError:
+            return {}
+        return data if isinstance(data, dict) else {}
+
+    async def save_prefs(self, telegram_id: int, changes: dict[str, Any]) -> dict[str, Any]:
+        """Дописать изменённые ключи к сохранённым и вернуть итог."""
+        merged = {**await self.prefs(telegram_id), **changes}
+        await self._db.execute(
+            """INSERT INTO web_prefs (telegram_id, payload, updated_at)
+               VALUES (?, ?, datetime('now'))
+               ON CONFLICT(telegram_id) DO UPDATE SET
+                   payload = excluded.payload, updated_at = excluded.updated_at""",
+            (telegram_id, json.dumps(merged, ensure_ascii=False)),
+        )
+        return merged
+
     async def push_subscriptions(self, telegram_id: int) -> list[dict[str, str]]:
         rows = await self._db.fetch_all(
             "SELECT endpoint, p256dh, auth FROM push_subscriptions WHERE telegram_id = ?",

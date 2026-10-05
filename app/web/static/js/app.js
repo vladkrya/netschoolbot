@@ -14,6 +14,7 @@ import { closeSheet, initSheet } from './sheet.js';
 import { clearScreens, handleBack, hasScreens, setFallbackBack } from './screens.js';
 import { initSwipeBack } from './swipeback.js';
 import { initIosHaptics, notify, tap } from './haptics.js';
+import { syncPrefs } from './prefs.js';
 
 const TABS = {
   day: loadDay,
@@ -299,6 +300,12 @@ function initChrome() {
 async function start() {
   applyStoredTheme();
   applyAccent();
+  // Тема и цвет, выбранные в Telegram, — и на сайте (и наоборот).
+  syncPrefs().then((changed) => {
+    if (!changed) return;
+    applyStoredTheme();
+    applyAccent();
+  });
   renderIcons();
   initTelegram();
   initFullscreen();

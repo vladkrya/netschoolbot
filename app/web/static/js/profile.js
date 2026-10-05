@@ -8,8 +8,7 @@ import { ICONS } from './icons.js';
 import { loadCalc } from './calc.js';
 import { pushScreen, syncBackButton } from './screens.js';
 import { notify, select, tap } from './haptics.js';
-
-const THEME_KEY = 'ns-theme';
+import { getPref, setPref } from './prefs.js';
 
 export async function loadProfile(force = false) {
   if (state.profile && !force) return state.profile;
@@ -19,12 +18,8 @@ export async function loadProfile(force = false) {
 }
 
 function currentTheme() {
-  try {
-    return localStorage.getItem(THEME_KEY) || 'auto';
-  } catch {
-    // Приватный режим и запрет на хранилище — не повод ломать экран.
-    return 'auto';
-  }
+  const theme = getPref('theme');
+  return ['light', 'dark'].includes(theme) ? theme : 'auto';
 }
 
 export function applyStoredTheme() {
@@ -177,11 +172,7 @@ function bindDrawer() {
   body.querySelectorAll('input[name="theme"]').forEach((input) =>
     input.addEventListener('change', () => {
       select();
-      try {
-        localStorage.setItem(THEME_KEY, input.value);
-      } catch {
-        /* хранилище недоступно — тема продержится до перезагрузки */
-      }
+      setPref('theme', input.value);
       applyStoredTheme();
     })
   );

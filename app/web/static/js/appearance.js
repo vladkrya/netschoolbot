@@ -2,8 +2,7 @@
 'use strict';
 
 import { initData, tg } from './core.js';
-
-const ACCENT_KEY = 'ns-accent';
+import { getPref, setPref } from './prefs.js';
 
 export const ACCENTS = [
   ['#4a6fae', 'Синий'],
@@ -17,11 +16,8 @@ export const ACCENTS = [
 ];
 
 export function currentAccent() {
-  try {
-    return localStorage.getItem(ACCENT_KEY) || ACCENTS[0][0];
-  } catch {
-    return ACCENTS[0][0];
-  }
+  const color = getPref('accent');
+  return /^#[0-9a-f]{6}$/i.test(color || '') ? color : ACCENTS[0][0];
 }
 
 /** Смешать цвет с белым (amount > 0) или чёрным (amount < 0). */
@@ -54,11 +50,7 @@ export function applyAccent(color = currentAccent()) {
 }
 
 export function saveAccent(color) {
-  try {
-    localStorage.setItem(ACCENT_KEY, color);
-  } catch {
-    /* без хранилища — до перезагрузки */
-  }
+  setPref('accent', color);
   applyAccent(color);
 }
 

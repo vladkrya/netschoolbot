@@ -315,6 +315,21 @@ class TestNewFeatures:
         assert (await response.json())["data"]["mail"] is True
         assert (await users.get(1)).notifications.mail is True
 
+    async def test_prefs_are_shared_and_merged(self, client, token):
+        url = f"{BASE}/api/prefs"
+        assert (await (await client.get(url, params={"token": token})).json())["data"] == {}
+        await client.post(url, params={"token": token}, json={"accent": "#A8434F", "theme": "dark"})
+        response = await client.post(url, params={"token": token}, json={"weights": [1, 2, 1.5, 2]})
+        data = (await response.json())["data"]
+        assert data == {"accent": "#a8434f", "theme": "dark", "weights": [1, 2, 1.5]}
+        assert (await (await client.get(url, params={"token": token})).json())["data"] == data
+
+    async def test_bad_prefs_are_rejected(self, client, token):
+        url = f"{BASE}/api/prefs"
+        for body in ({"accent": "red"}, {"theme": "pink"}, {"weights": [0]}, {"weights": "1"}, {}):
+            response = await client.post(url, params={"token": token}, json=body)
+            assert response.status == 400, body
+
     async def test_unknown_notification_key_is_rejected(self, client, token):
         response = await client.post(
             f"{BASE}/api/settings/notifications", params={"token": token}, json={"key": "enabled"}

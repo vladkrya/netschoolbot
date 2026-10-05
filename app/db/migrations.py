@@ -159,6 +159,15 @@ MIGRATIONS: list[str] = [
     """
     ALTER TABLE users ADD COLUMN token_warned_at TEXT;
     """,
+    # 7 — настройки мини-приложения (тема, цвет шапки, веса калькулятора),
+    # общие для Telegram и сайта. JSON: набор ключей меняется чаще схемы.
+    """
+    CREATE TABLE web_prefs (
+        telegram_id INTEGER PRIMARY KEY REFERENCES users(telegram_id) ON DELETE CASCADE,
+        payload     TEXT    NOT NULL DEFAULT '{}',
+        updated_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+    );
+    """,
 ]
 
 

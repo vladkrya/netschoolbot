@@ -8,6 +8,7 @@ import {
 import { markBox, openMark } from './details.js';
 import { pushScreen } from './screens.js';
 import { select, tap } from './haptics.js';
+import { getPref, setPref } from './prefs.js';
 
 const SHORT = { q1: '1/4', q2: '2/4', q3: '3/4', q4: '4/4' };
 
@@ -155,9 +156,8 @@ function openSubject(subject, key) {
         <div class="card-title">Если получить ещё</div>
         <button class="whatif-clear" data-clear hidden>Очистить всё</button>
       </div>
-      <div class="whatif-weights">Вес
-        ${WEIGHTS.map((w) => `<button class="chip" data-weight="${w}">${w}</button>`).join('')}
-        <input class="whatif-custom" inputmode="decimal" placeholder="свой" aria-label="Свой вес"></div>
+      <div class="whatif-weights">Вес <span class="whatif-chips"></span>
+        <input class="whatif-custom" inputmode="decimal" enterkeyhint="done" placeholder="+ свой" aria-label="Добавить свой вес"></div>
       <div class="whatif-add">${[5, 4, 3, 2]
         .map((value) => `<button class="mark-box mark m${value}" data-add="${value}">${value}</button>`).join('')}</div>
       <div class="whatif-list"></div>
@@ -192,7 +192,7 @@ async function loadClassAverage(body, subject, key) {
 // Свои оценки по предмету и четверти — живут до перезагрузки страницы,
 // чтобы можно было выйти из предмета и вернуться к тем же прикидкам.
 const whatIf = new Map();
-const WEIGHTS = [1, 2, 3, 4];
+const DEFAULT_WEIGHTS = [1, 2, 3, 4];
 
 /** «1,5» вместо «1.5». */
 const formatWeight = (weight) => String(weight).replace('.', ',');
@@ -203,17 +203,30 @@ function parseWeight(text) {
   return Number.isFinite(value) && value > 0 && value <= 100 ? Math.round(value * 100) / 100 : null;
 }
 
+/** Набор весов-чипов: свой у пользователя, общий для всех предметов, Telegram и сайта. */
+function savedWeights() {
+  const weights = getPref('weights');
+  return Array.isArray(weights) && weights.length && weights.every((w) => parseWeight(w) === w)
+    ? weights
+    : [...DEFAULT_WEIGHTS];
+}
+
 function bindWhatIf(card, marks, id) {
-  if (!whatIf.has(id)) whatIf.set(id, { weight: 1, extra: [] });
+  const weights = savedWeights();
+  if (!whatIf.has(id)) whatIf.set(id, { weight: weights[0], extra: [] });
   const plan = whatIf.get(id);
+  if (!weights.includes(plan.weight)) plan.weight = weights[0];
   const custom = card.querySelector('.whatif-custom');
-  if (!WEIGHTS.includes(plan.weight)) custom.value = formatWeight(plan.weight);
+
+  const saveWeights = () => setPref('weights', weights);
 
   const render = () => {
-    card.querySelectorAll('[data-weight]').forEach((chip) =>
-      chip.classList.toggle('active', Number(chip.dataset.weight) === plan.weight));
-    custom.classList.toggle('active', !WEIGHTS.includes(plan.weight));
-    card.querySelector('[data-clear]').hidden = !plan.extra.length && WEIGHTS.includes(plan.weight);
+    // Последний чип не убрать: без веса нечего добавлять.
+    card.querySelector('.whatif-chips').innerHTML = weights
+      .map((w) => `<span class="wchip"><button class="chip ${w === plan.weight ? 'active' : ''}" data-weight="${w}">${formatWeight(w)}</button>${
+        weights.length > 1 ? `<button class="wchip-x" data-drop="${w}" aria-label="Убрать вес ${formatWeight(w)}">×</button>` : ''}</span>`)
+      .join('');
+    card.querySelector('[data-clear]').hidden = !plan.extra.length;
 
     card.querySelector('.whatif-list').innerHTML = plan.extra
       .map((item, index) => `<button class="whatif-item" data-remove="${index}" aria-label="Убрать">
@@ -244,38 +257,58 @@ function bindWhatIf(card, marks, id) {
   };
 
   card.addEventListener('click', (event) => {
+    const drop = event.target.closest('[data-drop]');
     const weight = event.target.closest('[data-weight]');
     const add = event.target.closest('[data-add]');
     const remove = event.target.closest('[data-remove]');
     const clear = event.target.closest('[data-clear]');
-    if (weight) {
-      plan.weight = Number(weight.dataset.weight);
-      custom.value = '';
-      select();
-    } else if (clear) {
-      plan.extra = [];
-      plan.weight = 1;
-      custom.value = '';
+    if (drop) {
+      const index = weights.indexOf(Number(drop.dataset.drop));
+      if (index < 0 || weights.length < 2) return;
+      weights.splice(index, 1);
+      if (!weights.includes(plan.weight)) plan.weight = weights[Math.min(index, weights.length - 1)];
+      saveWeights();
       tap('soft');
+    } else if (weight) {
+      plan.weight = Number(weight.dataset.weight);
+      select();
     } else if (add) {
       plan.extra.push({ mark: add.dataset.add, weight: plan.weight });
       tap();
     } else if (remove) {
       plan.extra.splice(Number(remove.dataset.remove), 1);
       tap('soft');
+    } else if (clear) {
+      plan.extra = [];
+      plan.weight = weights[0];
+      tap('soft');
     } else {
       return;
     }
     render();
   });
-  custom.addEventListener('input', () => {
+
+  // Свой вес становится чипом: по «Готово»/Enter или когда поле теряет фокус.
+  const addCustom = () => {
     const value = parseWeight(custom.value);
-    // Пустое поле возвращает вес 1, недописанное («1,») ничего не меняет.
-    if (value != null) plan.weight = value;
-    else if (!custom.value.trim()) plan.weight = 1;
-    else return;
+    if (value == null) {
+      custom.classList.toggle('invalid', Boolean(custom.value.trim()));
+      return;
+    }
+    custom.value = '';
+    custom.classList.remove('invalid');
+    if (!weights.includes(value)) {
+      if (weights.length >= 12) weights.shift();
+      weights.push(value);
+      weights.sort((a, b) => a - b);
+      saveWeights();
+    }
+    plan.weight = value;
+    select();
     render();
-  });
+  };
+  custom.addEventListener('change', addCustom);
+  custom.addEventListener('input', () => custom.classList.remove('invalid'));
   custom.addEventListener('keydown', (event) => {
     if (event.key === 'Enter') custom.blur();
   });
