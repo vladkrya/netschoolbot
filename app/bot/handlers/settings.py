@@ -45,6 +45,7 @@ TOGGLES = {
     "mail": "mail",
     "weekly": "weekly_summary",
     "evening": "evening_summary",
+    "schedule": "schedule",
     "absences": "absences",
 }
 

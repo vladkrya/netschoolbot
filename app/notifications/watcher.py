@@ -31,6 +31,7 @@ from ..netschool.service import DiaryService, TokenState
 from .diff import confirm_deletions, diff_homework, diff_marks
 from .digests import DigestKind, evening_period, previous_week, weekly_period
 from .outbox import OutboxKind, decode, encode, mark_to_dict
+from .schedule_diff import diff_schedule, watched_days
 
 logger = logging.getLogger("netschoolbot.watcher")
 
@@ -194,6 +195,13 @@ class UserWatcher:
             known_homework, homework, first_run=first_run
         )
         absences, fresh_absences = await self._diff_absences(user, days, first_run=first_run)
+        today = _local_now(user).date()
+        schedule_now = watched_days(days, today)
+        # Снимок обновляется всегда, даже при выключенных уведомлениях: иначе
+        # включение тумблера выдало бы давние перестановки за новые.
+        schedule_changes = (
+            [] if first_run else diff_schedule(await self._state.load_schedule(user.telegram_id), schedule_now)
+        )
 
         prefs = user.notifications
         mark_events = [e for e in result.events if _mark_event_wanted(e, prefs)]
@@ -204,6 +212,8 @@ class UserWatcher:
             outbox.append((OutboxKind.HOMEWORK.value, encode(OutboxKind.HOMEWORK, fresh_homework)))
         if fresh_absences and prefs.absences:
             outbox.append((OutboxKind.ABSENCES.value, encode(OutboxKind.ABSENCES, fresh_absences)))
+        if schedule_changes and prefs.schedule:
+            outbox.append((OutboxKind.SCHEDULE.value, encode(OutboxKind.SCHEDULE, schedule_changes)))
         history = [
             (
                 event.kind.value,
@@ -226,6 +236,8 @@ class UserWatcher:
             history=history,
             # Базовая сверка завершена только после сохранения всех разделов.
             baseline_done=first_run,
+            schedule=schedule_now,
+            today=today,
         )
         self._note_full_sync(events)
 
@@ -276,6 +288,8 @@ class UserWatcher:
             await self._notifier.send_homework(user, items)
         elif kind is OutboxKind.ABSENCES:
             await self._notifier.send_absences(user, items)
+        elif kind is OutboxKind.SCHEDULE:
+            await self._notifier.send_text(user, formatting.schedule_changes(items))
 
     async def _send_digests(self, user: User) -> None:
         """Вечерняя сводка на завтра и недельная по понедельникам.

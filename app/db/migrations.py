@@ -230,6 +230,18 @@ MIGRATIONS: list[str] = [
         PRIMARY KEY (telegram_id, homework_key)
     );
     """,
+    # 11 — уведомления об изменениях расписания (по умолчанию выключены).
+    # tracked_schedule — последний виденный снимок уроков каждого дня.
+    """
+    ALTER TABLE users ADD COLUMN notify_schedule INTEGER NOT NULL DEFAULT 0;
+
+    CREATE TABLE tracked_schedule (
+        telegram_id INTEGER NOT NULL REFERENCES users(telegram_id) ON DELETE CASCADE,
+        day         TEXT    NOT NULL,
+        payload     TEXT    NOT NULL,
+        PRIMARY KEY (telegram_id, day)
+    );
+    """,
 ]
 
 

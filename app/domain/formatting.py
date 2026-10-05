@@ -361,6 +361,28 @@ def watch_status(user: User, status: object, *, running: bool, tracked: int) -> 
     return "\n".join(lines)
 
 
+def schedule_changes(changes: list) -> str:
+    """Замены и отмены уроков, по дням."""
+    lines = ["🔁 <b>Изменения в расписании</b>"]
+    current = None
+    for change in sorted(changes, key=lambda c: (c.day, c.number)):
+        if change.day != current:
+            current = change.day
+            lines.append(f"\n📅 <b>{date_label(change.day)}</b>")
+        lesson = f"{change.number} урок: " if change.number else ""
+        if change.kind == "replaced":
+            lines.append(f"• {lesson}{esc(change.old)} → <b>{esc(change.new)}</b>")
+        elif change.kind == "cancelled":
+            lines.append(f"• {lesson}<s>{esc(change.old)}</s> — отменён")
+        elif change.kind == "added":
+            lines.append(f"• {lesson}<b>{esc(change.new)}</b> — добавлен")
+        elif change.kind == "room":
+            lines.append(f"• {lesson}кабинет {esc(change.old) or '—'} → <b>{esc(change.new)}</b>")
+        else:
+            lines.append("• расписание дня перестроено — загляните в дневник")
+    return "\n".join(lines)
+
+
 HISTORY_ICONS = {MarkKind.NEW: "🆕", MarkKind.CHANGED: "✏️", MarkKind.DELETED: "🗑"}
 
 

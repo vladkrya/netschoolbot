@@ -112,8 +112,9 @@ class UserRepository:
                     login_type, login, password, student_name, selected_student_id,
                     check_interval, notify_grades, notify_changes, notify_deletes,
                     notify_homework, notify_mail, weekly_summary, notify_absences,
-                    quiet_start, quiet_end, api_mode, timezone, evening_summary, updated_at
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    quiet_start, quiet_end, api_mode, timezone, evening_summary, notify_schedule,
+                    updated_at
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(telegram_id) DO UPDATE SET
                     enabled = excluded.enabled,
                     display_name = excluded.display_name,
@@ -137,6 +138,7 @@ class UserRepository:
                     api_mode = excluded.api_mode,
                     timezone = excluded.timezone,
                     evening_summary = excluded.evening_summary,
+                    notify_schedule = excluded.notify_schedule,
                     updated_at = excluded.updated_at
                 """,
                 (
@@ -163,6 +165,7 @@ class UserRepository:
                     user.api_mode.value,
                     user.timezone,
                     int(user.notifications.evening_summary),
+                    int(user.notifications.schedule),
                     now,
                 ),
             )
@@ -252,6 +255,7 @@ class UserRepository:
                 mail=bool(row["notify_mail"]),
                 weekly_summary=bool(row["weekly_summary"]),
                 evening_summary=bool(row["evening_summary"]),
+                schedule=bool(row["notify_schedule"]),
                 absences=bool(row["notify_absences"]),
             ),
             filters=Filters(
@@ -363,13 +367,19 @@ class MarkStateRepository:
         как перенесённый из старого проекта, тоже считается без истории:
         его ключи оценок посчитаны по другим правилам и не совпадут.
         """
+        # Не только оценки: в начале года их нет ни одной, и без этого каждая
+        # проверка считалась бы первой — новые задания молча проглатывались бы.
         row = await self._db.fetch_one(
             """SELECT
-                   (SELECT 1 FROM tracked_marks WHERE telegram_id = ? LIMIT 1) AS has_marks,
+                   COALESCE(
+                       (SELECT 1 FROM tracked_marks WHERE telegram_id = ? LIMIT 1),
+                       (SELECT 1 FROM tracked_homework WHERE telegram_id = ? LIMIT 1),
+                       (SELECT 1 FROM tracked_schedule WHERE telegram_id = ? LIMIT 1)
+                   ) AS has_state,
                    (SELECT baseline_pending FROM users WHERE telegram_id = ?) AS pending""",
-            (telegram_id, telegram_id),
+            (telegram_id, telegram_id, telegram_id, telegram_id),
         )
-        if row is None or row["has_marks"] is None:
+        if row is None or row["has_state"] is None:
             return False
         return not row["pending"]
 
@@ -444,6 +454,8 @@ class MarkStateRepository:
         outbox: list[tuple[str, str]],
         history: list[tuple[str, str, str, str]],
         baseline_done: bool,
+        schedule: dict[dt.date, list] | None = None,
+        today: dt.date | None = None,
     ) -> None:
         """Итог одной проверки — одной транзакцией.
 
@@ -475,10 +487,39 @@ class MarkStateRepository:
                            ORDER BY id DESC LIMIT ?)""",
                     (telegram_id, telegram_id, HISTORY_LIMIT),
                 )
+            if schedule is not None:
+                if schedule:
+                    await db.executemany(
+                        """INSERT INTO tracked_schedule (telegram_id, day, payload) VALUES (?, ?, ?)
+                           ON CONFLICT(telegram_id, day) DO UPDATE SET payload = excluded.payload""",
+                        [
+                            (telegram_id, day.isoformat(), json.dumps(lessons, ensure_ascii=False))
+                            for day, lessons in schedule.items()
+                            # Пустой день — скорее сбой ответа: прежний снимок не затираем.
+                            if lessons
+                        ],
+                    )
+                if today is not None:
+                    await db.execute(
+                        "DELETE FROM tracked_schedule WHERE telegram_id = ? AND day < ?",
+                        (telegram_id, today.isoformat()),
+                    )
             if baseline_done:
                 await db.execute(
                     "UPDATE users SET baseline_pending = 0 WHERE telegram_id = ?", (telegram_id,)
                 )
+
+    async def load_schedule(self, telegram_id: int) -> dict[dt.date, list]:
+        rows = await self._db.fetch_all(
+            "SELECT day, payload FROM tracked_schedule WHERE telegram_id = ?", (telegram_id,)
+        )
+        result: dict[dt.date, list] = {}
+        for row in rows:
+            try:
+                result[dt.date.fromisoformat(row["day"])] = [tuple(item) for item in json.loads(row["payload"])]
+            except (ValueError, TypeError):
+                continue
+        return result
 
     async def pending_outbox(self, telegram_id: int) -> list[aiosqlite.Row]:
         """Неотправленные уведомления в порядке появления."""
@@ -616,7 +657,7 @@ class MarkStateRepository:
         async with self._db.transaction() as db:
             for table in (
                 "tracked_marks", "tracked_homework", "seen_mail", "tracked_absences",
-                "outbox", "mark_history", "homework_done",
+                "outbox", "mark_history", "homework_done", "tracked_schedule",
             ):
                 await db.execute(f"DELETE FROM {table} WHERE telegram_id = ?", (telegram_id,))
 

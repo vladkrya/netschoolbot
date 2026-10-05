@@ -846,7 +846,7 @@ async def switch_student(request: web.Request) -> web.Response:
 
 NOTIFICATION_KEYS = (
     "grades", "changes", "deletes", "homework", "mail", "weekly_summary", "evening_summary",
-    "absences",
+    "schedule", "absences",
 )
 
 

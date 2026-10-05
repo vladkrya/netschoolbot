@@ -63,6 +63,7 @@ const NOTIFY_LABELS = {
   mail: 'Школьная почта',
   weekly_summary: 'Сводка по понедельникам',
   evening_summary: 'Вечером — сводка на завтра',
+  schedule: 'Замены и отмены уроков',
   absences: 'Новые пропуски',
 };
 

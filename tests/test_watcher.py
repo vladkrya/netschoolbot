@@ -814,3 +814,14 @@ class TestTimezone:
     async def test_timezone_persists(self, users):
         await users.save(make_user(timezone="Asia/Novosibirsk"))
         assert (await users.get(1)).timezone == "Asia/Novosibirsk"
+
+
+class TestStartOfYear:
+    async def test_homework_is_notified_before_first_mark(self, users, watcher, diary, notifier):
+        """1 сентября оценок ещё нет — это не повод молчать о заданиях."""
+        await users.save(make_user())
+        diary.homework = [HomeworkRecord("Алгебра", dt.date(2026, 9, 2), "ДЗ", "№ 1")]
+        await watcher.run_once()
+        diary.homework.append(HomeworkRecord("Физика", dt.date(2026, 9, 3), "ДЗ", "§ 1"))
+        await watcher.run_once()
+        assert [h.subject for h in notifier.homework] == ["Физика"]

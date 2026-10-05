@@ -149,6 +149,8 @@ class NotificationPrefs:
     weekly_summary: bool = False
     # Вечером — расписание и задания на следующий учебный день.
     evening_summary: bool = False
+    # Замены, отмены и смена кабинета на ближайшую неделю.
+    schedule: bool = False
     # Новые пропуски — только мобильный режим: в веб-дневнике отметок посещаемости нет.
     absences: bool = False
 

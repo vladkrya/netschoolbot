@@ -25,6 +25,7 @@ def settings_menu(user: User) -> InlineKeyboardMarkup:
         [toggle("Школьная почта", user.notifications.mail, "mail")],
         [toggle("Сводка по понедельникам", user.notifications.weekly_summary, "weekly")],
         [toggle("Вечером — сводка на завтра", user.notifications.evening_summary, "evening")],
+        [toggle("Замены и отмены уроков", user.notifications.schedule, "schedule")],
         # Отметки посещаемости есть только в мобильном API.
         *(
             [[toggle("Новые пропуски", user.notifications.absences, "absences")]]

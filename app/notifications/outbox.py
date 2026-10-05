@@ -16,6 +16,7 @@ from enum import Enum
 from typing import Any
 
 from ..domain.models import MarkKind
+from .schedule_diff import ScheduleChange
 from ..domain.records import (
     AbsenceRecord,
     Attachment,
@@ -29,6 +30,7 @@ class OutboxKind(str, Enum):
     MARKS = "marks"
     HOMEWORK = "homework"
     ABSENCES = "absences"
+    SCHEDULE = "schedule"
 
 
 @dataclass(frozen=True, slots=True)
@@ -141,15 +143,31 @@ def _absence_from_dict(data: dict[str, Any]) -> AbsenceRecord:
     )
 
 
+def _schedule_to_dict(item: ScheduleChange) -> dict[str, Any]:
+    return {"day": item.day.isoformat(), "number": item.number, "kind": item.kind, "old": item.old, "new": item.new}
+
+
+def _schedule_from_dict(data: dict[str, Any]) -> ScheduleChange:
+    return ScheduleChange(
+        day=dt.date.fromisoformat(data["day"]),
+        number=int(data.get("number") or 0),
+        kind=data["kind"],
+        old=data.get("old", ""),
+        new=data.get("new", ""),
+    )
+
+
 _ENCODERS = {
     OutboxKind.MARKS: _event_to_dict,
     OutboxKind.HOMEWORK: _homework_to_dict,
     OutboxKind.ABSENCES: _absence_to_dict,
+    OutboxKind.SCHEDULE: _schedule_to_dict,
 }
 _DECODERS = {
     OutboxKind.MARKS: _event_from_dict,
     OutboxKind.HOMEWORK: _homework_from_dict,
     OutboxKind.ABSENCES: _absence_from_dict,
+    OutboxKind.SCHEDULE: _schedule_from_dict,
 }
 
 
