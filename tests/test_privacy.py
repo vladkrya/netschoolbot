@@ -49,7 +49,7 @@ async def test_explicit_storage_and_next_login(app, users, login_state, monkeypa
     assert login.await_args.args[0].credentials.login == 'remembered'
 
 
-async def test_storage_choice_and_qr_priority(login_state):
+async def test_storage_choice_and_login_order(login_state):
     callback = FakeCallback('login:esia')
     await auth.ask_save_credentials(callback, login_state)
     assert await login_state.get_state() == auth.Login.remember.state
@@ -57,8 +57,11 @@ async def test_storage_choice_and_qr_priority(login_state):
     assert (await login_state.get_data())['remember'] is False
     assert await login_state.get_state() == auth.Login.username.state
     rows = keyboards.login_methods().inline_keyboard
-    assert rows[0][0].callback_data == 'login:qr'
-    assert {r[0].callback_data for r in rows} >= {'login:password', 'login:esia'}
+    assert [r[0].callback_data for r in rows] == [
+        'login:password', 'login:qr', 'login:esia', 'login:cancel',
+    ]
+    assert all(r[0].style is None for r in rows)
+    assert all('рекомендуется' not in r[0].text for r in rows)
 
 
 async def test_session_encryption_migration_and_rotation(db, users):

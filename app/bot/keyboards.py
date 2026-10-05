@@ -124,8 +124,8 @@ def subjects(names: list[str], *, prefix: str = "subject") -> InlineKeyboardMark
 def login_methods() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="📱 QR-код Госуслуг (рекомендуется)", callback_data="login:qr", style="primary")],
             [InlineKeyboardButton(text="🔑 Логин и пароль школы", callback_data="login:password")],
+            [InlineKeyboardButton(text="📱 QR-код Госуслуг", callback_data="login:qr")],
             [InlineKeyboardButton(text="🏛 Госуслуги: логин и пароль", callback_data="login:esia")],
             [InlineKeyboardButton(text="❌ Отмена", callback_data="login:cancel")],
         ]
