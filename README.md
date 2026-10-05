@@ -262,4 +262,3 @@ python -m pytest
 Личный проект. Данные учеников хранятся на вашем сервере; веб-трафик `ns.ikrya.ru` идёт через ВМ yavds в Yandex Cloud, `ns2.ikrya.ru` — через Cloudflare.
 
 
-<!-- Security scan triggered at 2026-09-04 13:03:20 -->
