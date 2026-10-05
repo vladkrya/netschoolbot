@@ -336,7 +336,7 @@ def totals_from_mobile(
         terms: dict[str, dict[str, Any]] = {}
         for item in row.get("termTotals") or []:
             key = quarter_key_of_term((item.get("term") or {}).get("name"))
-            mark, average = _mark_code(item.get("markCode")), _number(item.get("avgMark"))
+            mark, average = (_mark_code(item.get("mark")) or _mark_code(item.get("markCode"))), _number(item.get("avgMark"))
             if key and (mark or average is not None):
                 terms[key] = {"mark": mark, "average": average}
 
@@ -344,7 +344,7 @@ def totals_from_mobile(
         for item in row.get("yearTotals") or []:
             period = item.get("period") or {}
             kind = str(period.get("periodType") or period.get("periodName") or "").lower()
-            mark = _mark_code(item.get("markCode"))
+            mark = _mark_code(item.get("mark")) or _mark_code(item.get("markCode"))
             if kind in ("year", "годовая"):
                 year = mark or year
             elif kind in ("total", "итоговая"):

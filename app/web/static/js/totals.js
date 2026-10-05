@@ -7,6 +7,7 @@ import {
 } from './core.js';
 import { markBox, openMark } from './details.js';
 import { pushScreen } from './screens.js';
+import { openSheet, closeSheet } from './sheet.js';
 import { select, tap } from './haptics.js';
 import { getPref, setPref } from './prefs.js';
 import {
@@ -18,22 +19,69 @@ const SCHEME_TITLE = { q: 'Четверти', t: 'Триместры', h: 'По�
 
 const shortLabel = (q) => q.short || SHORT[q.key] || q.key;
 
+let selectedYear = null;
+let loadVersion = 0;
+let yearContext = null;
+
 export async function loadTotals(force = false) {
   const container = $('totalsContent');
-  if (!state.grades || force) {
-    container.innerHTML = skeleton(8);
+  const version = ++loadVersion;
+  if (!state.totals || force) {
+    const previous = state.totals || yearContext;
+    container.innerHTML = (previous ? yearPicker(previous) : '') + skeleton(8);
+    bindYearPicker(previous);
+    const params = new URLSearchParams();
+    if (selectedYear != null) params.set('year', selectedYear);
+    if (force) params.set('refresh', '1');
+    const path = `/api/marks${params.size ? `?${params}` : ''}`;
+    const accept = (data) => {
+      if (version !== loadVersion) return;
+      state.totals = data;
+      yearContext = data;
+      if (!data.archived) state.grades = data;
+      render();
+    };
     try {
-      const { data } = await api(`/api/marks${force ? '?refresh=1' : ''}`, {
-        onFresh: (fresh) => { state.grades = fresh.data; },
-      });
-      state.grades = data;
+      const { data } = await api(path, { onFresh: (fresh) => accept(fresh.data) });
+      accept(data);
+      if (!force && data.years == null && version === loadVersion) loadTotals(true);
     } catch (error) {
-      container.innerHTML = errorCard(error, 'totalsRetry');
+      if (version !== loadVersion) return;
+      container.innerHTML = (previous ? yearPicker(previous) : '') + errorCard(error, 'totalsRetry');
+      bindYearPicker(previous);
       $('totalsRetry')?.addEventListener('click', () => loadTotals(true));
-      return;
     }
+    return;
   }
   render();
+}
+
+function yearPicker(data) {
+  if (!data) return '';
+  return `<div class="totals-year"><button class="year-pill" id="totalsYear" aria-label="Выбрать учебный год">${esc(data.year || '')}${data.years?.length > 1 ? ' ▾' : ''}</button>
+    ${data.class_name ? `<span class="muted">${esc(data.class_name)} класс</span>` : ''}</div>`;
+}
+
+function bindYearPicker(data) {
+  const button = $('totalsYear');
+  if (!button) return;
+  button.disabled = !(data?.years?.length > 1);
+  button.onclick = () => {
+    select();
+    const body = openSheet('Учебный год', `<div class="year-choices">${data.years.map((year) =>
+      `<button class="btn ${year.id === data.year_id ? '' : 'outline'}" data-year="${year.id}"><span>${esc(year.name)}</span><span>${esc(year.class_name ? `${year.class_name} класс` : '')}${year.current ? ' · текущий' : ''}</span></button>`
+    ).join('')}</div>`);
+    body.querySelectorAll('[data-year]').forEach((choice) => choice.onclick = () => {
+      const year = data.years.find((item) => item.id === Number(choice.dataset.year));
+      closeSheet();
+      if (year.id === data.year_id) return;
+      selectedYear = year.current ? null : year.id;
+      yearContext = { ...data, year: year.name, year_id: year.id, class_name: year.class_name };
+      state.totals = null;
+      select();
+      loadTotals(true);
+    });
+  };
 }
 
 /** Цвет выставленной оценки: «5» — зелёный … «2» — красный. */
@@ -47,14 +95,16 @@ function quarterMarks(subject, key) {
 }
 
 function render() {
-  const data = state.grades;
+  const data = state.totals;
   const quarters = data.quarters || Object.keys(SHORT).map((key) => ({ key }));
   // Годовая оценка есть только в мобильном режиме, где итоги приходят с сервера.
   const hasYear = data.subjects.some((subject) => subject.totals?.year);
+  const hasFinal = data.subjects.some((subject) => subject.totals?.final);
   const head = `<div class="tt-row tt-head">
-      <div class="tt-subject">${SCHEME_TITLE[quarters[0]?.key?.[0]] || 'Периоды'} <span class="year-pill">${esc(data.year || '')}</span></div>
+      <div class="tt-subject">${new Set(quarters.map((q) => q.key[0])).size > 1 ? 'Периоды' : SCHEME_TITLE[quarters[0]?.key?.[0]] || 'Периоды'}</div>
       ${quarters.map((q) => `<div class="tt-cell ${q.key === data.current_quarter ? 'now' : ''}">${shortLabel(q)}</div>`).join('')}
       ${hasYear ? '<div class="tt-cell">Год</div>' : ''}
+      ${hasFinal ? '<div class="tt-cell">Итог</div>' : ''}
     </div>`;
 
   const rows = data.subjects.map((subject, index) => `
@@ -64,21 +114,39 @@ function render() {
           .map((q) => {
             // Выставленная оценка за четверть важнее расчётного среднего.
             const official = subject.totals?.terms?.[q.key]?.mark;
-            const avg = weightedAverage(quarterMarks(subject, q.key));
+            const avg = subject.totals?.terms?.[q.key]?.average ?? weightedAverage(quarterMarks(subject, q.key));
             const grade = official ? markGrade(official) : avg == null ? '' : avgClass(avg, thresholdsFor(subject.subject));
             return `<button class="tt-cell ${official ? 'official' : ''} ${grade}" data-subject="${index}" data-q="${q.key}">${official ? esc(official) : formatAverage(avg)}</button>`;
           })
           .join('')}
         ${hasYear ? `<div class="tt-cell official ${markGrade(subject.totals?.year)}">${esc(subject.totals?.year || '')}</div>` : ''}
+        ${hasFinal ? `<div class="tt-cell official ${markGrade(subject.totals?.final)}">${esc(subject.totals?.final || '')}</div>` : ''}
       </div>`);
 
   const container = $('totalsContent');
-  container.innerHTML = `<div class="totals-table">${head}${rows.join('')}</div>`;
+  container.innerHTML = yearPicker(data) + (data.subjects.length
+    ? `<div class="totals-table" style="--totals-columns:${quarters.length + Number(hasYear) + Number(hasFinal)}">${head}${rows.join('')}</div>`
+    : '<div class="empty">За этот учебный год итоги пока не опубликованы.</div>');
+  bindYearPicker(data);
   container.querySelectorAll('[data-subject]').forEach((cell) =>
     cell.addEventListener('click', () =>
       openSubject(data.subjects[Number(cell.dataset.subject)], cell.dataset.q)
     )
   );
+}
+
+function openArchivedSubject(subject) {
+  const data = state.totals;
+  const body = pushScreen('Итоги по предмету', `${data.year}${data.class_name ? ` · ${data.class_name} класс` : ''}`);
+  const totals = subject.totals || {};
+  body.innerHTML = `<div class="card"><div class="subject-title">${esc(subject.subject)}</div>
+    ${data.quarters.map((q) => {
+      const item = totals.terms?.[q.key];
+      return `<div class="avg-line"><span>${esc(q.label)}</span><strong class="${markGrade(item?.mark)}">${esc(item?.mark) || formatAverage(item?.average)}</strong></div>`;
+    }).join('')}
+    ${totals.year ? `<div class="avg-line"><span>Годовая</span><strong>${esc(totals.year)}</strong></div>` : ''}
+    ${totals.final ? `<div class="avg-line"><span>Итоговая</span><strong>${esc(totals.final)}</strong></div>` : ''}
+    <p class="muted small">Итоги из «Сетевого города» за выбранный учебный год.</p></div>`;
 }
 
 /** Сводка отметок посещаемости за четверть: «Посещаемость: Пропуск по болезни — 2, Опоздал — 1». */
@@ -108,7 +176,11 @@ function distribution(marks) {
 }
 
 function openSubject(subject, key) {
-  const quarter = (state.grades.quarters || []).find((q) => q.key === key);
+  const quarter = (state.totals.quarters || []).find((q) => q.key === key);
+  if (state.totals.archived) {
+    openArchivedSubject(subject);
+    return;
+  }
   const body = pushScreen('Итоги по предмету', `на ${dayMonth(isoToday())}`);
   const marks = quarterMarks(subject, key);
   const lessons = subject.lessons?.[key] || { total: 0, done: 0 };
@@ -201,7 +273,7 @@ function openSubject(subject, key) {
     if ($('totalsContent').querySelector('.totals-table')) render();
   });
 
-  if (state.grades.mobile) loadClassAverage(body, subject.subject, key);
+  if (state.totals.mobile) loadClassAverage(body, subject.subject, key);
 }
 
 /** Средний балл класса приходит отдельным запросом: только мобильное API, и не всегда. */

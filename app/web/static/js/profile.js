@@ -276,6 +276,7 @@ async function savePeriods(setting) {
     state.profile.periods = setting;
     // «Итоги» и калькулятор посчитаны по старым границам.
     state.grades = null;
+    state.totals = null;
     state.calc = null;
     notify('success');
     if (state.tab === 'totals') loadTotals(true);

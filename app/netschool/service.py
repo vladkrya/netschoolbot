@@ -126,7 +126,34 @@ class DiaryService:
             return None
         return recent_events_from(payload)
 
-    async def fetch_totals(self, user: User) -> dict[str, dict[str, Any]] | None:
+    async def fetch_school_years(self, user: User) -> list[dict[str, Any]] | None:
+        """История обучения выбранного ученика с настоящими названиями классов."""
+        if user.effective_api_mode is not ApiMode.MOBILE:
+            return None
+
+        async def call(client: Any):
+            return await client.education() if hasattr(client, "education") else None
+
+        rows = await self._mobile_only(user, call, "Годы обучения")
+        if not isinstance(rows, list):
+            return None
+        result = []
+        for index, row in enumerate(rows):
+            if not isinstance(row, dict):
+                continue
+            year = row.get("schoolyear") or {}
+            if not isinstance(year.get("id"), int) or year["id"] <= 0:
+                continue
+            result.append({
+                "id": year["id"], "name": str(year.get("name") or ""),
+                "class_name": str((row.get("class") or {}).get("name") or ""),
+                "start": str(year.get("startDate") or "")[:10],
+                "end": str(year.get("endDate") or "")[:10],
+                "current": index == 0,
+            })
+        return result
+
+    async def fetch_totals(self, user: User, *, school_year_id: int | None = None) -> dict[str, dict[str, Any]] | None:
         """Четвертные и годовые оценки по предметам одним запросом — только мобильный режим.
 
         `None` — данных нет (веб-режим или сбой), экран остаётся на расчётных
@@ -138,7 +165,8 @@ class DiaryService:
         async def call(client: Any) -> tuple[Any, Any] | None:
             if not hasattr(client, "totals"):
                 return None
-            return await client.totals(), await client.subjects_raw()
+            kwargs = {"school_year_id": school_year_id} if school_year_id is not None else {}
+            return await client.totals(**kwargs), await client.subjects_raw(**kwargs)
 
         fetched = await self._mobile_only(user, call, "Итоговые оценки")
         if fetched is None:
@@ -151,7 +179,7 @@ class DiaryService:
         }
         return totals_from_mobile(rows, names)
 
-    async def fetch_terms(self, user: User) -> list[dict[str, Any]] | None:
+    async def fetch_terms(self, user: User, *, school_year_id: int | None = None) -> list[dict[str, Any]] | None:
         """Учебные периоды школы с датами (`/terms`). Только мобильный режим."""
         if user.effective_api_mode is not ApiMode.MOBILE:
             return None
@@ -159,7 +187,7 @@ class DiaryService:
         async def call(client: Any) -> Any:
             if not hasattr(client, "terms"):
                 return None
-            return await client.terms()
+            return await client.terms(school_year_id=school_year_id) if school_year_id is not None else await client.terms()
 
         payload = await self._mobile_only(user, call, "Учебные периоды")
         return [t for t in payload if isinstance(t, dict)] if isinstance(payload, list) else None

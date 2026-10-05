@@ -36,6 +36,7 @@ from ..domain.periods import (
     periods,
     periods_from_terms,
     quarter_of,
+    term_key,
 )
 from .telegram_auth import InitDataError, verify_init_data
 
@@ -421,7 +422,23 @@ async def marks(request: web.Request) -> web.Response:
     число уроков, включая ещё не прошедшие.
     """
 
+    selected_year_id = None
+    if "year" in request.query:
+        try:
+            selected_year_id = int(request.query["year"])
+            if selected_year_id <= 0:
+                raise ValueError
+        except ValueError:
+            return json_error("Некорректный учебный год")
+
     async def produce(app: AppContext, user: User):
+        available_years = await app.diary.fetch_school_years(user)
+        selected = next((y for y in available_years or [] if y["id"] == selected_year_id), None)
+        if selected_year_id is not None and selected is None:
+            raise NetSchoolError(Reason.UNKNOWN, "Этот учебный год недоступен для выбранного ученика")
+        if selected and not selected["current"]:
+            return await _archived_totals(app, user, selected, available_years)
+        current = next((y for y in available_years or [] if y["current"]), None)
         today = user.today()
         year, source = await _user_periods(app, user, today)
         now_quarter = next((q for q in year if q.covers(today)), None)
@@ -499,6 +516,10 @@ async def marks(request: web.Request) -> web.Response:
                 }
             )
         return {
+            "years": available_years or [],
+            "year_id": current["id"] if current else None,
+            "class_name": current["class_name"] if current else "",
+            "archived": False,
             "subjects": subjects,
             "average": formatting.weighted_average(records),
             "current_quarter": now_quarter.key,
@@ -522,7 +543,41 @@ async def marks(request: web.Request) -> web.Response:
             "year": f"{year[0].start.year}/{year[0].start.year + 1}",
         }
 
-    return await _cached(request, "marks:year", produce)
+    section = f"marks:year:{selected_year_id}" if selected_year_id is not None else "marks:year"
+    return await _cached(request, section, produce)
+
+
+async def _archived_totals(app: AppContext, user: User, selected: dict, years: list) -> dict:
+    """Архив берётся из итогов выбранного года, без запросов текущего дневника."""
+    year_id = selected["id"]
+    totals = await app.diary.fetch_totals(user, school_year_id=year_id)
+    if totals is None:
+        raise NetSchoolError(Reason.SERVER_UNAVAILABLE, "Не удалось получить итоги за выбранный год")
+    terms = await app.diary.fetch_terms(user, school_year_id=year_id) or []
+    columns = {}
+    for term in terms:
+        key = term_key(term.get("name"))
+        if key:
+            columns[key] = {"key": key, "label": str(term["name"]), "short": str(term["name"]),
+                            "start": str(term.get("startDate") or "")[:10],
+                            "end": str(term.get("endDate") or "")[:10]}
+    for subject in totals.values():
+        for key in subject["terms"]:
+            if key not in columns:
+                label = {"q": "четверть", "h": "полугодие", "t": "триместр"}[key[0]]
+                columns[key] = {"key": key, "label": f"{key[1:]} {label}", "short": f"{key[1:]} {label}"}
+    for key, column in columns.items():
+        count = {"q": 4, "h": 2, "t": 3}[key[0]]
+        column["short"] = f"{key[1:]}/{count}" + ({"h": " п/г", "t": " тр."}.get(key[0], ""))
+    return {
+        "years": years, "year_id": year_id, "year": selected["name"],
+        "class_name": selected["class_name"], "archived": True, "mobile": True,
+        "has_totals": bool(totals), "current_quarter": None, "average": None,
+        "periods_source": "school", "quarters": sorted(columns.values(), key=lambda q: q["key"]),
+        "subjects": [{"subject": name, "marks": [], "lessons": {}, "absences": {},
+                      "teacher": "", "average": None, "count": 0, "totals": item}
+                     for name, item in sorted(totals.items())],
+    }
 
 
 async def _user_periods(app: AppContext, user: User, today: dt.date) -> tuple[list[Quarter], str]:

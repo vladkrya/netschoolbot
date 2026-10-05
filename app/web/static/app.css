@@ -491,7 +491,14 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 
 /* ───────────────────────────── Итоги ───────────────────────────── */
 
-.totals-table { margin: 0 -12px; }
+.totals-table { margin: 0 -12px; overflow-x: auto; }
+.totals-table .tt-row { min-width: calc(110px + var(--totals-columns, 4) * 44px); }
+.totals-table .tt-cell { width: 44px; }
+.totals-table .tt-head { top: 0; }
+.totals-year { display: flex; align-items: center; gap: 12px; padding: 0 0 14px; }
+.totals-year .year-pill { margin: 0; font-size: 14px; padding: 8px 12px; }
+.year-choices { display: grid; gap: 10px; }
+.year-choices .btn { display: flex; justify-content: space-between; gap: 12px; }
 .tt-row {
   display: flex;
   align-items: center;

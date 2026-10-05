@@ -1067,3 +1067,95 @@ class TestMailAttachments:
         token = await app_context.miniapp.issue_token(user.telegram_id)
         data = (await (await client.get(f"{BASE}/api/profile", params={"token": token})).json())["data"]
         assert data["api_mode"] == "mobile"
+
+
+class TestSchoolYearHistory:
+    async def test_history_uses_school_class_names(self, service, holder, users):
+        from unittest.mock import AsyncMock
+        user = await users.save(mobile_user())
+        await service.fetch_totals(user)
+        holder["mobile"].education = AsyncMock(return_value=[
+            {"schoolyear": {"id": 72, "name": "2026/2027", "startDate": "2026-09-01T00:00:00"},
+             "class": {"name": "9б"}},
+            {"schoolyear": {"id": 65, "name": "2025/2026"}, "class": {"name": "8б"}},
+        ])
+        years = await service.fetch_school_years(user)
+        assert [(y["id"], y["class_name"], y["current"]) for y in years] == [(72, "9б", True), (65, "8б", False)]
+        assert years[0]["start"] == "2026-09-01"
+
+    async def test_archive_requests_selected_year_without_changing_current(self, service, holder, users):
+        from unittest.mock import AsyncMock
+        user = await users.save(mobile_user())
+        await service.fetch_totals(user)
+        mobile = holder["mobile"]
+        mobile.totals = AsyncMock(return_value=TOTALS)
+        mobile.subjects_raw = AsyncMock(return_value=SUBJECTS)
+        mobile.terms = AsyncMock(return_value=TERMS)
+        assert (await service.fetch_totals(user, school_year_id=65))["Алгебра"]["year"] == "4"
+        await service.fetch_terms(user, school_year_id=65)
+        mobile.totals.assert_awaited_once_with(school_year_id=65)
+        mobile.subjects_raw.assert_awaited_once_with(school_year_id=65)
+        mobile.terms.assert_awaited_once_with(school_year_id=65)
+        await service.fetch_totals(user)
+        assert mobile.totals.await_args.kwargs == {}
+
+    def test_actual_mark_takes_precedence_over_status_code(self):
+        from app.netschool.mapping import totals_from_mobile
+        table = totals_from_mobile([{
+            "subjectId": 10,
+            "termTotals": [{"term": {"name": "1 четверть"}, "mark": "4", "markCode": "PointSystem"}],
+            "yearTotals": [
+                {"period": {"periodType": "Year"}, "mark": "5", "markCode": "PointSystem"},
+                {"period": {"periodType": "Total"}, "mark": 4, "markCode": "PointSystem"},
+            ],
+        }], {10: "Алгебра"})
+        assert table["Алгебра"] == {"terms": {"q1": {"mark": "4", "average": None}}, "year": "5", "final": "4"}
+
+    async def test_archive_api_returns_all_periods_and_separate_cache(self, client, app_context, users, monkeypatch):
+        from unittest.mock import AsyncMock
+        from tests.test_web import BASE
+        user = await users.save(mobile_user())
+        token = await app_context.miniapp.issue_token(user.telegram_id)
+        years = [{"id": 72, "name": "2026/2027", "class_name": "9б", "current": True},
+                 {"id": 65, "name": "2025/2026", "class_name": "8б", "current": False}]
+        monkeypatch.setattr(app_context.diary, "fetch_school_years", AsyncMock(return_value=years))
+        old = {"Алгебра": {"terms": {"q1": {"mark": "4", "average": 4.3},
+                                      "h2": {"mark": "5", "average": None}}, "year": "5", "final": "4"}}
+        totals = AsyncMock(return_value=old)
+        monkeypatch.setattr(app_context.diary, "fetch_totals", totals)
+        monkeypatch.setattr(app_context.diary, "fetch_terms", AsyncMock(return_value=[]))
+        period = AsyncMock(side_effect=AssertionError("Архив не должен запрашивать текущий дневник"))
+        monkeypatch.setattr(app_context.diary, "fetch_period", period)
+        await app_context.cache.put(user.telegram_id, "marks:year", {"current": True})
+        response = await client.get(f"{BASE}/api/marks", params={"token": token, "year": 65})
+        assert response.status == 200
+        data = (await response.json())["data"]
+        assert (data["year"], data["class_name"], data["archived"]) == ("2025/2026", "8б", True)
+        assert {q["key"] for q in data["quarters"]} == {"q1", "h2"}
+        assert data["subjects"][0]["totals"]["final"] == "4"
+        assert totals.await_count == 1
+        assert totals.await_args.kwargs == {"school_year_id": 65}
+        assert totals.await_args.args[0].telegram_id == user.telegram_id
+        assert (await app_context.cache.get(user.telegram_id, "marks:year"))[0] == {"current": True}
+        assert (await app_context.cache.get(user.telegram_id, "marks:year:65"))[0]["year_id"] == 65
+        # Чужой/несуществующий год не передаётся школьному серверу.
+        response = await client.get(f"{BASE}/api/marks", params={"token": token, "year": 999})
+        assert not (await response.json())["ok"]
+        assert totals.await_count == 1
+        response = await client.get(f"{BASE}/api/marks", params={"token": token, "year": "wrong"})
+        assert response.status == 400
+
+    async def test_archive_outage_keeps_saved_totals(self, client, app_context, users, monkeypatch):
+        from unittest.mock import AsyncMock
+        from tests.test_web import BASE
+        user = await users.save(mobile_user())
+        token = await app_context.miniapp.issue_token(user.telegram_id)
+        monkeypatch.setattr(app_context.diary, "fetch_school_years", AsyncMock(return_value=[
+            {"id": 65, "name": "2025/2026", "class_name": "8б", "current": False}]))
+        monkeypatch.setattr(app_context.diary, "fetch_totals", AsyncMock(return_value=None))
+        saved = {"year_id": 65, "subjects": [{"subject": "Алгебра", "totals": {"year": "5"}}]}
+        await app_context.cache.put(user.telegram_id, "marks:year:65", saved)
+        response = await client.get(f"{BASE}/api/marks", params={"token": token, "year": 65, "refresh": 1})
+        result = await response.json()
+        assert result["stale"] and result["data"] == saved
+        assert (await app_context.cache.get(user.telegram_id, "marks:year:65"))[0] == saved

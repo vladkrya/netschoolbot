@@ -16,6 +16,7 @@ export const state = {
   date: null,
   scheduleWeek: 0,
   grades: null,
+  totals: null,
   homework: null,
   homeworkPast: null,
   // Ключи выполненных заданий (Set): общие с /dz в боте.

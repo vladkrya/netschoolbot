@@ -126,6 +126,9 @@ class FakeDiary:
             raise self.token_error
         return self.token_check
 
+    async def fetch_school_years(self, user):
+        return None
+
     async def fetch_totals(self, user):
         return self.totals
 
