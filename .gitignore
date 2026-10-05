@@ -21,3 +21,6 @@ __pycache__/
 *.sqlite3
 *.sqlite3-wal
 *.sqlite3-shm
+
+# Шаблон настроек хранится в репозитории
+!.env.example
