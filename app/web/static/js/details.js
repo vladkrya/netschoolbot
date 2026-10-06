@@ -4,7 +4,7 @@
 
 import {
   absenceText, attachmentsHtml, esc, escRich, forDate, fullDate, isAbsence,
-  markClass, observedTime,
+  markClass,
 } from './core.js';
 import { pushScreen } from './screens.js';
 import { ICONS } from './icons.js';
@@ -46,6 +46,22 @@ function timeRange(lesson) {
   return lesson.time || [lesson.start, lesson.end].filter(Boolean).join(' – ');
 }
 
+function bindSubject(body, subject, iso) {
+  body.querySelector('[data-subject-results]')?.addEventListener('click', async () => {
+    const { openSubjectForDate } = await import('./totals.js');
+    openSubjectForDate(subject, iso);
+  });
+}
+
+function compactTime(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return new Intl.DateTimeFormat('ru-RU', {
+    day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
+  }).format(date).replace(',', '');
+}
+
 export function openLesson(lesson, iso) {
   const body = pushScreen(`Урок ${lesson.number ?? ''}`.trim(), fullDate(iso));
   const status = lessonStatus(lesson, iso);
@@ -55,7 +71,6 @@ export function openLesson(lesson, iso) {
   const info = [
     ['Кабинет', lesson.room],
     ['Учитель', lesson.teacher],
-    ['Тема урока', lesson.topic],
   ].filter(([, value]) => value);
 
   const blocks = [
@@ -82,14 +97,18 @@ export function openLesson(lesson, iso) {
   body.innerHTML = `
     <div class="card lesson-head">
       <div class="lesson-title"><span class="lc-num">${esc(lesson.number ?? '')}</span>
-        <span class="link">${esc(lesson.subject)}</span></div>
+        <button class="link subject-link" data-subject-results>${esc(lesson.subject)}</button></div>
       ${lesson.is_elective ? '<div class="lc-badges"><span class="elective-badge">Факультатив</span></div>' : ''}
       <div class="lc-bottom"><span>${esc(timeRange(lesson))}</span><span>${esc(status)}</span></div>
     </div>
     ${info.length ? `<div class="info-strip">${info
       .map(([label, value]) => `<div class="info-card"><div class="info-label">${label}</div><div class="info-value">${esc(value)}</div></div>`)
       .join('')}</div>` : ''}
+    ${lesson.topic ? `<details class="info-card info-topic"><summary><span class="info-label">Тема урока</span>
+      <span class="topic-preview">${esc(lesson.topic)}</span></summary><div class="info-value">${esc(lesson.topic)}</div></details>` : ''}
     ${blocks.join('') || '<div class="empty">Заданий на этот урок нет</div>'}`;
+
+  bindSubject(body, lesson.subject, iso);
 
   const marks = realMarks(lesson.marks);
   body.querySelectorAll('[data-mark]').forEach((el) =>
@@ -103,19 +122,21 @@ export function openLesson(lesson, iso) {
 export function openHomework(item, topic = '') {
   topic = topic || item.topic || '';
   const body = pushScreen('Домашнее задание', forDate(item.date));
-  const observed = observedTime(item.observed_at);
-  const published = observedTime(item.published_at);
+  const observed = compactTime(item.observed_at);
+  const published = compactTime(item.published_at);
+  const closeTimes = published && observed && Math.abs(new Date(item.observed_at) - new Date(item.published_at)) <= 10 * 60 * 1000;
+  const timestamps = [published ? `Опубликовано ${published}` : '', observed && !closeTimes ? `Впервые замечено ${observed}` : ''].filter(Boolean);
   body.innerHTML = `
     <div class="detail">
-      <h2>${esc(item.subject)}</h2>
+      <h2><button class="subject-link" data-subject-results>${esc(item.subject)}</button></h2>
+      <div class="detail-weight">Вес задания: ${esc(item.weight || 1)}</div>
       ${topic ? `<div class="detail-label">Тема урока</div><div class="detail-text">${esc(topic)}</div>` : ''}
-      <div class="detail-row"><span class="detail-label">Задание</span>${item.type ? `<span class="muted small">${esc(item.type)}</span>` : ''}</div>
+      <div class="assignment-heading"><span class="detail-label">Задание</span>
+        ${timestamps.length ? `<span class="assignment-times">${timestamps.map(esc).join('<br>')}</span>` : ''}</div>
       <div class="detail-text">${escRich(item.text) || '<span class="muted">—Не указано—</span>'}</div>
-      ${item.weight ? `<div class="detail-row"><span class="detail-label">Вес задания</span><span class="muted small">${esc(String(item.weight))}</span></div>` : ''}
-      ${published ? `<div class="detail-label">Опубликовано учителем</div><div class="detail-text">${esc(published)}</div>` : ''}
-      ${observed ? `<div class="detail-label">Впервые замечено ботом</div><div class="detail-text">${esc(observed)}</div>` : ''}
       ${attachmentsHtml(item.attachments)}
     </div>`;
+  bindSubject(body, item.subject, item.date);
 }
 
 /** Текст, который на самом деле тема, а не повтор оценки или типа работы. */
@@ -135,14 +156,15 @@ export function openMark(mark, subject, lessonTopic = '') {
   const work = realTopic(mark.topic, mark);
   body.innerHTML = `
     <div class="detail">
-      <h2>${esc(subject || mark.subject)}</h2>
+      <h2><button class="subject-link" data-subject-results>${esc(subject || mark.subject)}</button></h2>
+      <div class="detail-weight">Вес задания: ${esc(mark.weight || 1)}</div>
       <div class="detail-label">Тема урока</div>
       <div class="detail-text">${esc(topic) || '<span class="muted">—Не указана—</span>'}</div>
       ${work && work !== topic ? `<div class="detail-label">Работа</div><div class="detail-text">${esc(work)}</div>` : ''}
-      <div class="muted small">Вес задания ${esc(mark.weight || 1)}</div>
       <div class="grade-row ${isAbsence(mark.mark) ? 'absence' : ''}">
         <span>${isAbsence(mark.mark) ? esc(absenceText(mark.mark)) : 'Оценка'}</span>
         ${markBox(mark.mark)}
       </div>
     </div>`;
+  bindSubject(body, subject || mark.subject, mark.date);
 }

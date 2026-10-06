@@ -1002,7 +1002,7 @@ class TestMailAttachments:
         user = await users.save(mobile_user())
         calls = []
 
-        async def send_mail(user, to, subject, text, attachments=None):
+        async def send_mail(user, to, subject, text, attachments=None, *, notify=False):
             calls.append((to, subject, text, attachments))
 
         app_context.diary.send_mail = send_mail
@@ -1067,7 +1067,9 @@ class TestMailAttachments:
         await service.send_mail(user, ["a"], "Тема", "Текст", [("a.txt", b"1")])
 
         sent = holder["mobile"].sent
-        assert sent[0][3] == {} and sent[1][3] == {"attachments": [("a.txt", b"1")]}
+        assert sent[0][3] == {"notify": False} and sent[1][3] == {"attachments": [("a.txt", b"1")], "notify": False}
+        await service.send_mail(user, ["a"], "Тема", "Текст", notify=True)
+        assert sent[2][3] == {"notify": True}
 
     async def test_web_mode_refuses_files_and_sends_nothing(self, service, holder, users):
         user = await users.save(make_user())
@@ -1085,6 +1087,42 @@ class TestMailAttachments:
 
 
 class TestSchoolYearHistory:
+    async def test_recipient_categories_follow_address_book_hierarchy(self, service, holder, users):
+        from unittest.mock import AsyncMock
+        user = await users.save(mobile_user())
+        await service.fetch_totals(user)
+        holder["mobile"].address_book = AsyncMock(return_value=[
+            {"groupType": "Teachers", "subGroups": [{"groupName": "9б", "recipients": [{"id": "t", "name": "Учитель"}]}]},
+            {"groupType": "Parents", "subGroups": [{"groupName": "Ученик", "recipients": [{"id": "p", "name": "Родитель"}]}]},
+            {"groupType": "Admins", "recipients": [{"id": "a", "name": "Администратор"}]},
+            {"groupType": "Students", "recipients": [{"id": "s", "name": "Ученик"}]},
+        ])
+        recipients = await service.fetch_recipients(user)
+        assert {r["id"]: r["category"] for r in recipients} == {
+            "t": "Учителя", "p": "Родители", "a": "Администрация", "s": "Ученики"}
+
+    async def test_mail_receipt_option_reaches_service_for_json_and_files(self, client, app_context, users, monkeypatch):
+        from unittest.mock import AsyncMock
+        from aiohttp import FormData
+        from tests.test_web import BASE
+        user = await users.save(mobile_user())
+        token = await app_context.miniapp.issue_token(user.telegram_id)
+        send = AsyncMock()
+        monkeypatch.setattr(app_context.diary, "send_mail", send, raising=False)
+        for requested in (False, True):
+            response = await client.post(f"{BASE}/api/mail/send", params={"token": token},
+                json={"to": ["a"], "subject": "Тема", "text": "Текст", "notify": requested})
+            assert (await response.json())["ok"]
+            assert send.await_args.kwargs == {"notify": requested}
+        form = FormData()
+        for name, value in (("to", "a"), ("subject", "Тема"), ("text", "Текст"), ("notify", "true")):
+            form.add_field(name, value)
+        form.add_field("file", b"data", filename="test.txt")
+        response = await client.post(f"{BASE}/api/mail/send", params={"token": token}, data=form)
+        assert (await response.json())["ok"]
+        assert send.await_args.kwargs == {"notify": True}
+        assert send.await_args.args[-1] == [("test.txt", b"data")]
+
     async def test_archive_subject_uses_old_term_dates_and_filters_records(self, client, app_context, users, monkeypatch):
         from unittest.mock import AsyncMock
         from app.domain.records import DiaryDay, Lesson, MarkRecord

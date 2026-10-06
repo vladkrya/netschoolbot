@@ -373,12 +373,30 @@ class DiaryService:
         """Кому можно написать: учителя и администрация школы."""
 
         async def call(client: Any) -> list[dict[str, str]]:
+            if user.effective_api_mode is ApiMode.MOBILE and hasattr(client, "address_book"):
+                result = {}
+                categories = {"Teachers": "Учителя", "ClassTeachers": "Учителя", "Students": "Ученики",
+                              "ClassStudents": "Ученики", "Parents": "Родители", "ClassParents": "Родители",
+                              "Admins": "Администрация", "Principals": "Администрация"}
+                def walk(group, category="Другие"):
+                    category = categories.get(group.get("groupType"), category)
+                    for person in group.get("recipients") or []:
+                        if person.get("id"):
+                            identity = str(person["id"])
+                            result.setdefault(identity, {"id": identity, "name": str(person.get("name") or ""),
+                                "organization": str(person.get("organizationName") or ""), "category": category})
+                    for child in group.get("subGroups") or []:
+                        walk(child, category)
+                for group in await client.address_book():
+                    walk(group)
+                return list(result.values())
             items = await client.mail_recipients()
             return [
                 {
                     "id": str(getattr(item, "id", "")),
                     "name": str(getattr(item, "name", "") or ""),
                     "organization": str(getattr(item, "organization_name", "") or ""),
+                    "category": str(getattr(item, "category", "") or "Другие"),
                 }
                 for item in items
                 if getattr(item, "id", "")
@@ -393,6 +411,7 @@ class DiaryService:
         subject: str,
         text: str,
         attachments: list[tuple[str, bytes]] | None = None,
+        *, notify: bool = False,
     ) -> None:
         """Отправить письмо. Файлы `[(имя, байты)]` — только в мобильном режиме."""
         if attachments and user.effective_api_mode is not ApiMode.MOBILE:
@@ -405,10 +424,10 @@ class DiaryService:
         # мог бы послать письмо дважды.
         async with self._pool.acquire(user) as client:
             try:
+                kwargs = {"notify": notify}
                 if attachments:
-                    await client.mail_send(subject, text, to, attachments=attachments)
-                else:
-                    await client.mail_send(subject, text, to)
+                    kwargs["attachments"] = attachments
+                await client.mail_send(subject, text, to, **kwargs)
             except Exception as exc:
                 raise wrap(exc, context=f"письмо от {user.telegram_id}") from exc
 

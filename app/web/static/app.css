@@ -443,23 +443,28 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .sched-lesson .lc-num { min-width: 22px; height: 22px; font-size: 12px; border-radius: 7px; }
 
 .info-strip {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
-  overflow-x: auto;
-  margin: 0 -12px 10px;
-  padding: 0 12px;
-  scrollbar-width: none;
+  margin-bottom: 10px;
 }
 .info-strip::-webkit-scrollbar { display: none; }
 .info-card {
-  flex: none;
-  max-width: 80%;
+  min-width: 0;
   background: var(--card);
   border-radius: var(--radius);
   padding: 10px 12px;
 }
 .info-label { font-size: 12px; color: var(--text2); }
-.info-value { font-weight: 600; font-size: 14px; }
+.info-value { font-weight: 500; font-size: 14px; overflow-wrap: anywhere; }
+.info-topic { margin-bottom: 10px; }
+.info-topic summary { cursor: pointer; }
+.info-topic .info-label { display: inline; }
+.topic-preview { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; font-size: 14px; margin-top: 4px; }
+.info-topic[open] .topic-preview { display: none; }
+.info-topic[open] .info-value { margin-top: 6px; line-height: 1.45; }
+.subject-link { text-align: left; font: inherit; overflow-wrap: anywhere; }
+.lesson-title .subject-link { min-width: 0; }
 
 .task-block {
   display: block;
@@ -478,6 +483,24 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .detail h2 { font-size: 24px; margin-bottom: 8px; }
 .detail-label { font-size: 13px; color: var(--text2); margin-top: 10px; }
 .detail-row { display: flex; justify-content: space-between; gap: 8px; margin-top: 12px; font-size: 13px; }
+.detail-row .detail-label { margin-top: 0; }
+.detail-weight { color: var(--text2); font-size: 13px; margin-bottom: 14px; }
+.assignment-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-top: 18px; }
+.assignment-heading .detail-label { flex: none; margin-top: 0; }
+.assignment-times { font-size: 12px; color: var(--text2); text-align: right; line-height: 1.5; }
+.mail-envelope { padding: 14px; background: var(--card); border-radius: var(--radius); margin-bottom: 16px; }
+.mail-envelope > .detail-label { margin-top: 0; }
+.mail-envelope h2 { font-size: 20px; line-height: 1.35; overflow-wrap: anywhere; margin: 4px 0 16px; }
+.mail-meta { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 16px; row-gap: 8px; font-size: 13px; }
+.mail-meta dt { color: var(--text2); }
+.mail-meta dd { margin: 0; overflow-wrap: anywhere; }
+.mail-message-text { line-height: 1.5; }
+.recipient-group { margin-top: 12px; }
+.recipient-group > summary { cursor: pointer; padding: 10px 4px; font-weight: 600; }
+.recipient-group > summary span { float: right; font-weight: 400; }
+.recipient { text-align: left; }
+.compose-notify { margin: 10px 0; font-size: 14px; }
+.compose-notify .switch:checked::after { content: '✓'; color: var(--primary); display: grid; place-items: center; font-weight: 700; }
 .detail-text { font-size: 16px; margin: 4px 0 8px; white-space: pre-wrap; word-break: break-word; }
 .grade-row {
   display: flex;

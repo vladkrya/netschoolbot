@@ -815,7 +815,7 @@ async def mail_recipients(request: web.Request) -> web.Response:
     async def produce(app: AppContext, user: User):
         return {"items": await app.diary.fetch_recipients(user)}
 
-    return await _cached(request, "mail:recipients", produce)
+    return await _cached(request, "mail:recipients:v2", produce)
 
 
 # Вложения к письму. Общий предел держим меньше client_max_body_size у nginx.
@@ -835,7 +835,7 @@ def _safe_filename(name: str | None) -> str:
     return base[:150] or "file"
 
 
-async def _read_mail_request(request: web.Request) -> tuple[list[str], str, str, list[tuple[str, bytes]]]:
+async def _read_mail_request(request: web.Request) -> tuple[list[str], str, str, list[tuple[str, bytes]], bool]:
     """Разобрать запрос отправки: JSON без файлов или multipart с файлами.
 
     Multipart читается потоком с проверкой размера: слишком большой файл
@@ -847,7 +847,7 @@ async def _read_mail_request(request: web.Request) -> tuple[list[str], str, str,
         except ValueError as exc:
             raise _BadMail("Некорректный запрос") from exc
         to = [str(item) for item in (body.get("to") or []) if str(item).strip()]
-        return to, str(body.get("subject") or "").strip(), str(body.get("text") or "").strip(), []
+        return to, str(body.get("subject") or "").strip(), str(body.get("text") or "").strip(), [], body.get("notify") is True
 
     to: list[str] = []
     fields: dict[str, str] = {}
@@ -872,18 +872,18 @@ async def _read_mail_request(request: web.Request) -> tuple[list[str], str, str,
                 value = (await part.text()).strip()
                 if value:
                     to.append(value)
-            elif part.name in ("subject", "text"):
+            elif part.name in ("subject", "text", "notify"):
                 fields[part.name] = (await part.text()).strip()
     except (ValueError, AssertionError) as exc:
         raise _BadMail("Некорректный запрос") from exc
-    return to, fields.get("subject", ""), fields.get("text", ""), files
+    return to, fields.get("subject", ""), fields.get("text", ""), files, fields.get("notify") == "true"
 
 
 @routes.post("/api/mail/send")
 async def mail_send(request: web.Request) -> web.Response:
     app, user = context(request), current_user(request)
     try:
-        to, subject, text, files = await _read_mail_request(request)
+        to, subject, text, files, notify = await _read_mail_request(request)
     except _BadMail as exc:
         return json_error(str(exc))
     if not to:
@@ -894,7 +894,7 @@ async def mail_send(request: web.Request) -> web.Response:
         return json_error("Письмо слишком длинное")
     if any(not data for _, data in files):
         return json_error("Файл пустой")
-    await app.diary.send_mail(user, to, subject, text, files or None)
+    await app.diary.send_mail(user, to, subject, text, files or None, notify=notify)
     return web.json_response({"ok": True})
 
 

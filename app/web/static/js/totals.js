@@ -230,10 +230,9 @@ function render() {
   );
 }
 
-async function openArchivedSubject(subject, key) {
-  const data = state.totals;
+async function openArchivedSubject(subject, key, data = state.totals, existingBody = null) {
   const quarter = data.quarters.find((q) => q.key === key);
-  const body = pushScreen('Итоги по предмету', `${quarter?.label || ''} · ${data.year}`);
+  const body = existingBody || pushScreen('Итоги по предмету', `${quarter?.label || ''} · ${data.year}`);
   const load = async (force = false) => {
     showLoading(body, skeleton(3));
     const params = new URLSearchParams({ year: data.year_id, subject: subject.subject, quarter: key });
@@ -251,6 +250,31 @@ async function openArchivedSubject(subject, key) {
     }
   };
   load();
+}
+
+/** Переход из урока/задания с периодом, соответствующим его дате. */
+export async function openSubjectForDate(name, iso) {
+  const body = pushScreen('Итоги по предмету', name);
+  showLoading(body, skeleton(3));
+  try {
+    let data = state.grades || (await api('/api/marks')).data;
+    let quarter = data.quarters?.find((q) => q.start <= iso && iso <= q.end);
+    if (!quarter) {
+      const year = data.years?.find((y) => y.start <= iso && iso <= y.end);
+      if (year && !year.current) data = (await api(`/api/marks?year=${year.id}`)).data;
+      quarter = data.quarters?.find((q) => q.start <= iso && iso <= q.end);
+    }
+    const subject = data.subjects.find((s) => s.subject.trim().toLowerCase() === name.trim().toLowerCase());
+    if (!body.isConnected) return;
+    if (!subject || !quarter) {
+      body.innerHTML = '<div class="empty">Итоги по этому предмету за выбранный период недоступны.</div>';
+      return;
+    }
+    if (data.archived) openArchivedSubject(subject, quarter.key, data, body);
+    else openSubject(subject, quarter.key, body, data);
+  } catch (error) {
+    if (body.isConnected) body.innerHTML = errorCard(error);
+  }
 }
 
 /** Сводка отметок посещаемости за четверть: «Посещаемость: Пропуск по болезни — 2, Опоздал — 1». */

@@ -2,7 +2,7 @@
 'use strict';
 
 import {
-  $, api, attachmentsHtml, banner, errorCard, esc, escRich, shortDate, showFailure, showLoading, skeleton, state,
+  $, api, attachmentsHtml, banner, errorCard, esc, escRich, observedTime, shortDate, showFailure, showLoading, skeleton, state,
 } from './core.js';
 import { notify, select } from './haptics.js';
 import { ICONS } from './icons.js';
@@ -66,11 +66,13 @@ async function openMessage(id) {
   try {
     const { data } = await api(`/api/mail/${encodeURIComponent(id)}`);
     body.innerHTML = `
-      <div class="detail">
-        <h2>${esc(data.subject || 'Без темы')}</h2>
-        <div class="detail-row"><span class="detail-label">От кого</span><span>${esc(data.author)}</span></div>
-        ${data.sent ? `<div class="detail-row"><span class="detail-label">Дата</span><span>${esc(shortDate(data.sent.slice(0, 10)))}</span></div>` : ''}
-        <div class="detail-text">${escRich(data.text) || '<span class="muted">Пустое письмо</span>'}</div>
+      <div class="detail mail-detail">
+        <div class="mail-envelope">
+          <div class="detail-label">Тема:</div><h2>${esc(data.subject || 'Без темы')}</h2>
+          <dl class="mail-meta"><dt>От кого</dt><dd>${esc(data.author || 'Без отправителя')}</dd>
+          ${data.sent ? `<dt>Дата</dt><dd>${esc(observedTime(data.sent) || shortDate(data.sent.slice(0, 10)))}</dd>` : ''}</dl>
+        </div>
+        <div class="detail-text mail-message-text">${escRich(data.text) || '<span class="muted">Пустое письмо</span>'}</div>
         ${attachmentsHtml(data.attachments)}
       </div>`;
     // Письмо прочитано — отметка в списке без перезагрузки.
@@ -152,6 +154,7 @@ export async function openCompose() {
       <input class="field" id="composeSubject" maxlength="200" placeholder="Тема письма">
       <div class="detail-label">Сообщение</div>
       <textarea class="field" id="composeText" rows="8" maxlength="10000" placeholder="Текст письма"></textarea>
+      <label class="switch-row compose-notify"><span>Уведомить о прочтении</span><input type="checkbox" class="switch" id="composeNotify"></label>
       ${attach ? `<div class="detail-label">Вложения</div>
         <div id="composeFiles" class="compose-files"></div>
         <label class="btn secondary attach-btn">📎 Прикрепить файл
@@ -210,20 +213,27 @@ export async function openCompose() {
     const draw = (query = '') => {
       const needle = query.trim().toLowerCase();
       const list = recipients.filter((r) => !needle || `${r.name} ${r.organization}`.toLowerCase().includes(needle));
-      $('recipientList').innerHTML = list
+      const categories = ['Администрация', 'Учителя', 'Родители', 'Ученики', 'Другие'];
+      $('recipientList').innerHTML = categories.map((category) => {
+        const group = list.filter((r) => (r.category || 'Другие') === category).sort((a, b) => a.name.localeCompare(b.name, 'ru'));
+        if (!group.length) return '';
+        return `<details class="recipient-group"${needle ? ' open' : ''}><summary>${category}<span class="muted small">${group.length}</span></summary>` + group
         .map((r) => `<button class="recipient ${chosen.has(r.id) ? 'on' : ''}" data-id="${esc(r.id)}">
             <span class="avatar small" style="background:${avatarColor(r.name)}">${esc(r.name.trim()[0] || '?')}</span>
             <span class="recipient-main"><span>${esc(r.name)}</span><span class="muted small">${esc(r.organization)}</span></span>
             <span class="check">${chosen.has(r.id) ? '✓' : ''}</span>
           </button>`)
-        .join('') || '<div class="empty">Никого не нашлось</div>';
+        .join('') + '</details>';
+      }).join('') || '<div class="empty">Никого не нашлось</div>';
       $('recipientList').querySelectorAll('[data-id]').forEach((row) =>
         row.addEventListener('click', () => {
           select();
           const recipient = recipients.find((r) => String(r.id) === row.dataset.id);
           if (chosen.has(recipient.id)) chosen.delete(recipient.id);
           else chosen.set(recipient.id, recipient);
+          const opened = [...$('recipientList').querySelectorAll('details[open]')].map((group) => group.querySelector('summary').textContent);
           draw($('recipientSearch').value);
+          $('recipientList').querySelectorAll('details').forEach((group) => { group.open = opened.includes(group.querySelector('summary').textContent); });
           renderTo();
         })
       );
@@ -241,6 +251,7 @@ export async function openCompose() {
     const button = event.currentTarget;
     const subject = $('composeSubject').value.trim();
     const text = $('composeText').value.trim();
+    const notifyRead = $('composeNotify').checked;
     if (!chosen.size || !subject) {
       notify('error');
       banner(!chosen.size ? 'Выберите получателя' : 'Укажите тему письма', true);
@@ -256,9 +267,10 @@ export async function openCompose() {
         [...chosen.keys()].forEach((id) => payload.append('to', id));
         payload.append('subject', subject);
         payload.append('text', text);
+        payload.append('notify', String(notifyRead));
         files.forEach((file) => payload.append('file', file, file.name));
       } else {
-        payload = JSON.stringify({ to: [...chosen.keys()], subject, text });
+        payload = JSON.stringify({ to: [...chosen.keys()], subject, text, notify: notifyRead });
       }
       await api('/api/mail/send', { method: 'POST', body: payload });
       notify('success');

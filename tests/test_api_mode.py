@@ -30,7 +30,7 @@ class FakeMobile(FakeClient):
     async def classmeetings(self, *args):
         return []
 
-    async def mail_send(self, subject, text, to):
+    async def mail_send(self, subject, text, to, *, notify=False):
         self.sent = getattr(self, "sent", []) + [(subject, text, list(to))]
 
     async def is_alive(self):
@@ -192,7 +192,7 @@ async def test_mobile_mail_error_is_wrapped_and_not_repeated(db, from_web):
     service = DiaryService(pool, users)
     calls = []
 
-    async def failing(subject, text, to):
+    async def failing(subject, text, to, *, notify=False):
         calls.append(1)
         raise RuntimeError("HTTP 403")
 
