@@ -38,8 +38,11 @@ export function realMarks(marks) {
   return (marks || []).filter((m) => !isAbsence(m.mark));
 }
 
-export function markBox(mark, extra = '') {
-  return `<span class="mark-box ${markClass(mark)} ${extra}">${esc(mark)}</span>`;
+/** Оценка в рамке. weight — коэффициент маленькой цифрой в углу
+ *  (виден в новом дизайне, см. .mw в new.css). */
+export function markBox(mark, extra = '', weight = null) {
+  const coef = weight == null ? '' : `<sup class="mw">${esc(String(weight).replace('.', ','))}</sup>`;
+  return `<span class="mark-box ${markClass(mark)} ${extra}">${esc(mark)}${coef}</span>`;
 }
 
 function timeRange(lesson) {

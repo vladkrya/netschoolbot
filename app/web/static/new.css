@@ -505,58 +505,196 @@
 :root[data-design="new"] .sched-empty { padding-top: 6px; }
 :root[data-design="new"] .week-card:not(:has(.sched-list)) { opacity: .6; }
 
-/* ─────────────── «Оценки»: сводка и карточки предметов ─────────────── */
+/* ─────────────── «Оценки»: Liquid Glass ─────────────── */
+
+/* За стеклом — мягкие цветные пятна: без них размытию нечего преломлять. */
+:root[data-design="new"] #panel-totals,
+:root[data-design="new"] .screen.glassy { isolation: isolate; }
+:root[data-design="new"] #panel-totals { position: relative; }
+:root[data-design="new"] .screen.glassy::before,
+:root[data-design="new"] #panel-totals::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(42% 26% at 12% 18%, color-mix(in srgb, var(--primary) 38%, transparent), transparent 70%),
+    radial-gradient(38% 24% at 92% 34%, color-mix(in srgb, var(--g5) 30%, transparent), transparent 70%),
+    radial-gradient(46% 26% at 22% 62%, color-mix(in srgb, var(--g3) 22%, transparent), transparent 70%),
+    radial-gradient(40% 24% at 88% 86%, color-mix(in srgb, var(--primary) 26%, transparent), transparent 70%);
+}
+
+/* Стекло: полупрозрачная заливка, размытие, светлая кромка и блик сверху. */
+:root[data-design="new"] .glass {
+  background: color-mix(in srgb, var(--card) 58%, transparent);
+  -webkit-backdrop-filter: blur(22px) saturate(180%);
+  backdrop-filter: blur(22px) saturate(180%);
+  border: 1px solid var(--glass-edge);
+  box-shadow: 0 8px 24px rgba(16, 24, 40, .08), inset 0 1px 0 var(--glass-shine);
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  :root[data-design="new"] .glass { background: var(--card); }
+}
 
 :root[data-design="new"] .totals-cards { display: block; }
 :root[data-design="new"] .totals-year { padding-bottom: 12px; }
 :root[data-design="new"] .totals-year .year-pill {
   padding: 7px 14px;
   border-radius: 999px;
-  background: var(--card);
+  background: color-mix(in srgb, var(--card) 58%, transparent);
+  -webkit-backdrop-filter: blur(18px) saturate(180%);
+  backdrop-filter: blur(18px) saturate(180%);
+  border: 1px solid var(--glass-edge);
   color: var(--text);
-  box-shadow: var(--lift);
+  box-shadow: inset 0 1px 0 var(--glass-shine);
   font-weight: 600;
 }
-:root[data-design="new"] .totals-hero {
-  margin-bottom: 14px;
-  padding: 18px;
-  border-radius: 24px;
-  background: linear-gradient(135deg, var(--head), color-mix(in srgb, var(--head) 65%, #000));
-  color: #fff;
-  box-shadow: 0 12px 30px color-mix(in srgb, var(--head) 30%, transparent);
-}
-:root[data-design="new"] .th-label { font-size: 13px; opacity: .8; }
-:root[data-design="new"] .th-avg { margin: 2px 0 12px; font-size: 44px; font-weight: 800; letter-spacing: -.04em; line-height: 1; font-variant-numeric: tabular-nums; }
-:root[data-design="new"] .th-bar { display: flex; gap: 3px; height: 8px; margin-bottom: 10px; }
-:root[data-design="new"] .th-bar span { border-radius: 4px; }
-:root[data-design="new"] .th-bar .d5 { background: #6ee08f; }
-:root[data-design="new"] .th-bar .d4 { background: #d4ec74; }
-:root[data-design="new"] .th-bar .d3 { background: #ffbd6b; }
-:root[data-design="new"] .th-bar .d2 { background: #ff8a8d; }
-:root[data-design="new"] .th-counts { display: flex; gap: 14px; font-size: 13px; opacity: .9; font-variant-numeric: tabular-nums; }
-:root[data-design="new"] .th-counts b { margin-right: 2px; font-size: 15px; }
 
-:root[data-design="new"] .period-row { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
-:root[data-design="new"] .period-chips { flex: 1; display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; }
-:root[data-design="new"] .period-chips::-webkit-scrollbar { display: none; }
-:root[data-design="new"] .period-chips .chip { flex: none; }
+:root[data-design="new"] .totals-hero { margin-bottom: 12px; padding: 18px; border-radius: 26px; }
+:root[data-design="new"] .th-top { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; margin-bottom: 14px; }
+:root[data-design="new"] .th-label { font-size: 13px; color: var(--text2); }
+:root[data-design="new"] .th-avg {
+  margin-top: 2px;
+  font-size: 52px;
+  font-weight: 800;
+  letter-spacing: -.045em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--c, var(--text));
+}
+:root[data-design="new"] .th-avg.g5 { --c: var(--g5); }
+:root[data-design="new"] .th-avg.g4 { --c: var(--g4); }
+:root[data-design="new"] .th-avg.g3 { --c: var(--g3); }
+:root[data-design="new"] .th-avg.g2 { --c: var(--g2); }
+:root[data-design="new"] .th-side { display: flex; gap: 8px; }
+:root[data-design="new"] .th-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 64px;
+  padding: 8px 10px;
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--card) 55%, transparent);
+  box-shadow: inset 0 1px 0 var(--glass-shine), 0 0 0 1px var(--glass-edge);
+}
+:root[data-design="new"] .th-stat b { font-size: 20px; font-variant-numeric: tabular-nums; line-height: 1.1; }
+:root[data-design="new"] .th-stat span { font-size: 11px; color: var(--text2); }
+:root[data-design="new"] .th-bar { display: flex; gap: 3px; height: 10px; margin-bottom: 10px; }
+:root[data-design="new"] .th-bar span { border-radius: 5px; animation: grow .7s var(--ease) both; transform-origin: left; }
+:root[data-design="new"] .th-bar .d5 { background: var(--g5); }
+:root[data-design="new"] .th-bar .d4 { background: var(--g4); }
+:root[data-design="new"] .th-bar .d3 { background: var(--g3); }
+:root[data-design="new"] .th-bar .d2 { background: var(--g2); }
+:root[data-design="new"] .th-counts { display: flex; gap: 6px; font-size: 13px; font-variant-numeric: tabular-nums; }
+:root[data-design="new"] .th-counts span {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 5px 0;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--c) 14%, transparent);
+  color: var(--text2);
+}
+:root[data-design="new"] .th-counts b { color: var(--c); font-size: 15px; }
+:root[data-design="new"] .th-counts .c5 { --c: var(--g5); }
+:root[data-design="new"] .th-counts .c4 { --c: var(--g4); }
+:root[data-design="new"] .th-counts .c3 { --c: var(--g3); }
+:root[data-design="new"] .th-counts .c2 { --c: var(--g2); }
+
+/* Переключатель периода — стеклянная капсула с линзой, как нижняя панель. */
+:root[data-design="new"] .period-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+:root[data-design="new"] .seg-glass {
+  position: relative;
+  flex: 1;
+  display: flex;
+  padding: 4px;
+  border-radius: 999px;
+}
+:root[data-design="new"] .seg-lens {
+  position: absolute;
+  top: 4px; bottom: 4px; left: 4px;
+  width: calc((100% - 8px) / var(--n, 4));
+  translate: calc(var(--i, 0) * 100%) 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--card) 85%, transparent);
+  box-shadow: 0 2px 10px rgba(16, 24, 40, .12), inset 0 1px 0 var(--glass-shine), 0 0 0 .5px var(--glass-edge);
+  transition: translate .5s cubic-bezier(.34, 1.4, .5, 1);
+}
+:root[data-design="new"] .seg-glass button {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  padding: 8px 0;
+  text-align: center;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text2);
+  transition: color .25s;
+}
+:root[data-design="new"] .seg-glass button.on { color: var(--primary); }
+:root[data-design="new"] .period-row.tools { margin-bottom: 12px; }
+:root[data-design="new"] .glass-pill { padding: 7px 14px; border-radius: 999px; font-size: 13px; font-weight: 600; color: var(--text); }
+:root[data-design="new"] .glass-pill.on { color: var(--primary); }
+:root[data-design="new"] .glass-pill::before { content: '⇅ '; color: var(--text2); }
 :root[data-design="new"] .view-toggle { flex: none; margin-left: auto; padding: 7px 12px; border-radius: 999px; color: var(--primary); font-size: 13px; font-weight: 600; }
 :root[data-design="new"] .view-toggle:active { background: var(--soft); }
 
-:root[data-design="new"] .subject-card { display: block; width: 100%; padding: 14px 16px; margin-bottom: 10px; text-align: left; }
-:root[data-design="new"] .sc-top { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
-:root[data-design="new"] .sc-name { min-width: 0; font-size: 16px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-:root[data-design="new"] .sc-avg { flex: none; font-size: 22px; font-weight: 800; letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
+/* Карточки предметов — тоже стекло. */
+:root[data-design="new"] .subject-card { display: block; width: 100%; padding: 14px 16px; margin-bottom: 10px; text-align: left; border-radius: 22px; }
+:root[data-design="new"] .sc-top { display: flex; align-items: center; gap: 8px; }
+:root[data-design="new"] .sc-name { flex: 1; min-width: 0; font-size: 16px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+:root[data-design="new"] .sc-trend { flex: none; padding: 2px 7px; border-radius: 8px; font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums; }
+:root[data-design="new"] .sc-trend.up { color: var(--g5); background: color-mix(in srgb, var(--g5) 14%, transparent); }
+:root[data-design="new"] .sc-trend.down { color: var(--g2); background: color-mix(in srgb, var(--g2) 14%, transparent); }
+:root[data-design="new"] .sc-avg { flex: none; font-size: 24px; font-weight: 800; letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
 :root[data-design="new"] .sc-avg.g5, :root[data-design="new"] .sc-bar.g5 { --c: var(--g5); color: var(--g5); }
 :root[data-design="new"] .sc-avg.g4, :root[data-design="new"] .sc-bar.g4 { --c: var(--g4); color: var(--g4); }
 :root[data-design="new"] .sc-avg.g3, :root[data-design="new"] .sc-bar.g3 { --c: var(--g3); color: var(--g3); }
 :root[data-design="new"] .sc-avg.g2, :root[data-design="new"] .sc-bar.g2 { --c: var(--g2); color: var(--g2); }
-:root[data-design="new"] .sc-bar { height: 5px; margin: 8px 0 10px; border-radius: 3px; background: var(--card-2); overflow: hidden; }
-:root[data-design="new"] .sc-bar span { display: block; height: 100%; border-radius: inherit; background: var(--c, var(--text2)); animation: grow .6s var(--ease) both; transform-origin: left; }
-:root[data-design="new"] .sc-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-:root[data-design="new"] .sc-marks { display: flex; gap: 5px; flex-wrap: wrap; min-width: 0; }
-:root[data-design="new"] .sc-marks .mark-box { min-width: 26px; height: 26px; border-radius: 8px; font-size: 14px; }
+:root[data-design="new"] .sc-bar { height: 6px; margin: 8px 0 10px; border-radius: 3px; background: color-mix(in srgb, var(--text2) 14%, transparent); overflow: hidden; }
+:root[data-design="new"] .sc-bar span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--c, var(--text2)) 60%, transparent), var(--c, var(--text2)));
+  animation: grow .6s var(--ease) both;
+  transform-origin: left;
+}
+:root[data-design="new"] .sc-marks { display: flex; gap: 5px; flex-wrap: wrap; }
+:root[data-design="new"] .sc-marks .mark-box { min-width: 28px; height: 28px; padding: 0 5px; border-radius: 9px; font-size: 14px; }
+:root[data-design="new"] .sc-foot { display: flex; justify-content: space-between; gap: 8px; margin-top: 9px; font-size: 12px; color: var(--text2); }
 :root[data-design="new"] .subject-card:active { transform: scale(.98); }
+
 :root[data-design="new"] .totals-cards > * { animation: rise-in .35s var(--ease) both; }
-:root[data-design="new"] .totals-cards > :nth-child(n+3) { animation-delay: .06s; }
-:root[data-design="new"] .totals-cards > :nth-child(n+6) { animation-delay: .12s; }
+:root[data-design="new"] .totals-cards > :nth-child(n+2) { animation-delay: .05s; }
+:root[data-design="new"] .totals-cards > :nth-child(n+4) { animation-delay: .1s; }
+:root[data-design="new"] [data-list].rise > * { animation: rise-in .35s var(--ease) both; }
+:root[data-design="new"] [data-list].rise > :nth-child(2) { animation-delay: .04s; }
+:root[data-design="new"] [data-list].rise > :nth-child(3) { animation-delay: .08s; }
+:root[data-design="new"] [data-list].rise > :nth-child(n+4) { animation-delay: .12s; }
+
+/* Коэффициент оценки — маленькой цифрой рядом с ней. */
+:root[data-design="new"] .mark-box .mw {
+  display: inline;
+  margin-left: 1px;
+  font-size: .5em;
+  font-weight: 700;
+  line-height: 0;
+  vertical-align: .9em;
+  opacity: .75;
+}
+:root[data-design="new"] .tile-weight { display: none; }
+
+/* Экран предмета из «Оценок»: карточки — стекло над теми же пятнами. */
+:root[data-design="new"] .screen.glassy .screen-body > .card {
+  background: color-mix(in srgb, var(--card) 58%, transparent);
+  -webkit-backdrop-filter: blur(22px) saturate(180%);
+  backdrop-filter: blur(22px) saturate(180%);
+  border: 1px solid var(--glass-edge);
+  border-radius: 22px;
+  box-shadow: 0 8px 24px rgba(16, 24, 40, .08), inset 0 1px 0 var(--glass-shine);
+}
+:root[data-design="new"] .screen.glassy .dist { border-radius: 14px; }

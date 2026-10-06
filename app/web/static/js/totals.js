@@ -3,7 +3,7 @@
 
 import {
   $, ABSENCES, DEFAULT_THRESHOLDS, api, avgClass, errorCard, esc, formatAverage, isAbsence, isoToday, dayMonth,
-  shortDate, showFailure, showLoading, skeleton, state, weightedAverage,
+  plural, shortDate, showFailure, showLoading, skeleton, state, weightedAverage,
 } from './core.js';
 import { markBox, openMark } from './details.js';
 import { pushScreen } from './screens.js';
@@ -104,13 +104,21 @@ function quarterMarks(subject, key) {
 /* ───────────── Новый дизайн: карточки предметов вместо таблицы ───────────── */
 
 const VIEW_KEY = 'ns-totals-view';
-let view = 'cards';
-try { view = localStorage.getItem(VIEW_KEY) || 'cards'; } catch { /* приватный режим */ }
+const SORT_KEY = 'ns-totals-sort';
+const readLocal = (key, fallback) => {
+  try { return localStorage.getItem(key) || fallback; } catch { return fallback; }
+};
+const writeLocal = (key, value) => {
+  try { localStorage.setItem(key, value); } catch { /* приватный режим */ }
+};
+let view = readLocal(VIEW_KEY, 'cards');
+// alpha — по алфавиту, weak — слабые предметы сверху.
+let sort = readLocal(SORT_KEY, 'alpha');
 let period = null;
 
 function setView(next) {
   view = next;
-  try { localStorage.setItem(VIEW_KEY, next); } catch { /* приватный режим */ }
+  writeLocal(VIEW_KEY, next);
   select();
   render();
 }
@@ -127,14 +135,32 @@ function pickPeriod(data, quarters) {
   return [...keys].reverse().find((key) => data.subjects.some((s) => quarterMarks(s, key).length)) || keys[0];
 }
 
-function renderCards(data, quarters) {
-  period = pickPeriod(data, quarters);
-  const quarter = quarters.find((q) => q.key === period);
-  const rows = data.subjects.map((subject, index) => {
+const signed = (value) => `${value > 0 ? '+' : '−'}${formatAverage(Math.abs(value))}`;
+
+/** Что нужно до следующей оценки: «до «5» ещё 2 пятёрки». */
+function goalText(row) {
+  if (row.official || row.avg == null) return '';
+  const thresholds = thresholdsFor(row.subject.subject);
+  const target = row.avg >= thresholds[5] ? null : row.avg >= thresholds[4] ? 5 : row.avg >= thresholds[3] ? 4 : 3;
+  if (!target) return 'Выходит «5»';
+  const needed = neededMarks(row.marks, thresholds[target]);
+  if (!needed) return '';
+  return `До «${target}» — ещё ${needed} ${plural(needed, 'пятёрка', 'пятёрки', 'пятёрок')}`;
+}
+
+function periodRows(data) {
+  return data.subjects.map((subject, index) => {
     const term = subject.totals?.terms?.[period];
     const marks = quarterMarks(subject, period).filter((mark) => !isAttendance(mark));
-    return { subject, index, official: term?.mark, marks, avg: term?.average ?? weightedAverage(marks) };
+    const avg = term?.average ?? weightedAverage(marks);
+    // Как сдвинула среднее последняя оценка.
+    const before = marks.length > 1 ? weightedAverage(marks.slice(0, -1)) : null;
+    const trend = avg != null && before != null ? avg - before : 0;
+    return { subject, index, official: term?.mark, marks, avg, trend };
   });
+}
+
+function heroHtml(rows, quarter) {
   const averages = rows.map((row) => row.avg).filter((value) => value != null);
   const overall = averages.length ? averages.reduce((a, b) => a + b, 0) / averages.length : null;
   const counts = { 5: 0, 4: 0, 3: 0, 2: 0 };
@@ -142,53 +168,114 @@ function renderCards(data, quarters) {
     for (const mark of row.marks) if (Number(mark.mark) in counts) counts[Number(mark.mark)] += 1;
   }
   const total = counts[5] + counts[4] + counts[3] + counts[2];
-
-  const hero = `<div class="totals-hero">
-      <div class="th-label">Средний балл · ${esc(quarter?.label || shortLabel(quarter || { key: period }))}</div>
-      <div class="th-avg">${formatAverage(overall)}</div>
+  const strong = rows.filter((row) => row.avg != null && avgClass(row.avg, thresholdsFor(row.subject.subject)) === 'g5').length;
+  return `<div class="totals-hero glass">
+      <div class="th-top">
+        <div>
+          <div class="th-label">Средний балл · ${esc(quarter?.label || shortLabel(quarter || { key: period }))}</div>
+          <div class="th-avg ${overall == null ? '' : avgClass(overall)}">${formatAverage(overall)}</div>
+        </div>
+        <div class="th-side">
+          <div class="th-stat"><b>${total}</b><span>${plural(total, 'оценка', 'оценки', 'оценок')}</span></div>
+          <div class="th-stat"><b>${strong}</b><span>на «5»</span></div>
+        </div>
+      </div>
       ${total ? `<div class="th-bar">${[5, 4, 3, 2].filter((v) => counts[v])
         .map((v) => `<span class="d${v}" style="flex:${counts[v]}"></span>`).join('')}</div>` : ''}
-      <div class="th-counts">${[5, 4, 3, 2].map((v) => `<span><b>${v}</b>×${counts[v]}</span>`).join('')}</div>
+      <div class="th-counts">${[5, 4, 3, 2].map((v) => `<span class="c${v}"><b>${v}</b>${counts[v]}</span>`).join('')}</div>
     </div>`;
-  const chips = `<div class="period-row">
-      <div class="period-chips">${quarters.map((q) =>
-        `<button class="chip ${q.key === period ? 'active' : ''}" data-period="${q.key}">${esc(shortLabel(q))}</button>`).join('')}</div>
-      ${viewToggle('Таблица', 'table')}
-    </div>`;
-  const cards = rows.map((row) => {
+}
+
+function cardsHtml(rows) {
+  const ordered = sort === 'weak'
+    ? [...rows].sort((a, b) => (a.avg ?? 9) - (b.avg ?? 9))
+    : rows;
+  return ordered.map((row) => {
     const grade = row.official ? markGrade(row.official)
       : row.avg == null ? '' : avgClass(row.avg, thresholdsFor(row.subject.subject));
-    const recent = row.marks.slice(-8).map((mark) => markBox(mark.mark)).join('');
+    const recent = row.marks.slice(-10).map((mark) => markBox(mark.mark, '', mark.weight || 1)).join('');
     const fill = row.avg == null ? 0 : Math.max(0, Math.min(100, (row.avg - 1) / 4 * 100));
-    return `<button class="card subject-card" data-subject="${row.index}" data-q="${period}">
+    const trend = Math.abs(row.trend) >= 0.005 && !row.official
+      ? `<span class="sc-trend ${row.trend > 0 ? 'up' : 'down'}">${row.trend > 0 ? '▲' : '▼'} ${signed(row.trend)}</span>` : '';
+    const goal = goalText(row);
+    return `<button class="card subject-card glass" data-subject="${row.index}">
         <div class="sc-top">
           <div class="sc-name">${esc(row.subject.subject)}</div>
+          ${trend}
           <div class="sc-avg ${grade}">${row.official ? esc(row.official) : formatAverage(row.avg)}</div>
         </div>
         <div class="sc-bar ${grade}"><span style="width:${fill}%"></span></div>
-        <div class="sc-foot">
-          <div class="sc-marks">${recent || '<span class="muted small">Оценок пока нет</span>'}</div>
-          ${row.official && row.avg != null ? `<span class="muted small">ср. ${formatAverage(row.avg)}</span>` : ''}
-        </div>
+        <div class="sc-marks">${recent || '<span class="muted small">Оценок пока нет</span>'}</div>
+        ${goal || (row.official && row.avg != null) ? `<div class="sc-foot">
+          <span>${esc(goal)}</span>
+          ${row.official && row.avg != null ? `<span>ср. ${formatAverage(row.avg)}</span>` : ''}
+        </div>` : ''}
       </button>`;
   }).join('');
+}
 
+function renderCards(data, quarters) {
+  period = pickPeriod(data, quarters);
+  const index = Math.max(0, quarters.findIndex((q) => q.key === period));
   const container = $('totalsContent');
   container.innerHTML = yearPicker(data) + (data.subjects.length
-    ? `<div class="totals-cards">${hero}${chips}${cards}</div>`
+    ? `<div class="totals-cards">
+        <div data-hero></div>
+        <div class="period-row">
+          <div class="seg-glass glass" style="--n:${quarters.length};--i:${index}">
+            <span class="seg-lens" aria-hidden="true"></span>
+            ${quarters.map((q) => `<button class="${q.key === period ? 'on' : ''}" data-period="${q.key}">${esc(shortLabel(q))}</button>`).join('')}
+          </div>
+        </div>
+        <div class="period-row tools">
+          <button class="glass-pill glass ${sort === 'weak' ? 'on' : ''}" data-sort>${sort === 'weak' ? 'Слабые сверху' : 'По алфавиту'}</button>
+          ${viewToggle('Таблица', 'table')}
+        </div>
+        <div data-list></div>
+      </div>`
     : '<div class="empty">За этот учебный год итоги пока не опубликованы.</div>');
   bindYearPicker(data);
-  container.querySelectorAll('[data-period]').forEach((chip) => chip.addEventListener('click', () => {
-    if (chip.dataset.period === period) return;
+  if (!data.subjects.length) return;
+
+  const hero = container.querySelector('[data-hero]');
+  const list = container.querySelector('[data-list]');
+  const fill = (animate) => {
+    const rows = periodRows(data);
+    hero.innerHTML = heroHtml(rows, quarters.find((q) => q.key === period));
+    list.innerHTML = cardsHtml(rows);
+    // Лесенка появления — только при открытии вкладки, не при смене периода.
+    list.classList.toggle('rise', animate);
+  };
+  fill(true);
+
+  // Период меняется на месте: линза переезжает, карточки перерисовываются.
+  const control = container.querySelector('.seg-glass');
+  control.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-period]');
+    if (!button || button.dataset.period === period) return;
     select();
-    period = chip.dataset.period;
-    renderCards(data, quarters);
-  }));
+    period = button.dataset.period;
+    control.style.setProperty('--i', quarters.findIndex((q) => q.key === period));
+    control.querySelectorAll('[data-period]').forEach((b) => b.classList.toggle('on', b === button));
+    fill(false);
+    list.animate([{ opacity: 0.4, transform: 'translateY(4px)' }, { opacity: 1, transform: 'none' }],
+      { duration: 260, easing: 'ease-out' });
+  });
+  container.querySelector('[data-sort]').addEventListener('click', (event) => {
+    select();
+    sort = sort === 'weak' ? 'alpha' : 'weak';
+    writeLocal(SORT_KEY, sort);
+    event.currentTarget.classList.toggle('on', sort === 'weak');
+    event.currentTarget.textContent = sort === 'weak' ? 'Слабые сверху' : 'По алфавиту';
+    fill(false);
+  });
   container.querySelector('[data-view]')?.addEventListener('click', () => setView('table'));
-  container.querySelectorAll('[data-subject]').forEach((card) => card.addEventListener('click', () => {
+  list.addEventListener('click', (event) => {
+    const card = event.target.closest('[data-subject]');
+    if (!card) return;
     tap();
-    openSubject(data.subjects[Number(card.dataset.subject)], card.dataset.q);
-  }));
+    openSubject(data.subjects[Number(card.dataset.subject)], period);
+  });
 }
 
 function render() {
@@ -317,6 +404,8 @@ function openSubject(subject, key, existingBody = null, data = state.totals) {
     return;
   }
   const body = existingBody || pushScreen('Итоги по предмету', `на ${dayMonth(isoToday())}`);
+  // Экран предмета — в том же стекле, что и вкладка (new.css).
+  body.closest('.screen')?.classList.add('glassy');
   const marks = quarterMarks(subject, key);
   const lessons = subject.lessons?.[key] || { total: 0, done: 0 };
   const left = Math.max(0, lessons.total - lessons.done);
@@ -335,7 +424,7 @@ function openSubject(subject, key, existingBody = null, data = state.totals) {
   const renderTiles = (attendance) => marks
     .map(
       (mark, index) => isAttendance(mark) !== attendance ? '' : `<button class="tile ${isAttendance(mark) ? 'absence' : ''}" data-mark="${index}">
-          ${markBox(mark.mark, 'big')}
+          ${markBox(mark.mark, 'big', isAttendance(mark) ? null : mark.weight || 1)}
           ${!isAttendance(mark) ? `<span class="tile-weight">${esc(mark.weight || 1)}</span>` : ''}
           <span class="tile-date">${esc(shortDate(mark.date))}</span>
         </button>`

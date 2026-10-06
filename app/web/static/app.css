@@ -1194,3 +1194,6 @@ body::after {
 .sched-lesson .elective-badge { display: block; width: fit-content; margin-top: 3px; }
 
 .attendance-tiles { margin-top: 20px; }
+
+/* Коэффициент в углу оценки — только в новом дизайне. */
+.mark-box .mw { display: none; }
