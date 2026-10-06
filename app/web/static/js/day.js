@@ -7,7 +7,7 @@
 
 import {
   $, addDays, api, dayMonth, errorCard, esc, fullDate, isoOf, isoToday, mondayOf,
-  parseIso, plural, skeleton, state, WEEKDAYS, WEEKDAYS_FULL, weekdayIndex, weekOffsetOf,
+  parseIso, plural, showFailure, showLoading, skeleton, state, WEEKDAYS, WEEKDAYS_FULL, weekdayIndex, weekOffsetOf,
 } from './core.js';
 import { ICONS } from './icons.js';
 import { canGoBack } from './screens.js';
@@ -50,11 +50,11 @@ export async function loadDay(force = false) {
   renderHeader();
   const container = $('dayContent');
   if (force || !loadedWeeks.has(weekOffsetOf(state.date))) {
-    container.innerHTML = skeleton();
+    showLoading(container, skeleton());
     try {
       await ensureWeek(state.date, force);
     } catch (error) {
-      container.innerHTML = errorCard(error, 'dayRetry');
+      showFailure(container, error, errorCard(error, 'dayRetry'));
       $('dayRetry')?.addEventListener('click', () => loadDay(true));
       return;
     }
@@ -78,24 +78,17 @@ function renderHeader() {
   renderWeekStrip();
 }
 
-/** Неделя полосой под датой (новый дизайн): число, день недели и точки —
- *  есть оценки и есть задания. Воскресенье — только если в нём есть уроки. */
+/** Неделя полосой под датой (новый дизайн): день недели и число. Все семь
+ *  дней всегда — иначе воскресенье появлялось и строка перестраивалась. */
 function renderWeekStrip() {
-  const strip = $('weekStrip');
   const monday = mondayOf(state.date);
   const today = isoToday();
-  const dates = Array.from({ length: 7 }, (_, index) => addDays(monday, index))
-    .filter((iso, index) => index < 6 || days.get(iso)?.lessons?.length || iso === state.date);
-  strip.innerHTML = dates.map((iso) => {
-    const lessons = days.get(iso)?.lessons || [];
-    const marks = lessons.some((lesson) => realMarks(lesson.marks).length);
-    const homework = lessons.some((lesson) => lesson.homework.length);
+  $('weekStrip').innerHTML = Array.from({ length: 7 }, (_, index) => addDays(monday, index)).map((iso) => {
     const classes = ['week-day', iso === state.date ? 'on' : '', iso === today ? 'today' : '',
-      lessons.length ? '' : 'free'].filter(Boolean).join(' ');
+      days.get(iso)?.lessons?.length ? '' : 'free'].filter(Boolean).join(' ');
     return `<button class="${classes}" data-week-day="${iso}">
         <span class="wd-name">${WEEKDAYS[weekdayIndex(iso)]}</span>
         <span class="wd-num">${parseIso(iso).getDate()}</span>
-        <span class="wd-dots">${marks ? '<i class="dot mark"></i>' : ''}${homework ? '<i class="dot hw"></i>' : ''}</span>
       </button>`;
   }).join('');
 }

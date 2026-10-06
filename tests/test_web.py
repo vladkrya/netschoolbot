@@ -348,6 +348,12 @@ class TestNewFeatures:
         assert (await bad.json())["ok"] is False
         await client.post(url, params={"token": token}, json={"timezone": "Asia/Omsk"})
         assert (await users.get(1)).timezone == "Asia/Omsk"
+        # Приложение присылает пояс устройства — годится любой из IANA.
+        await client.post(url, params={"token": token}, json={"timezone": "Europe/Berlin"})
+        assert (await users.get(1)).timezone == "Europe/Berlin"
+        for junk in ("UTC", "../etc/passwd", "Europe/" + "x" * 80):
+            bad = await client.post(url, params={"token": token}, json={"timezone": junk})
+            assert (await bad.json())["ok"] is False
 
     async def test_history_and_status_in_profile(self, client, app_context, token):
         import json as _json

@@ -3,7 +3,7 @@
 
 import {
   $, ABSENCES, DEFAULT_THRESHOLDS, api, avgClass, errorCard, esc, formatAverage, isAbsence, isoToday, dayMonth,
-  shortDate, skeleton, state, weightedAverage,
+  shortDate, showFailure, showLoading, skeleton, state, weightedAverage,
 } from './core.js';
 import { markBox, openMark } from './details.js';
 import { pushScreen } from './screens.js';
@@ -28,8 +28,7 @@ export async function loadTotals(force = false) {
   const version = ++loadVersion;
   if (!state.totals || force) {
     const previous = state.totals || yearContext;
-    container.innerHTML = (previous ? yearPicker(previous) : '') + skeleton(8);
-    bindYearPicker(previous);
+    if (showLoading(container, (previous ? yearPicker(previous) : '') + skeleton(8))) bindYearPicker(previous);
     const params = new URLSearchParams();
     if (selectedYear != null) params.set('year', selectedYear);
     if (force) params.set('refresh', '1');
@@ -47,7 +46,7 @@ export async function loadTotals(force = false) {
       if (!force && data.years == null && version === loadVersion) loadTotals(true);
     } catch (error) {
       if (version !== loadVersion) return;
-      container.innerHTML = (previous ? yearPicker(previous) : '') + errorCard(error, 'totalsRetry');
+      showFailure(container, error, (previous ? yearPicker(previous) : '') + errorCard(error, 'totalsRetry'));
       bindYearPicker(previous);
       $('totalsRetry')?.addEventListener('click', () => loadTotals(true));
     }

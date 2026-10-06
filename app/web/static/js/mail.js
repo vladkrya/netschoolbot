@@ -2,7 +2,7 @@
 'use strict';
 
 import {
-  $, api, attachmentsHtml, banner, errorCard, esc, escRich, shortDate, skeleton, state,
+  $, api, attachmentsHtml, banner, errorCard, esc, escRich, shortDate, showFailure, showLoading, skeleton, state,
 } from './core.js';
 import { notify, select } from './haptics.js';
 import { ICONS } from './icons.js';
@@ -20,14 +20,14 @@ function avatarColor(name) {
 export async function loadMail(force = false) {
   const container = $('mailContent');
   if (!state.mail || force) {
-    container.innerHTML = skeleton();
+    showLoading(container, skeleton());
     try {
       const { data } = await api(`/api/mail${force ? '?refresh=1' : ''}`, {
         onFresh: (fresh) => { state.mail = fresh.data; },
       });
       state.mail = data;
     } catch (error) {
-      container.innerHTML = errorCard(error, 'mailRetry');
+      showFailure(container, error, errorCard(error, 'mailRetry'));
       $('mailRetry')?.addEventListener('click', () => loadMail(true));
       return;
     }

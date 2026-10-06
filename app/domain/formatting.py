@@ -383,6 +383,15 @@ def schedule_changes(changes: list) -> str:
     return "\n".join(lines)
 
 
+def schedule_preview(changes: list) -> str:
+    """Строка для push: даты с изменениями, без HTML."""
+    days = sorted({change.day for change in changes})
+    labels = [date_label(day) for day in days[:3]]
+    if len(days) > 3:
+        labels.append(f"и ещё {len(days) - 3}")
+    return ", ".join(labels)
+
+
 HISTORY_ICONS = {MarkKind.NEW: "🆕", MarkKind.CHANGED: "✏️", MarkKind.DELETED: "🗑"}
 
 

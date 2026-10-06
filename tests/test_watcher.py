@@ -61,7 +61,7 @@ class FakeNotifier:
     async def send_error(self, user, error):
         self.errors.append(error)
 
-    async def send_text(self, user, text):
+    async def send_text(self, user, text, *, push=None):
         self.texts.append(text)
 
 

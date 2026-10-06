@@ -539,6 +539,36 @@ class TestTelegramNotifier:
         await notifier.send_mark_events(user, [MarkEvent(MarkKind.NEW, record())])
         assert len(bot.sent) == 1
 
+    class Push:
+        def __init__(self):
+            self.sent: list[tuple[int, str, str]] = []
+
+        async def send(self, telegram_id, title, body):
+            self.sent.append((telegram_id, title, body))
+
+    async def test_telegram_off_leaves_only_push(self, users):
+        from dataclasses import replace
+
+        bot, push = self.Bot(), self.Push()
+        user = await users.save(make_user())
+        user = await users.save(replace(user, notifications=replace(user.notifications, telegram=False)))
+        assert (await users.get(user.telegram_id)).notifications.telegram is False
+        notifier = TelegramNotifier(bot, users, push=push)
+        await notifier.send_mark_events(user, [MarkEvent(MarkKind.NEW, record())])
+        await notifier.send_text(user, "Замены", push=("Изменения в расписании", "завтра"))
+        assert bot.sent == []
+        assert [title for _, title, _ in push.sent] == ["Новые оценки", "Изменения в расписании"]
+
+    async def test_service_messages_ignore_channel(self, users):
+        from dataclasses import replace
+
+        bot = self.Bot()
+        user = await users.save(make_user())
+        user = replace(user, notifications=replace(user.notifications, telegram=False))
+        notifier = TelegramNotifier(bot, users)
+        await notifier.send_error(user, NetSchoolError(Reason.AUTH, "нет входа"))
+        assert len(bot.sent) == 1
+
 
 async def _no_sleep(_seconds):
     return None

@@ -19,6 +19,25 @@ export async function loadProfile(force = false) {
   return data;
 }
 
+/** Часовой пояс берём у устройства: «сегодня» и время уведомлений
+ *  считаются по нему. Сервер обновляется, только когда пояс сменился. */
+export async function syncTimezone(profile) {
+  if (demo || !profile?.timezone) return;
+  let zone = '';
+  try {
+    zone = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+  } catch {
+    return;
+  }
+  if (!zone || zone === profile.timezone) return;
+  try {
+    await api('/api/settings/timezone', { method: 'POST', body: JSON.stringify({ timezone: zone }) });
+    profile.timezone = zone;
+  } catch {
+    /* неизвестный серверу пояс — остаётся прежний */
+  }
+}
+
 function currentTheme() {
   const theme = getPref('theme');
   return ['light', 'dark'].includes(theme) ? theme : 'auto';
@@ -96,15 +115,6 @@ function statusLine(status) {
   if (status.running && status.next_check_at) rows.push(`Следующая: ${when(status.next_check_at)}`);
   if (status.queued) rows.push(`Ждут отправки: ${status.queued}`);
   return `<div class="muted small sync-status ${failing ? 'failing' : ''}">${rows.join('<br>')}</div>`;
-}
-
-function timezoneSelect(data) {
-  if (!data.timezones) return '';
-  const options = data.timezones
-    .map((tz) => `<option value="${tz.id}" ${tz.id === data.timezone ? 'selected' : ''}>${esc(tz.name)}</option>`)
-    .join('');
-  return `<label class="field-label">Часовой пояс
-      <select class="field" id="timezoneSelect">${options}</select></label>`;
 }
 
 async function openCalendar() {
@@ -226,95 +236,40 @@ async function openHistory() {
   }
 }
 
-const SCHEMES = [
-  ['auto', 'Как в школе'],
-  ['quarters', 'Четверти'],
-  ['trimesters', 'Триместры'],
-  ['halves', 'Полугодия'],
-];
-const SCHEME_PERIODS = {
-  quarters: ['1 четверть', '2 четверть', '3 четверть', '4 четверть'],
-  trimesters: ['1 триместр', '2 триместр', '3 триместр'],
-  halves: ['1 полугодие', '2 полугодие'],
-};
-const SCHEME_STARTS = {
-  quarters: ['09-01', '11-01', '01-09', '04-01'],
-  trimesters: ['09-01', '12-01', '03-01'],
-  halves: ['09-01', '01-09'],
-};
-
-/** «MM-DD» ↔ дата поля ввода: год любой, нужен только месяц и день. */
-const toInput = (md) => {
-  const [month] = md.split('-').map(Number);
-  return `${month >= 9 ? 2026 : 2027}-${md}`;
-};
-const fromInput = (value) => value.slice(5);
-
-function periodsSection(data) {
-  const setting = data.periods || { scheme: 'auto' };
-  const scheme = setting.scheme || 'auto';
-  const options = SCHEMES.map(([key, label]) =>
-    `<option value="${key}" ${key === scheme ? 'selected' : ''}>${label}</option>`).join('');
-  const hint = scheme === 'auto'
-    ? (data.api_mode === 'mobile'
-      ? 'Границы берутся из «Сетевого города».'
-      : 'Веб-API не отдаёт границы периодов: используются обычные четверти. Выберите схему, если у вашей школы иначе.')
-    : '';
-  const starts = setting.starts || SCHEME_STARTS[scheme] || [];
-  const dates = scheme === 'auto' ? '' : SCHEME_PERIODS[scheme]
-    .map((label, i) => `<label class="field-label period-start">${label} — с
-        <input class="field" type="date" data-period-start="${i}" value="${toInput(starts[i])}"></label>`)
-    .join('');
-  return `<section class="drawer-section">
-      <div class="drawer-heading">Учебные периоды</div>
-      <select class="field" id="periodScheme">${options}</select>
-      ${hint ? `<div class="muted small">${hint}</div>` : ''}
-      ${dates}
-    </section>`;
+/** Где возможен web push: сайт в браузере, на iPhone — только с экрана «Домой». */
+function pushAvailability() {
+  if (initData) return 'telegram';
+  if (!pushEnabled || !('serviceWorker' in navigator) || !('PushManager' in window)) return 'none';
+  const iphone = /iPhone|iPad|iPod/.test(navigator.userAgent);
+  const installed = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  return iphone && !installed ? 'install' : 'ready';
 }
 
-async function savePeriods(setting) {
-  try {
-    await api('/api/prefs', { method: 'POST', body: JSON.stringify({ periods: setting }) });
-    state.profile.periods = setting;
-    // «Итоги» и калькулятор посчитаны по старым границам.
-    state.grades = null;
-    state.totals = null;
-    state.calc = null;
-    notify('success');
-    if (state.tab === 'totals') loadTotals(true);
-  } catch (error) {
-    notify('error');
-    banner(error.message, true);
+function pushRow() {
+  const where = pushAvailability();
+  if (where === 'ready') {
+    return `<label class="switch-row"><span>Пуш на этом устройстве</span>
+        <input type="checkbox" switch class="switch" id="pushToggle" disabled></label>`;
   }
-  render();
+  if (where === 'install') {
+    return `<div class="muted small">Пуш на iPhone: откройте дневник в Safari, «Поделиться» → «На экран Домой»
+        и запустите приложение с новой иконки.</div>`;
+  }
+  return '';
 }
 
-function pushSection() {
+function pushHowto() {
   // Внутри Telegram web push недоступен: уведомления браузера работают только
   // у сайта, открытого в самом браузере или установленного на экран «Домой».
-  if (initData) {
-    return `<section class="drawer-section">
-      <div class="drawer-heading">Уведомления в браузере</div>
+  if (pushAvailability() !== 'telegram') return '';
+  return `<section class="drawer-section">
+      <div class="drawer-heading">Пуш-уведомления на телефон</div>
       <ol class="howto">
         <li>Нажмите «Открыть в браузере» — откроется ваша личная ссылка.</li>
         <li><b>iPhone:</b> в Safari «Поделиться» → «На экран Домой». <b>Android:</b> в Chrome ⋮ → «Установить приложение».</li>
-        <li>Запустите дневник с иконки на экране и в меню ☰ нажмите «Включить уведомления».</li>
+        <li>Запустите дневник с иконки на экране и в меню ☰ включите «Пуш на этом устройстве».</li>
       </ol>
       <button class="btn outline" id="pwaOpen">Открыть в браузере</button>
-    </section>`;
-  }
-  if (!pushEnabled) return '';
-  const iphone = /iPhone|iPad|iPod/.test(navigator.userAgent);
-  const installed = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
-  if (iphone && !installed) return `<section class="drawer-section">
-      <div class="drawer-heading">Уведомления в браузере</div>
-      <p class="muted small">Чтобы включить уведомления, откройте дневник в Safari, нажмите «Поделиться» → «На экран Домой» и запустите приложение с новой иконки.</p>
-    </section>`;
-  return `<section class="drawer-section">
-      <div class="drawer-heading">Уведомления в браузере</div>
-      <button class="btn outline" id="pushBtn">Включить уведомления</button>
-      <p class="muted small">На iPhone работают только в приложении, установленном на экран «Домой».</p>
     </section>`;
 }
 
@@ -376,17 +331,19 @@ function render() {
       </div>
     </section>
     <section class="drawer-section">
-      <div class="drawer-heading">Уведомления в Telegram</div>
+      <div class="drawer-heading">Уведомления</div>
+      ${toggle('telegram', 'В Telegram', data.notifications.telegram !== false)}
+      ${pushRow()}
+      <div class="muted small" id="notifyNowhere" hidden>Сейчас уведомления никуда не приходят.</div>
+      <div class="drawer-sub">О чём сообщать</div>
       ${Object.entries(NOTIFY_LABELS)
         .filter(([key]) => !MOBILE_ONLY.has(key) || data.api_mode === 'mobile')
         .map(([key, label]) => toggle(key, label, data.notifications[key]))
         .join('')}
       <div class="muted small">Проверка каждые ${data.interval_minutes} мин</div>
       ${statusLine(data.status)}
-      ${timezoneSelect(data)}
     </section>
-    ${demo ? '' : periodsSection(data)}
-    ${pushSection()}
+    ${pushHowto()}
     ${demoSection()}
     <div class="drawer-foot muted small">Дневник «Сетевого города»</div>`;
 
@@ -434,6 +391,7 @@ function bindDrawer() {
         banner(error.message, true);
       } finally {
         input.disabled = false;
+        syncNowhere(Boolean($('pushToggle')?.checked));
       }
     })
   );
@@ -449,34 +407,7 @@ function bindDrawer() {
   $('drawerHistory').addEventListener('click', () => { tap(); openHistory(); });
   $('drawerCalendar')?.addEventListener('click', () => { tap(); openCalendar(); });
   $('drawerBug')?.addEventListener('click', () => { tap(); closeDrawer(); openBugReport(); });
-  $('timezoneSelect')?.addEventListener('change', async (event) => {
-    select();
-    const previous = state.profile.timezone;
-    try {
-      await api('/api/settings/timezone', {
-        method: 'POST',
-        body: JSON.stringify({ timezone: event.target.value }),
-      });
-      state.profile.timezone = event.target.value;
-      notify('success');
-    } catch (error) {
-      notify('error');
-      event.target.value = previous;
-      banner(error.message, true);
-    }
-  });
-  $('periodScheme')?.addEventListener('change', (event) => {
-    select();
-    savePeriods({ scheme: event.target.value });
-  });
-  body.querySelectorAll('[data-period-start]').forEach((input) =>
-    input.addEventListener('change', () => {
-      const values = [...body.querySelectorAll('[data-period-start]')].map((el) => fromInput(el.value));
-      if (values.some((v) => !/^\d{2}-\d{2}$/.test(v))) return;
-      savePeriods({ scheme: state.profile.periods.scheme, starts: values });
-    })
-  );
-  $('pushBtn')?.addEventListener('click', (event) => enablePush(event.currentTarget));
+  bindPushToggle();
   $('pwaOpen')?.addEventListener('click', openInBrowser);
   if (demo) bindDemo();
 }
@@ -549,36 +480,83 @@ async function switchStudent(button) {
   }
 }
 
-async function enablePush(button) {
-  button.disabled = true;
+async function workerRegistration() {
+  const { base, token } = window.NETSCHOOL;
+  return navigator.serviceWorker.register(
+    `${base}/sw.js?token=${encodeURIComponent(token)}`,
+    { scope: `${base}/` }
+  );
+}
+
+async function currentSubscription() {
   try {
-    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-      throw new Error('Браузер не поддерживает уведомления');
+    return await (await workerRegistration()).pushManager.getSubscription();
+  } catch {
+    return null;
+  }
+}
+
+/** Подсказать, если выключены оба канала. */
+function syncNowhere(pushOn) {
+  const hint = $('notifyNowhere');
+  if (!hint) return;
+  const telegramOn = state.profile?.notifications?.telegram !== false;
+  hint.hidden = telegramOn || pushOn;
+}
+
+async function bindPushToggle() {
+  const input = $('pushToggle');
+  if (!input) {
+    syncNowhere(false);
+    return;
+  }
+  const subscription = await currentSubscription();
+  input.checked = Boolean(subscription) && Notification.permission === 'granted';
+  input.disabled = false;
+  syncNowhere(input.checked);
+  input.addEventListener('change', async () => {
+    select();
+    input.disabled = true;
+    try {
+      if (input.checked) await subscribePush();
+      else await unsubscribePush();
+      notify('success');
+    } catch (error) {
+      notify('error');
+      input.checked = !input.checked;
+      banner(error.message, true);
+    } finally {
+      input.disabled = false;
+      syncNowhere(input.checked);
     }
-    if ((await Notification.requestPermission()) !== 'granted') {
-      throw new Error('Разрешение не выдано');
-    }
-    const { base, token } = window.NETSCHOOL;
-    const registration = await navigator.serviceWorker.register(
-      `${base}/sw.js?token=${encodeURIComponent(token)}`,
-      { scope: `${base}/` }
-    );
-    const { data } = await api('/api/push/key');
-    const subscription = await registration.pushManager.subscribe({
+  });
+}
+
+async function subscribePush() {
+  if ((await Notification.requestPermission()) !== 'granted') {
+    throw new Error('Уведомления запрещены в настройках браузера');
+  }
+  const registration = await workerRegistration();
+  const { data } = await api('/api/push/key');
+  const subscription = await registration.pushManager.getSubscription()
+    || await registration.pushManager.subscribe({
       userVisibleOnly: true,
       applicationServerKey: urlBase64ToUint8Array(data.key),
     });
-    await api('/api/push/subscribe', {
-      method: 'POST',
-      body: JSON.stringify(subscription.toJSON()),
-    });
-    button.textContent = 'Уведомления включены ✓';
-    notify('success');
-  } catch (error) {
-    notify('error');
-    banner(error.message, true);
-    button.disabled = false;
-  }
+  await api('/api/push/subscribe', {
+    method: 'POST',
+    body: JSON.stringify(subscription.toJSON()),
+  });
+}
+
+async function unsubscribePush() {
+  const subscription = await currentSubscription();
+  if (!subscription) return;
+  await api('/api/push/unsubscribe', {
+    method: 'POST',
+    body: JSON.stringify({ endpoint: subscription.endpoint }),
+  });
+  await subscription.unsubscribe();
 }
 
 function urlBase64ToUint8Array(value) {

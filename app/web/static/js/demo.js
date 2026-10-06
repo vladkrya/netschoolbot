@@ -43,7 +43,7 @@ const DEFAULTS = {
   density: 35,
   absences: true,
   saturday: false,
-  notifications: { grades: true, changes: true, deletes: true, homework: true, mail: false, weekly_summary: false },
+  notifications: { telegram: true, grades: true, changes: true, deletes: true, homework: true, mail: false, weekly_summary: false },
   sent: [],
 };
 

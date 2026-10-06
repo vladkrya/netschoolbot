@@ -153,6 +153,9 @@ class NotificationPrefs:
     schedule: bool = False
     # Новые пропуски — только мобильный режим: в веб-дневнике отметок посещаемости нет.
     absences: bool = False
+    # Канал: присылать ли всё это в Telegram. Push в браузер включается
+    # подпиской на устройстве, и у кого он есть, могут выключить Telegram.
+    telegram: bool = True
 
 
 @dataclass(frozen=True, slots=True)

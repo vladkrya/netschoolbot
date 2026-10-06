@@ -17,6 +17,7 @@ import re
 from urllib.parse import quote
 from dataclasses import asdict, replace
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from aiohttp import web
 
@@ -902,7 +903,7 @@ async def switch_student(request: web.Request) -> web.Response:
 
 NOTIFICATION_KEYS = (
     "grades", "changes", "deletes", "homework", "mail", "weekly_summary", "evening_summary",
-    "schedule", "absences",
+    "schedule", "absences", "telegram",
 )
 
 
@@ -922,16 +923,34 @@ async def notification_settings(request: web.Request) -> web.Response:
     return web.json_response({"ok": True, "data": asdict(updated.notifications)})
 
 
+def valid_timezone(name: str) -> bool:
+    if name in {key for key, _ in TIMEZONES}:
+        return True
+    if not name or len(name) > 64 or "/" not in name:
+        return False
+    try:
+        ZoneInfo(name)
+    except (ZoneInfoNotFoundError, ValueError):
+        return False
+    return True
+
+
 @routes.post("/api/settings/timezone")
 async def timezone_settings(request: web.Request) -> web.Response:
+    """Пояс устройства: приложение присылает его само, когда он не совпал.
+
+    Принимается любой пояс IANA, а не только российские из списка бота.
+    """
     app, user = context(request), current_user(request)
     try:
         body = await request.json()
     except ValueError:
         return json_error("Некорректный запрос")
     name = str(body.get("timezone") or "")
-    if name not in {key for key, _ in TIMEZONES}:
+    if not valid_timezone(name):
         return json_error("Неизвестный часовой пояс")
+    if name == user.timezone:
+        return web.json_response({"ok": True, "data": {"timezone": name}})
     await app.users.save(replace(user, timezone=name))
     # «Сегодня» сдвинулось — сохранённые окна дневника посчитаны от старого.
     await app.cache.clear(user.telegram_id)

@@ -55,6 +55,25 @@ export function avgClass(value, thresholds = DEFAULT_THRESHOLDS) {
   return avg >= thresholds[5] ? 'g5' : avg >= thresholds[4] ? 'g4' : avg >= thresholds[3] ? 'g3' : 'g2';
 }
 
+/** Заглушка загрузки. При обновлении свайпом экран не очищается — видно
+ *  только индикатор сверху, а данные меняются на месте. → заменено ли. */
+export function showLoading(container, html) {
+  if (state.refreshing && container.childElementCount) return false;
+  container.innerHTML = html;
+  return true;
+}
+
+/** Ошибка загрузки. При обновлении свайпом прежние данные остаются, а
+ *  ошибка — плашкой; иначе карточка ошибки вместо содержимого. */
+export function showFailure(container, error, html) {
+  if (state.refreshing && container.childElementCount && !container.querySelector('.skeleton')) {
+    state.refreshFailed = true;
+    banner(error.message, true, 5000);
+    return;
+  }
+  container.innerHTML = html;
+}
+
 export function skeleton(count = 5) {
   return `<div class="card">${'<div class="skeleton"></div>'.repeat(count)}</div>`;
 }

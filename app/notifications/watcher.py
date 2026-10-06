@@ -91,7 +91,7 @@ class Notifier(Protocol):
 
     async def send_error(self, user: User, error: NetSchoolError) -> None: ...
 
-    async def send_text(self, user: User, text: str) -> None: ...
+    async def send_text(self, user: User, text: str, *, push: tuple[str, str] | None = None) -> None: ...
 
 
 class UserWatcher:
@@ -289,7 +289,11 @@ class UserWatcher:
         elif kind is OutboxKind.ABSENCES:
             await self._notifier.send_absences(user, items)
         elif kind is OutboxKind.SCHEDULE:
-            await self._notifier.send_text(user, formatting.schedule_changes(items))
+            await self._notifier.send_text(
+                user,
+                formatting.schedule_changes(items),
+                push=("Изменения в расписании", formatting.schedule_preview(items)),
+            )
 
     async def _send_digests(self, user: User) -> None:
         """Вечерняя сводка на завтра и недельная по понедельникам.

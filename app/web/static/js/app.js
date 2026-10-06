@@ -9,7 +9,7 @@ import { loadTotals } from './totals.js';
 import { loadMail, openAnnouncements, openCompose } from './mail.js';
 import { applyAccent, applyDesign, initFullscreen } from './appearance.js';
 import { ICONS } from './icons.js';
-import { applyStoredTheme, closeDrawer, isDrawerOpen, loadProfile, openDrawer } from './profile.js';
+import { applyStoredTheme, closeDrawer, isDrawerOpen, loadProfile, openDrawer, syncTimezone } from './profile.js';
 import { closeSheet, initSheet } from './sheet.js';
 import { clearScreens, handleBack, hasScreens, setFallbackBack } from './screens.js';
 import { initSwipeBack } from './swipeback.js';
@@ -122,9 +122,21 @@ function bindPullToRefresh() {
     if (startY == null) return;
     startY = null;
     if (pulled > 80) {
+      // Данные остаются на экране, пока идёт запрос, и меняются на месте —
+      // без скелетона и без повторной анимации появления.
       indicator.textContent = 'Обновляю…';
-      await TABS[state.tab](true);
-      const failed = document.querySelector('.panel.active .error-card');
+      indicator.classList.add('busy');
+      state.refreshing = true;
+      state.refreshFailed = false;
+      document.body.classList.add('quiet-render');
+      try {
+        await TABS[state.tab](true);
+      } finally {
+        state.refreshing = false;
+        indicator.classList.remove('busy');
+        requestAnimationFrame(() => document.body.classList.remove('quiet-render'));
+      }
+      const failed = state.refreshFailed || document.querySelector('.panel.active .error-card');
       notify(failed ? 'error' : 'success');
     }
     indicator.classList.remove('show');
@@ -341,6 +353,7 @@ async function start() {
   try {
     const profile = await loadProfile();
     if (profile?.name) $('topTitle').textContent = profile.name;
+    syncTimezone(profile);
   } catch {
     /* профиль не критичен для остальных экранов */
   }

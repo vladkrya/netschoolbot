@@ -3,7 +3,7 @@
 'use strict';
 
 import {
-  $, addDays, dayMonth, errorCard, esc, isoToday, mondayOf, skeleton, state,
+  $, addDays, dayMonth, errorCard, esc, isoToday, mondayOf, showFailure, showLoading, skeleton, state,
   WEEKDAYS_FULL,
 } from './core.js';
 import { dayData, ensureWeek, goToDay } from './day.js';
@@ -32,11 +32,11 @@ export async function loadSchedule(force = false) {
   $('schedSub').textContent = `${dayMonth(monday)} – ${dayMonth(addDays(monday, 6))}`;
 
   const container = $('scheduleContent');
-  if (force || !dayData(monday)) container.innerHTML = skeleton();
+  if (force || !dayData(monday)) showLoading(container, skeleton());
   try {
     await ensureWeek(monday, force);
   } catch (error) {
-    container.innerHTML = errorCard(error, 'schedRetry');
+    showFailure(container, error, errorCard(error, 'schedRetry'));
     $('schedRetry')?.addEventListener('click', () => loadSchedule(true));
     return;
   }

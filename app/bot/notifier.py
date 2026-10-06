@@ -48,18 +48,18 @@ class TelegramNotifier:
         if not events:
             return
         if len(events) > DIGEST_THRESHOLD:
-            await self._send(user, formatting.mark_events_digest(events))
+            await self._notify(user, formatting.mark_events_digest(events))
         else:
             for index, event in enumerate(events):
-                if index:
+                if index and user.notifications.telegram:
                     await asyncio.sleep(BETWEEN_MESSAGES)
-                await self._send(user, formatting.mark_event(event))
+                await self._notify(user, formatting.mark_event(event))
         await self._push_notify(user, "Новые оценки", _events_preview(events))
 
     async def send_homework(self, user: User, items: list[HomeworkRecord]) -> None:
         if not items:
             return
-        await self._send(user, formatting.homework_digest(items, tz=user.tz))
+        await self._notify(user, formatting.homework_digest(items, tz=user.tz))
         await self._push_notify(
             user,
             "Новые задания",
@@ -69,7 +69,7 @@ class TelegramNotifier:
     async def send_absences(self, user: User, items: list[AbsenceRecord]) -> None:
         if not items:
             return
-        await self._send(user, formatting.absences_digest(items))
+        await self._notify(user, formatting.absences_digest(items))
         await self._push_notify(
             user,
             "Отметки посещаемости",
@@ -88,8 +88,19 @@ class TelegramNotifier:
         except Exception as exc:  # noqa: BLE001
             logger.debug("Push для %s не ушёл: %s", user.telegram_id, exc)
 
-    async def send_text(self, user: User, text: str) -> None:
-        await self._send(user, text)
+    async def send_text(self, user: User, text: str, *, push: tuple[str, str] | None = None) -> None:
+        """Уведомление-текст (замены, сводки); push — заголовок и строка для браузера."""
+        await self._notify(user, text)
+        if push:
+            await self._push_notify(user, *push)
+
+    async def _notify(self, user: User, text: str) -> None:
+        """Уведомление в Telegram, если человек его оттуда не выключил.
+
+        Служебное — ошибки входа, истекающий токен — идёт в Telegram всегда.
+        """
+        if user.notifications.telegram:
+            await self._send(user, text)
 
     async def send_error(self, user: User, error: NetSchoolError) -> None:
         await self._send(user, f"⚠️ {formatting.esc(error.user_message)}")

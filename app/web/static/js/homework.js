@@ -3,7 +3,7 @@
 // Отметка «выполнено» хранится на сервере и общая с /dz в боте.
 'use strict';
 
-import { $, api, banner, dayMonth, errorCard, esc, isoToday, observedTime, skeleton, state } from './core.js';
+import { $, api, banner, dayMonth, errorCard, esc, isoToday, observedTime, showFailure, showLoading, skeleton, state } from './core.js';
 import { ICONS } from './icons.js';
 import { openHomework } from './details.js';
 import { notify, select, tap } from './haptics.js';
@@ -26,7 +26,7 @@ export async function loadHomework(force = false) {
   const past = filter === 'past';
   const slot = past ? 'homeworkPast' : 'homework';
   if (!state[slot] || force) {
-    container.innerHTML = skeleton();
+    showLoading(container, skeleton());
     try {
       const params = [past ? 'past=1' : '', force ? 'refresh=1' : ''].filter(Boolean).join('&');
       const [{ data }] = await Promise.all([
@@ -37,7 +37,7 @@ export async function loadHomework(force = false) {
       ]);
       state[slot] = data;
     } catch (error) {
-      container.innerHTML = errorCard(error, 'hwRetry');
+      showFailure(container, error, errorCard(error, 'hwRetry'));
       $('hwRetry')?.addEventListener('click', () => loadHomework(true));
       return;
     }

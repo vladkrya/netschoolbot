@@ -426,7 +426,7 @@
   flex-direction: column;
   align-items: center;
   gap: 1px;
-  padding: 6px 0 5px;
+  padding: 7px 0;
   border-radius: 14px;
   color: var(--text);
   transition: background-color .2s, color .2s, transform .15s var(--ease);
@@ -434,15 +434,10 @@
 :root[data-design="new"] .week-day:active { transform: scale(.92); }
 :root[data-design="new"] .wd-name { font-size: 11px; font-weight: 600; color: var(--text2); text-transform: uppercase; }
 :root[data-design="new"] .wd-num { font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; }
-:root[data-design="new"] .wd-dots { display: flex; gap: 3px; height: 5px; }
-:root[data-design="new"] .dot { width: 5px; height: 5px; border-radius: 50%; }
-:root[data-design="new"] .dot.mark { background: var(--g5); }
-:root[data-design="new"] .dot.hw { background: var(--primary); }
 :root[data-design="new"] .week-day.free { opacity: .45; }
 :root[data-design="new"] .week-day.today .wd-num { color: var(--primary); }
 :root[data-design="new"] .week-day.on { background: var(--primary); color: #fff; opacity: 1; }
 :root[data-design="new"] .week-day.on :is(.wd-name, .wd-num) { color: #fff; }
-:root[data-design="new"] .week-day.on .dot { background: rgba(255, 255, 255, .85); }
 
 :root[data-design="new"] .day-summary {
   display: flex;

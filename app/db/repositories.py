@@ -115,8 +115,8 @@ class UserRepository:
                     check_interval, notify_grades, notify_changes, notify_deletes,
                     notify_homework, notify_mail, weekly_summary, notify_absences,
                     quiet_start, quiet_end, api_mode, timezone, evening_summary, notify_schedule,
-                    updated_at, remember_credentials
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    updated_at, remember_credentials, notify_telegram
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(telegram_id) DO UPDATE SET
                     enabled = excluded.enabled,
                     display_name = excluded.display_name,
@@ -142,6 +142,7 @@ class UserRepository:
                     timezone = excluded.timezone,
                     evening_summary = excluded.evening_summary,
                     notify_schedule = excluded.notify_schedule,
+                    notify_telegram = excluded.notify_telegram,
                     updated_at = excluded.updated_at
                 """,
                 (
@@ -171,6 +172,7 @@ class UserRepository:
                     int(user.notifications.schedule),
                     now,
                     int(user.credentials.remember),
+                    int(user.notifications.telegram),
                 ),
             )
             await self._replace_students(db, user)
@@ -267,6 +269,7 @@ class UserRepository:
                 evening_summary=bool(row["evening_summary"]),
                 schedule=bool(row["notify_schedule"]),
                 absences=bool(row["notify_absences"]),
+                telegram=bool(row["notify_telegram"]),
             ),
             filters=Filters(
                 exclude_titles=frozenset(

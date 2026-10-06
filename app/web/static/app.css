@@ -198,6 +198,13 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
   transition: .15s;
 }
 .pull-indicator.show { transform: none; opacity: 1; }
+.pull-indicator.busy::before {
+  content: ''; display: inline-block; width: 11px; height: 11px; margin-right: 6px; vertical-align: -2px;
+  border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%;
+  animation: spin .7s linear infinite;
+}
+/* Обновление свайпом: новые данные встают на место без анимации появления. */
+.quiet-render .panel, .quiet-render .panel * { animation: none !important; }
 
 /* Баннер — всплывающее уведомление над всем, в том числе над экранами. */
 .banner {

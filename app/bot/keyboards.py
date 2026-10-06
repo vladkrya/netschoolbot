@@ -19,6 +19,8 @@ def settings_menu(user: User) -> InlineKeyboardMarkup:
 
     rows = [
         [toggle("Уведомления", user.enabled, "enabled")],
+        # Выключив, можно получать только push из приложения на телефоне.
+        [toggle("Присылать в Telegram", user.notifications.telegram, "telegram")],
         [toggle("Изменения оценок", user.notifications.changes, "changes")],
         [toggle("Удаления оценок", user.notifications.deletes, "deletes")],
         [toggle("Домашние задания", user.notifications.homework, "homework")],

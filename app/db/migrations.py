@@ -259,6 +259,10 @@ MIGRATIONS: list[str] = [
     INSERT INTO app_metadata (key, value)
         SELECT 'legacy_import_completed', '1' WHERE EXISTS (SELECT 1 FROM users);
     """,
+    # 14 — уведомления можно получать только push'ем, без Telegram.
+    """
+    ALTER TABLE users ADD COLUMN notify_telegram INTEGER NOT NULL DEFAULT 1;
+    """,
 ]
 
 
