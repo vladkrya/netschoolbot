@@ -1136,12 +1136,13 @@ class TestSchoolYearHistory:
         terms = AsyncMock(return_value=[{"name": "1 четверть", "startDate": "2025-09-01", "endDate": "2025-10-25"}])
         monkeypatch.setattr(app_context.diary, "fetch_terms", terms)
         day = dt.date(2025, 9, 3)
-        mark = MarkRecord("Алгебра", day, "Контрольная работа", "Дроби", "4", weight=3)
+        marked_at = dt.datetime(2025, 9, 4, 12, 11, tzinfo=dt.timezone(dt.timedelta(hours=3)))
+        mark = MarkRecord("Алгебра", day, "Контрольная работа", "Дроби", "4", weight=3, marked_at=marked_at)
         other = replace(mark, subject="Физика", mark="2")
         elective = replace(mark, mark="5")
         outside = replace(mark, date=dt.date(2025, 10, 26))
         period = AsyncMock(return_value=[
-            DiaryDay(day, lessons=[Lesson(1, "Алгебра", teacher="Учитель", topic="Тема", marks=(mark,)),
+            DiaryDay(day, lessons=[Lesson(1, "Алгебра", teacher="Учитель", topic="Тема", marks=(mark,), absence="УП"),
                                    Lesson(2, "Алгебра", is_elective=True, marks=(elective,))],
                      marks=[mark, other, elective]),
             DiaryDay(outside.date, marks=[outside]),
@@ -1154,6 +1155,8 @@ class TestSchoolYearHistory:
         assert [(m["mark"], m["date"], m["weight"], m["quarter"]) for m in subject["marks"]] == [
             ("4", "2025-09-03", 3, "q1")]
         assert subject["marks"][0]["lesson_topic"] == "Тема"
+        assert subject["marks"][0]["marked_at"] == marked_at.isoformat()
+        assert [(a["mark"], a["date"], a["quarter"]) for a in subject["attendance"]] == [("УП", "2025-09-03", "q1")]
         assert subject["lessons"] == {"q1": {"total": 1, "done": 1}}
         assert subject["teacher"] == "Учитель"
         assert terms.await_count == 1

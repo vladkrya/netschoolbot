@@ -90,8 +90,15 @@ function markGrade(mark) {
   return digit ? `g${digit[0]}` : '';
 }
 
+function isAttendance(mark) {
+  return mark.type === 'Посещаемость' || isAbsence(mark.mark);
+}
+
 function quarterMarks(subject, key) {
-  return subject.marks.filter((mark) => mark.quarter === key);
+  const attendance = (subject.attendance || []).filter((entry) => !subject.marks.some((mark) =>
+    mark.mark === entry.mark && mark.date === entry.date && mark.lesson_number === entry.lesson_number));
+  return [...subject.marks, ...attendance].filter((mark) => mark.quarter === key)
+    .sort((a, b) => a.date.localeCompare(b.date));
 }
 
 /* ───────────── Новый дизайн: карточки предметов вместо таблицы ───────────── */
@@ -125,7 +132,7 @@ function renderCards(data, quarters) {
   const quarter = quarters.find((q) => q.key === period);
   const rows = data.subjects.map((subject, index) => {
     const term = subject.totals?.terms?.[period];
-    const marks = quarterMarks(subject, period).filter((mark) => !isAbsence(mark.mark));
+    const marks = quarterMarks(subject, period).filter((mark) => !isAttendance(mark));
     return { subject, index, official: term?.mark, marks, avg: term?.average ?? weightedAverage(marks) };
   });
   const averages = rows.map((row) => row.avg).filter((value) => value != null);
@@ -325,15 +332,17 @@ function openSubject(subject, key, existingBody = null, data = state.totals) {
        <span>${data.archived ? 'Закончилась' : `Осталось ${left} ${left === 1 ? 'урок' : [2, 3, 4].includes(left % 10) && ![12, 13, 14].includes(left % 100) ? 'урока' : 'уроков'}`}</span></div>`
     : `<div class="muted small">${esc(quarter?.label || '')}</div>`;
 
-  const tiles = marks
+  const renderTiles = (attendance) => marks
     .map(
-      (mark, index) => `<button class="tile ${isAbsence(mark.mark) ? 'absence' : ''}" data-mark="${index}">
+      (mark, index) => isAttendance(mark) !== attendance ? '' : `<button class="tile ${isAttendance(mark) ? 'absence' : ''}" data-mark="${index}">
           ${markBox(mark.mark, 'big')}
-          <span class="tile-weight">${esc(mark.weight || 1)}</span>
+          ${!isAttendance(mark) ? `<span class="tile-weight">${esc(mark.weight || 1)}</span>` : ''}
           <span class="tile-date">${esc(shortDate(mark.date))}</span>
         </button>`
     )
     .join('');
+  const tiles = renderTiles(false);
+  const attendanceTiles = renderTiles(true);
 
   body.innerHTML = `
     <div class="card">
@@ -357,6 +366,7 @@ function openSubject(subject, key, existingBody = null, data = state.totals) {
       <div class="mark-results-head"><div class="card-title">Результаты учебного периода</div>
         <button class="mark-filter-reset" data-mark-reset hidden>Все оценки</button></div>
       ${tiles ? `<div class="tiles">${tiles}</div>` : '<div class="empty">Оценок пока нет</div>'}
+      ${attendanceTiles ? `<div class="tiles attendance-tiles">${attendanceTiles}</div>` : ''}
     </div>
     <div class="card whatif"${data.archived ? ' hidden' : ''}>
       <div class="whatif-head">
@@ -393,8 +403,14 @@ function openSubject(subject, key, existingBody = null, data = state.totals) {
     tile.addEventListener('click', () => openMark(marks[Number(tile.dataset.mark)], subject.subject))
   );
   let markFilter = null;
+  let filterAnimation = null;
   const filterButtons = body.querySelectorAll('[data-mark-filter]');
   const applyMarkFilter = (value) => {
+    const tiles = body.querySelector('.tiles');
+    const oldHeight = tiles?.getBoundingClientRect().height;
+    const positions = new Map([...body.querySelectorAll('[data-mark]:not([hidden])')]
+      .map((tile) => [tile, tile.getBoundingClientRect()]));
+    filterAnimation?.cancel();
     markFilter = value;
     body.querySelector('.dist')?.classList.toggle('filtered', value != null);
     filterButtons.forEach((button) =>
@@ -402,9 +418,25 @@ function openSubject(subject, key, existingBody = null, data = state.totals) {
     body.querySelectorAll('[data-mark]').forEach((tile) => {
       const mark = marks[Number(tile.dataset.mark)];
       // Посещаемость остаётся видимой, как в итогах «Сетевого города».
-      tile.hidden = value != null && !isAbsence(mark.mark) && Number(mark.mark) !== value;
+      tile.hidden = value != null && !isAttendance(mark) && Number(mark.mark) !== value;
     });
     body.querySelector('[data-mark-reset]').hidden = value == null;
+    if (tiles && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      const height = tiles.getBoundingClientRect().height;
+      filterAnimation = tiles.animate([{ height: `${oldHeight}px` }, { height: `${height}px` }], {
+        duration: 220, easing: 'cubic-bezier(.2,.8,.3,1)',
+      });
+      body.querySelectorAll('[data-mark]:not([hidden])').forEach((tile) => {
+        tile.getAnimations().forEach((animation) => animation.cancel());
+        const old = positions.get(tile);
+        const next = tile.getBoundingClientRect();
+        tile.animate(old ? [
+          { transform: `translate(${old.left - next.left}px, ${old.top - next.top}px)` }, { transform: 'translate(0,0)' },
+        ] : [ { opacity: 0, transform: 'translateY(6px) scale(.94)' }, { opacity: 1, transform: 'none' } ], {
+          duration: 220, easing: 'cubic-bezier(.2,.8,.3,1)',
+        });
+      });
+    }
     select();
   };
   filterButtons.forEach((button) => button.addEventListener('click', () => {

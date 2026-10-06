@@ -11,6 +11,7 @@ import { isNewDesign } from './appearance.js';
 import { select, tap } from './haptics.js';
 
 const expanded = new Set();
+const expansionAnimations = new WeakMap();
 
 function lessonsWord(count) {
   const tail = count % 100;
@@ -87,8 +88,18 @@ function render(monday) {
       else expanded.delete(iso);
       button.setAttribute('aria-expanded', String(open));
       const panel = document.getElementById(button.getAttribute('aria-controls'));
+      const from = panel.getBoundingClientRect().height;
+      expansionAnimations.get(panel)?.cancel();
       panel.inert = !open;
       panel.classList.toggle('open', open);
+      panel.style.height = open ? 'auto' : '0px';
+      if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        const to = open ? panel.scrollHeight : 0;
+        const animation = panel.animate([{ height: `${from}px` }, { height: `${to}px` }], {
+          duration: 240, easing: 'cubic-bezier(.2,.8,.3,1)',
+        });
+        expansionAnimations.set(panel, animation);
+      }
     })
   );
   container.querySelectorAll('[data-goto]').forEach((button) =>

@@ -57,6 +57,8 @@ def mark_to_dict(record: MarkRecord) -> dict[str, Any]:
         "lesson_start": record.lesson_start,
         "lesson_end": record.lesson_end,
         "assignment_index": record.assignment_index,
+        "published_at": record.published_at.isoformat() if record.published_at else None,
+        "marked_at": record.marked_at.isoformat() if record.marked_at else None,
     }
 
 
@@ -73,6 +75,8 @@ def mark_from_dict(data: dict[str, Any]) -> MarkRecord:
         lesson_start=data.get("lesson_start", ""),
         lesson_end=data.get("lesson_end", ""),
         assignment_index=int(data.get("assignment_index") or 0),
+        published_at=dt.datetime.fromisoformat(data["published_at"]) if data.get("published_at") else None,
+        marked_at=dt.datetime.fromisoformat(data["marked_at"]) if data.get("marked_at") else None,
     )
 
 

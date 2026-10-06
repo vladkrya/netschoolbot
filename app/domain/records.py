@@ -61,6 +61,8 @@ class MarkRecord:
     lesson_start: str = ""
     lesson_end: str = ""
     assignment_index: int = 0
+    published_at: dt.datetime | None = field(default=None, compare=False)
+    marked_at: dt.datetime | None = field(default=None, compare=False)
 
     @property
     def title(self) -> str:

@@ -534,13 +534,15 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .sched-toggle { display: block; margin-top: 8px; color: var(--primary); font-size: 14px; }
 .sched-list { margin-top: 6px; }
 .sched-collapse {
-  display: grid;
-  grid-template-rows: 0fr;
-  opacity: 0;
-  transition: grid-template-rows .3s var(--ease), opacity .2s ease;
+  height: 0;
+  overflow: hidden;
+  contain: layout paint;
 }
-.sched-collapse.open { grid-template-rows: 1fr; opacity: 1; }
+.sched-collapse.open { height: auto; }
 .sched-collapse-inner { min-height: 0; overflow: hidden; }
+.grade-entered { color: var(--text2); font-size: 12px; margin-left: auto; text-align: right; }
+.grade-row { gap: 10px; }
+.grade-row > .mark-box { flex: none; }
 .sched-chevron { display: inline-block; transition: transform .3s var(--ease); }
 .sched-toggle[aria-expanded="true"] .sched-chevron { transform: rotate(180deg); }
 .sched-lesson { padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 16px; }
@@ -606,6 +608,7 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .dist-part.d2 { background: var(--g2); }
 .empty-dist { align-items: center; justify-content: center; color: var(--text2); background: var(--card-2); font-size: 13px; }
 .tiles { display: flex; flex-wrap: wrap; gap: 12px; }
+.tiles { overflow: hidden; }
 .tile { display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 12px; color: var(--text2); }
 .tile .mark-box { border-color: var(--green); background: color-mix(in srgb, var(--green) 25%, var(--card)); }
 .tile .mark-box.m2, .grade-row .mark-box.m2, .whatif .mark-box.m2 { --c: var(--g2); }
@@ -1189,3 +1192,5 @@ body::after {
   font-weight: 600;
 }
 .sched-lesson .elective-badge { display: block; width: fit-content; margin-top: 3px; }
+
+.attendance-tiles { margin-top: 20px; }

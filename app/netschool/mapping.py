@@ -95,6 +95,8 @@ def marks_from_day(day: Any) -> list[MarkRecord]:
                     lesson_start=lesson_start,
                     lesson_end=lesson_end,
                     assignment_index=index,
+                    published_at=_as_datetime(_attr(assignment, "published_at")),
+                    marked_at=_as_datetime(_attr(assignment, "mark_set_at")),
                 )
             )
     return records

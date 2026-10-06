@@ -309,7 +309,7 @@ class TestData:
         from app.domain.records import DiaryDay, Lesson
 
         day = dt.date(2026, 9, 7)
-        lesson = Lesson(number=1, subject="Алгебра", teacher="Циркулев А. Г.")
+        lesson = Lesson(number=1, subject="Алгебра", teacher="Циркулев А. Г.", absence="Б")
 
         async def fetch_period(user, start, end, **kwargs):
             # Год целиком: от 1 сентября, а не пять недель назад.
@@ -321,6 +321,7 @@ class TestData:
         data = (await response.json())["data"]
         algebra = data["subjects"][0]
         assert algebra["teacher"] == "Циркулев А. Г."
+        assert [(a["mark"], a["date"]) for a in algebra["attendance"]] == [("Б", "2026-09-07")]
         assert algebra["lessons"]["q1"]["total"] == 1
         assert [q["key"] for q in data["quarters"]] == ["q1", "q2", "q3", "q4"]
 

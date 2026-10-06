@@ -154,17 +154,22 @@ export function openMark(mark, subject, lessonTopic = '') {
   // самой оценки, когда у работы не было названия.
   const topic = realTopic(lessonTopic || mark.lesson_topic, mark);
   const work = realTopic(mark.topic, mark);
+  const absence = mark.type === 'Посещаемость' || isAbsence(mark.mark);
   body.innerHTML = `
     <div class="detail">
       <h2><button class="subject-link" data-subject-results>${esc(subject || mark.subject)}</button></h2>
-      <div class="detail-weight">Вес задания: ${esc(mark.weight || 1)}</div>
+      ${!absence ? `<div class="detail-weight">Вес задания: ${esc(mark.weight || 1)}</div>` : ''}
       <div class="detail-label">Тема урока</div>
       <div class="detail-text">${esc(topic) || '<span class="muted">—Не указана—</span>'}</div>
-      ${work && work !== topic ? `<div class="detail-label">Работа</div><div class="detail-text">${esc(work)}</div>` : ''}
-      <div class="grade-row ${isAbsence(mark.mark) ? 'absence' : ''}">
-        <span>${isAbsence(mark.mark) ? esc(absenceText(mark.mark)) : 'Оценка'}</span>
+      ${!absence ? `<div class="assignment-heading"><span class="detail-label">Задание</span>
+        ${mark.published_at ? `<span class="assignment-times">Опубликовано ${esc(compactTime(mark.published_at))}</span>` : ''}</div>
+        <div class="detail-text">${esc(work) || '<span class="muted">—Не указано—</span>'}</div>` : ''}
+      <div class="grade-row ${absence ? 'absence' : ''}">
+        <span>${absence ? esc(absenceText(mark.mark) || 'Посещаемость') : 'Оценка'}</span>
+        ${mark.marked_at ? `<span class="grade-entered">Внесена ${esc(compactTime(mark.marked_at))}</span>` : ''}
         ${markBox(mark.mark)}
       </div>
+      ${mark.comment ? `<div class="detail-label">Комментарий учителя</div><div class="detail-text">${esc(mark.comment)}</div>` : ''}
     </div>`;
   bindSubject(body, subject || mark.subject, mark.date);
 }

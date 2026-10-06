@@ -214,6 +214,10 @@ def _mark_to_json(record) -> dict:
         "mark": record.mark,
         "weight": record.weight,
         "numeric": record.numeric_mark,
+        "published_at": record.published_at.isoformat() if record.published_at else None,
+        "marked_at": record.marked_at.isoformat() if record.marked_at else None,
+        "lesson_number": record.lesson_number,
+        "comment": record.comment,
         # Четверть считается на сервере: правила одни и те же для бота и
         # приложения, дублировать их в JavaScript незачем.
         "quarter": quarter_of(record.date),
@@ -456,6 +460,7 @@ async def marks(request: web.Request) -> web.Response:
         teachers: dict[str, dict[str, int]] = {}
         # Отметки посещаемости: {предмет: {четверть: {код: сколько}}}.
         absences: dict[str, dict[str, dict[str, int]]] = {}
+        attendance: dict[str, list] = {}
         # Тема урока к каждой оценке: экран оценки показывает её как «Тему».
         # Ключ — сама запись: номер урока бывает перенумерован (см. mapping).
         lesson_topics: dict = {}
@@ -483,6 +488,7 @@ async def marks(request: web.Request) -> web.Response:
                     counts["done"] += 1
                 code = (lesson.absence or "").strip()
                 if code:
+                    attendance.setdefault(lesson.subject, []).append(_attendance_to_json(lesson, day.day, key))
                     counts_by_code = absences.setdefault(lesson.subject, {}).setdefault(key or "", {})
                     counts_by_code[code] = counts_by_code.get(code, 0) + 1
                 if lesson.teacher:
@@ -520,6 +526,7 @@ async def marks(request: web.Request) -> web.Response:
                     ],
                     "lessons": lessons.get(subject, {}),
                     "absences": absences.get(subject, {}),
+                    "attendance": attendance.get(subject, []),
                     "totals": totals_by_name.get(normalize(subject), (None, None))[1],
                     "teacher": (
                         max(teacher_counts, key=teacher_counts.get)
@@ -624,6 +631,7 @@ async def archived_subject_marks(request: web.Request) -> web.Response:
         topics = {}
         teachers = {}
         absences = {}
+        attendance = []
         total = 0
         for day in days:
             # Понедельный дневник включает соседние дни за границами четверти.
@@ -642,6 +650,7 @@ async def archived_subject_marks(request: web.Request) -> web.Response:
                     teachers[lesson.teacher] = teachers.get(lesson.teacher, 0) + 1
                 if code := (lesson.absence or "").strip():
                     absences[code] = absences.get(code, 0) + 1
+                    attendance.append(_attendance_to_json(lesson, day.day, key))
         return {"subject": {
             "subject": subject,
             "marks": [{**_mark_to_json(record), "quarter": key, "lesson_topic": topics.get(record, "")}
@@ -649,10 +658,17 @@ async def archived_subject_marks(request: web.Request) -> web.Response:
                       if start <= record.date <= end],
             "lessons": {key: {"total": total, "done": total}},
             "absences": {key: absences},
+            "attendance": attendance,
             "teacher": max(teachers, key=teachers.get) if teachers else "",
         }}
 
     return await _cached(request, f"marks:subject:{year_id}:{key}:{normalize(subject)}", produce)
+
+
+def _attendance_to_json(lesson, day, key):
+    return {"subject": lesson.subject, "date": day.isoformat(), "quarter": key,
+            "mark": lesson.absence.strip(), "type": "Посещаемость", "title": "Посещаемость",
+            "lesson_number": lesson.number, "lesson_topic": lesson.topic, "weight": None}
 
 
 async def _user_periods(app: AppContext, user: User, today: dt.date) -> tuple[list[Quarter], str]:

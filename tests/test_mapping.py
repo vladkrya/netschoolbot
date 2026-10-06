@@ -58,6 +58,16 @@ def test_elective_flag_survives_diary_mapping():
     assert mapped[0].lessons[1].is_elective is False
 
 
+def test_grade_timestamps_survive_mapping_without_changing_identity():
+    from dataclasses import replace
+    published = dt.datetime(2026, 8, 17, 5, 36, tzinfo=dt.timezone(dt.timedelta(hours=3)))
+    entered = dt.datetime(2026, 9, 14, 12, 11, tzinfo=published.tzinfo)
+    record = marks_from_day(day([lesson([assignment(published_at=published, mark_set_at=entered)])]))[0]
+    assert record.published_at == published and record.marked_at == entered
+    without = replace(record, published_at=None, marked_at=None)
+    assert record == without and record.identity == without.identity
+
+
 def test_serialized_library_lesson_keeps_elective_flag():
     from netschoolpy.models import Lesson as LibraryLesson
 
