@@ -266,7 +266,7 @@ function distribution(marks) {
   if (!total) return '<div class="dist empty-dist">Оценок пока нет</div>';
   return `<div class="dist">${[5, 4, 3, 2]
     .filter((value) => weights[value])
-    .map((value) => `<div class="dist-part d${value}" style="flex:${weights[value]}">${value}</div>`)
+    .map((value) => `<button class="dist-part d${value}" style="flex:${weights[value]}" data-mark-filter="${value}" aria-label="Показать оценки ${value}" aria-pressed="false">${value}</button>`)
     .join('')}</div>`;
 }
 
@@ -321,7 +321,8 @@ function openSubject(subject, key) {
       <div class="muted small">*доли оценок, образующих средний балл</div>
     </div>
     <div class="card">
-      <div class="card-title">Результаты учебного периода</div>
+      <div class="mark-results-head"><div class="card-title">Результаты учебного периода</div>
+        <button class="mark-filter-reset" data-mark-reset hidden>Все оценки</button></div>
       ${tiles ? `<div class="tiles">${tiles}</div>` : '<div class="empty">Оценок пока нет</div>'}
     </div>
     <div class="card whatif">
@@ -358,6 +359,26 @@ function openSubject(subject, key) {
   body.querySelectorAll('[data-mark]').forEach((tile) =>
     tile.addEventListener('click', () => openMark(marks[Number(tile.dataset.mark)], subject.subject))
   );
+  let markFilter = null;
+  const filterButtons = body.querySelectorAll('[data-mark-filter]');
+  const applyMarkFilter = (value) => {
+    markFilter = value;
+    body.querySelector('.dist')?.classList.toggle('filtered', value != null);
+    filterButtons.forEach((button) =>
+      button.setAttribute('aria-pressed', String(Number(button.dataset.markFilter) === value)));
+    body.querySelectorAll('[data-mark]').forEach((tile) => {
+      const mark = marks[Number(tile.dataset.mark)];
+      // Посещаемость остаётся видимой, как в итогах «Сетевого города».
+      tile.hidden = value != null && !isAbsence(mark.mark) && Number(mark.mark) !== value;
+    });
+    body.querySelector('[data-mark-reset]').hidden = value == null;
+    select();
+  };
+  filterButtons.forEach((button) => button.addEventListener('click', () => {
+    const value = Number(button.dataset.markFilter);
+    applyMarkFilter(markFilter === value ? null : value);
+  }));
+  body.querySelector('[data-mark-reset]').addEventListener('click', () => applyMarkFilter(null));
   const whatIfCard = body.querySelector('.whatif');
   const refreshWhatIf = bindWhatIf(whatIfCard, marks, `${subject.subject}|${key}`, subject.subject);
   bindThresholds(whatIfCard, subject.subject, () => {
