@@ -1200,10 +1200,11 @@ body::after {
 
 /* Имя в шапке: у родителя с несколькими детьми — кнопка со стрелкой. */
 .topbar-title { display: flex; align-items: center; justify-content: center; gap: 3px; min-width: 0; }
-.topbar-title:disabled { cursor: default; }
+.topbar-title { cursor: default; opacity: 1; -webkit-text-fill-color: currentColor; }
+.topbar-title.switchable { cursor: pointer; }
 #topName { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .title-switch { display: flex; flex: none; opacity: .8; transition: transform .2s var(--ease); }
-.topbar-title:not(:disabled):active .title-switch { transform: translateY(2px); }
+.topbar-title.switchable:active .title-switch { transform: translateY(2px); }
 .student-list { display: flex; flex-direction: column; gap: 6px; padding-bottom: 6px; }
 .student-option {
   display: flex; align-items: center; gap: 12px; width: 100%;

@@ -470,7 +470,9 @@ export function initStudentSwitch(profile) {
   const students = profile?.students || [];
   if (students.length < 2) return;
   const title = $('topTitle');
-  title.disabled = false;
+  // Не disabled для одного ребёнка: выключенную кнопку iOS рисует бледной,
+  // и имя в шапке выглядело размытым. Вместо этого — класс.
+  title.classList.add('switchable');
   $('titleSwitch').hidden = false;
   title.addEventListener('click', () => {
     tap();
