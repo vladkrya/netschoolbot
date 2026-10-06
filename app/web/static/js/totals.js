@@ -230,18 +230,27 @@ function render() {
   );
 }
 
-function openArchivedSubject(subject) {
+async function openArchivedSubject(subject, key) {
   const data = state.totals;
-  const body = pushScreen('Итоги по предмету', `${data.year}${data.class_name ? ` · ${data.class_name} класс` : ''}`);
-  const totals = subject.totals || {};
-  body.innerHTML = `<div class="card"><div class="subject-title">${esc(subject.subject)}</div>
-    ${data.quarters.map((q) => {
-      const item = totals.terms?.[q.key];
-      return `<div class="avg-line"><span>${esc(q.label)}</span><strong class="${markGrade(item?.mark)}">${esc(item?.mark) || formatAverage(item?.average)}</strong></div>`;
-    }).join('')}
-    ${totals.year ? `<div class="avg-line"><span>Годовая</span><strong>${esc(totals.year)}</strong></div>` : ''}
-    ${totals.final ? `<div class="avg-line"><span>Итоговая</span><strong>${esc(totals.final)}</strong></div>` : ''}
-    <p class="muted small">Итоги из «Сетевого города» за выбранный учебный год.</p></div>`;
+  const quarter = data.quarters.find((q) => q.key === key);
+  const body = pushScreen('Итоги по предмету', `${quarter?.label || ''} · ${data.year}`);
+  const load = async (force = false) => {
+    showLoading(body, skeleton(3));
+    const params = new URLSearchParams({ year: data.year_id, subject: subject.subject, quarter: key });
+    if (force) params.set('refresh', '1');
+    const accept = (fresh) => {
+      if (body.isConnected) openSubject({ ...subject, ...fresh.subject }, key, body, data);
+    };
+    try {
+      const result = await api(`/api/marks/subject?${params}`, { onFresh: (fresh) => accept(fresh.data) });
+      accept(result.data);
+    } catch (error) {
+      if (!body.isConnected) return;
+      showFailure(body, error, errorCard(error, 'archiveMarksRetry'));
+      body.querySelector('#archiveMarksRetry')?.addEventListener('click', () => load(true));
+    }
+  };
+  load();
 }
 
 /** Сводка отметок посещаемости за четверть: «Посещаемость: Пропуск по болезни — 2, Опоздал — 1». */
@@ -270,13 +279,13 @@ function distribution(marks) {
     .join('')}</div>`;
 }
 
-function openSubject(subject, key) {
-  const quarter = (state.totals.quarters || []).find((q) => q.key === key);
-  if (state.totals.archived) {
-    openArchivedSubject(subject);
+function openSubject(subject, key, existingBody = null, data = state.totals) {
+  const quarter = (data.quarters || []).find((q) => q.key === key);
+  if (data.archived && !existingBody) {
+    openArchivedSubject(subject, key);
     return;
   }
-  const body = pushScreen('Итоги по предмету', `на ${dayMonth(isoToday())}`);
+  const body = existingBody || pushScreen('Итоги по предмету', `на ${dayMonth(isoToday())}`);
   const marks = quarterMarks(subject, key);
   const lessons = subject.lessons?.[key] || { total: 0, done: 0 };
   const left = Math.max(0, lessons.total - lessons.done);
@@ -289,7 +298,7 @@ function openSubject(subject, key) {
     ? `<div class="progress">${Array.from({ length: lessons.total }, (_, i) =>
         `<span class="seg ${i < lessons.done ? 'done' : ''}" style="--i:${i}"></span>`).join('')}</div>
        <div class="progress-caption"><span>${esc(quarter?.label || SHORT[key] || '')} ${lessons.done}/${lessons.total}</span>
-       <span>Осталось ${left} ${left === 1 ? 'урок' : [2, 3, 4].includes(left % 10) && ![12, 13, 14].includes(left % 100) ? 'урока' : 'уроков'}</span></div>`
+       <span>${data.archived ? 'Закончилась' : `Осталось ${left} ${left === 1 ? 'урок' : [2, 3, 4].includes(left % 10) && ![12, 13, 14].includes(left % 100) ? 'урока' : 'уроков'}`}</span></div>`
     : `<div class="muted small">${esc(quarter?.label || '')}</div>`;
 
   const tiles = marks
@@ -325,7 +334,7 @@ function openSubject(subject, key) {
         <button class="mark-filter-reset" data-mark-reset hidden>Все оценки</button></div>
       ${tiles ? `<div class="tiles">${tiles}</div>` : '<div class="empty">Оценок пока нет</div>'}
     </div>
-    <div class="card whatif">
+    <div class="card whatif"${data.archived ? ' hidden' : ''}>
       <div class="whatif-head">
         <div class="card-title">Если получить ещё</div>
         <button class="whatif-clear" data-clear hidden>Очистить всё</button>
@@ -379,6 +388,7 @@ function openSubject(subject, key) {
     applyMarkFilter(markFilter === value ? null : value);
   }));
   body.querySelector('[data-mark-reset]').addEventListener('click', () => applyMarkFilter(null));
+  if (data.archived) return;
   const whatIfCard = body.querySelector('.whatif');
   const refreshWhatIf = bindWhatIf(whatIfCard, marks, `${subject.subject}|${key}`, subject.subject);
   bindThresholds(whatIfCard, subject.subject, () => {

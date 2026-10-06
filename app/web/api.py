@@ -593,6 +593,68 @@ async def _archived_totals(app: AppContext, user: User, selected: dict, years: l
     }
 
 
+@routes.get("/api/marks/subject")
+async def archived_subject_marks(request: web.Request) -> web.Response:
+    """Оценки архивного предмета: только выбранный период, по запросу экрана."""
+    subject = (request.query.get("subject") or "").strip()[:120]
+    key = request.query.get("quarter") or ""
+    try:
+        year_id = int(request.query.get("year", ""))
+        if year_id <= 0 or not subject or key not in PERIOD_KEYS:
+            raise ValueError
+    except ValueError:
+        return json_error("Не указан предмет, учебный год или период")
+
+    async def produce(app: AppContext, user: User):
+        years = await app.diary.fetch_school_years(user) or []
+        selected = next((year for year in years if year["id"] == year_id and not year["current"]), None)
+        if selected is None:
+            raise NetSchoolError(Reason.UNKNOWN, "Этот архивный год недоступен для выбранного ученика")
+        terms = await app.diary.fetch_terms(user, school_year_id=year_id) or []
+        term = next((item for item in terms if term_key(item.get("name")) == key), None)
+        try:
+            start = dt.date.fromisoformat(str((term or {}).get("startDate") or "")[:10])
+            end = dt.date.fromisoformat(str((term or {}).get("endDate") or "")[:10])
+            if end < start or (end - start).days > 366:
+                raise ValueError
+        except ValueError:
+            raise NetSchoolError(Reason.SERVER_UNAVAILABLE, "Школа не вернула даты выбранного периода")
+        days = await app.diary.fetch_period(user, start, end, today=user.today())
+        items = []
+        topics = {}
+        teachers = {}
+        absences = {}
+        total = 0
+        for day in days:
+            # Понедельный дневник включает соседние дни за границами четверти.
+            if not start <= day.day <= end:
+                continue
+            excluded = {record for lesson in day.lessons if lesson.is_elective for record in lesson.marks}
+            items.extend(record for record in day.marks
+                         if normalize(record.subject) == normalize(subject) and record not in excluded)
+            for lesson in day.lessons:
+                if lesson.is_elective or normalize(lesson.subject) != normalize(subject):
+                    continue
+                total += 1
+                for record in lesson.marks:
+                    topics[record] = lesson.topic
+                if lesson.teacher:
+                    teachers[lesson.teacher] = teachers.get(lesson.teacher, 0) + 1
+                if code := (lesson.absence or "").strip():
+                    absences[code] = absences.get(code, 0) + 1
+        return {"subject": {
+            "subject": subject,
+            "marks": [{**_mark_to_json(record), "quarter": key, "lesson_topic": topics.get(record, "")}
+                      for record in sorted(items, key=lambda record: record.date)
+                      if start <= record.date <= end],
+            "lessons": {key: {"total": total, "done": total}},
+            "absences": {key: absences},
+            "teacher": max(teachers, key=teachers.get) if teachers else "",
+        }}
+
+    return await _cached(request, f"marks:subject:{year_id}:{key}:{normalize(subject)}", produce)
+
+
 async def _user_periods(app: AppContext, user: User, today: dt.date) -> tuple[list[Quarter], str]:
     """Периоды для «Итогов»: свои даты, периоды школы или общепринятые."""
     setting = (await app.miniapp.prefs(user.telegram_id)).get("periods") or {}
