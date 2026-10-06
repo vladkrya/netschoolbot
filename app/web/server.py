@@ -14,8 +14,8 @@ HTML-каркас.
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import logging
+import time
 from pathlib import Path
 
 import aiohttp_jinja2
@@ -31,25 +31,8 @@ logger = logging.getLogger("netschoolbot.web")
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 STATIC_DIR = Path(__file__).parent / "static"
 
-def _static_version() -> str:
-    """Версия статики — хэш содержимого файлов.
-
-    Раньше это было время запуска, и каждый перезапуск сервера, даже без
-    изменений, давал новые адреса: телефоны заново качали всю статику, а на
-    медленной сети приложение долго стояло на пустом экране.
-    """
-    digest = hashlib.sha1()
-    for path in sorted(STATIC_DIR.rglob("*")):
-        if path.is_file():
-            digest.update(str(path.relative_to(STATIC_DIR)).encode())
-            digest.update(path.read_bytes())
-    return digest.hexdigest()[:12]
-
-
-STATIC_VERSION = _static_version()
-# Модули приложения — в <head> как modulepreload: браузер качает их разом,
-# а не цепочкой «app.js → его импорты → их импорты».
-JS_MODULES = sorted(path.name for path in (STATIC_DIR / "js").glob("*.js") if path.name != "demo.js")
+# Версия для обхода кэша браузера при обновлении статики.
+STATIC_VERSION = str(int(time.time()))
 
 page_routes = web.RouteTableDef()
 
@@ -116,21 +99,13 @@ def create_app(context: AppContext, bot=None) -> web.Application:
 
 
 async def _revalidate_static(request: web.Request, response: web.StreamResponse) -> None:
-    """Кэш статики.
+    """Статику браузер обязан перепроверять.
 
-    По пути с версией (/static/v<хэш>/) файл не меняется никогда: новая
-    версия — новый адрес. Его можно хранить сколько угодно и не спрашивать
-    сервер при каждом запуске — на мобильной сети эти перепроверки двух
-    десятков модулей и были заметной частью пустого экрана.
-
-    Без версии статику браузер обязан перепроверять: без заголовка WebView
-    Telegram брал старые модули из своего кэша.
+    Версия в адресе есть только у app.js, а остальные модули он импортирует
+    без неё. Без заголовка WebView Telegram брал их из своего кэша, и после
+    обновления экраны оставались старыми. Перепроверка стоит ответа 304.
     """
-    if "/static/" not in request.path:
-        return
-    if f"/static/v{STATIC_VERSION}/" in request.path and response.status == 200:
-        response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
-    else:
+    if "/static/" in request.path:
         response.headers["Cache-Control"] = "no-cache"
 
 
@@ -222,7 +197,6 @@ async def index(request: web.Request) -> web.Response:
         {
             "base": _base(request),
             "version": STATIC_VERSION,
-            "modules": JS_MODULES,
             "token": token,
             "student": user.student_name if user else "",
             "school": user.school.name if user else "",
@@ -250,7 +224,6 @@ async def demo(request: web.Request) -> web.Response:
         {
             "base": _base(request),
             "version": STATIC_VERSION,
-            "modules": JS_MODULES,
             "token": "",
             "student": "Пятёркин Отличник",
             "school": "Демо-школа",

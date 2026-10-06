@@ -27,40 +27,19 @@ function cacheKey(request) {
   return url.toString();
 }
 
-// Сколько ждать страницу из сети, прежде чем открыть сохранённую. На
-// iPhone после сна сеть «просыпается» секунды, и без предела приложение
-// стояло на чёрном экране, пока iOS сама не оборвёт запрос.
-const PAGE_TIMEOUT_MS = 3000;
-
-async function networkFirst(request, event) {
+async function networkFirst(request) {
   const cache = await caches.open(CACHE);
-  const network = fetch(request).then((response) => {
+  try {
+    const response = await fetch(request);
     if (response.ok) cache.put(cacheKey(request), response.clone());
     return response;
-  });
-  const fromCache = async (error) => {
+  } catch (error) {
     const saved = await cache.match(cacheKey(request));
     if (!saved) throw error;
     // Помечаем, чтобы приложение сказало «нет сети, показаны сохранённые данные».
     const headers = new Headers(saved.headers);
     headers.set('X-Netschool-Offline', '1');
     return new Response(await saved.blob(), { status: saved.status, headers });
-  };
-  if (request.mode !== 'navigate') return network.catch(fromCache);
-
-  // Страница: сеть или, если она медлит, сохранённая копия. Страница сама по
-  // себе почти статична — данные приложение всё равно запросит заново.
-  // Запрос из сети при этом не бросаем: он обновит копию к следующему разу.
-  event.waitUntil(network.catch(() => {}));
-  let timer;
-  const slow = new Promise((resolve) => { timer = setTimeout(resolve, PAGE_TIMEOUT_MS); })
-    .then(async () => (await cache.match(cacheKey(request))) || network);
-  try {
-    return await Promise.race([network, slow]);
-  } catch (error) {
-    return fromCache(error);
-  } finally {
-    clearTimeout(timer);
   }
 }
 
@@ -97,7 +76,7 @@ self.addEventListener('fetch', (event) => {
   if (STATIC_VERSION.test(url.pathname)) {
     event.respondWith(cacheFirst(request));
   } else if (request.mode === 'navigate' || url.pathname.includes('/api/')) {
-    event.respondWith(networkFirst(request, event));
+    event.respondWith(networkFirst(request));
   }
 });
 

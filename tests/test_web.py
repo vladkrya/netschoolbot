@@ -203,17 +203,6 @@ class TestPageLinksResolve:
         response = await client.get(f"{BASE}/static/js/details.js")
         assert response.headers["Cache-Control"] == "no-cache"
 
-    async def test_versioned_static_is_cached_for_good(self, client, token):
-        # Путь с версией не меняется — телефон не перепроверяет его при запуске.
-        from app.web.server import STATIC_VERSION, _static_version
-
-        response = await client.get(f"{BASE}/static/v{STATIC_VERSION}/js/details.js")
-        assert "immutable" in response.headers["Cache-Control"]
-        # Версия — по содержимому: перезапуск без изменений её не меняет.
-        assert _static_version() == STATIC_VERSION
-        page = await (await client.get(f"{BASE}/", params={"token": token})).text()
-        assert f'rel="modulepreload" href="{BASE}/static/v{STATIC_VERSION}/js/core.js"' in page
-
     async def test_stylesheet_and_script_have_content(self, client, token):
         for asset in ("app.css", "js/app.js"):
             response = await client.get(f"{BASE}/static/{asset}")
