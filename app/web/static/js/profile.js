@@ -72,9 +72,11 @@ const NOTIFY_LABELS = {
 // Отметки посещаемости есть только в мобильном API.
 const MOBILE_ONLY = new Set(['absences']);
 
+// Атрибут switch — системный переключатель: в Safari на iPhone он сам
+// тактильно щёлкает от касания (vibrate там нет, см. haptics.js).
 function toggle(key, label, on) {
   return `<label class="switch-row"><span>${label}</span>
-      <input type="checkbox" class="switch" data-notify="${key}" ${on ? 'checked' : ''}></label>`;
+      <input type="checkbox" switch class="switch" data-notify="${key}" ${on ? 'checked' : ''}></label>`;
 }
 
 const timeFormat = new Intl.DateTimeFormat('ru-RU', {
@@ -328,8 +330,8 @@ function demoSection() {
         <input type="range" id="demoLessons" min="3" max="7"></label>
       <label class="field-label">Как часто ставят оценки: <b id="demoDensityValue"></b>
         <input type="range" id="demoDensity" min="0" max="90" step="5"></label>
-      <label class="switch-row"><span>Пропуски по болезни</span><input type="checkbox" class="switch" id="demoAbsences"></label>
-      <label class="switch-row"><span>Учимся по субботам</span><input type="checkbox" class="switch" id="demoSaturday"></label>
+      <label class="switch-row"><span>Пропуски по болезни</span><input type="checkbox" switch class="switch" id="demoAbsences"></label>
+      <label class="switch-row"><span>Учимся по субботам</span><input type="checkbox" switch class="switch" id="demoSaturday"></label>
       <button class="btn" id="demoApply">Применить</button>
       <button class="btn outline" id="demoReset">Сбросить демо</button>
     </section>`;
