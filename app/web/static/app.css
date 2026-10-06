@@ -41,7 +41,7 @@
   --safe-bottom: max(env(safe-area-inset-bottom, 0px), var(--tg-bottom, 0px));
   --topbar-h: calc(52px + var(--safe-top));
   --header-h: calc(var(--topbar-h) + 64px);
-  --nav-h: calc(70px + var(--safe-bottom));
+  --nav-h: calc(78px + var(--safe-bottom));
   --ease: cubic-bezier(.2, .8, .3, 1);
   --radius: 12px;
   --press-glass: inset 0 1px 0 rgba(255, 255, 255, .45), inset 0 0 0 1px rgba(255, 255, 255, .2);
@@ -618,10 +618,10 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
   left: 12px; right: 12px;
   bottom: calc(var(--safe-bottom) + 8px);
   z-index: 40;
-  height: 62px;
+  height: 70px;
   padding: 4px;
   display: flex;
-  border-radius: 31px;
+  border-radius: 35px;
   background: linear-gradient(180deg, var(--glass), var(--glass-2));
   -webkit-backdrop-filter: blur(22px) saturate(180%);
   backdrop-filter: blur(22px) saturate(180%);
@@ -641,7 +641,7 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
   position: absolute;
   top: 4px; bottom: 4px; left: 4px;
   width: calc((100% - 8px) / 5);
-  border-radius: 27px;
+  border-radius: 22px;
   background: var(--lens);
   box-shadow: inset 0 1px 0 var(--lens-shine), inset 0 -1px 0 rgba(255, 255, 255, .08);
   /* Сдвиг — отдельным translate: transform умножался бы на scale капли. */
@@ -683,8 +683,9 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 2px;
-  border-radius: 27px;
+  gap: 3px;
+  padding-bottom: 4px;
+  border-radius: 22px;
   font-size: 10.5px;
   font-weight: 500;
   letter-spacing: -.1px;
@@ -700,7 +701,9 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
   overflow: hidden;
   text-overflow: ellipsis;
   font-size: clamp(9px, 2.65vw, 10.5px);
+  line-height: 1.15;
 }
+.nav-item .lbl-old { font-size: clamp(8.5px, 2.5vw, 10px); }
 .nav-item.active { color: var(--primary); opacity: 1; font-weight: 600; }
 .nav-item.active .ico { animation: bounce .45s var(--ease); }
 /* Пункт под каплей «увеличен» линзой, прежняя вкладка гаснет. */
@@ -776,6 +779,25 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .cal-day.weekend { color: var(--primary); }
 .cal-day.today { background: var(--card-2); box-shadow: inset 0 0 0 1.5px var(--primary); }
 .cal-day.selected { background: #4caf50; color: #fff; }
+
+/* Неделя — единая полоса от понедельника до воскресенья. */
+.cal-week .cal-day.week-selected,
+.cal-week .cal-day.week-current {
+  width: 100%;
+  margin: 0;
+  border-radius: 0;
+  opacity: 1;
+}
+.cal-week .cal-day.week-selected { background: #2e8b57; color: #fff; }
+.cal-week .cal-day.week-current {
+  color: var(--primary);
+  border-top: 2px solid var(--primary);
+  border-bottom: 2px solid var(--primary);
+}
+.cal-week .week-current.week-start { border-left: 2px solid var(--primary); }
+.cal-week .week-current.week-end { border-right: 2px solid var(--primary); }
+.cal-week .cal-day.week-start { border-top-left-radius: 20px; border-bottom-left-radius: 20px; }
+.cal-week .cal-day.week-end { border-top-right-radius: 20px; border-bottom-right-radius: 20px; }
 
 .error-card p { margin-bottom: 4px; }
 

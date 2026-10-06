@@ -210,7 +210,7 @@ function slideTo(iso) {
 
 /* ─────────────────────────── Календарь ─────────────────────────── */
 
-export function openCalendar(selectedDate = state.date, onSelect = goToDay) {
+export function openCalendar(selectedDate = state.date, onSelect = goToDay, { week = false } = {}) {
   tap();
   const month = parseIso(selectedDate);
   month.setDate(1);
@@ -218,6 +218,8 @@ export function openCalendar(selectedDate = state.date, onSelect = goToDay) {
   const body = openSheet('', '');
   const render = () => {
     const today = isoToday();
+    const selectedWeek = mondayOf(selectedDate);
+    const currentWeek = mondayOf(today);
     const first = new Date(month);
     const start = new Date(first);
     start.setDate(1 - ((first.getDay() + 6) % 7));
@@ -230,8 +232,12 @@ export function openCalendar(selectedDate = state.date, onSelect = goToDay) {
         'cal-day',
         date.getMonth() !== month.getMonth() ? 'other' : '',
         i % 7 >= 5 ? 'weekend' : '',
-        iso === today ? 'today' : '',
-        iso === selectedDate ? 'selected' : '',
+        !week && iso === today ? 'today' : '',
+        !week && iso === selectedDate ? 'selected' : '',
+        week && mondayOf(iso) === selectedWeek ? 'week-selected' : '',
+        week && currentWeek !== selectedWeek && mondayOf(iso) === currentWeek ? 'week-current' : '',
+        week && i % 7 === 0 ? 'week-start' : '',
+        week && i % 7 === 6 ? 'week-end' : '',
       ].filter(Boolean).join(' ');
       cells.push(`<button class="${classes}" data-date="${iso}">${date.getDate()}</button>`);
     }
@@ -242,7 +248,7 @@ export function openCalendar(selectedDate = state.date, onSelect = goToDay) {
         <div><div class="cal-month">${monthName}</div><div class="muted small">${month.getFullYear()}</div></div>
         <button class="cal-arrow" data-shift="1">›</button>
       </div>
-      <div class="cal-grid">
+      <div class="cal-grid${week ? ' cal-week' : ''}">
         ${WEEKDAYS.map((d) => `<div class="cal-dow">${d}</div>`).join('')}
         ${cells.join('')}
       </div>`;

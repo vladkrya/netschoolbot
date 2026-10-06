@@ -128,6 +128,6 @@ export function initSchedule() {
     openCalendar(monday, (iso) => {
       state.scheduleWeek = weekOffsetOf(iso);
       loadSchedule();
-    });
+    }, { week: true });
   });
 }
