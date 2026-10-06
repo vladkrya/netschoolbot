@@ -77,18 +77,28 @@ function renderHeader() {
   $('daySub').textContent = WEEKDAYS_FULL.includes(label) ? dayMonth(state.date) : fullDate(state.date);
 }
 
-function renderDay() {
+let renderedKey = '';
+
+/** quiet — перерисовка по таймеру: без анимации появления и только если
+ *  что-то поменялось (полоска текущего урока), иначе экран «перезагружался»
+ *  каждые 30 секунд. */
+function renderDay(quiet = false) {
   renderHeader();
   const day = days.get(state.date);
   const lessons = day?.lessons || [];
   const container = $('dayContent');
 
   if (!lessons.length) {
+    renderedKey = '';
     container.innerHTML = `<div class="empty big">${weekdayIndex(state.date) >= 5 ? 'Выходной' : 'Уроков нет'}</div>`;
     return;
   }
 
   const progress = activeProgress(lessons);
+  const key = `${state.date}|${progress?.index}|${progress?.label}`;
+  if (quiet && key === renderedKey && container.children.length) return;
+  renderedKey = key;
+  container.classList.toggle('quiet', quiet);
   container.innerHTML = lessons.map((lesson, index) => lessonCard(lesson, index, progress?.index === index ? progress : null)).join('');
   container.querySelectorAll('[data-lesson]').forEach((card) => {
     card.addEventListener('click', (event) => {
@@ -244,7 +254,7 @@ function bindSwipe() {
 }
 
 export function initDay() {
-  setInterval(() => { if (state.tab === 'day' && dayData(state.date)) renderDay(); }, 30000);
+  setInterval(() => { if (state.tab === 'day' && dayData(state.date)) renderDay(true); }, 30000);
   $('dayPrev').addEventListener('click', () => shiftDay(-1));
   $('dayNext').addEventListener('click', () => shiftDay(1));
   $('dayTitle').addEventListener('click', openCalendar);

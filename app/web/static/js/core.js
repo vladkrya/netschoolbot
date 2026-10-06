@@ -61,39 +61,91 @@ export function skeleton(count = 5) {
 
 let bannerTimer = 0;
 
-/** Сообщение под шапкой. Закрывается нажатием; hideAfter (мс) — само гаснет:
- *  для «Отправлено» и подобного, иначе оно висело бы на всех вкладках. */
+/** Смахнуть плашку вверх или вбок; нажатие тоже закрывает. */
+function bindBannerDismiss(el) {
+  let x0 = 0, y0 = 0, dx = 0, dy = 0, active = false;
+  el.addEventListener('touchstart', (event) => {
+    const t = event.touches[0];
+    x0 = t.clientX; y0 = t.clientY; dx = dy = 0; active = true;
+    el.style.transition = 'none';
+  }, { passive: true });
+  el.addEventListener('touchmove', (event) => {
+    if (!active) return;
+    const t = event.touches[0];
+    dx = t.clientX - x0;
+    dy = Math.min(0, t.clientY - y0);
+    el.style.transform = `translate(${dx}px, ${dy}px)`;
+    el.style.opacity = String(Math.max(0, 1 - Math.max(Math.abs(dx), -dy) / 160));
+  }, { passive: true });
+  el.addEventListener('touchend', () => {
+    if (!active) return;
+    active = false;
+    el.style.transition = '';
+    if (Math.abs(dx) > 60 || dy < -30) {
+      el.style.transform = dy < -30 && Math.abs(dx) < 60
+        ? 'translateY(-150%)' : `translateX(${dx > 0 ? 120 : -120}%)`;
+      el.style.opacity = '0';
+      setTimeout(() => banner(''), 150);
+    } else {
+      el.style.transform = '';
+      el.style.opacity = '';
+    }
+  });
+  el.addEventListener('click', () => banner(''));
+}
+
+/** Сообщение под шапкой. Закрывается нажатием или смахиванием; hideAfter
+ *  (мс) — само гаснет: для «Отправлено» и подобного, иначе оно висело бы на
+ *  всех вкладках. */
 export function banner(text, isError, hideAfter = 0) {
   const el = $('banner');
   if (!el.dataset.dismiss) {
     el.dataset.dismiss = '1';
-    el.addEventListener('click', () => banner(''));
+    bindBannerDismiss(el);
   }
   clearTimeout(bannerTimer);
+  // Закрыли плашку о сохранённых данных — повторные запросы её не возвращают.
+  if (!text && notice) dismissedNotice = notice;
+  notice = '';
   el.textContent = text || '';
+  el.style.transform = '';
+  el.style.opacity = '';
   el.classList.toggle('error', Boolean(isError));
   el.hidden = !text;
   if (text && hideAfter) bannerTimer = setTimeout(() => banner(''), hideAfter);
+}
+
+// Плашки о работе без связи: одна на состояние. Закрытая не всплывает при
+// каждом следующем запросе, пока связь не вернётся.
+let notice = '';
+let dismissedNotice = '';
+const NOTICE_HIDE_MS = 6000;
+
+function showNotice(text) {
+  if (notice === text || dismissedNotice === text) return;
+  banner(text, false, NOTICE_HIDE_MS);
+  notice = text;
+}
+
+function clearNotices() {
+  dismissedNotice = '';
+  if (notice) banner('');
+  dismissedNotice = '';
 }
 
 const REQUEST_TIMEOUT_MS = 75000;
 // Кэш моложе минуты — его только что получили со школьного сервера,
 // перепроверять незачем.
 const REVALIDATE_AFTER_S = 60;
+const OFFLINE_TEXT = 'Нет связи — показаны сохранённые данные';
 const STALE_TEXT = 'Сервер дневника сейчас недоступен. Показаны сохранённые данные.';
-let staleShown = false;
 // Пути, которые за этот запуск уже сверили со школьным сервером.
 const revalidated = new Set();
 
 function staleBanner(show) {
-  if (show) {
-    staleShown = true;
-    banner(STALE_TEXT);
-  } else if (staleShown) {
-    // Свежий ответ пришёл — плашка о сохранённых данных больше не правда.
-    staleShown = false;
-    banner('');
-  }
+  // Свежий ответ пришёл — плашка о сохранённых данных больше не правда.
+  if (show) showNotice(STALE_TEXT);
+  else clearNotices();
 }
 
 /** Запрос к API с удостоверением личности и разбором ошибки. */
@@ -139,9 +191,12 @@ async function request(path, options = {}) {
   }
   if (response.headers.get('X-Netschool-Offline')) {
     // Ответ из копии service worker: сети нет совсем.
-    banner('Нет связи — показаны сохранённые данные');
+    showNotice(OFFLINE_TEXT);
     return { ...payload, offline: true, stale: false };
   }
+  // Ответ пришёл по сети — связь вернулась.
+  if (notice === OFFLINE_TEXT) banner('');
+  if (dismissedNotice === OFFLINE_TEXT) dismissedNotice = '';
   return payload;
 }
 
