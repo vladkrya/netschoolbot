@@ -3,7 +3,7 @@
 'use strict';
 
 import { $, api, banner, demo, esc, initData, pushEnabled, state, tg } from './core.js';
-import { ACCENTS, currentAccent, saveAccent, syncChromeColor } from './appearance.js';
+import { ACCENTS, currentAccent, isNewDesign, saveAccent, saveDesign, syncChromeColor } from './appearance.js';
 import { ICONS } from './icons.js';
 import { loadCalc } from './calc.js';
 import { loadTotals } from './totals.js';
@@ -363,6 +363,8 @@ function render() {
     </section>
     <section class="drawer-section">
       <div class="drawer-heading">Оформление</div>
+      <label class="switch-row design-row"><span>Новый дизайн<span class="design-tag">beta</span></span>
+        <input type="checkbox" switch class="switch" id="designNew" ${isNewDesign() ? 'checked' : ''}></label>
       ${radio('light', 'Светлая тема')}
       ${radio('auto', 'Как в системе')}
       ${radio('dark', 'Тёмная тема')}
@@ -400,6 +402,10 @@ function bindDrawer() {
       applyStoredTheme();
     })
   );
+  $('designNew').addEventListener('change', (event) => {
+    select();
+    saveDesign(event.target.checked);
+  });
   body.querySelectorAll('[data-accent]').forEach((button) =>
     button.addEventListener('click', () => {
       select();

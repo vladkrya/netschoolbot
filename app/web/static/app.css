@@ -360,7 +360,7 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
   font-weight: 600;
   color: var(--text2);
 }
-.hw-badge.clip { padding: 1px 4px; vertical-align: middle; }
+.hw-badge.clip { display: inline-flex; padding: 1px 4px; vertical-align: middle; }
 .hw-badge .icon { display: inline-block; vertical-align: -3px; }
 
 .mark-box {
@@ -1069,3 +1069,18 @@ body::after {
    и position: fixed у рамки отсчитывался от карточки, а не от экрана —
    окно капчи уезжало вправо вниз. */
 .screen-body > .bug-report { animation: none; }
+
+/* Тумблер «Новый дизайн» в меню ☰. */
+.design-tag {
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--primary) 16%, transparent);
+  color: var(--primary);
+  font-size: 11px;
+  font-weight: 700;
+  vertical-align: 1px;
+}
+
+/* Полоса недели и сводка дня есть только в новом дизайне (new.css). */
+.week-strip, .day-summary { display: none; }

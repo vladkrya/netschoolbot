@@ -5,7 +5,7 @@
 // смотреть, что получится.
 'use strict';
 
-import { $, api, avgClass, errorCard, esc, skeleton, state } from './core.js';
+import { $, api, avgClass, errorCard, esc, plural, skeleton, state } from './core.js';
 import { neededMarks, thresholdsFor, thresholdsText } from './grading.js';
 
 const MARKS = [5, 4, 3, 2];
@@ -132,14 +132,6 @@ function render() {
     </div>`;
 
   bind();
-}
-
-function plural(count, one, few, many) {
-  if (count % 100 >= 11 && count % 100 <= 14) return many;
-  const last = count % 10;
-  if (last === 1) return one;
-  if (last >= 2 && last <= 4) return few;
-  return many;
 }
 
 function bind() {

@@ -1,0 +1,470 @@
+/* «Новый дизайн» — включается тумблером в меню ☰ (атрибут data-design="new"
+   на <html>, см. appearance.js). Разметка та же, что у классического,
+   меняется только оформление:
+   — шапка не цветная, а в тон фону, со стеклом при прокрутке;
+   — цвет акцента остаётся только на действиях и активных элементах;
+   — карточки крупнее и мягче, номер урока — плашка в тон акцента;
+   — оценки — залитые плашки цвета оценки везде, а не только в итогах;
+   — меню ☰ собрано из сгруппированных карточек, как настройки iOS.
+   Все селекторы начинаются с :root[data-design="new"], чтобы перебить
+   и тёмную тему из app.css (у неё :root:not([data-theme="light"])). */
+
+/* ─────────────────────────── Палитра ─────────────────────────── */
+
+:root[data-design="new"] {
+  --bg: #f3f4f8;
+  --card: #fff;
+  --card-2: #f0f1f5;
+  --text: #14171f;
+  --text2: #6c7280;
+  --border: #e6e8ee;
+  --primary: var(--head);
+  --mark-bg: #f0f1f5;
+  --g2: #e0383e;
+  --g3: #e8770c;
+  --g4: #7aa315;
+  --g5: #22a04b;
+  --soft: color-mix(in srgb, var(--primary) 13%, transparent);
+  --soft-2: color-mix(in srgb, var(--primary) 22%, transparent);
+  --lift: 0 1px 2px rgba(16, 24, 40, .04), 0 0 0 1px rgba(16, 24, 40, .045);
+  --lift-2: 0 8px 24px rgba(16, 24, 40, .08), 0 0 0 1px rgba(16, 24, 40, .04);
+  --glass: rgba(255, 255, 255, .72);
+  --glass-2: rgba(255, 255, 255, .55);
+  --glass-edge: rgba(255, 255, 255, .8);
+  --radius: 20px;
+}
+
+:root[data-design="new"][data-theme="dark"] {
+  --bg: #0f1217;
+  --card: #181c23;
+  --card-2: #20252e;
+  --text: #eceef2;
+  --text2: #8b92a0;
+  --border: #262b35;
+  --primary: color-mix(in srgb, var(--head) 62%, #fff);
+  --mark-bg: #20252e;
+  --g2: #f26a6e;
+  --g3: #f3a046;
+  --g4: #b2d04a;
+  --g5: #4fcf73;
+  --lift: 0 0 0 1px rgba(255, 255, 255, .05);
+  --lift-2: 0 10px 30px rgba(0, 0, 0, .45), 0 0 0 1px rgba(255, 255, 255, .06);
+  --glass: rgba(32, 37, 46, .7);
+  --glass-2: rgba(24, 28, 35, .55);
+  --glass-edge: rgba(255, 255, 255, .1);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-design="new"]:not([data-theme="light"]) {
+    --bg: #0f1217;
+    --card: #181c23;
+    --card-2: #20252e;
+    --text: #eceef2;
+    --text2: #8b92a0;
+    --border: #262b35;
+    --primary: color-mix(in srgb, var(--head) 62%, #fff);
+    --mark-bg: #20252e;
+    --g2: #f26a6e;
+    --g3: #f3a046;
+    --g4: #b2d04a;
+    --g5: #4fcf73;
+    --lift: 0 0 0 1px rgba(255, 255, 255, .05);
+    --lift-2: 0 10px 30px rgba(0, 0, 0, .45), 0 0 0 1px rgba(255, 255, 255, .06);
+    --glass: rgba(32, 37, 46, .7);
+    --glass-2: rgba(24, 28, 35, .55);
+    --glass-edge: rgba(255, 255, 255, .1);
+  }
+}
+
+:root[data-design="new"] body {
+  font-size: 15px;
+  letter-spacing: -.01em;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ──────────────────────────── Шапка ──────────────────────────── */
+
+:root[data-design="new"] .app-header,
+:root[data-design="new"] .screen-head {
+  background: color-mix(in srgb, var(--bg) 84%, transparent);
+  -webkit-backdrop-filter: blur(22px) saturate(180%);
+  backdrop-filter: blur(22px) saturate(180%);
+  color: var(--text);
+  box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--border) 80%, transparent);
+}
+:root[data-design="new"] .topbar { padding-left: 10px; padding-right: 10px; }
+:root[data-design="new"] .topbar-title { font-size: 18px; font-weight: 700; letter-spacing: -.02em; }
+:root[data-design="new"] .topbar-btn,
+:root[data-design="new"] .screen-back {
+  width: 40px;
+  height: 40px;
+  color: var(--text);
+  background: var(--card);
+  box-shadow: var(--lift);
+}
+:root[data-design="new"] .screen-back { color: var(--primary); margin-left: 4px; }
+:root[data-design="new"] .topbar-btn:active,
+:root[data-design="new"] .screen-back:active { background: var(--card-2); box-shadow: var(--lift); }
+
+/* Полоса дня и недели — карточка-«пилюля» внутри шапки. */
+:root[data-design="new"] .date-bar {
+  margin: 2px 12px 10px;
+  padding: 4px;
+  border-radius: 16px;
+  background: var(--card);
+  color: var(--text);
+  box-shadow: var(--lift);
+}
+:root[data-design="new"] .date-arrow {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  color: var(--primary);
+  background: var(--soft);
+}
+:root[data-design="new"] .date-arrow:active { background: var(--soft-2); box-shadow: none; }
+:root[data-design="new"] .date-title { color: var(--text); }
+:root[data-design="new"] .date-label { font-size: 16px; font-weight: 700; }
+:root[data-design="new"] .date-sub { color: var(--text2); opacity: 1; }
+
+:root[data-design="new"] .filter-bar {
+  background: none;
+  color: var(--text);
+  padding: 2px 12px 10px;
+}
+:root[data-design="new"] .segment-title {
+  text-align: left;
+  padding-left: 4px;
+  font-size: 13px;
+  color: var(--text2);
+}
+:root[data-design="new"] .search {
+  border: 0;
+  border-radius: 14px;
+  background: var(--card);
+  box-shadow: var(--lift);
+  color: var(--text2);
+}
+:root[data-design="new"] .search input { color: var(--text); }
+:root[data-design="new"] .search input::placeholder { color: var(--text2); }
+
+/* ───────────────────────── Общие элементы ───────────────────────── */
+
+:root[data-design="new"] .panel { padding: 14px 14px 24px; }
+
+:root[data-design="new"] .card,
+:root[data-design="new"] .lesson-card,
+:root[data-design="new"] .task-block,
+:root[data-design="new"] .info-card,
+:root[data-design="new"] .history-item {
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--card);
+  box-shadow: var(--lift);
+}
+:root[data-design="new"] .card { padding: 16px; margin-bottom: 12px; }
+:root[data-design="new"] .card-title { font-size: 16px; font-weight: 700; }
+
+:root[data-design="new"] .btn {
+  padding: 13px;
+  border-radius: 14px;
+  background: var(--head);
+  letter-spacing: -.01em;
+}
+:root[data-design="new"] .btn.outline { border: 0; background: var(--soft); color: var(--primary); }
+
+:root[data-design="new"] .chip {
+  padding: 7px 14px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--card);
+  box-shadow: var(--lift);
+  font-weight: 500;
+}
+:root[data-design="new"] .chip.active { background: var(--primary); color: #fff; box-shadow: none; }
+
+:root[data-design="new"] .field,
+:root[data-design="new"] .to-field,
+:root[data-design="new"] .calc-input {
+  border-color: transparent;
+  border-radius: 12px;
+  background: var(--card-2);
+}
+:root[data-design="new"] .field:focus { border-color: var(--primary); }
+
+:root[data-design="new"] .switch:checked { background: var(--primary); }
+:root[data-design="new"] .skeleton { border-radius: 8px; }
+
+:root[data-design="new"] .banner { border-radius: 16px; font-weight: 500; }
+
+:root[data-design="new"] .fab {
+  border-radius: 20px;
+  background: var(--head);
+  box-shadow: 0 10px 28px color-mix(in srgb, var(--head) 45%, transparent);
+  border: 0;
+}
+
+/* ───────────────────────── Карточка урока ───────────────────────── */
+
+:root[data-design="new"] .lesson-card { padding: 14px 16px; margin-bottom: 10px; }
+:root[data-design="new"] .lc-top { align-items: center; gap: 12px; }
+:root[data-design="new"] .lc-num {
+  min-width: 34px;
+  height: 34px;
+  border-radius: 11px;
+  background: var(--soft);
+  box-shadow: none;
+  color: var(--primary);
+  font-size: 15px;
+  font-weight: 700;
+}
+:root[data-design="new"] .lc-subject { font-size: 16px; font-weight: 600; line-height: 1.25; }
+/* Всё под названием выровнено по его левому краю, а не по номеру. */
+:root[data-design="new"] .lc-badges,
+:root[data-design="new"] .lesson-progress-label,
+:root[data-design="new"] .lesson-progress,
+:root[data-design="new"] .lc-bottom { margin-left: 46px; }
+:root[data-design="new"] .lesson-card:has(.lc-num:empty) :is(.lc-badges, .lesson-progress-label, .lesson-progress, .lc-bottom) { margin-left: 0; }
+:root[data-design="new"] .lc-bottom {
+  margin-top: 6px;
+  padding-top: 0;
+  border-top: 0;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+:root[data-design="new"] .hw-badge {
+  padding: 3px 9px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--soft);
+  color: var(--primary);
+}
+:root[data-design="new"] .hw-badge.clip { padding: 3px 6px; }
+:root[data-design="new"] .lesson-progress-label { font-weight: 600; }
+:root[data-design="new"] .lesson-progress { height: 6px; background: var(--card-2); }
+
+/* Идущий или ближайший урок — подсвечен рамкой акцента. */
+:root[data-design="new"] .lesson-card:has(.lesson-progress) {
+  box-shadow: 0 0 0 2px var(--primary), 0 10px 28px color-mix(in srgb, var(--primary) 18%, transparent);
+}
+
+/* ─────────────────────────── Оценки ─────────────────────────── */
+
+:root[data-design="new"] .mark-box {
+  min-width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 11px;
+  background: var(--card-2);
+  font-size: 17px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+:root[data-design="new"] .mark-box.big { min-width: 48px; height: 48px; border-radius: 14px; font-size: 22px; }
+:root[data-design="new"] .mark-box.m2 { --c: var(--g2); }
+:root[data-design="new"] .mark-box.m3 { --c: var(--g3); }
+:root[data-design="new"] .mark-box.m4 { --c: var(--g4); }
+:root[data-design="new"] .mark-box.m5 { --c: var(--g5); }
+:root[data-design="new"] .mark-box:is(.m2, .m3, .m4, .m5),
+:root[data-design="new"] .tile .mark-box:is(.m2, .m3, .m4, .m5),
+:root[data-design="new"] .grade-row .mark-box:is(.m2, .m3, .m4, .m5),
+:root[data-design="new"] .whatif .mark-box:is(.m2, .m3, .m4, .m5) {
+  border: 0;
+  background: color-mix(in srgb, var(--c) 15%, var(--card));
+  color: var(--c);
+}
+:root[data-design="new"] .tile .mark-box { border: 0; background: var(--card-2); }
+:root[data-design="new"] .whatif-item .mark-box,
+:root[data-design="new"] .whatif-item .mark-box:is(.m2, .m3, .m4, .m5) {
+  border: 1.5px dashed var(--c, var(--text2));
+}
+:root[data-design="new"] .whatif-add .mark-box { height: 44px; border-radius: 14px; }
+
+:root[data-design="new"] .avg { border-radius: 10px; font-weight: 700; font-variant-numeric: tabular-nums; }
+:root[data-design="new"] .avg-line strong,
+:root[data-design="new"] .whatif-result strong { font-size: 30px; letter-spacing: -.03em; }
+
+:root[data-design="new"] .grade-row {
+  border: 0;
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--g5) 12%, var(--card));
+}
+:root[data-design="new"] .grade-row.absence { background: var(--card-2); }
+
+/* ───────────────────────── Экраны поверх ───────────────────────── */
+
+:root[data-design="new"] .screen { box-shadow: -10px 0 30px rgba(0, 0, 0, .12); }
+:root[data-design="new"] .screen-body { padding: 14px; }
+:root[data-design="new"] .screen-title { font-weight: 700; }
+:root[data-design="new"] .screen-subtitle { color: var(--text2); opacity: 1; }
+:root[data-design="new"] .detail h2 { font-size: 26px; letter-spacing: -.03em; }
+
+:root[data-design="new"] .task-block {
+  border-left: 0;
+  box-shadow: var(--lift), inset 4px 0 0 var(--yellow);
+}
+:root[data-design="new"] .task-block.task-mark { box-shadow: var(--lift), inset 4px 0 0 var(--green); }
+:root[data-design="new"] .attach { border-radius: 12px; background: var(--soft); }
+
+/* ─────────────────────────── Расписание ─────────────────────────── */
+
+:root[data-design="new"] .sched-card.current {
+  outline: 0;
+  background: var(--card);
+  box-shadow: 0 0 0 2px var(--primary), 0 10px 28px color-mix(in srgb, var(--primary) 16%, transparent);
+}
+:root[data-design="new"] .sched-top { border-bottom: 0; padding-bottom: 4px; }
+:root[data-design="new"] .sched-day { font-size: 18px; font-weight: 700; }
+:root[data-design="new"] .sched-lesson { padding: 9px 0; font-size: 15px; gap: 12px; }
+:root[data-design="new"] .sched-lesson:last-child { border-bottom: 0; }
+:root[data-design="new"] .sched-lesson .lc-num { min-width: 28px; height: 28px; border-radius: 9px; font-size: 13px; }
+:root[data-design="new"] .sched-toggle { font-weight: 600; }
+
+/* ───────────────────────────── Д/З ───────────────────────────── */
+
+:root[data-design="new"] .hw-subject { font-size: 17px; font-weight: 700; }
+:root[data-design="new"] .hw-check { width: 30px; height: 30px; border-width: 2px; }
+
+/* ───────────────────────────── Итоги ───────────────────────────── */
+
+:root[data-design="new"] .totals-table {
+  margin: 0;
+  border-radius: var(--radius);
+  background: var(--card);
+  box-shadow: var(--lift);
+}
+:root[data-design="new"] .tt-row { min-height: 50px; }
+:root[data-design="new"] .tt-row:last-child { border-bottom: 0; }
+:root[data-design="new"] .tt-head { background: var(--card); color: var(--text2); }
+:root[data-design="new"] .tt-subject { padding-left: 14px; font-weight: 500; }
+:root[data-design="new"] .tt-cell { font-variant-numeric: tabular-nums; }
+:root[data-design="new"] .subject-title { font-size: 24px; font-weight: 700; letter-spacing: -.03em; }
+:root[data-design="new"] .seg { height: 8px; border-radius: 4px; background: var(--card-2); }
+:root[data-design="new"] .seg.done { background: var(--primary); }
+:root[data-design="new"] .dist { border-radius: 12px; }
+:root[data-design="new"] .year-pill { border-radius: 8px; }
+
+/* ──────────────────────────── Почта ──────────────────────────── */
+
+:root[data-design="new"] .mail-card { gap: 14px; }
+:root[data-design="new"] .avatar { border-radius: 16px; }
+:root[data-design="new"] .avatar.small { border-radius: 11px; }
+:root[data-design="new"] .unread-dot { background: var(--primary); }
+:root[data-design="new"] .ann-title { font-weight: 700; }
+:root[data-design="new"] .ann-foot { border-top: 0; padding-top: 0; }
+
+/* ──────────────────────── Нижняя навигация ──────────────────────── */
+
+:root[data-design="new"] .bottom-nav { box-shadow: var(--lift-2), inset 0 1px 0 var(--glass-edge); }
+:root[data-design="new"] .nav-glider { background: var(--soft); box-shadow: none; }
+:root[data-design="new"] .nav-item { opacity: .6; }
+:root[data-design="new"] .nav-item.active { opacity: 1; }
+
+/* ──────────────────────────── Меню ☰ ──────────────────────────── */
+
+/* Разделы — сгруппированные карточки на сером фоне, как настройки iOS. */
+:root[data-design="new"] .drawer-panel {
+  width: min(88vw, 360px);
+  padding-left: 12px;
+  padding-right: 12px;
+  background: var(--bg);
+  border-radius: 0 28px 28px 0;
+}
+:root[data-design="new"] .drawer-section {
+  margin-bottom: 12px;
+  padding: 14px 16px;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--card);
+  box-shadow: var(--lift);
+}
+:root[data-design="new"] .drawer-heading {
+  margin-bottom: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text2);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+/* Первый раздел — ученик: имя крупно, как карточка профиля. */
+:root[data-design="new"] .drawer-section:first-child .drawer-name,
+:root[data-design="new"] .demo-badge + .drawer-section .drawer-name { font-size: 19px; font-weight: 700; }
+:root[data-design="new"] .drawer-link {
+  width: 100%;
+  gap: 12px;
+  padding: 11px 0;
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 500;
+  border-bottom: 1px solid var(--border);
+}
+:root[data-design="new"] .drawer-link:last-child { border-bottom: 0; }
+:root[data-design="new"] .drawer-link .icon { color: var(--primary); }
+:root[data-design="new"] .drawer-option { color: var(--text); padding: 9px 0; }
+:root[data-design="new"] .drawer-option input { accent-color: var(--primary); }
+:root[data-design="new"] .switch-row { padding: 9px 0; }
+:root[data-design="new"] .drawer-foot { padding: 4px 16px 0; }
+:root[data-design="new"] .demo-badge { border-radius: 14px; }
+
+/* ─────────────────────── Нижняя шторка ─────────────────────── */
+
+:root[data-design="new"] .sheet-head h3 { font-size: 17px; font-weight: 700; }
+:root[data-design="new"] .cal-day.selected { background: var(--primary); }
+:root[data-design="new"] .cal-day.today { background: var(--soft); box-shadow: none; color: var(--primary); font-weight: 700; }
+
+/* ─────────────────── Полоса недели и сводка дня ─────────────────── */
+
+:root[data-design="new"] .week-strip {
+  display: flex;
+  gap: 4px;
+  margin: -2px 12px 10px;
+}
+:root[data-design="new"] .week-day {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 6px 0 5px;
+  border-radius: 14px;
+  color: var(--text);
+  transition: background-color .2s, color .2s, transform .15s var(--ease);
+}
+:root[data-design="new"] .week-day:active { transform: scale(.92); }
+:root[data-design="new"] .wd-name { font-size: 11px; font-weight: 600; color: var(--text2); text-transform: uppercase; }
+:root[data-design="new"] .wd-num { font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; }
+:root[data-design="new"] .wd-dots { display: flex; gap: 3px; height: 5px; }
+:root[data-design="new"] .dot { width: 5px; height: 5px; border-radius: 50%; }
+:root[data-design="new"] .dot.mark { background: var(--g5); }
+:root[data-design="new"] .dot.hw { background: var(--primary); }
+:root[data-design="new"] .week-day.free { opacity: .45; }
+:root[data-design="new"] .week-day.today .wd-num { color: var(--primary); }
+:root[data-design="new"] .week-day.on { background: var(--primary); color: #fff; opacity: 1; }
+:root[data-design="new"] .week-day.on :is(.wd-name, .wd-num) { color: #fff; }
+:root[data-design="new"] .week-day.on .dot { background: rgba(255, 255, 255, .85); }
+
+:root[data-design="new"] .day-summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding: 14px 16px;
+  border-radius: var(--radius);
+  background: linear-gradient(135deg, var(--head), color-mix(in srgb, var(--head) 70%, #000));
+  color: #fff;
+  box-shadow: 0 10px 28px color-mix(in srgb, var(--head) 30%, transparent);
+}
+:root[data-design="new"] .ds-main { flex: 1; min-width: 0; }
+:root[data-design="new"] .ds-title { font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; }
+:root[data-design="new"] .ds-sub { margin-top: 2px; font-size: 13px; opacity: .8; }
+:root[data-design="new"] .ds-marks { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; max-width: 50%; }
+:root[data-design="new"] .ds-marks .mark-box,
+:root[data-design="new"] .ds-marks .mark-box:is(.m2, .m3, .m4, .m5) {
+  min-width: 30px;
+  height: 30px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, .92);
+  color: var(--c, var(--text));
+  font-size: 15px;
+}

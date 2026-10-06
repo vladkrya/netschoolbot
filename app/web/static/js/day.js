@@ -6,8 +6,8 @@
 'use strict';
 
 import {
-  $, addDays, api, dayMonth, errorCard, esc, fullDate, isoOf, isoToday,
-  parseIso, skeleton, state, WEEKDAYS, WEEKDAYS_FULL, weekdayIndex, weekOffsetOf,
+  $, addDays, api, dayMonth, errorCard, esc, fullDate, isoOf, isoToday, mondayOf,
+  parseIso, plural, skeleton, state, WEEKDAYS, WEEKDAYS_FULL, weekdayIndex, weekOffsetOf,
 } from './core.js';
 import { ICONS } from './icons.js';
 import { canGoBack } from './screens.js';
@@ -75,6 +75,47 @@ function renderHeader() {
   $('dayLabel').textContent = label;
   // Когда сверху день недели, снизу только дата — без повтора.
   $('daySub').textContent = WEEKDAYS_FULL.includes(label) ? dayMonth(state.date) : fullDate(state.date);
+  renderWeekStrip();
+}
+
+/** Неделя полосой под датой (новый дизайн): число, день недели и точки —
+ *  есть оценки и есть задания. Воскресенье — только если в нём есть уроки. */
+function renderWeekStrip() {
+  const strip = $('weekStrip');
+  const monday = mondayOf(state.date);
+  const today = isoToday();
+  const dates = Array.from({ length: 7 }, (_, index) => addDays(monday, index))
+    .filter((iso, index) => index < 6 || days.get(iso)?.lessons?.length || iso === state.date);
+  strip.innerHTML = dates.map((iso) => {
+    const lessons = days.get(iso)?.lessons || [];
+    const marks = lessons.some((lesson) => realMarks(lesson.marks).length);
+    const homework = lessons.some((lesson) => lesson.homework.length);
+    const classes = ['week-day', iso === state.date ? 'on' : '', iso === today ? 'today' : '',
+      lessons.length ? '' : 'free'].filter(Boolean).join(' ');
+    return `<button class="${classes}" data-week-day="${iso}">
+        <span class="wd-name">${WEEKDAYS[weekdayIndex(iso)]}</span>
+        <span class="wd-num">${parseIso(iso).getDate()}</span>
+        <span class="wd-dots">${marks ? '<i class="dot mark"></i>' : ''}${homework ? '<i class="dot hw"></i>' : ''}</span>
+      </button>`;
+  }).join('');
+}
+
+/** Сводка дня над уроками (новый дизайн): сколько уроков, с какого по какое
+ *  время, сколько заданий и какие оценки. */
+function daySummary(lessons) {
+  const first = lessons.find((lesson) => lesson.start)?.start;
+  const last = [...lessons].reverse().find((lesson) => lesson.end)?.end;
+  const homework = lessons.filter((lesson) => lesson.homework.length).length;
+  const marks = lessons.flatMap((lesson) => realMarks(lesson.marks)).map((m) => markBox(m.mark)).join('');
+  const parts = [`${lessons.length} ${plural(lessons.length, 'урок', 'урока', 'уроков')}`];
+  if (first && last) parts.push(`${first}–${last}`);
+  return `<div class="day-summary">
+      <div class="ds-main">
+        <div class="ds-title">${esc(parts.join(' · '))}</div>
+        <div class="ds-sub">${homework ? `Д/З по ${homework} ${plural(homework, 'предмету', 'предметам', 'предметам')}` : 'Без домашних заданий'}</div>
+      </div>
+      ${marks ? `<div class="ds-marks">${marks}</div>` : ''}
+    </div>`;
 }
 
 let renderedKey = '';
@@ -99,7 +140,8 @@ function renderDay(quiet = false) {
   if (quiet && key === renderedKey && container.children.length) return;
   renderedKey = key;
   container.classList.toggle('quiet', quiet);
-  container.innerHTML = lessons.map((lesson, index) => lessonCard(lesson, index, progress?.index === index ? progress : null)).join('');
+  container.innerHTML = daySummary(lessons)
+    + lessons.map((lesson, index) => lessonCard(lesson, index, progress?.index === index ? progress : null)).join('');
   container.querySelectorAll('[data-lesson]').forEach((card) => {
     card.addEventListener('click', (event) => {
       tap();
@@ -158,13 +200,18 @@ export async function goToDay(iso) {
 }
 
 function shiftDay(delta) {
+  slideTo(addDays(state.date, delta));
+}
+
+/** Перейти на день с листанием в его сторону. */
+function slideTo(iso) {
   select();
   const container = $('dayContent');
   container.classList.remove('slide-left', 'slide-right');
   // Перезапуск анимации: без чтения layout класс не срабатывает повторно.
   void container.offsetWidth;
-  container.classList.add(delta > 0 ? 'slide-left' : 'slide-right');
-  goToDay(addDays(state.date, delta));
+  container.classList.add(iso > state.date ? 'slide-left' : 'slide-right');
+  goToDay(iso);
 }
 
 /* ─────────────────────────── Календарь ─────────────────────────── */
@@ -258,5 +305,9 @@ export function initDay() {
   $('dayPrev').addEventListener('click', () => shiftDay(-1));
   $('dayNext').addEventListener('click', () => shiftDay(1));
   $('dayTitle').addEventListener('click', openCalendar);
+  $('weekStrip').addEventListener('click', (event) => {
+    const button = event.target.closest('[data-week-day]');
+    if (button && button.dataset.weekDay !== state.date) slideTo(button.dataset.weekDay);
+  });
   bindSwipe();
 }

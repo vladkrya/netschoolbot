@@ -18,7 +18,9 @@
     if (theme === 'dark' || theme === 'light') document.documentElement.setAttribute('data-theme', theme);
     var accent = localStorage.getItem('ns-accent');
     if (!/^#[0-9a-f]{6}$/i.test(accent || '')) accent = '#4a6fae';
-    var bg = dark ? '#141a22' : '#eef1f6';
+    var fresh = localStorage.getItem('ns-design') === 'new';
+    if (fresh) document.documentElement.setAttribute('data-design', 'new');
+    var bg = fresh ? (dark ? '#0f1217' : '#f3f4f8') : (dark ? '#141a22' : '#eef1f6');
     var glass = CSS.supports('background', 'color-mix(in srgb, red 50%, transparent)')
       && (CSS.supports('backdrop-filter', 'blur(1px)') || CSS.supports('-webkit-backdrop-filter', 'blur(1px)'));
     var chrome = '#' + [1, 3, 5].map(function(offset) {
@@ -26,6 +28,8 @@
       var background = parseInt(bg.slice(offset, offset + 2), 16);
       return Math.round(glass ? foreground * .8 + background * .2 : foreground).toString(16).padStart(2, '0');
     }).join('');
+    // В новом дизайне шапка не цветная, а в тон фону.
+    if (fresh) chrome = bg;
     document.documentElement.style.setProperty('--head', accent);
     document.documentElement.style.setProperty('--chrome-head', chrome);
     document.querySelector('meta[name="theme-color"]').setAttribute('content', chrome);
@@ -38,6 +42,8 @@
      оставляет пустую плитку. -->
 <link rel="apple-touch-icon" href="{{ base }}/static/apple-touch-icon.png">
 <link rel="stylesheet" href="{{ base }}/static/v{{ version }}/app.css">
+<!-- «Новый дизайн» (тумблер в меню ☰): все правила под html[data-design="new"]. -->
+<link rel="stylesheet" href="{{ base }}/static/v{{ version }}/new.css">
 <!-- До app.js: приложению нужен Telegram.WebApp уже при старте, чтобы
      забрать initData до первого запроса. Копия у нас, а не с telegram.org:
      без VPN telegram.org заблокирован, и синхронный скрипт в head не давал
@@ -64,6 +70,8 @@
       </button>
       <button class="date-arrow" id="dayNext" aria-label="Следующий день" data-icon="right"></button>
     </div>
+    <!-- Неделя полосой: только в новом дизайне (new.css). -->
+    <div class="week-strip" id="weekStrip"></div>
   </div>
 
   <div class="subbar" data-for="schedule" hidden>

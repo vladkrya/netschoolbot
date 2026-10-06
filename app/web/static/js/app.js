@@ -7,7 +7,7 @@ import { initSchedule, loadSchedule } from './schedule.js';
 import { initHomework, loadHomework } from './homework.js';
 import { loadTotals } from './totals.js';
 import { loadMail, openAnnouncements, openCompose } from './mail.js';
-import { applyAccent, initFullscreen } from './appearance.js';
+import { applyAccent, applyDesign, initFullscreen } from './appearance.js';
 import { ICONS } from './icons.js';
 import { applyStoredTheme, closeDrawer, isDrawerOpen, loadProfile, openDrawer } from './profile.js';
 import { closeSheet, initSheet } from './sheet.js';
@@ -313,11 +313,13 @@ function initChrome() {
 async function start() {
   applyStoredTheme();
   applyAccent();
-  // Тема и цвет, выбранные в Telegram, — и на сайте (и наоборот).
+  applyDesign();
+  // Тема, дизайн и цвет, выбранные в Telegram, — и на сайте (и наоборот).
   syncPrefs().then((changed) => {
     if (!changed) return;
     applyStoredTheme();
     applyAccent();
+    applyDesign();
   });
   renderIcons();
   initTelegram();

@@ -7,9 +7,9 @@
 import { api, demo } from './core.js';
 
 const KEYS = {
-  theme: 'ns-theme', accent: 'ns-accent', weights: 'ns-weights', thresholds: 'ns-thresholds',
+  theme: 'ns-theme', design: 'ns-design', accent: 'ns-accent', weights: 'ns-weights', thresholds: 'ns-thresholds',
 };
-// Тема и цвет лежат строкой (их читает скрипт в <head>), остальное — JSON.
+// Тема, дизайн и цвет лежат строкой (их читает скрипт в <head>), остальное — JSON.
 const JSON_PREFS = new Set(['weights', 'thresholds']);
 
 function readLocal(name) {

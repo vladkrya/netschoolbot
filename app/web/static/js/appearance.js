@@ -61,7 +61,9 @@ export function syncChromeColor() {
     const background = parseInt(bg.slice(offset, offset + 2), 16);
     return Math.round(glass ? foreground * 0.8 + background * 0.2 : foreground);
   });
-  const color = `#${channels.map((value) => value.toString(16).padStart(2, '0')).join('')}`;
+  // В новом дизайне шапка в тон фону — и системная область тоже.
+  const color = isNewDesign() ? bg
+    : `#${channels.map((value) => value.toString(16).padStart(2, '0')).join('')}`;
   document.documentElement.style.setProperty('--chrome-head', color);
   document.querySelector('meta[name="theme-color"]')?.setAttribute('content', color);
   if (initData && tg) {
@@ -71,6 +73,22 @@ export function syncChromeColor() {
 
 // В режиме «как в системе» оформление меняется без перезапуска приложения.
 window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', syncChromeColor);
+
+export function isNewDesign() {
+  return getPref('design') === 'new';
+}
+
+/** Включить или выключить «Новый дизайн»: атрибут на <html>, правила в new.css. */
+export function applyDesign() {
+  if (isNewDesign()) document.documentElement.setAttribute('data-design', 'new');
+  else document.documentElement.removeAttribute('data-design');
+  syncChromeColor();
+}
+
+export function saveDesign(on) {
+  setPref('design', on ? 'new' : 'classic');
+  applyDesign();
+}
 
 export function saveAccent(color) {
   setPref('accent', color);

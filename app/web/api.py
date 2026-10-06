@@ -970,6 +970,7 @@ async def mark_history(request: web.Request) -> web.Response:
 
 
 THEMES = ("auto", "light", "dark")
+DESIGNS = ("classic", "new")
 ACCENT_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 
 
@@ -1060,7 +1061,7 @@ def _clean_periods(value: Any) -> dict[str, Any] | None:
 
 @routes.get("/api/prefs")
 async def get_prefs(request: web.Request) -> web.Response:
-    """Тема, цвет шапки и веса калькулятора — общие для Telegram и сайта."""
+    """Тема, дизайн, цвет шапки и веса калькулятора — общие для Telegram и сайта."""
     app, user = context(request), current_user(request)
     return web.json_response({"ok": True, "data": await app.miniapp.prefs(user.telegram_id)})
 
@@ -1079,6 +1080,10 @@ async def save_prefs(request: web.Request) -> web.Response:
         if body["theme"] not in THEMES:
             return json_error("Неизвестная тема")
         changes["theme"] = body["theme"]
+    if "design" in body:
+        if body["design"] not in DESIGNS:
+            return json_error("Неизвестный дизайн")
+        changes["design"] = body["design"]
     if "accent" in body:
         if not isinstance(body["accent"], str) or not ACCENT_RE.match(body["accent"]):
             return json_error("Некорректный цвет")

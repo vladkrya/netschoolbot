@@ -406,6 +406,15 @@ export function isoOf(date) {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
+/** «1 урок», «2 урока», «5 уроков». */
+export function plural(count, one, few, many) {
+  if (count % 100 >= 11 && count % 100 <= 14) return many;
+  const last = count % 10;
+  if (last === 1) return one;
+  if (last >= 2 && last <= 4) return few;
+  return many;
+}
+
 /** Понедельник недели, в которую попадает дата. */
 export function mondayOf(iso) {
   return addDays(iso, -weekdayIndex(iso));

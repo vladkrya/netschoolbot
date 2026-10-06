@@ -404,6 +404,13 @@ class TestNewFeatures:
         assert data == {"accent": "#a8434f", "theme": "dark", "weights": [1, 2, 1.5]}
         assert (await (await client.get(url, params={"token": token})).json())["data"] == data
 
+    async def test_design_pref_is_validated(self, client, token):
+        url = f"{BASE}/api/prefs"
+        response = await client.post(url, params={"token": token}, json={"design": "new"})
+        assert (await response.json())["data"]["design"] == "new"
+        response = await client.post(url, params={"token": token}, json={"design": "retro"})
+        assert response.status == 400
+
     async def test_grade_thresholds_are_saved(self, client, token):
         url = f"{BASE}/api/prefs"
         thresholds = {
