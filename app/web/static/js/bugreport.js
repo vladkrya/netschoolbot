@@ -176,7 +176,7 @@ export async function openBugReport() {
         body: formData(body, token, meta, files),
       });
       notify('success');
-      banner('Спасибо! Отчёт отправлен.');
+      banner('Спасибо! Отчёт отправлен.', false, 4000);
       window.removeEventListener('message', listener);
       listener = null;
       popScreen();

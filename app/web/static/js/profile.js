@@ -114,7 +114,7 @@ async function openCalendar() {
     try {
       await navigator.clipboard.writeText(value);
       notify('success');
-      banner('Скопировано');
+      banner('Скопировано', false, 2500);
     } catch { prompt('Скопируйте значение', value); }
   };
   const render = (data) => {

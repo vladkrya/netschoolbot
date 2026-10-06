@@ -59,11 +59,21 @@ export function skeleton(count = 5) {
   return `<div class="card">${'<div class="skeleton"></div>'.repeat(count)}</div>`;
 }
 
-export function banner(text, isError) {
+let bannerTimer = 0;
+
+/** Сообщение под шапкой. Закрывается нажатием; hideAfter (мс) — само гаснет:
+ *  для «Отправлено» и подобного, иначе оно висело бы на всех вкладках. */
+export function banner(text, isError, hideAfter = 0) {
   const el = $('banner');
+  if (!el.dataset.dismiss) {
+    el.dataset.dismiss = '1';
+    el.addEventListener('click', () => banner(''));
+  }
+  clearTimeout(bannerTimer);
   el.textContent = text || '';
   el.classList.toggle('error', Boolean(isError));
   el.hidden = !text;
+  if (text && hideAfter) bannerTimer = setTimeout(() => banner(''), hideAfter);
 }
 
 const REQUEST_TIMEOUT_MS = 75000;

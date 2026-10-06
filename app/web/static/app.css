@@ -215,6 +215,7 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 }
 @keyframes drop { from { transform: translateY(-20px); opacity: 0; } }
 .banner.error { background: #ffebee; color: #b71c1c; }
+.banner { cursor: pointer; }
 
 /* ─────────────────────────── Вкладки ─────────────────────────── */
 
@@ -1062,3 +1063,7 @@ body::after {
 .captcha-frame.expanded { position: fixed; inset: 0; width: 100vw; height: 100dvh; z-index: 1000; }
 .screen.captcha-open { z-index: 80; }
 .bug-report .btn { margin-top: 10px; }
+/* Анимация появления с fill-mode: both делает карточку «трансформированной»,
+   и position: fixed у рамки отсчитывался от карточки, а не от экрана —
+   окно капчи уезжало вправо вниз. */
+.screen-body > .bug-report { animation: none; }
