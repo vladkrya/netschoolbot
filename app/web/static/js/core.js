@@ -5,6 +5,12 @@ import { ICONS } from './icons.js';
 
 export const { base, token, pushEnabled, student, school, demo } = window.NETSCHOOL;
 
+/** СГО отдаёт ученика в порядке «Фамилия Имя Отчество». */
+export function studentFirstName(name) {
+  const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
+  return parts[1] || parts[0] || '';
+}
+
 // Telegram отдаёт объект только внутри мини-приложения. Вне его
 // (установленное на домашний экран) работаем по токену из ссылки.
 export const tg = window.Telegram && window.Telegram.WebApp;
@@ -223,8 +229,30 @@ const withRefresh = (path) => `${path}${path.includes('?') ? '&' : '?'}refresh=1
 
 /** Сверить показанные сохранённые данные со школьным сервером.
  *  Новое — отдаём в onFresh и сообщаем экранам событием netschool:fresh. */
+let syncing = 0;
+
+/** Тонкая полоса под шапкой, пока сверяем данные со школьным сервером. */
+export function syncStarted() {
+  syncing += 1;
+  document.documentElement.classList.add('syncing');
+}
+
+export function syncFinished() {
+  syncing = Math.max(0, syncing - 1);
+  if (!syncing) document.documentElement.classList.remove('syncing');
+}
+
 async function revalidate(path, shown, onFresh) {
   revalidated.add(path);
+  syncStarted();
+  try {
+    await revalidateNow(path, shown, onFresh);
+  } finally {
+    syncFinished();
+  }
+}
+
+async function revalidateNow(path, shown, onFresh) {
   let fresh;
   try {
     fresh = await request(withRefresh(path));

@@ -178,6 +178,7 @@ function lessonCard(lesson, index, progress) {
         <span class="lc-subject">${esc(lesson.subject)}</span>
         <span class="lc-marks">${marks}</span>
       </div>
+      ${lesson.is_elective ? '<div class="lc-badges"><span class="elective-badge">Факультатив</span></div>' : ''}
       ${lesson.homework.length ? `<div class="lc-badges">
         <span class="hw-badge" data-hw-badge>Д/З</span>
         ${hasFiles ? `<span class="hw-badge clip">${ICONS.clip}</span>` : ''}
@@ -209,9 +210,9 @@ function slideTo(iso) {
 
 /* ─────────────────────────── Календарь ─────────────────────────── */
 
-function openCalendar() {
+export function openCalendar(selectedDate = state.date, onSelect = goToDay) {
   tap();
-  const month = parseIso(state.date);
+  const month = parseIso(selectedDate);
   month.setDate(1);
 
   const body = openSheet('', '');
@@ -230,7 +231,7 @@ function openCalendar() {
         date.getMonth() !== month.getMonth() ? 'other' : '',
         i % 7 >= 5 ? 'weekend' : '',
         iso === today ? 'today' : '',
-        iso === state.date ? 'selected' : '',
+        iso === selectedDate ? 'selected' : '',
       ].filter(Boolean).join(' ');
       cells.push(`<button class="${classes}" data-date="${iso}">${date.getDate()}</button>`);
     }
@@ -256,7 +257,7 @@ function openCalendar() {
       button.addEventListener('click', () => {
         select();
         closeSheet();
-        goToDay(button.dataset.date);
+        onSelect(button.dataset.date);
       })
     );
   };
@@ -297,7 +298,7 @@ export function initDay() {
   setInterval(() => { if (state.tab === 'day' && dayData(state.date)) renderDay(true); }, 30000);
   $('dayPrev').addEventListener('click', () => shiftDay(-1));
   $('dayNext').addEventListener('click', () => shiftDay(1));
-  $('dayTitle').addEventListener('click', openCalendar);
+  $('dayTitle').addEventListener('click', () => openCalendar());
   $('weekStrip').addEventListener('click', (event) => {
     const button = event.target.closest('[data-week-day]');
     if (button && button.dataset.weekDay !== state.date) slideTo(button.dataset.weekDay);

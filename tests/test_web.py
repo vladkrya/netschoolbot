@@ -244,6 +244,49 @@ class TestPageLinksResolve:
 
 
 class TestData:
+    async def test_electives_stay_in_diary_but_not_in_totals(self, client, app_context, token):
+        from app.domain.records import DiaryDay, Lesson
+
+        elective_mark = record(0, "2", subject="Курс английского")
+        regular_mark = record(0, "5", subject="Алгебра")
+        days = [DiaryDay(day=regular_mark.date, lessons=[
+            Lesson(number=1, subject="Алгебра", marks=(regular_mark,)),
+            Lesson(number=2, subject="Курс английского", is_elective=True, marks=(elective_mark,)),
+            Lesson(number=3, subject="Разговоры о важном", is_elective=True),
+        ], marks=[regular_mark, elective_mark])]
+
+        async def fetch_days(*args, **kwargs):
+            return days
+
+        app_context.diary.fetch_diary = fetch_days
+        app_context.diary.fetch_period = fetch_days
+        app_context.diary.totals = {"Курс английского": {"terms": {}, "year": "2", "final": ""}}
+        diary = (await (await client.get(f"{BASE}/api/diary", params={"token": token})).json())["data"]
+        assert diary["days"][0]["lessons"][1]["is_elective"] is True
+        assert diary["days"][0]["lessons"][0]["is_elective"] is False
+        totals = (await (await client.get(f"{BASE}/api/marks", params={"token": token})).json())["data"]
+        assert [s["subject"] for s in totals["subjects"]] == ["Алгебра"]
+        assert totals["average"] == 5
+        assert totals["has_totals"] is False
+
+    async def test_regular_lessons_with_same_name_as_elective_remain_in_totals(self, client, app_context, token):
+        from app.domain.records import DiaryDay, Lesson
+
+        regular = record(0, "5", subject="Английский язык")
+        elective = record(1, "2", subject="Английский язык")
+
+        async def fetch_period(*args, **kwargs):
+            return [DiaryDay(day=regular.date, lessons=[
+                Lesson(number=1, subject=regular.subject, marks=(regular,)),
+                Lesson(number=2, subject=elective.subject, is_elective=True, marks=(elective,)),
+            ], marks=[regular, elective])]
+
+        app_context.diary.fetch_period = fetch_period
+        totals = (await (await client.get(f"{BASE}/api/marks", params={"token": token})).json())["data"]
+        assert len(totals["subjects"]) == 1
+        assert totals["subjects"][0]["count"] == 1
+        assert totals["average"] == 5
+
     async def test_diary(self, client, app_context, token):
         app_context.diary.marks = [record(0)]
         response = await client.get(f"{BASE}/api/diary", params={"token": token})

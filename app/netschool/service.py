@@ -172,6 +172,13 @@ class DiaryService:
         if fetched is None:
             return None
         rows, subjects = fetched
+        from netschoolpy import is_elective
+
+        elective_ids = {item["id"] for item in subjects or []
+                        if isinstance(item, dict) and "id" in item and is_elective(item)}
+        rows = [item for item in rows or []
+                if not isinstance(item, dict) or
+                (not is_elective(item) and item.get("subjectId") not in elective_ids)]
         names = {
             item["id"]: str(item.get("name") or "")
             for item in subjects or []

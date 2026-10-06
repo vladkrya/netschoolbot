@@ -32,6 +32,7 @@
   --glass-2: rgba(255, 255, 255, .55);
   --glass-edge: rgba(255, 255, 255, .8);
   --radius: 20px;
+  --sync-color: var(--primary);
 }
 
 :root[data-design="new"][data-theme="dark"] {
@@ -463,3 +464,99 @@
   color: var(--c, var(--text));
   font-size: 15px;
 }
+
+/* Вкладки подписаны короче: «Неделя», «Задания», «Оценки», «Почта». */
+:root[data-design="new"] .lbl-old { display: none; }
+:root[data-design="new"] .lbl-new { display: inline; }
+
+/* ────────────────── «Задания»: заголовки дней ────────────────── */
+
+:root[data-design="new"] .hw-day {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 18px 4px 8px;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -.01em;
+}
+:root[data-design="new"] .hw-day:first-child { margin-top: 2px; }
+:root[data-design="new"] .hw-day-count {
+  min-width: 22px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--soft);
+  color: var(--primary);
+  font-size: 12px;
+  text-align: center;
+}
+/* Дата уже в заголовке — в карточке её не повторяем. */
+:root[data-design="new"] .hw-foot > .muted { display: none; }
+:root[data-design="new"] .hw-card { margin-bottom: 8px; }
+
+/* ───────────────── «Неделя»: дни целиком ───────────────── */
+
+:root[data-design="new"] .week-card { display: block; width: 100%; text-align: left; padding-bottom: 20px; }
+:root[data-design="new"] .week-card .sched-list { margin-top: 4px; }
+:root[data-design="new"] .week-card .sched-lesson { padding: 7px 0; border-bottom: 0; }
+:root[data-design="new"] .sl-subject { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+:root[data-design="new"] .sl-time { flex: none; color: var(--text2); font-size: 13px; font-variant-numeric: tabular-nums; }
+:root[data-design="new"] .sched-range { font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
+:root[data-design="new"] .sched-empty { padding-top: 6px; }
+:root[data-design="new"] .week-card:not(:has(.sched-list)) { opacity: .6; }
+
+/* ─────────────── «Оценки»: сводка и карточки предметов ─────────────── */
+
+:root[data-design="new"] .totals-cards { display: block; }
+:root[data-design="new"] .totals-year { padding-bottom: 12px; }
+:root[data-design="new"] .totals-year .year-pill {
+  padding: 7px 14px;
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--text);
+  box-shadow: var(--lift);
+  font-weight: 600;
+}
+:root[data-design="new"] .totals-hero {
+  margin-bottom: 14px;
+  padding: 18px;
+  border-radius: 24px;
+  background: linear-gradient(135deg, var(--head), color-mix(in srgb, var(--head) 65%, #000));
+  color: #fff;
+  box-shadow: 0 12px 30px color-mix(in srgb, var(--head) 30%, transparent);
+}
+:root[data-design="new"] .th-label { font-size: 13px; opacity: .8; }
+:root[data-design="new"] .th-avg { margin: 2px 0 12px; font-size: 44px; font-weight: 800; letter-spacing: -.04em; line-height: 1; font-variant-numeric: tabular-nums; }
+:root[data-design="new"] .th-bar { display: flex; gap: 3px; height: 8px; margin-bottom: 10px; }
+:root[data-design="new"] .th-bar span { border-radius: 4px; }
+:root[data-design="new"] .th-bar .d5 { background: #6ee08f; }
+:root[data-design="new"] .th-bar .d4 { background: #d4ec74; }
+:root[data-design="new"] .th-bar .d3 { background: #ffbd6b; }
+:root[data-design="new"] .th-bar .d2 { background: #ff8a8d; }
+:root[data-design="new"] .th-counts { display: flex; gap: 14px; font-size: 13px; opacity: .9; font-variant-numeric: tabular-nums; }
+:root[data-design="new"] .th-counts b { margin-right: 2px; font-size: 15px; }
+
+:root[data-design="new"] .period-row { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+:root[data-design="new"] .period-chips { flex: 1; display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; }
+:root[data-design="new"] .period-chips::-webkit-scrollbar { display: none; }
+:root[data-design="new"] .period-chips .chip { flex: none; }
+:root[data-design="new"] .view-toggle { flex: none; margin-left: auto; padding: 7px 12px; border-radius: 999px; color: var(--primary); font-size: 13px; font-weight: 600; }
+:root[data-design="new"] .view-toggle:active { background: var(--soft); }
+
+:root[data-design="new"] .subject-card { display: block; width: 100%; padding: 14px 16px; margin-bottom: 10px; text-align: left; }
+:root[data-design="new"] .sc-top { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+:root[data-design="new"] .sc-name { min-width: 0; font-size: 16px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+:root[data-design="new"] .sc-avg { flex: none; font-size: 22px; font-weight: 800; letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
+:root[data-design="new"] .sc-avg.g5, :root[data-design="new"] .sc-bar.g5 { --c: var(--g5); color: var(--g5); }
+:root[data-design="new"] .sc-avg.g4, :root[data-design="new"] .sc-bar.g4 { --c: var(--g4); color: var(--g4); }
+:root[data-design="new"] .sc-avg.g3, :root[data-design="new"] .sc-bar.g3 { --c: var(--g3); color: var(--g3); }
+:root[data-design="new"] .sc-avg.g2, :root[data-design="new"] .sc-bar.g2 { --c: var(--g2); color: var(--g2); }
+:root[data-design="new"] .sc-bar { height: 5px; margin: 8px 0 10px; border-radius: 3px; background: var(--card-2); overflow: hidden; }
+:root[data-design="new"] .sc-bar span { display: block; height: 100%; border-radius: inherit; background: var(--c, var(--text2)); animation: grow .6s var(--ease) both; transform-origin: left; }
+:root[data-design="new"] .sc-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+:root[data-design="new"] .sc-marks { display: flex; gap: 5px; flex-wrap: wrap; min-width: 0; }
+:root[data-design="new"] .sc-marks .mark-box { min-width: 26px; height: 26px; border-radius: 8px; font-size: 14px; }
+:root[data-design="new"] .subject-card:active { transform: scale(.98); }
+:root[data-design="new"] .totals-cards > * { animation: rise-in .35s var(--ease) both; }
+:root[data-design="new"] .totals-cards > :nth-child(n+3) { animation-delay: .06s; }
+:root[data-design="new"] .totals-cards > :nth-child(n+6) { animation-delay: .12s; }

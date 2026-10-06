@@ -286,6 +286,7 @@ def _day_to_json(
                 # Тема урока: карточка «Тема урока» на экране урока.
                 "topic": getattr(lesson, "topic", ""),
                 "absence": getattr(lesson, "absence", ""),
+                "is_elective": lesson.is_elective,
                 "marks": [_mark_to_json(m) for m in lesson.marks],
                 "homework": [_homework_to_json(h, observed) for h in lesson.homework],
             }
@@ -458,11 +459,20 @@ async def marks(request: web.Request) -> web.Response:
         # Тема урока к каждой оценке: экран оценки показывает её как «Тему».
         # Ключ — сама запись: номер урока бывает перенумерован (см. mapping).
         lesson_topics: dict = {}
+        elective_subjects = {normalize(lesson.subject) for day in days for lesson in day.lessons if lesson.is_elective}
+        regular_subjects = {normalize(lesson.subject) for day in days for lesson in day.lessons if not lesson.is_elective}
+        excluded_subjects = elective_subjects - regular_subjects
+        elective_marks = {record for day in days for lesson in day.lessons
+                          if lesson.is_elective for record in lesson.marks}
         for day in days:
             key = period_of(day.day, year)
             for record in day.marks:
+                if record in elective_marks or normalize(record.subject) in excluded_subjects:
+                    continue
                 by_subject.setdefault(record.subject, []).append(record)
             for lesson in day.lessons:
+                if lesson.is_elective:
+                    continue
                 for record in lesson.marks if lesson.topic else ():
                     lesson_topics[record] = lesson.topic
                 counts = lessons.setdefault(lesson.subject, {}).setdefault(
@@ -484,7 +494,8 @@ async def marks(request: web.Request) -> web.Response:
         # Официальные четвертные и годовые оценки — только мобильный режим;
         # без них таблица остаётся на расчётных средних.
         totals = await app.diary.fetch_totals(user) or {}
-        totals_by_name = {normalize(name): (name, item) for name, item in totals.items()}
+        totals_by_name = {normalize(name): (name, item) for name, item in totals.items()
+                          if normalize(name) not in excluded_subjects}
         known = {normalize(name) for name in set(by_subject) | set(lessons)}
         extra = {name for key, (name, _) in totals_by_name.items() if key not in known}
 
@@ -528,7 +539,7 @@ async def marks(request: web.Request) -> web.Response:
             # Экран по этому признаку решает, спрашивать ли у сервера
             # аналитику по предмету (средний балл класса).
             "mobile": user.effective_api_mode is ApiMode.MOBILE,
-            "has_totals": bool(totals),
+            "has_totals": bool(totals_by_name),
             "quarters": [
                 {
                     "key": q.key,

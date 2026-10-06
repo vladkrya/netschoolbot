@@ -3,7 +3,10 @@
 // Отметка «выполнено» хранится на сервере и общая с /dz в боте.
 'use strict';
 
-import { $, api, banner, dayMonth, errorCard, esc, isoToday, observedTime, showFailure, showLoading, skeleton, state } from './core.js';
+import {
+  $, addDays, api, banner, dayMonth, errorCard, esc, isoToday, observedTime, showFailure, showLoading, skeleton, state,
+  WEEKDAYS_FULL, weekdayIndex,
+} from './core.js';
 import { ICONS } from './icons.js';
 import { openHomework } from './details.js';
 import { notify, select, tap } from './haptics.js';
@@ -78,10 +81,16 @@ function render() {
     return;
   }
 
+  const perDay = new Map();
+  for (const item of items) perDay.set(item.date, (perDay.get(item.date) || 0) + 1);
   container.innerHTML = items
     .map((item, index) => {
       const isDone = done.has(item.key);
-      return `<div class="card hw-card ${isDone ? 'done' : ''}" data-hw="${index}">
+      // Заголовок дня перед первым его заданием (виден только в новом дизайне).
+      const heading = item.date !== items[index - 1]?.date
+        ? `<div class="hw-day"><span>${esc(dayHeading(item.date))}</span><span class="hw-day-count">${perDay.get(item.date)}</span></div>`
+        : '';
+      return `${heading}<div class="card hw-card ${isDone ? 'done' : ''}" data-hw="${index}">
           <div class="hw-top">
             <div class="hw-subject">${esc(item.subject)}</div>
             ${item.key ? `<button class="hw-check ${isDone ? 'on' : ''}" data-done="${index}" aria-pressed="${isDone}"
@@ -105,6 +114,12 @@ function render() {
       else openHomework(items[Number(card.dataset.hw)]);
     })
   );
+}
+
+function dayHeading(iso) {
+  const today = isoToday();
+  const near = { [today]: 'Сегодня', [addDays(today, 1)]: 'Завтра', [addDays(today, -1)]: 'Вчера' }[iso];
+  return `${near || WEEKDAYS_FULL[weekdayIndex(iso)]}, ${dayMonth(iso)}`;
 }
 
 /** Галочка на месте, без перерисовки списка: иначе карточки заново «въезжают». */

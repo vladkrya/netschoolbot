@@ -83,6 +83,7 @@ export function openLesson(lesson, iso) {
     <div class="card lesson-head">
       <div class="lesson-title"><span class="lc-num">${esc(lesson.number ?? '')}</span>
         <span class="link">${esc(lesson.subject)}</span></div>
+      ${lesson.is_elective ? '<div class="lc-badges"><span class="elective-badge">Факультатив</span></div>' : ''}
       <div class="lc-bottom"><span>${esc(timeRange(lesson))}</span><span>${esc(status)}</span></div>
     </div>
     ${info.length ? `<div class="info-strip">${info

@@ -308,6 +308,21 @@ PERFORMANCE = {
 
 
 class TestTotals:
+    async def test_service_excludes_explicit_elective_totals(self, service, holder, users):
+        user = await users.save(mobile_user())
+        await service.fetch_totals(user)
+        holder["mobile"].subjects = [
+            {"id": 10, "name": "Алгебра"},
+            {"id": 20, "name": "Курс английского", "extraActivity": True},
+            {"id": 30, "name": "Кружок"},
+        ]
+        holder["mobile"].totals_rows = [
+            {"subjectId": sid, "yearTotals": [{"period": {"periodType": "Year"}, "markCode": "5"}],
+             **({"addEducation": True} if sid == 30 else {})}
+            for sid in [10, 20, 30]
+        ]
+        assert set(await service.fetch_totals(user)) == {"Алгебра"}
+
     def test_terms_map_to_table_columns(self):
         from app.netschool.mapping import quarter_key_of_term
 

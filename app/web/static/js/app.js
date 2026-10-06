@@ -1,7 +1,9 @@
 // Точка входа: вкладки как в официальном приложении, шапка, «Назад» Telegram.
 'use strict';
 
-import { $, banner, base, demo, school, state, student, tg, token } from './core.js';
+import {
+  $, banner, base, demo, school, state, student, studentFirstName, syncFinished, syncStarted, tg, token,
+} from './core.js';
 import { initDay, loadDay } from './day.js';
 import { initSchedule, loadSchedule } from './schedule.js';
 import { initHomework, loadHomework } from './homework.js';
@@ -128,13 +130,13 @@ function bindPullToRefresh() {
       indicator.classList.add('busy');
       state.refreshing = true;
       state.refreshFailed = false;
-      document.body.classList.add('quiet-render');
+      syncStarted();
       try {
-        await TABS[state.tab](true);
+        await quietly(() => TABS[state.tab](true));
       } finally {
         state.refreshing = false;
+        syncFinished();
         indicator.classList.remove('busy');
-        requestAnimationFrame(() => document.body.classList.remove('quiet-render'));
       }
       const failed = state.refreshFailed || document.querySelector('.panel.active .error-card');
       notify(failed ? 'error' : 'success');
@@ -304,8 +306,41 @@ function initFresh() {
   document.addEventListener('netschool:fresh', ({ detail: path }) => {
     const tabs = FRESH_TABS[path.split('?')[0]] || [];
     if (!tabs.includes(state.tab) || $('screens').childElementCount) return;
-    TABS[state.tab]();
+    quietly(() => TABS[state.tab]());
   });
+}
+
+/** Перерисовать вкладку на месте: без скелетона и без повторного «въезда»
+ *  карточек — только лёгкое проявление обновлённого. */
+async function quietly(render) {
+  document.body.classList.add('quiet-render');
+  try {
+    await render();
+  } finally {
+    requestAnimationFrame(() => {
+      document.body.classList.remove('quiet-render');
+      const panel = document.querySelector('.panel.active');
+      if (!panel) return;
+      panel.classList.remove('soft-update');
+      void panel.offsetWidth;
+      panel.classList.add('soft-update');
+    });
+  }
+}
+
+/** Все вкладки грузятся сразу после «Дня», а не при первом заходе: в
+ *  «Итогах» и «Д/З» данные уже на месте. Рисуются они в скрытые панели —
+ *  при переключении вкладка берёт готовое из state. По одной, чтобы не
+ *  забить школьный сервер пачкой запросов. */
+async function prefetch() {
+  for (const name of ['schedule', 'homework', 'totals', 'mail']) {
+    if (name === state.tab) continue;
+    try {
+      await TABS[name]();
+    } catch {
+      /* вкладка догрузится при заходе */
+    }
+  }
 }
 
 function initChrome() {
@@ -320,6 +355,7 @@ function initChrome() {
   new ResizeObserver(syncHeaderHeight).observe($('appHeader'));
   // «Перейти ко дню» из расписания.
   window.addEventListener('netschool:tab', (event) => switchTab(event.detail));
+  window.addEventListener('netschool:design', () => { if (state.tab) quietly(() => TABS[state.tab]()); });
 }
 
 async function start() {
@@ -332,6 +368,7 @@ async function start() {
     applyStoredTheme();
     applyAccent();
     applyDesign();
+    window.dispatchEvent(new CustomEvent('netschool:design'));
   });
   renderIcons();
   initTelegram();
@@ -345,14 +382,16 @@ async function start() {
   initSwipeBack();
   setFallbackBack(fallbackBack);
 
-  $('topTitle').textContent = student || school || 'Дневник';
+  $('topTitle').textContent = studentFirstName(student) || school || 'Дневник';
   switchTab('day');
+  // Предзагрузка — после первой отрисовки «Дня», чтобы не тормозить её.
+  setTimeout(prefetch, 600);
 
   // Профиль нужен только меню, но имя ученика в шапке берём из него,
   // если страница открыта без токена (по initData Telegram).
   try {
     const profile = await loadProfile();
-    if (profile?.name) $('topTitle').textContent = profile.name;
+    if (profile?.name) $('topTitle').textContent = studentFirstName(profile.name);
     syncTimezone(profile);
   } catch {
     /* профиль не критичен для остальных экранов */

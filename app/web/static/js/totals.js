@@ -10,6 +10,7 @@ import { pushScreen } from './screens.js';
 import { openSheet, closeSheet } from './sheet.js';
 import { select, tap } from './haptics.js';
 import { getPref, setPref } from './prefs.js';
+import { isNewDesign } from './appearance.js';
 import {
   formatThreshold, neededMarks, thresholdPrefs, thresholdsFor, validThresholds,
 } from './grading.js';
@@ -93,9 +94,103 @@ function quarterMarks(subject, key) {
   return subject.marks.filter((mark) => mark.quarter === key);
 }
 
+/* ───────────── Новый дизайн: карточки предметов вместо таблицы ───────────── */
+
+const VIEW_KEY = 'ns-totals-view';
+let view = 'cards';
+try { view = localStorage.getItem(VIEW_KEY) || 'cards'; } catch { /* приватный режим */ }
+let period = null;
+
+function setView(next) {
+  view = next;
+  try { localStorage.setItem(VIEW_KEY, next); } catch { /* приватный режим */ }
+  select();
+  render();
+}
+
+function viewToggle(label, next) {
+  return `<button class="view-toggle" data-view="${next}">${label}</button>`;
+}
+
+/** Период по умолчанию — текущий, а если его нет — последний с оценками. */
+function pickPeriod(data, quarters) {
+  const keys = quarters.map((q) => q.key);
+  if (keys.includes(period)) return period;
+  if (keys.includes(data.current_quarter)) return data.current_quarter;
+  return [...keys].reverse().find((key) => data.subjects.some((s) => quarterMarks(s, key).length)) || keys[0];
+}
+
+function renderCards(data, quarters) {
+  period = pickPeriod(data, quarters);
+  const quarter = quarters.find((q) => q.key === period);
+  const rows = data.subjects.map((subject, index) => {
+    const term = subject.totals?.terms?.[period];
+    const marks = quarterMarks(subject, period).filter((mark) => !isAbsence(mark.mark));
+    return { subject, index, official: term?.mark, marks, avg: term?.average ?? weightedAverage(marks) };
+  });
+  const averages = rows.map((row) => row.avg).filter((value) => value != null);
+  const overall = averages.length ? averages.reduce((a, b) => a + b, 0) / averages.length : null;
+  const counts = { 5: 0, 4: 0, 3: 0, 2: 0 };
+  for (const row of rows) {
+    for (const mark of row.marks) if (Number(mark.mark) in counts) counts[Number(mark.mark)] += 1;
+  }
+  const total = counts[5] + counts[4] + counts[3] + counts[2];
+
+  const hero = `<div class="totals-hero">
+      <div class="th-label">Средний балл · ${esc(quarter?.label || shortLabel(quarter || { key: period }))}</div>
+      <div class="th-avg">${formatAverage(overall)}</div>
+      ${total ? `<div class="th-bar">${[5, 4, 3, 2].filter((v) => counts[v])
+        .map((v) => `<span class="d${v}" style="flex:${counts[v]}"></span>`).join('')}</div>` : ''}
+      <div class="th-counts">${[5, 4, 3, 2].map((v) => `<span><b>${v}</b>×${counts[v]}</span>`).join('')}</div>
+    </div>`;
+  const chips = `<div class="period-row">
+      <div class="period-chips">${quarters.map((q) =>
+        `<button class="chip ${q.key === period ? 'active' : ''}" data-period="${q.key}">${esc(shortLabel(q))}</button>`).join('')}</div>
+      ${viewToggle('Таблица', 'table')}
+    </div>`;
+  const cards = rows.map((row) => {
+    const grade = row.official ? markGrade(row.official)
+      : row.avg == null ? '' : avgClass(row.avg, thresholdsFor(row.subject.subject));
+    const recent = row.marks.slice(-8).map((mark) => markBox(mark.mark)).join('');
+    const fill = row.avg == null ? 0 : Math.max(0, Math.min(100, (row.avg - 1) / 4 * 100));
+    return `<button class="card subject-card" data-subject="${row.index}" data-q="${period}">
+        <div class="sc-top">
+          <div class="sc-name">${esc(row.subject.subject)}</div>
+          <div class="sc-avg ${grade}">${row.official ? esc(row.official) : formatAverage(row.avg)}</div>
+        </div>
+        <div class="sc-bar ${grade}"><span style="width:${fill}%"></span></div>
+        <div class="sc-foot">
+          <div class="sc-marks">${recent || '<span class="muted small">Оценок пока нет</span>'}</div>
+          ${row.official && row.avg != null ? `<span class="muted small">ср. ${formatAverage(row.avg)}</span>` : ''}
+        </div>
+      </button>`;
+  }).join('');
+
+  const container = $('totalsContent');
+  container.innerHTML = yearPicker(data) + (data.subjects.length
+    ? `<div class="totals-cards">${hero}${chips}${cards}</div>`
+    : '<div class="empty">За этот учебный год итоги пока не опубликованы.</div>');
+  bindYearPicker(data);
+  container.querySelectorAll('[data-period]').forEach((chip) => chip.addEventListener('click', () => {
+    if (chip.dataset.period === period) return;
+    select();
+    period = chip.dataset.period;
+    renderCards(data, quarters);
+  }));
+  container.querySelector('[data-view]')?.addEventListener('click', () => setView('table'));
+  container.querySelectorAll('[data-subject]').forEach((card) => card.addEventListener('click', () => {
+    tap();
+    openSubject(data.subjects[Number(card.dataset.subject)], card.dataset.q);
+  }));
+}
+
 function render() {
   const data = state.totals;
   const quarters = data.quarters || Object.keys(SHORT).map((key) => ({ key }));
+  if (isNewDesign() && view !== 'table') {
+    renderCards(data, quarters);
+    return;
+  }
   // Годовая оценка есть только в мобильном режиме, где итоги приходят с сервера.
   const hasYear = data.subjects.some((subject) => subject.totals?.year);
   const hasFinal = data.subjects.some((subject) => subject.totals?.final);
@@ -123,10 +218,11 @@ function render() {
       </div>`);
 
   const container = $('totalsContent');
-  container.innerHTML = yearPicker(data) + (data.subjects.length
+  container.innerHTML = yearPicker(data) + (isNewDesign() ? `<div class="period-row">${viewToggle('Карточки', 'cards')}</div>` : '') + (data.subjects.length
     ? `<div class="totals-table" style="--totals-columns:${quarters.length + Number(hasYear) + Number(hasFinal)}">${head}${rows.join('')}</div>`
     : '<div class="empty">За этот учебный год итоги пока не опубликованы.</div>');
   bindYearPicker(data);
+  container.querySelector('[data-view]')?.addEventListener('click', () => setView('cards'));
   container.querySelectorAll('[data-subject]').forEach((cell) =>
     cell.addEventListener('click', () =>
       openSubject(data.subjects[Number(cell.dataset.subject)], cell.dataset.q)

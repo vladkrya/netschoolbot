@@ -4,9 +4,10 @@
 
 import {
   $, addDays, dayMonth, errorCard, esc, isoToday, mondayOf, showFailure, showLoading, skeleton, state,
-  WEEKDAYS_FULL,
+  WEEKDAYS_FULL, weekOffsetOf,
 } from './core.js';
-import { dayData, ensureWeek, goToDay } from './day.js';
+import { dayData, ensureWeek, goToDay, openCalendar } from './day.js';
+import { isNewDesign } from './appearance.js';
 import { select, tap } from './haptics.js';
 
 const expanded = new Set();
@@ -55,6 +56,10 @@ function render(monday) {
     const first = lessons[0];
     const last = lessons[lessons.length - 1];
     const range = first && last && first.start && last.end ? `${first.start} — ${last.end}` : '';
+    if (isNewDesign()) {
+      cards.push(weekCard(iso, index, lessons, range, iso === today));
+      continue;
+    }
     const open = expanded.has(iso);
     cards.push(`<div class="card sched-card ${iso === today ? 'current' : ''}">
         <div class="sched-top">
@@ -65,7 +70,7 @@ function render(monday) {
           ? `<button class="sched-toggle" data-toggle="${iso}">${lessons.length} ${lessonsWord(lessons.length)} ${open ? '▴' : '▾'}</button>`
           : '<div class="muted small sched-toggle">Уроков нет</div>'}
         ${open ? `<div class="sched-list">
-            ${lessons.map((l) => `<div class="sched-lesson"><span class="lc-num">${esc(l.number ?? '')}</span><span>${esc(l.subject)}</span></div>`).join('')}
+            ${lessons.map((l) => `<div class="sched-lesson"><span class="lc-num">${esc(l.number ?? '')}</span><span>${esc(l.subject)}${l.is_elective ? '<span class="elective-badge">Факультатив</span>' : ''}</span></div>`).join('')}
             <button class="btn outline" data-goto="${iso}">Перейти ко дню</button>
           </div>` : ''}
       </div>`);
@@ -91,6 +96,22 @@ function render(monday) {
   );
 }
 
+/** Новый дизайн: день недели целиком, без раскрытия — уроки со временем.
+ *  Нажатие на день открывает его во вкладке «День». */
+function weekCard(iso, index, lessons, range, isToday) {
+  return `<button class="card sched-card week-card ${isToday ? 'current' : ''}" data-goto="${iso}">
+      <div class="sched-top">
+        <div><div class="sched-day">${WEEKDAYS_FULL[index]}</div><div class="muted small">${esc(dayMonth(iso))}${isToday ? ' · сегодня' : ''}</div></div>
+        <div class="sched-range">${esc(range.replace(' — ', '–'))}</div>
+      </div>
+      ${lessons.length ? `<div class="sched-list">${lessons.map((l) => `<div class="sched-lesson">
+          <span class="lc-num">${esc(l.number ?? '')}</span>
+          <span class="sl-subject">${esc(l.subject)}${l.is_elective ? '<span class="elective-badge">Факультатив</span>' : ''}</span>
+          <span class="sl-time">${esc(l.start || '')}</span>
+        </div>`).join('')}</div>` : '<div class="muted small sched-empty">Уроков нет</div>'}
+    </button>`;
+}
+
 export function initSchedule() {
   $('schedPrev').addEventListener('click', () => {
     select();
@@ -103,8 +124,10 @@ export function initSchedule() {
     loadSchedule();
   });
   $('schedTitle').addEventListener('click', () => {
-    select();
-    state.scheduleWeek = 0;
-    loadSchedule();
+    const monday = addDays(mondayOf(isoToday()), state.scheduleWeek * 7);
+    openCalendar(monday, (iso) => {
+      state.scheduleWeek = weekOffsetOf(iso);
+      loadSchedule();
+    });
   });
 }

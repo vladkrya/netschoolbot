@@ -50,6 +50,22 @@ def day(lessons, date=dt.date(2026, 3, 2)):
     return SimpleNamespace(day=date, lessons=lessons)
 
 
+def test_elective_flag_survives_diary_mapping():
+    raw = lesson([], subject="Курс английского")
+    raw.is_elective = True
+    mapped = diary_days([day([raw, lesson([], subject="Алгебра")])])
+    assert mapped[0].lessons[0].is_elective is True
+    assert mapped[0].lessons[1].is_elective is False
+
+
+def test_serialized_library_lesson_keeps_elective_flag():
+    from netschoolpy.models import Lesson as LibraryLesson
+
+    raw = LibraryLesson(number=1, subject="Курс английского", extra_activity=True)
+    mapped = diary_days([day([raw.model_dump()])])
+    assert mapped[0].lessons[0].is_elective is True
+
+
 class TestExtractMark:
     @pytest.mark.parametrize(
         "source,expected",

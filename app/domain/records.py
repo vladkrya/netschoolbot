@@ -244,6 +244,7 @@ class Lesson:
     # id заданий урока: учителя дневник не отдаёт, его приходится брать
     # из карточки любого задания (student/diary/assigns/{id}).
     assignment_ids: tuple[int, ...] = ()
+    is_elective: bool = False
 
     @property
     def time_range(self) -> str:

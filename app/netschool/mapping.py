@@ -171,6 +171,8 @@ def lessons_from_day(day: Any, *, today: dt.date | None = None) -> list[Lesson]:
     предмету: один предмет может стоять в дне дважды, и связать их обратно
     по названию уже нельзя.
     """
+    from netschoolpy import is_elective
+
     day_date = _as_date(_attr(day, "day"))
     if day_date is None:
         return []
@@ -192,6 +194,7 @@ def lessons_from_day(day: Any, *, today: dt.date | None = None) -> list[Lesson]:
                 teacher=str(_attr(raw, "teacher", "") or ""),
                 topic=str(_attr(raw, "topic", "") or _attr(raw, "lessonTopic", "") or ""),
                 absence=str(_attr(raw, "absence", "") or _attr(raw, "absenceReason", "") or ""),
+                is_elective=_attr(raw, "is_elective", False) is True or is_elective(raw),
                 assignment_ids=tuple(
                     int(a_id)
                     for a_id in (_attr(a, "id") for a in _attr(raw, "assignments", []) or [])

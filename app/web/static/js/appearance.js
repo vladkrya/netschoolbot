@@ -88,6 +88,8 @@ export function applyDesign() {
 export function saveDesign(on) {
   setPref('design', on ? 'new' : 'classic');
   applyDesign();
+  // Часть экранов в новом дизайне устроена иначе — их надо перерисовать.
+  window.dispatchEvent(new CustomEvent('netschool:design'));
 }
 
 export function saveAccent(color) {

@@ -205,6 +205,26 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 }
 /* Обновление свайпом: новые данные встают на место без анимации появления. */
 .quiet-render .panel, .quiet-render .panel * { animation: none !important; }
+/* …а обновлённое мягко проявляется. */
+.panel.active.soft-update { animation: soft-update .45s ease; }
+@keyframes soft-update { from { opacity: .55; } }
+
+/* Пока данные сверяются со школьным сервером — бегущая полоса по нижнему
+   краю шапки. Экран при этом не трогаем. */
+.app-header::after {
+  content: '';
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--sync-color, rgba(255, 255, 255, .95)), transparent);
+  background-size: 40% 100%;
+  background-repeat: no-repeat;
+  opacity: 0;
+  transition: opacity .3s;
+  pointer-events: none;
+}
+.syncing .app-header::after { opacity: .9; animation: sync-run 1.1s ease-in-out infinite; }
+@keyframes sync-run { from { background-position: -40% 0; } to { background-position: 140% 0; } }
 
 /* Баннер — всплывающее уведомление над всем, в том числе над экранами. */
 .banner {
@@ -230,6 +250,7 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 
 .panel { display: none; padding: 12px 12px 20px; }
 .panel.active { display: block; animation: panel-in .25s var(--ease); }
+#panel-schedule { padding-bottom: 40px; }
 #panel-day { min-height: calc(100dvh - var(--header-h) - var(--nav-h) - 12px); }
 @keyframes panel-in { from { opacity: 0; transform: translateY(8px); } }
 
@@ -674,6 +695,12 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
   transition: color .25s, opacity .25s;
 }
 .nav-item .ico { display: flex; transition: transform .3s cubic-bezier(.34, 1.45, .5, 1); }
+.nav-item .lbl-old, .nav-item .lbl-new {
+  max-width: calc(100% - 4px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: clamp(9px, 2.65vw, 10.5px);
+}
 .nav-item.active { color: var(--primary); opacity: 1; font-weight: 600; }
 .nav-item.active .ico { animation: bounce .45s var(--ease); }
 /* Пункт под каплей «увеличен» линзой, прежняя вкладка гаснет. */
@@ -1089,5 +1116,16 @@ body::after {
   vertical-align: 1px;
 }
 
-/* Полоса недели и сводка дня есть только в новом дизайне (new.css). */
-.week-strip, .day-summary { display: none; }
+/* Полоса недели, сводка дня и короткие подписи вкладок — только в новом дизайне (new.css). */
+.week-strip, .day-summary, .lbl-new, .hw-day, .totals-cards { display: none; }
+
+.elective-badge {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: 6px;
+  color: var(--primary);
+  background: var(--card-2);
+  font-size: 11px;
+  font-weight: 600;
+}
+.sched-lesson .elective-badge { display: block; width: fit-content; margin-top: 3px; }
