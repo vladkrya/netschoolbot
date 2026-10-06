@@ -23,7 +23,7 @@ import jinja2
 from aiohttp import web
 
 from ..context import AppContext
-from . import api, bugreport, caldav
+from . import api, bugreport, caldav, captcha_proxy
 from .api import BOT, CONTEXT
 
 logger = logging.getLogger("netschoolbot.web")
@@ -68,6 +68,7 @@ def create_app(context: AppContext, bot=None) -> web.Application:
     inner.add_routes(caldav.routes)
     inner.add_routes(api.routes)
     inner.add_routes(bugreport.routes)
+    inner.add_routes(captcha_proxy.routes)
     inner.add_routes(page_routes)
     # Те же файлы под путём с версией. Модули JS импортируют друг друга
     # относительными путями без ?v=, а Cloudflare навязывает браузеру кэш
@@ -234,14 +235,17 @@ async def demo(request: web.Request) -> web.Response:
 
 @page_routes.get("/captcha-frame")
 async def captcha_frame(request: web.Request) -> web.Response:
-    """Рамка с KryaCaptcha для отчёта об ошибке — см. templates/captcha.html."""
+    """Рамка с KryaCaptcha для отчёта об ошибке — см. templates/captcha.html.
+
+    Скрипт, стили и API капчи идут через /captcha-proxy на этом же домене.
+    """
     settings = request.app[CONTEXT].settings.web
     if not settings.captcha_url:
         raise web.HTTPNotFound()
     response = aiohttp_jinja2.render_template(
         "captcha.html",
         request,
-        {"captcha_url": settings.captcha_url, "rounds": settings.captcha_rounds},
+        {"base": _base(request), "rounds": settings.captcha_rounds},
     )
     # Встраивать рамку можно только в своё же приложение.
     response.headers["X-Frame-Options"] = "SAMEORIGIN"

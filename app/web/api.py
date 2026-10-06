@@ -164,7 +164,8 @@ async def resolve_identity(request: web.Request) -> tuple[int | None, str]:
 @web.middleware
 async def auth_middleware(request: web.Request, handler):
     """Опознание пользователя для запросов к API."""
-    if "/api/" not in request.path:
+    # /captcha-proxy/api/v1/… — API капчи, а не наше: его зовёт виджет без входа.
+    if "/api/" not in request.path or "/captcha-proxy/" in request.path:
         return await handler(request)
 
     telegram_id, method = await resolve_identity(request)

@@ -160,8 +160,9 @@ async def test_captcha_frame_takes_script_from_settings(app_context, bot):
     finally:
         await client.close()
     assert response.status == 200
-    assert f'src="{CAPTCHA}/sdk/kryacaptcha.js"' in text
-    assert "evil.example" not in text
+    # Капча — через прокси на домене приложения, а не с её собственного домена.
+    assert f'src="{BASE}/captcha-proxy/sdk/kryacaptcha.js"' in text
+    assert CAPTCHA not in text and "evil.example" not in text
     assert response.headers["X-Frame-Options"] == "SAMEORIGIN"
 
 
@@ -233,3 +234,49 @@ async def test_single_file_goes_as_document(app_context, bot, token, verificatio
     finally:
         await client.close()
     assert bot.files == [["фото.heic"]]
+
+
+@pytest.mark.parametrize(
+    ("method", "tail", "ok"),
+    [
+        ("GET", "sdk/kryacaptcha.js", True),
+        ("GET", "css/main.css", True),
+        ("POST", "api/v1/session/new", True),
+        ("GET", "api/v1/session/hc_abc123/challenge", True),
+        ("POST", "api/v1/session/hc_abc123/verify", True),
+        ("POST", "api/v1/siteverify", False),
+        ("GET", "api/v1/session/new", False),
+        ("GET", "docs", False),
+        ("GET", "sdk/../../etc/passwd", False),
+        ("GET", "api/v1/session/a/b/challenge", False),
+    ],
+)
+def test_captcha_proxy_allows_only_widget_routes(method, tail, ok):
+    from app.web.captcha_proxy import allowed
+
+    assert allowed(method, tail) is ok
+
+
+async def test_captcha_proxy_forwards_without_login(app_context, bot, monkeypatch):
+    from aiohttp import web as aioweb
+
+    seen = []
+
+    async def upstream(request):
+        seen.append((request.method, request.path, await request.text()))
+        return aioweb.json_response({"success": True, "sessionId": "hc_1"})
+
+    upstream_app = aioweb.Application()
+    upstream_app.router.add_route("*", "/{tail:.*}", upstream)
+    server = TestServer(upstream_app)
+    await server.start_server()
+    client = await _client(app_context, bot, captcha_url=str(server.make_url("")).rstrip("/"))
+    try:
+        response = await client.post(f"{BASE}/captcha-proxy/api/v1/session/new", json={"mode": "rounds"})
+        assert response.status == 200
+        assert (await response.json())["sessionId"] == "hc_1"
+        assert (await client.post(f"{BASE}/captcha-proxy/api/v1/siteverify", json={})).status == 404
+    finally:
+        await client.close()
+        await server.close()
+    assert seen == [("POST", "/api/v1/session/new", '{"mode": "rounds"}')]

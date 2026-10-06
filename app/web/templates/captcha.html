@@ -8,8 +8,10 @@
   Рамка для KryaCaptcha. SDK подключает свои стили к документу целиком
   (`* {margin:0}`, `body {display:flex; padding:32px}`, переменные :root), и на
   странице приложения они ломали бы вёрстку — поэтому виджет живёт здесь, в
-  iframe того же origin. Адрес скрипта подставляет сервер из настроек: из
-  query его брать нельзя, иначе ссылкой можно было бы подключить чужой скрипт.
+  iframe того же origin. Скрипт, стили и API капчи идут через /captcha-proxy
+  на этом же домене (см. app/web/captcha_proxy.py): отдельный домен капчи не
+  открывается в режиме белых списков. Адрес из query не берётся никогда —
+  иначе ссылкой можно было бы подключить чужой скрипт.
 
   Родителю уходят сообщения {type: "kryacaptcha", event, ...}:
   ready / error / modal (open) / token (token) / fail.
@@ -36,7 +38,7 @@
     window.__captchaStart = function () {
       if (!window.KryaCaptcha) return post('error');
       KryaCaptcha.render('#captcha', {
-        endpoint: {{ captcha_url | tojson }},
+        endpoint: location.origin + {{ (base ~ '/captcha-proxy') | tojson }},
         mode: 'rounds',
         targetRounds: {{ rounds | int }},
         bind: params.get('bind') || undefined,
@@ -56,6 +58,6 @@
     };
   })();
 </script>
-<script src="{{ captcha_url }}/sdk/kryacaptcha.js" onload="__captchaStart()" onerror="__captchaFailed()"></script>
+<script src="{{ base }}/captcha-proxy/sdk/kryacaptcha.js" onload="__captchaStart()" onerror="__captchaFailed()"></script>
 </body>
 </html>
