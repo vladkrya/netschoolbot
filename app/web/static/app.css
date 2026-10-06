@@ -510,6 +510,16 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .sched-range { color: var(--text2); }
 .sched-toggle { display: block; margin-top: 8px; color: var(--primary); font-size: 14px; }
 .sched-list { margin-top: 6px; }
+.sched-collapse {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition: grid-template-rows .3s var(--ease), opacity .2s ease;
+}
+.sched-collapse.open { grid-template-rows: 1fr; opacity: 1; }
+.sched-collapse-inner { min-height: 0; overflow: hidden; }
+.sched-chevron { display: inline-block; transition: transform .3s var(--ease); }
+.sched-toggle[aria-expanded="true"] .sched-chevron { transform: rotate(180deg); }
 .sched-lesson { padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 16px; }
 
 /* ───────────────────────────── Д/З ───────────────────────────── */

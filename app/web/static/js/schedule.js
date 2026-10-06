@@ -67,12 +67,12 @@ function render(monday) {
           <div class="sched-range">${esc(range)}</div>
         </div>
         ${lessons.length
-          ? `<button class="sched-toggle" data-toggle="${iso}">${lessons.length} ${lessonsWord(lessons.length)} ${open ? '▴' : '▾'}</button>`
+          ? `<button class="sched-toggle" data-toggle="${iso}" aria-expanded="${open}" aria-controls="sched-${iso}">${lessons.length} ${lessonsWord(lessons.length)} <span class="sched-chevron" aria-hidden="true">▾</span></button>`
           : '<div class="muted small sched-toggle">Уроков нет</div>'}
-        ${open ? `<div class="sched-list">
+        ${lessons.length ? `<div id="sched-${iso}" class="sched-collapse${open ? ' open' : ''}"${open ? '' : ' inert'}><div class="sched-collapse-inner"><div class="sched-list">
             ${lessons.map((l) => `<div class="sched-lesson"><span class="lc-num">${esc(l.number ?? '')}</span><span>${esc(l.subject)}${l.is_elective ? '<span class="elective-badge">Факультатив</span>' : ''}</span></div>`).join('')}
             <button class="btn outline" data-goto="${iso}">Перейти ко дню</button>
-          </div>` : ''}
+          </div></div></div>` : ''}
       </div>`);
   }
 
@@ -82,9 +82,13 @@ function render(monday) {
     button.addEventListener('click', () => {
       select();
       const iso = button.dataset.toggle;
-      if (expanded.has(iso)) expanded.delete(iso);
-      else expanded.add(iso);
-      render(monday);
+      const open = !expanded.has(iso);
+      if (open) expanded.add(iso);
+      else expanded.delete(iso);
+      button.setAttribute('aria-expanded', String(open));
+      const panel = document.getElementById(button.getAttribute('aria-controls'));
+      panel.inert = !open;
+      panel.classList.toggle('open', open);
     })
   );
   container.querySelectorAll('[data-goto]').forEach((button) =>
