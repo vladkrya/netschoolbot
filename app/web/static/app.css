@@ -1197,3 +1197,20 @@ body::after {
 
 /* Коэффициент в углу оценки — только в новом дизайне. */
 .mark-box .mw { display: none; }
+
+/* Имя в шапке: у родителя с несколькими детьми — кнопка со стрелкой. */
+.topbar-title { display: flex; align-items: center; justify-content: center; gap: 3px; min-width: 0; }
+.topbar-title:disabled { cursor: default; }
+#topName { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.title-switch { display: flex; flex: none; opacity: .8; transition: transform .2s var(--ease); }
+.topbar-title:not(:disabled):active .title-switch { transform: translateY(2px); }
+.student-list { display: flex; flex-direction: column; gap: 6px; padding-bottom: 6px; }
+.student-option {
+  display: flex; align-items: center; gap: 12px; width: 100%;
+  padding: 10px 12px; border-radius: 14px; background: var(--card-2);
+  font-size: 16px; font-weight: 500;
+}
+.student-option.on { background: color-mix(in srgb, var(--primary) 14%, var(--card)); }
+.student-option .student-name { flex: 1; min-width: 0; }
+.student-option .check { color: var(--primary); font-weight: 700; }
+.student-option:disabled { opacity: .6; }

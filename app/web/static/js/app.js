@@ -11,7 +11,7 @@ import { loadTotals } from './totals.js';
 import { loadMail, openAnnouncements, openCompose } from './mail.js';
 import { applyAccent, applyDesign, initFullscreen } from './appearance.js';
 import { ICONS } from './icons.js';
-import { applyStoredTheme, closeDrawer, isDrawerOpen, loadProfile, openDrawer, syncTimezone } from './profile.js';
+import { applyStoredTheme, closeDrawer, initStudentSwitch, isDrawerOpen, loadProfile, openDrawer, syncTimezone } from './profile.js';
 import { closeSheet, initSheet } from './sheet.js';
 import { clearScreens, handleBack, hasScreens, setFallbackBack } from './screens.js';
 import { initSwipeBack } from './swipeback.js';
@@ -382,7 +382,7 @@ async function start() {
   initSwipeBack();
   setFallbackBack(fallbackBack);
 
-  $('topTitle').textContent = studentFirstName(student) || school || 'Дневник';
+  $('topName').textContent = studentFirstName(student) || school || 'Дневник';
   switchTab('day');
   // Предзагрузка — после первой отрисовки «Дня», чтобы не тормозить её.
   setTimeout(prefetch, 600);
@@ -391,7 +391,8 @@ async function start() {
   // если страница открыта без токена (по initData Telegram).
   try {
     const profile = await loadProfile();
-    if (profile?.name) $('topTitle').textContent = studentFirstName(profile.name);
+    if (profile?.name) $('topName').textContent = studentFirstName(profile.name);
+    initStudentSwitch(profile);
     syncTimezone(profile);
   } catch {
     /* профиль не критичен для остальных экранов */

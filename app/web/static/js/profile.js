@@ -10,6 +10,7 @@ import { loadTotals } from './totals.js';
 import { pushScreen, syncBackButton } from './screens.js';
 import { notify, select, tap } from './haptics.js';
 import { getPref, setPref } from './prefs.js';
+import { closeSheet, openSheet } from './sheet.js';
 import { openBugReport } from './bugreport.js';
 
 export async function loadProfile(force = false) {
@@ -461,6 +462,47 @@ async function bindDemo() {
     notify('success');
     location.reload();
   });
+}
+
+/** Стрелка у имени в шапке — если детей несколько: шторка со списком,
+ *  нажатие переключает ребёнка (как чипы в меню ☰). */
+export function initStudentSwitch(profile) {
+  const students = profile?.students || [];
+  if (students.length < 2) return;
+  const title = $('topTitle');
+  title.disabled = false;
+  $('titleSwitch').hidden = false;
+  title.addEventListener('click', () => {
+    tap();
+    const body = openSheet('Чей дневник', `<div class="student-list">${students.map((s) =>
+      `<button class="student-option ${s.current ? 'on' : ''}" data-student="${s.id}">
+        <span class="avatar small" style="background:${studentColor(s.name)}">${esc(initial(s.name))}</span>
+        <span class="student-name">${esc(s.name)}</span>
+        ${s.current ? '<span class="check">✓</span>' : ''}
+      </button>`).join('')}</div>`);
+    body.querySelectorAll('[data-student]').forEach((button) => button.addEventListener('click', () => {
+      if (button.classList.contains('on')) {
+        closeSheet();
+        return;
+      }
+      select();
+      switchStudent(button);
+    }));
+  });
+}
+
+const STUDENT_COLORS = ['#4a6fae', '#2e8b6e', '#6b4fa8', '#a8434f', '#c9702f', '#2a8fa3'];
+
+function studentColor(name) {
+  let hash = 0;
+  for (const char of String(name)) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
+  return STUDENT_COLORS[hash % STUDENT_COLORS.length];
+}
+
+function initial(name) {
+  // «Иванов Пётр» — по имени, а не по фамилии.
+  const parts = String(name).trim().split(/\s+/);
+  return (parts[1] || parts[0] || '?')[0].toUpperCase();
 }
 
 async function switchStudent(button) {

@@ -16,6 +16,7 @@ export const ICONS = {
   back: svg('<path d="M19 12H5M11 6l-6 6 6 6"/>'),
   left: svg('<path d="m15 5-7 7 7 7"/>'),
   right: svg('<path d="m9 5 7 7-7 7"/>'),
+  down: svg('<path d="m6 9 6 6 6-6"/>', 16),
   clip: svg('<path d="m20 11.5-8.2 8.2a5 5 0 0 1-7-7L13 4.5a3.3 3.3 0 0 1 4.7 4.7l-8.2 8.3a1.7 1.7 0 0 1-2.4-2.4L14.8 7.4"/>', 16),
   chat: svg('<path d="M20 12a8 8 0 0 1-11.6 7.1L4 20l1-4.2A8 8 0 1 1 20 12z"/>', 20),
   homework: svg('<path d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-4.5v-6h-5v6H5a1 1 0 0 1-1-1z"/>', 20),
