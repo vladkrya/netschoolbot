@@ -78,8 +78,8 @@ class UserRepository:
             return user
         async with self._db.transaction() as db:
             await db.execute(
-                "INSERT OR IGNORE INTO users (telegram_id, display_name) VALUES (?, ?)",
-                (telegram_id, display_name),
+                "INSERT OR IGNORE INTO users (telegram_id, display_name, api_mode) VALUES (?, ?, ?)",
+                (telegram_id, display_name, ApiMode.MOBILE.value),
             )
         created = await self.get(telegram_id)
         assert created is not None

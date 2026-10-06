@@ -75,9 +75,9 @@ class LoginType(str, Enum):
 class ApiMode(str, Enum):
     """Через какое API «Сетевого города» бот получает данные пользователя.
 
-    WEB — веб-API сайта (netschoolpy `NetSchool`), режим по умолчанию.
+    WEB — веб-API сайта (netschoolpy `NetSchool`), резервный режим.
     MOBILE — API приложения NetSchool (`MobileNetSchool`): токен на 60 дней
-    и время публикации заданий. Переключается командой /changeapi.
+    и время публикации заданий. Режим по умолчанию; смена через /changeapi.
     """
 
     WEB = "web"
@@ -92,7 +92,7 @@ class ApiMode(str, Enum):
         try:
             return cls(str(value or "").strip().lower())
         except ValueError:
-            return cls.WEB
+            return cls.MOBILE
 
 
 class MarkKind(str, Enum):
@@ -220,7 +220,7 @@ class User:
     notifications: NotificationPrefs = field(default_factory=NotificationPrefs)
     filters: Filters = field(default_factory=Filters)
     quiet_hours: QuietHours = field(default_factory=QuietHours)
-    api_mode: ApiMode = ApiMode.WEB
+    api_mode: ApiMode = ApiMode.MOBILE
     # Часовой пояс IANA: регионы разные, а тихие часы и «сегодня» — местные.
     timezone: str = DEFAULT_TIMEZONE
     created_at: dt.datetime | None = None

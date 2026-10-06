@@ -12,6 +12,7 @@ import pytest
 
 from app.db.repositories import UserRepository
 from app.domain.models import (
+    ApiMode,
     Credentials,
     Filters,
     LoginType,
@@ -31,6 +32,7 @@ def make_user(telegram_id=1, **kwargs) -> User:
         school=School(url="https://sgo.example.ru", name="Школа №1"),
         credentials=Credentials(login_type=LoginType.PASSWORD, login="ivan", password="secret"),
         enabled=True,
+        api_mode=ApiMode.WEB,
     )
     defaults.update(kwargs)
     return User(**defaults)

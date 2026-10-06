@@ -604,9 +604,9 @@ def _render_qr(content: str) -> bytes | None:
 
 
 async def _settle_api_mode(user: User, app: AppContext) -> tuple[User, str]:
-    """Довести вход через Госуслуги до рабочего мобильного режима.
+    """Довести новую веб-сессию входа до рабочего мобильного режима.
 
-    После входа через Госуслуги у пользователя есть только веб-сессия, а
+    После входа у пользователя есть только веб-сессия, а
     мобильному клиенту нужен токен. Пока пользователь в мобильном режиме,
     меняем живую веб-сессию на токен прямо сейчас — позже, без нового кода
     подтверждения, этого не сделать. Не вышло — возвращаем веб-режим и
@@ -615,15 +615,15 @@ async def _settle_api_mode(user: User, app: AppContext) -> tuple[User, str]:
     Возвращает пользователя и пояснение для сообщения (пустое, если
     сказать нечего).
     """
-    if not (user.credentials.login_type.is_gosuslugi and user.api_mode is ApiMode.MOBILE):
+    if user.api_mode is not ApiMode.MOBILE:
         return user, ""
     try:
         await app.pool.switch_api(user, ApiMode.MOBILE)
     except Exception as exc:  # noqa: BLE001 — любой сбой означает «остаёмся на вебе»
-        logger.info("Мобильный токен из Госуслуг не получен для %s: %s", user.telegram_id, exc)
+        logger.info("Мобильный токен после входа не получен для %s: %s", user.telegram_id, exc)
         reverted = await app.users.save(replace(user, api_mode=ApiMode.WEB))
         return reverted, (
-            "⚠️ Мобильное API через Госуслуги включить не удалось — работаю через веб-API. "
+            "⚠️ Мобильное API включить не удалось — работаю через веб-API. "
             "Попробовать снова: /changeapi."
         )
     return user, "📱 Мобильное API включено: вход держится 60 дней."

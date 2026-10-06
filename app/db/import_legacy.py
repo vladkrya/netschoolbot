@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any
 
 from ..domain.models import (
+    ApiMode,
     Credentials,
     Filters,
     LoginType,
@@ -104,6 +105,7 @@ def user_from_legacy(telegram_id: int, data: dict[str, Any]) -> User:
 
     return User(
         telegram_id=telegram_id,
+        api_mode=ApiMode.WEB,  # Сохранённые сессии старого проекта — веб-сессии.
         enabled=bool(data.get("enabled")),
         display_name=str(data.get("display_name") or ""),
         school=School(

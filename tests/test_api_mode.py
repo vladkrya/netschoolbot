@@ -61,6 +61,17 @@ def pool_for(db, settings=MOBILE_SETTINGS) -> SessionPool:
     return SessionPool(settings, SessionRepository(db), client_factory=FakeClient, mobile_factory=FakeMobile)
 
 
+async def test_new_users_default_to_mobile_and_keep_explicit_web(db):
+    users = UserRepository(db)
+    created = await users.get_or_create(42)
+    assert created.api_mode is ApiMode.MOBILE
+    assert ApiMode.MOBILE is type(created)(telegram_id=43, school=created.school, credentials=created.credentials).api_mode
+    await users.save(replace(created, api_mode=ApiMode.WEB))
+    assert (await users.get_or_create(42)).api_mode is ApiMode.WEB
+    assert ApiMode.parse(None) is ApiMode.MOBILE
+    assert ApiMode.parse("web") is ApiMode.WEB
+
+
 async def test_api_mode_is_persisted(db):
     users = UserRepository(db)
     await users.save(make_user(api_mode=ApiMode.MOBILE))
@@ -94,6 +105,29 @@ async def test_switch_to_mobile_falls_back_to_password(db, from_web):
 
     mobile = [c for c in FakeClient.instances if isinstance(c, FakeMobile)]
     assert len(mobile) == 1 and mobile[0].logins == 1 and mobile[0].secret == "cs"
+
+
+async def test_password_login_without_stored_credentials_converts_session(db, from_web):
+    from app.bot.handlers.auth import _settle_api_mode
+
+    users = UserRepository(db)
+    user = await users.save(make_user(
+        api_mode=ApiMode.MOBILE,
+        credentials=Credentials(LoginType.PASSWORD, remember=False),
+    ))
+    sessions = SessionRepository(db)
+    await sessions.save(1, '{"cookies": "existing"}')
+    pool = pool_for(db)
+    try:
+        settled, note = await _settle_api_mode(user, SimpleNamespace(users=users, pool=pool))
+        assert settled.api_mode is ApiMode.MOBILE
+        assert "60 дней" in note
+        assert len(from_web) == 1
+        assert await sessions.load(1) == '{"kind": "mobile"}'
+        async with pool.acquire(settled) as client:
+            assert isinstance(client, FakeMobile)
+    finally:
+        await pool.close_all()
 
 
 async def test_gosuslugi_user_cannot_fall_back_to_password(db, from_web):
@@ -306,15 +340,17 @@ class TestGosuslugiLogin:
         settled, _ = await _settle_api_mode(user, self._app(users, self.Pool(RuntimeError("boom"))))
         assert settled.api_mode is ApiMode.WEB
 
-    async def test_web_mode_and_password_users_are_left_alone(self, users):
+    async def test_web_mode_is_kept_and_password_mobile_is_converted(self, users):
         from app.bot.handlers.auth import _settle_api_mode
 
         pool = self.Pool()
         esia_web = await users.save(make_user(credentials=Credentials(login_type=LoginType.ESIA)))
         assert await _settle_api_mode(esia_web, self._app(users, pool)) == (esia_web, "")
         password_mobile = await users.save(make_user(telegram_id=2, api_mode=ApiMode.MOBILE))
-        assert await _settle_api_mode(password_mobile, self._app(users, pool)) == (password_mobile, "")
-        assert pool.calls == []
+        settled, note = await _settle_api_mode(password_mobile, self._app(users, pool))
+        assert settled.api_mode is ApiMode.MOBILE
+        assert "60 дней" in note
+        assert pool.calls == [ApiMode.MOBILE]
 
     async def test_relogin_with_dead_esia_session_does_not_hang_on_mobile(self, db, from_web):
         # Полный путь: живая веб-сессия → токен → дальше клиент мобильный.

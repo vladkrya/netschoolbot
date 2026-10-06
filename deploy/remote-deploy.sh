@@ -16,6 +16,8 @@ PREV="$(git rev-parse HEAD)"
 STEP="подготовка"
 SWITCHED=0
 BACKUP=""
+NGINX_CONFIG=""
+NGINX_BACKUP=""
 
 DB="$APP/data/netschoolbot.sqlite3"
 
@@ -73,6 +75,17 @@ install_units() {
   systemctl daemon-reload
 }
 
+install_nginx() {
+  local enabled=/etc/nginx/sites-enabled/netschool.ikrya.ru
+  [ -e "$enabled" ] || return 0
+  NGINX_CONFIG="$(readlink -f "$enabled")"
+  NGINX_BACKUP="${NGINX_CONFIG}.bak-$(date +%Y%m%d-%H%M%S)"
+  cp -p "$NGINX_CONFIG" "$NGINX_BACKUP"
+  install -m 644 deploy/nginx/netschool.ikrya.ru.conf "$NGINX_CONFIG"
+  nginx -t
+  systemctl reload nginx
+}
+
 install_deps() {
   if [ -f constraints.txt ]; then
     "$APP/venv/bin/pip" install -q -r requirements.txt -c constraints.txt
@@ -87,6 +100,10 @@ rollback() {
   local log
   log="$(journalctl -u netschoolbot -n 25 --no-pager 2>/dev/null | tail -25 || true)"
   echo "✖ Шаг «$STEP» не удался (код $code)"
+  if [ -n "$NGINX_BACKUP" ] && [ -f "$NGINX_BACKUP" ]; then
+    cp -p "$NGINX_BACKUP" "$NGINX_CONFIG"
+    nginx -t && systemctl reload nginx || true
+  fi
   if [ "$SWITCHED" = 1 ]; then
     echo "↩ Откат на $PREV"
     systemctl stop netschoolbot || true
@@ -134,6 +151,9 @@ step "Юниты systemd"
 install_units
 # Копия до установки таймера снималась вручную — теперь по расписанию.
 systemctl enable --now netschoolbot-backup.timer >/dev/null 2>&1 || true
+
+step "Конфигурация nginx старого домена"
+install_nginx
 
 step "Перезапуск"
 systemctl restart netschoolbot

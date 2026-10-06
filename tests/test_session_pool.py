@@ -11,7 +11,7 @@ import datetime as dt
 import pytest
 
 from app.db.repositories import SessionRepository, UserRepository
-from app.domain.models import Credentials, LoginType, School, User
+from app.domain.models import ApiMode, Credentials, LoginType, School, User
 from app.netschool.errors import NetSchoolError, Reason
 from app.netschool.session import SessionPool
 from app.settings import NetSchoolSettings
@@ -85,6 +85,7 @@ def make_user(telegram_id=1, url="https://sgo.example.ru", **kwargs) -> User:
             Credentials(login_type=LoginType.PASSWORD, login="ivan", password="secret"),
         ),
         enabled=True,
+        api_mode=kwargs.pop("api_mode", ApiMode.WEB),
         **kwargs,
     )
 
