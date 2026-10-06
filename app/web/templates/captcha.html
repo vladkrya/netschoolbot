@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Проверка</title>
+<!--
+  Рамка для KryaCaptcha. SDK подключает свои стили к документу целиком
+  (`* {margin:0}`, `body {display:flex; padding:32px}`, переменные :root), и на
+  странице приложения они ломали бы вёрстку — поэтому виджет живёт здесь, в
+  iframe того же origin. Адрес скрипта подставляет сервер из настроек: из
+  query его брать нельзя, иначе ссылкой можно было бы подключить чужой скрипт.
+
+  Родителю уходят сообщения {type: "kryacaptcha", event, ...}:
+  ready / error / modal (open) / token (token) / fail.
+-->
+<style>
+  html, body { background: transparent !important; }
+  body { display: block !important; min-height: 0 !important; padding: 0 !important; margin: 0 !important; }
+  #captcha { display: flex; justify-content: center; padding: 4px 0; }
+  .hc-sdk-widget { max-width: none !important; }
+</style>
+</head>
+<body>
+<div id="captcha"></div>
+<script>
+  'use strict';
+  (function () {
+    var params = new URLSearchParams(location.search);
+    function post(event, extra) {
+      var message = { type: 'kryacaptcha', event: event };
+      for (var key in extra || {}) message[key] = extra[key];
+      if (window.parent !== window) window.parent.postMessage(message, location.origin);
+    }
+    window.__captchaFailed = function () { post('error'); };
+    window.__captchaStart = function () {
+      if (!window.KryaCaptcha) return post('error');
+      KryaCaptcha.render('#captcha', {
+        endpoint: {{ captcha_url | tojson }},
+        mode: 'rounds',
+        targetRounds: {{ rounds | int }},
+        bind: params.get('bind') || undefined,
+        theme: params.get('theme') === 'dark' ? 'dark' : 'light',
+        onSuccess: function (token) { post('token', { token: token }); },
+        onFail: function () { post('fail'); }
+      });
+      // Окно с головоломкой — position:fixed внутри рамки; пока оно открыто,
+      // родитель растягивает iframe на весь экран.
+      var backdrop = document.querySelector('.hc-modal-backdrop');
+      if (backdrop) {
+        new MutationObserver(function () {
+          post('modal', { open: backdrop.classList.contains('active') });
+        }).observe(backdrop, { attributes: true, attributeFilter: ['class'] });
+      }
+      post('ready');
+    };
+  })();
+</script>
+<script src="{{ captcha_url }}/sdk/kryacaptcha.js" onload="__captchaStart()" onerror="__captchaFailed()"></script>
+</body>
+</html>

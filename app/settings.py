@@ -100,6 +100,10 @@ class WebSettings:
     # Резервный адрес того же приложения: сервер, до которого доходят и
     # тогда, когда мобильный интернет урезан до белых списков.
     mirror_url: str = ""
+    # KryaCaptcha перед отправкой отчёта об ошибке: адрес сервиса и сколько
+    # раундов нужно пройти. Пустой адрес выключает кнопку.
+    captcha_url: str = ""
+    captcha_rounds: int = 2
 
     @property
     def miniapp_url(self) -> str:
@@ -245,6 +249,8 @@ def load_settings(*, require_bot_token: bool = True) -> Settings:
             port=_env_int("NETSCHOOL_WEB_PORT", 8283),
             public_url=public_url,
             mirror_url=_env("NETSCHOOL_MIRROR_URL").rstrip("/"),
+            captcha_url=_env("NETSCHOOL_CAPTCHA_URL", "https://captcha.ikrya.ru").rstrip("/"),
+            captcha_rounds=max(1, _env_int("NETSCHOOL_CAPTCHA_ROUNDS", 2)),
             miniapp_path=miniapp_path,
             token_ttl=_env_int("NETSCHOOL_MINIAPP_TOKEN_TTL", 900),
             login_code_ttl=_env_int("NETSCHOOL_LOGIN_CODE_TTL", 600),

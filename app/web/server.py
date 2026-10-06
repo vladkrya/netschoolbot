@@ -23,7 +23,7 @@ import jinja2
 from aiohttp import web
 
 from ..context import AppContext
-from . import api, caldav
+from . import api, bugreport, caldav
 from .api import BOT, CONTEXT
 
 logger = logging.getLogger("netschoolbot.web")
@@ -67,6 +67,7 @@ def create_app(context: AppContext, bot=None) -> web.Application:
         inner.cleanup_ctx.append(calendar_lifecycle)
     inner.add_routes(caldav.routes)
     inner.add_routes(api.routes)
+    inner.add_routes(bugreport.routes)
     inner.add_routes(page_routes)
     # Те же файлы под путём с версией. Модули JS импортируют друг друга
     # относительными путями без ?v=, а Cloudflare навязывает браузеру кэш
@@ -229,6 +230,23 @@ async def demo(request: web.Request) -> web.Response:
             "demo": True,
         },
     )
+
+
+@page_routes.get("/captcha-frame")
+async def captcha_frame(request: web.Request) -> web.Response:
+    """Рамка с KryaCaptcha для отчёта об ошибке — см. templates/captcha.html."""
+    settings = request.app[CONTEXT].settings.web
+    if not settings.captcha_url:
+        raise web.HTTPNotFound()
+    response = aiohttp_jinja2.render_template(
+        "captcha.html",
+        request,
+        {"captcha_url": settings.captcha_url, "rounds": settings.captcha_rounds},
+    )
+    # Встраивать рамку можно только в своё же приложение.
+    response.headers["X-Frame-Options"] = "SAMEORIGIN"
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 @page_routes.get("/manifest.webmanifest")

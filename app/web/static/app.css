@@ -1053,3 +1053,9 @@ body::after {
 .hw-check.on { background: var(--g5); border-color: var(--g5); }
 .hw-card.done .hw-subject, .hw-card.done .hw-text { opacity: .55; }
 .hw-card.done .hw-text { text-decoration: line-through; }
+
+/* Отчёт об ошибке: капча в рамке; пока открыта головоломка — на весь экран. */
+.captcha-frame { display: block; width: 100%; height: 84px; border: 0; background: transparent; color-scheme: normal; }
+.captcha-frame.expanded { position: fixed; inset: 0; width: 100vw; height: 100dvh; z-index: 1000; }
+.screen.captcha-open { z-index: 80; }
+.bug-report .btn { margin-top: 10px; }
