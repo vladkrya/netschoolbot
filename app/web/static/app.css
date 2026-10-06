@@ -615,8 +615,11 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
   box-shadow: inset 0 1px 0 var(--lens-shine), inset 0 -1px 0 rgba(255, 255, 255, .08);
   /* Сдвиг — отдельным translate: transform умножался бы на scale капли. */
   translate: calc(var(--i, 0) * 100%) 0;
+  /* Пружина перелетает цель на долю пути, поэтому для дальних прыжков app.js
+     подставляет в --glide более мягкую: иначе с «Дня» на «Сообщения» линза
+     вылетала за край панели. */
   transition:
-    translate .5s cubic-bezier(.34, 1.45, .5, 1),
+    translate .5s var(--glide, cubic-bezier(.34, 1.45, .5, 1)),
     scale .45s cubic-bezier(.34, 1.45, .5, 1),
     background-color .25s, box-shadow .25s;
   pointer-events: none;

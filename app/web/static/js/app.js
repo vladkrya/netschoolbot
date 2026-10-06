@@ -24,6 +24,19 @@ const TABS = {
   mail: loadMail,
 };
 
+// Перелёт пружины cubic-bezier(.34, y1, .5, 1) — доля пути, а не пиксели: на
+// прыжке через четыре вкладки линза улетала за край панели. y1 подобран так,
+// чтобы перелёт на любом расстоянии был как у соседних вкладок, 0,066 ширины.
+const GLIDE_Y1 = [1.45, 1.45, 1.315, 1.259, 1.227];
+
+function moveLens(index) {
+  const nav = $('bottomNav');
+  const distance = Math.abs(index - Number(nav.style.getPropertyValue('--i') || 0));
+  const y1 = GLIDE_Y1[Math.min(distance, GLIDE_Y1.length - 1)];
+  nav.style.setProperty('--glide', `cubic-bezier(.34, ${y1}, .5, 1)`);
+  nav.style.setProperty('--i', index);
+}
+
 function switchTab(name) {
   state.tab = name;
   clearScreens();
@@ -33,7 +46,7 @@ function switchTab(name) {
   document.querySelectorAll('.nav-item').forEach((item, index) => {
     const active = item.dataset.tab === name;
     item.classList.toggle('active', active);
-    if (active) $('bottomNav').style.setProperty('--i', index);
+    if (active) moveLens(index);
   });
   // Полоса под шапкой (дата, поиск) — своя у каждой вкладки.
   document.querySelectorAll('.subbar').forEach((bar) => {
