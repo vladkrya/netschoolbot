@@ -30,6 +30,8 @@
     }).join('');
     // В новом дизайне шапка не цветная, а в тон фону.
     if (fresh) chrome = bg;
+    // Фон темы — сразу, до стилей: пока они грузятся, экран не чёрный.
+    document.documentElement.style.background = bg;
     document.documentElement.style.setProperty('--head', accent);
     document.documentElement.style.setProperty('--chrome-head', chrome);
     document.querySelector('meta[name="theme-color"]').setAttribute('content', chrome);
@@ -48,7 +50,11 @@
      забрать initData до первого запроса. Копия у нас, а не с telegram.org:
      без VPN telegram.org заблокирован, и синхронный скрипт в head не давал
      странице отрисоваться — оставался пустой тёмный экран. -->
-<script src="{{ base }}/static/v{{ version }}/telegram-web-app.js"></script>
+<!-- defer: скрипт Telegram больше не держит первую отрисовку, а выполняется
+     всё равно раньше app.js — отложенные скрипты идут по порядку. -->
+<script src="{{ base }}/static/v{{ version }}/telegram-web-app.js" defer></script>
+{% for module in modules %}<link rel="modulepreload" href="{{ base }}/static/v{{ version }}/js/{{ module }}">
+{% endfor %}
 </head>
 <body>
 
