@@ -36,8 +36,28 @@ export function pushScreen(title, subtitle = '') {
 
 export function popScreen() {
   const screen = stack.pop();
-  if (screen) screen.remove();
+  if (screen) leave(screen);
   syncBackButton();
+}
+
+/** Экран уезжает вправо и тает — зеркально тому, как появился. Из стека он
+ *  уже убран, так что повторное «назад» закрывает следующий. Если его увёл
+ *  свайп (transform уже за краем), просто убираем. */
+function leave(screen) {
+  const swiped = screen.style.transform.includes('100%');
+  const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (swiped || still || !screen.animate) {
+    screen.remove();
+    return;
+  }
+  screen.style.pointerEvents = 'none';
+  screen.getAnimations().forEach((animation) => animation.cancel());
+  const animation = screen.animate(
+    [{ transform: 'none', opacity: 1 }, { transform: 'translateX(40%)', opacity: 0 }],
+    { duration: 220, easing: 'cubic-bezier(.4, 0, .6, 1)', fill: 'forwards' },
+  );
+  animation.onfinish = () => screen.remove();
+  animation.oncancel = () => screen.remove();
 }
 
 export function clearScreens() {
