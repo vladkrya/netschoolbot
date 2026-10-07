@@ -1275,3 +1275,9 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
 .app-lock:focus { outline: none; }
 /* Сохраняем пустую левую ячейку, чтобы 0 оставался по центру без биометрии. */
 .pin-key[hidden] { display: grid !important; visibility: hidden; }
+.pin-spacer { width: 76px; height: 68px; }
+.pin-biometric { width: 100%; max-width: 272px; min-height: 48px; display: block; margin: 20px auto 0; padding: 12px 18px; border-radius: 16px; background: #15803d; color: #fff; font-size: 15px; font-weight: 600; box-shadow: 0 4px 16px #15803d20; transition: transform .15s, background .15s; touch-action: manipulation; }
+.pin-biometric:active { transform: scale(.97); background: #166534; }
+.pin-biometric[hidden] { display: none; }
+.pin-biometric:disabled { opacity: .6; }
+@media (max-height: 580px) { .pin-spacer { height: 56px; } }

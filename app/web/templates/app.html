@@ -32,11 +32,20 @@
     if (fresh) chrome = bg;
     // Фон темы — сразу, до стилей: пока они грузятся, экран не чёрный.
     document.documentElement.style.background = bg;
+    document.documentElement.style.setProperty('--boot-bg', bg);
     document.documentElement.style.setProperty('--head', accent);
     document.documentElement.style.setProperty('--chrome-head', chrome);
     document.querySelector('meta[name="theme-color"]').setAttribute('content', chrome);
   } catch (e) {}
 </script>
+<style>
+  html { background: #eef1f6; }
+  html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
+  .boot-splash { position: fixed; inset: 0; z-index: 9999; display: grid; place-items: center; text-align: center; background: var(--boot-bg, #eef1f6); font: 15px -apple-system, BlinkMacSystemFont, sans-serif; color: #64748b; }
+  .boot-spinner { display: block; width: 30px; height: 30px; margin: 0 auto 18px; border: 3px solid #94a3b833; border-top-color: #4a6fae; border-radius: 50%; animation: boot-spin .8s linear infinite; }
+  @keyframes boot-spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .boot-spinner { animation: none; } }
+</style>
 <title>{{ school or "Дневник" }}</title>
 {% if not demo %}<link rel="manifest" href="{{ base }}/manifest.webmanifest?token={{ token }}">{% endif %}
 <link rel="icon" type="image/png" href="{{ base }}/static/icon-192.png">
@@ -53,10 +62,13 @@
 <!-- defer: скрипт Telegram больше не держит первую отрисовку, а выполняется
      всё равно раньше app.js — отложенные скрипты идут по порядку. -->
 <script src="{{ base }}/static/v{{ version }}/telegram-web-app.js" defer></script>
-{% for module in modules %}<link rel="modulepreload" href="{{ base }}/static/v{{ version }}/js/{{ module }}">
+{% for module in boot_modules %}<link rel="modulepreload" href="{{ base }}/static/v{{ version }}/js/{{ module }}">
 {% endfor %}
 </head>
 <body>
+<div class="app-lock boot-splash" id="bootSplash" role="status" aria-live="polite">
+  <div><span class="boot-spinner" aria-hidden="true"></span><p>Открываем дневник…</p></div>
+</div>
 
 <!-- Шапка и полоса вкладки — один закреплённый блок: раньше полоса с датой
      была липкой внутри страницы и при прокрутке отрывалась от шапки. -->
@@ -153,6 +165,7 @@
 
 <script>
   window.NETSCHOOL = {
+    modules: [{% for module in modules %}{{ (base ~ '/static/v' ~ version ~ '/js/' ~ module) | tojson }}{{ ',' if not loop.last else '' }}{% endfor %}],
     base: {{ base | tojson }},
     token: {{ token | tojson }},
     pushEnabled: {{ push_enabled | tojson }},
@@ -173,6 +186,11 @@
       return;
     }
     try { sessionStorage.removeItem('bootRetries'); } catch (e) {}
+    var el = document.getElementById('bootSplash');
+    if (el) {
+      el.innerHTML = '<div><p>Не удалось загрузить приложение.</p><button type="button" onclick="location.reload()">Повторить</button></div>';
+      return;
+    }
     var el = document.getElementById('banner');
     if (el) {
       el.textContent = 'Не удалось загрузить приложение. Закройте и откройте его снова.';
@@ -181,6 +199,6 @@
     }
   }
 </script>
-<script src="{{ base }}/static/v{{ version }}/js/app.js" type="module" onerror="netschoolBootFailed()"></script>
+<script src="{{ base }}/static/v{{ version }}/js/boot.js" type="module" onerror="netschoolBootFailed()"></script>
 </body>
 </html>

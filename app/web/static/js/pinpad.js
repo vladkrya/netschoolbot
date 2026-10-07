@@ -12,10 +12,10 @@ export function mountPinpad(root, complete, { hint = 'Введите 4 цифр�
     <span class="pin-progress" role="status" aria-live="polite">Введено 0 из 4 цифр</span>
     <div class="pin-grid" role="group" aria-label="Цифровая клавиатура">${Array.from({length: 9}, (_, i) =>
       `<button type="button" class="pin-key" data-digit="${i + 1}" aria-label="${i + 1}">${i + 1}</button>`).join('')}
-      <button type="button" class="pin-key pin-aux" data-biometric hidden></button>
+      <span class="pin-spacer" aria-hidden="true"></span>
       <button type="button" class="pin-key" data-digit="0" aria-label="0">0</button>
       <button type="button" class="pin-key pin-aux" data-delete aria-label="Удалить последнюю цифру">${BACK}</button>
-    </div>`;
+    </div><button type="button" class="pin-biometric" data-biometric hidden></button>`;
   root.querySelector('h2').before(field.querySelector('.pin-emblem'));
   const dots = field.querySelectorAll('.pin-dots i');
   let value = '', busy = false, disposed = false;
@@ -36,8 +36,20 @@ export function mountPinpad(root, complete, { hint = 'Введите 4 цифр�
       ], {duration: 320});
     }
   };
+  const press = button => {
+    if (!button) return;
+    button.getAnimations().forEach(animation => animation.cancel());
+    const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    button.animate(reduced ? [{opacity: .65}, {opacity: 1}] : [
+      {transform: 'translateY(0) scale(1)', offset: 0},
+      {transform: 'translateY(4px) scale(.91)', offset: .25},
+      {transform: 'translateY(2px) scale(.95)', offset: .6},
+      {transform: 'translateY(0) scale(1)', offset: 1},
+    ], {duration: reduced ? 100 : 260, easing: 'cubic-bezier(.2,.8,.2,1)'});
+  };
   async function enter(digit) {
     if (disposed || busy || value.length >= 4) return;
+    press(field.querySelector(`[data-digit="${digit}"]`));
     root.querySelector('.lock-error').textContent = '';
     value += digit; tap('light'); paint();
     if (value.length !== 4) return;
@@ -52,21 +64,23 @@ export function mountPinpad(root, complete, { hint = 'Введите 4 цифр�
       if (!disposed) paint();
     }
   }
-  function remove() { if (!busy && !disposed) { value = value.slice(0, -1); tap('light'); paint(); } }
+  function remove() { if (!busy && !disposed) { press(field.querySelector('[data-delete]')); value = value.slice(0, -1); tap('light'); paint(); } }
   field.querySelectorAll('[data-digit]').forEach(button => { button.onclick = () => enter(button.dataset.digit); });
   field.querySelector('[data-delete]').onclick = remove;
-  if (biometric) {
+  function setBiometric(biometric) {
+    if (disposed || !biometric) return;
     const button = field.querySelector('[data-biometric]');
-    button.hidden = false; button.textContent = biometric.label;
+    button.hidden = false; button.textContent = `Войти с ${biometric.label}`;
     button.setAttribute('aria-label', `Войти с ${biometric.label}`);
     button.onclick = async () => {
-      if (busy) return;
+      if (disposed || busy) return;
       busy = true; paint();
       try { await biometric.run(); }
       catch (error) { root.querySelector('.lock-error').textContent = error.message; }
       finally { busy = false; if (!disposed) paint(); }
     };
   }
+  if (biometric) setBiometric(biometric);
   const keydown = event => {
     if (/^[0-9]$/.test(event.key)) { event.preventDefault(); enter(event.key); }
     if (event.key === 'Backspace' || event.key === 'Delete') { event.preventDefault(); remove(); }
@@ -78,7 +92,7 @@ export function mountPinpad(root, complete, { hint = 'Введите 4 цифр�
   };
   root.addEventListener('keydown', keydown); root.addEventListener('paste', paste);
   root.tabIndex = -1; root.focus(); reset();
-  return { reset, destroy() {
+  return { reset, setBiometric, destroy() {
     value = ''; disposed = true;
     root.removeEventListener('keydown', keydown); root.removeEventListener('paste', paste);
   }};

@@ -929,3 +929,62 @@ class TestMailMessage:
     async def test_bad_id_is_rejected(self, client, token):
         response = await client.get(f"{BASE}/api/mail/не-число", params={"token": token})
         assert response.status in (400, 404)
+
+class TestFastStartup:
+    async def test_compact_diary_requests_only_current_week(self, client, app_context, token):
+        calls = []
+        async def fetch(user, **kwargs):
+            calls.append(kwargs)
+            return []
+        app_context.diary.fetch_diary = fetch
+        response = await client.get(f'{BASE}/api/diary', params={'token': token, 'window': 'current'})
+        assert response.status == 200
+        assert calls[0]['weeks_back'] == 0
+        assert calls[0]['weeks_forward'] == 0
+
+    async def test_compact_diary_reuses_full_window_cache(self, client, app_context, token):
+        saved = {'days': [{'date': '2026-10-07', 'lessons': []}], 'week': 0}
+        await app_context.cache.put(1, 'diary:0', saved)
+        async def fail(*args, **kwargs): raise AssertionError('school must not be queried')
+        app_context.diary.fetch_diary = fail
+        response = await client.get(f'{BASE}/api/diary', params={'token': token, 'window': 'current'})
+        assert (await response.json())['data'] == saved
+
+    async def test_compact_diary_does_not_wait_for_teacher_cards(self, client, app_context, token):
+        from app.domain.records import DiaryDay, Lesson
+        release = asyncio.Event()
+        async def fetch(user, **kwargs):
+            return [DiaryDay(day=dt.date(2026, 10, 7), lessons=[Lesson(number=1, subject='Математика', assignment_ids=(42,))])]
+        async def teachers(user, wanted):
+            await release.wait()
+            return {'Математика': 'Учитель'}
+        app_context.diary.fetch_diary = fetch
+        app_context.diary.fetch_teachers = teachers
+        response = await asyncio.wait_for(client.get(f'{BASE}/api/diary', params={'token': token, 'window': 'current'}), timeout=1)
+        assert response.status == 200
+        assert (await response.json())['data']['days'][0]['lessons'][0]['subject'] == 'Математика'
+        release.set()
+        await asyncio.gather(*list(app_context.cache_refreshes.values()))
+        assert (await app_context.cache.get(1, 'teachers'))[0] == {'Математика': 'Учитель'}
+
+    async def test_boot_has_visible_splash_and_preloads_only_lock_modules(self, client):
+        response = await client.get(f'{BASE}/')
+        html = await response.text()
+        assert 'id="bootSplash"' in html
+        assert '/js/boot.js" type="module"' in html
+        preloads = re.findall(r'<link rel="modulepreload" href="([^"]+)"', html)
+        assert any('/js/lock.js' in path for path in preloads)
+        assert not any('/js/totals.js' in path for path in preloads)
+
+    async def test_static_compression_and_range_requests(self, client):
+        from app.web.server import STATIC_VERSION
+        path = f'{BASE}/static/v{STATIC_VERSION}/app.css'
+        response = await client.get(path, headers={'Accept-Encoding': 'gzip'})
+        assert response.status == 200
+        assert response.headers.get('Content-Encoding') == 'gzip'
+        assert 'Accept-Encoding' in response.headers['Vary']
+        assert 'pin-biometric' in await response.text()
+        partial = await client.get(path, headers={'Accept-Encoding': 'gzip', 'Range': 'bytes=0-99'})
+        assert partial.status == 206
+        assert 'Content-Encoding' not in partial.headers
+        assert len(await partial.read()) == 100

@@ -17,7 +17,6 @@ import { clearScreens, handleBack, hasScreens, setFallbackBack } from './screens
 import { initSwipeBack } from './swipeback.js';
 import { initIosHaptics, notify, tap } from './haptics.js';
 import { syncPrefs } from './prefs.js';
-import { unlockApp } from './lock.js';
 
 const TABS = {
   day: loadDay,
@@ -365,7 +364,6 @@ async function start() {
   applyDesign();
   // Telegram должен скрыть свой экран загрузки до ввода PIN.
   initTelegram();
-  await unlockApp();
   // Тема, дизайн и цвет, выбранные в Telegram, — и на сайте (и наоборот).
   syncPrefs().then((changed) => {
     if (!changed) return;
@@ -386,8 +384,9 @@ async function start() {
   setFallbackBack(fallbackBack);
 
   $('topName').textContent = studentFirstName(student) || school || 'Дневник';
-  switchTab('day');
-  // Предзагрузка — после первой отрисовки «Дня», чтобы не тормозить её.
+  state.tab = 'day';
+  await loadDay();
+  // Остальные запросы идут только после первого экрана, не конкурируют с ним.
   setTimeout(prefetch, 600);
 
   // Профиль нужен только меню, но имя ученика в шапке берём из него,

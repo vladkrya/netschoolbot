@@ -30,6 +30,8 @@ export const state = {
   mail: null,
   profile: null,
   calc: null,
+  initialDiary: null,
+  initialDiaryFresh: null,
 };
 
 export const $ = (id) => document.getElementById(id);
@@ -190,7 +192,7 @@ async function request(path, options = {}) {
   // Без предела запрос к зависшему школьному серверу крутил загрузку
   // бесконечно. Сервер сам отвечает не дольше минуты при обновлении.
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), path.startsWith('/api/lock/') ? 10000 : REQUEST_TIMEOUT_MS);
   const { onFresh, ...init } = options;
   let response;
   try {

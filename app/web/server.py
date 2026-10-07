@@ -51,6 +51,8 @@ STATIC_VERSION = _static_version()
 # а не цепочкой «app.js → его импорты → их импорты».
 JS_MODULES = sorted(path.name for path in (STATIC_DIR / "js").glob("*.js") if path.name != "demo.js")
 
+BOOT_MODULES = ['boot.js', 'core.js', 'icons.js', 'haptics.js', 'lock.js', 'biometrics.js', 'pinpad.js']
+
 page_routes = web.RouteTableDef()
 
 # Прежний адрес приложения. Ссылки на него остались в чатах, на домашних
@@ -58,9 +60,20 @@ page_routes = web.RouteTableDef()
 LEGACY_PREFIX = "/mini/netschool"
 
 
+@web.middleware
+async def compress_static(request: web.Request, handler):
+    response = await handler(request)
+    if '/static/' in request.path and request.path.endswith(('.js', '.css')):
+        response.headers['Vary'] = 'Accept-Encoding'
+        if response.status == 200 and 'Range' not in request.headers:
+            # Прокси не сжимал JS/CSS: на мобильной сети уходили сотни килобайт.
+            response.enable_compression()
+    return response
+
+
 def create_app(context: AppContext, bot=None) -> web.Application:
     """Собрать сервер: подприложение под префиксом плюс проверка живости."""
-    inner = web.Application(middlewares=[caldav.root_discovery, api.error_middleware, api.auth_middleware])
+    inner = web.Application(middlewares=[caldav.root_discovery, compress_static, api.error_middleware, api.auth_middleware])
     inner[CONTEXT] = context
     inner[BOT] = bot
     async def stop_refreshes(app):
@@ -225,6 +238,7 @@ async def index(request: web.Request) -> web.Response:
             "base": _base(request),
             "version": STATIC_VERSION,
             "modules": JS_MODULES,
+            "boot_modules": BOOT_MODULES,
             "token": token,
             "student": user.student_name if user and not protected else "",
             "school": user.school.name if user and not protected else "",
@@ -253,6 +267,7 @@ async def demo(request: web.Request) -> web.Response:
             "base": _base(request),
             "version": STATIC_VERSION,
             "modules": JS_MODULES,
+            "boot_modules": BOOT_MODULES,
             "token": "",
             "student": "Пятёркин Отличник",
             "school": "Демо-школа",

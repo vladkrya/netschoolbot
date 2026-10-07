@@ -22,6 +22,12 @@ const days = new Map();
 const loadedWeeks = new Set();
 const pending = new Map();
 
+// Ответ фоновой сверки мог прийти до загрузки этого модуля или после неё.
+window.addEventListener('netschool:diaryfresh', event => {
+  for (const day of event.detail.data.days || []) days.set(day.date, day);
+  if (state.date && state.tab === 'day') renderDay();
+});
+
 export function dayData(iso) {
   return days.get(iso) || null;
 }
@@ -35,11 +41,17 @@ export async function ensureWeek(iso, force = false) {
   const keep = ({ data }) => {
     for (const day of data.days || []) days.set(day.date, day);
   };
-  const request = api(`/api/diary?week=${offset}${force ? '&refresh=1' : ''}`, { onFresh: keep })
+  const initial = !force && offset === 0 ? state.initialDiary : null;
+  if (initial) state.initialDiary = null;
+  const source = initial ? initial.then(result => {
+    if (result.error) throw result.error;
+    return result.payload;
+  }) : api(`/api/diary?week=${offset}&window=current${force ? '&refresh=1' : ''}`, { onFresh: keep });
+  const request = source
     .then((payload) => {
-      keep(payload);
-      // Окно — неделя до и после: соседние недели тоже уже на руках.
-      for (const shift of [-1, 0, 1]) loadedWeeks.add(offset + shift);
+      keep(initial && state.initialDiaryFresh ? state.initialDiaryFresh : payload);
+      // Первая загрузка — одна неделя; соседние запрашиваются при переходе.
+      loadedWeeks.add(offset);
     })
     .finally(() => pending.delete(offset));
   pending.set(offset, request);

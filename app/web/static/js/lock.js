@@ -146,10 +146,11 @@ export async function unlockApp() {
   pending = (async () => {
     const root = panel('Вход в дневник');
     root.querySelector('.lock-error').textContent = 'Проверяем защиту…';
-    const native = await nativeManager();
+    // Проверка PIN не должна ждать ответ Telegram о биометрии (до 5 с).
+    const nativeReady = nativeManager();
     let status;
     while (!status) {
-      try { status = (await api(statusPath(native))).data; }
+      try { status = (await api(statusPath(null))).data; }
       catch (failure) {
         error(root, failure);
         root.querySelector('.lock-actions').innerHTML = '<button type="button">Повторить</button>';
@@ -161,9 +162,16 @@ export async function unlockApp() {
     await clearOffline();
     root.querySelector('.lock-error').textContent = '';
     root.querySelector('.lock-actions').innerHTML = '';
-    const canBiometric = nativeBiometricEnabled(native, status.biometric) ||
-      (!tg?.initData && status.passkeys && await supportsBiometry());
-    const label = native ? biometricLabel(native.biometricType, tg.platform) : 'Touch ID / Face ID';
+    const biometricReady = (async () => {
+      const native = await nativeReady;
+      let registered = false;
+      if (native) {
+        try { registered = (await api(statusPath(native))).data.biometric; } catch { /* PIN работает. */ }
+      }
+      const available = nativeBiometricEnabled(native, registered) ||
+        (!tg?.initData && status.passkeys && await supportsBiometry());
+      return available ? { label: native ? biometricLabel(native.biometricType, tg.platform) : 'Touch ID / Face ID' } : null;
+    })();
     await new Promise(resolve => {
       let pad;
       const finish = async () => {
@@ -175,12 +183,14 @@ export async function unlockApp() {
         } else root.close();
         resolve();
       };
-      const biometric = canBiometric ? { label, run: async () => { await biometry(); await finish(); } } : null;
       if (status.pin) {
         pad = mountPinpad(root, async pin => {
           const result = await post('unlock', { pin });
           setUnlock(result.data.unlock); await finish();
-        }, { biometric });
+        });
+        biometricReady.then(config => {
+          if (config && root.isConnected) pad.setBiometric({ ...config, run: async () => { await biometry(); await finish(); } });
+        }).catch(() => {});
       } else {
         root.querySelector('.lock-fields').innerHTML = '<p>Введите прежний пароль, затем замените его на PIN из 4 цифр.</p><label>Прежний пароль<input type="password" autocomplete="current-password" required maxlength="128" autofocus></label>';
         root.querySelector('.lock-actions').innerHTML = '<button type="submit">Продолжить</button>';
@@ -193,12 +203,15 @@ export async function unlockApp() {
           } catch (failure) { error(root, failure); }
           finally { button.disabled = false; }
         };
-        if (biometric) {
-          const button = document.createElement('button'); button.type = 'button';
-          button.textContent = `Войти с ${label}`;
-          button.onclick = () => biometric.run().catch(failure => error(root, failure));
+        biometricReady.then(config => {
+          if (!config || !root.isConnected) return;
+          const button = document.createElement('button'); button.type = 'button'; button.className = 'pin-biometric';
+          button.textContent = `Войти с ${config.label}`;
+          button.onclick = async () => {
+            try { await biometry(); await finish(); } catch (failure) { error(root, failure); }
+          };
           root.querySelector('.lock-actions').append(button);
-        }
+        }).catch(() => {});
       }
     });
   })();
@@ -206,10 +219,15 @@ export async function unlockApp() {
 }
 
 async function clearOffline() {
-  if ('caches' in window) {
-    for (const name of await caches.keys()) {
-      if (name.startsWith('ns-offline')) await caches.delete(name);
-    }
+  if (!('caches' in window)) return;
+  for (const name of await caches.keys()) {
+    if (!name.startsWith('ns-offline')) continue;
+    const cache = await caches.open(name);
+    // Удаляем данные и персональные страницы, сохраняем версионные JS/CSS.
+    // Полное удаление кэша заставляло iPhone качать всё приложение при каждом входе.
+    const entries = await cache.keys();
+    await Promise.all(entries.filter(request => !/\/static\/v[^/]+\//.test(new URL(request.url).pathname))
+      .map(request => cache.delete(request)));
   }
 }
 

@@ -305,7 +305,7 @@ def _day_to_json(
     }
 
 
-async def _cached(request: web.Request, section: str, producer, *, cacheable=lambda payload: True):
+async def _cached(request: web.Request, section: str, producer, *, cacheable=lambda payload: True, fallback_section=None):
     """Отдать сохранённые данные сразу, обновив устаревшие в фоне.
 
     Если школьный сервер недоступен, отдаётся устаревший кэш с пометкой —
@@ -316,6 +316,8 @@ async def _cached(request: web.Request, section: str, producer, *, cacheable=lam
     app = context(request)
     user = current_user(request)
     cached = await app.cache.get(user.telegram_id, section)
+    if cached is None and fallback_section:
+        cached = await app.cache.get(user.telegram_id, fallback_section)
     fresh_for = dt.timedelta(seconds=app.settings.web.cache_fresh_seconds)
 
     if cached is not None and not request.query.get("refresh"):
@@ -412,16 +414,32 @@ async def diary(request: web.Request) -> web.Response:
     # перебирать сотни недель.
     offset = max(-30, min(30, offset))
 
+    compact = request.query.get('window') == 'current'
+
     async def produce(app: AppContext, user: User):
         today = user.today() + dt.timedelta(weeks=offset)
-        days = await app.diary.fetch_diary(user, weeks_back=1, weeks_forward=1, today=today)
-        teachers = await _teachers(app, user, days)
+        days = await app.diary.fetch_diary(user, weeks_back=0 if compact else 1, weeks_forward=0 if compact else 1, today=today)
+        if compact and user.effective_api_mode is not ApiMode.MOBILE:
+            cached_teachers = await app.cache.get(user.telegram_id, "teachers")
+            teachers = dict(cached_teachers[0]) if cached_teachers else {}
+            wanted = {lesson.subject: lesson.assignment_ids[0]
+                      for day in days for lesson in day.lessons
+                      if lesson.subject not in teachers and lesson.assignment_ids}
+            if wanted:
+                async def refresh_teachers(ctx, owner):
+                    found = await ctx.diary.fetch_teachers(owner, wanted)
+                    return {**teachers, **found}
+                _refresh_cached_section(app, user, "teachers", refresh_teachers, bool)
+        else:
+            teachers = await _teachers(app, user, days)
         observed = await app.state.observed_homework(user.telegram_id)
         return {"days": [_day_to_json(day, teachers, observed) for day in days], "week": offset}
 
     # Каждое окно кэшируется отдельно, иначе соседние недели вытесняли бы
     # друг друга и стрелки снова упирались бы в сеть.
-    return await _cached(request, f"diary:{offset}", produce)
+    section = f"diary:{offset}"
+    return await _cached(request, f"{section}:current" if compact else section, produce,
+                         fallback_section=section if compact else None)
 
 
 @routes.get("/api/marks")
