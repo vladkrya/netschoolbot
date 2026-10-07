@@ -45,7 +45,10 @@
   --bar-top: calc(var(--safe-top) + min(var(--safe-top), 10px));
   --topbar-h: calc(52px + var(--bar-top));
   --header-h: calc(var(--topbar-h) + 64px);
-  --nav-h: calc(70px + var(--safe-bottom));
+  /* Нижняя панель — ближе к низу: заходит в зону полоски «домой», как
+     системные панели iOS. Без системного отступа — 8px от края. */
+  --nav-bottom: max(8px, calc(var(--safe-bottom) - 14px));
+  --nav-h: calc(62px + var(--nav-bottom));
   --ease: cubic-bezier(.2, .8, .3, 1);
   --radius: 12px;
   --press-glass: inset 0 1px 0 rgba(255, 255, 255, .45), inset 0 0 0 1px rgba(255, 255, 255, .2);
@@ -461,12 +464,9 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 }
 .info-label { font-size: 12px; color: var(--text2); }
 .info-value { font-weight: 500; font-size: 14px; overflow-wrap: anywhere; }
+/* Тема урока — сразу целиком, без раскрытия. */
 .info-topic { margin-bottom: 10px; }
-.info-topic summary { cursor: pointer; }
-.info-topic .info-label { display: inline; }
-.topic-preview { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; font-size: 14px; margin-top: 4px; }
-.info-topic[open] .topic-preview { display: none; }
-.info-topic[open] .info-value { margin-top: 6px; line-height: 1.45; }
+.info-topic .info-value { margin-top: 4px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; }
 .subject-link { text-align: left; font: inherit; overflow-wrap: anywhere; }
 .lesson-title .subject-link { min-width: 0; }
 
@@ -556,6 +556,7 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .hw-card { cursor: pointer; }
 .hw-subject { font-size: 18px; color: var(--text); margin-bottom: 6px; }
 .hw-observed { margin-top: 8px; color: var(--text2); font-size: 12px; }
+.hw-observed + .hw-observed { margin-top: 2px; }
 .hw-text { font-size: 15px; margin-bottom: 10px; word-break: break-word; }
 .hw-foot { display: flex; justify-content: space-between; align-items: center; }
 
@@ -661,7 +662,7 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .bottom-nav {
   position: fixed;
   left: 12px; right: 12px;
-  bottom: calc(var(--safe-bottom) + 8px);
+  bottom: var(--nav-bottom);
   z-index: 40;
   height: 62px;
   padding: 4px;

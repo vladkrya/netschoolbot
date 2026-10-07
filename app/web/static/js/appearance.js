@@ -92,6 +92,17 @@ export function saveDesign(on) {
   window.dispatchEvent(new CustomEvent('netschool:design'));
 }
 
+/** Субботу и воскресенье без уроков прячем, если не включено «Показывать выходные». */
+export function showWeekends() {
+  return getPref('weekends') === 'show';
+}
+
+export function saveWeekends(on) {
+  setPref('weekends', on ? 'show' : 'hide');
+  // Полоса недели и расписание перерисуются (слушатель в app.js).
+  window.dispatchEvent(new CustomEvent('netschool:design'));
+}
+
 export function saveAccent(color) {
   setPref('accent', color);
   applyAccent(color);

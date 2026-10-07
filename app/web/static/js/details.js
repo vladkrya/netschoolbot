@@ -107,8 +107,8 @@ export function openLesson(lesson, iso) {
     ${info.length ? `<div class="info-strip">${info
       .map(([label, value]) => `<div class="info-card"><div class="info-label">${label}</div><div class="info-value">${esc(value)}</div></div>`)
       .join('')}</div>` : ''}
-    ${lesson.topic ? `<details class="info-card info-topic"><summary><span class="info-label">Тема урока</span>
-      <span class="topic-preview">${esc(lesson.topic)}</span></summary><div class="info-value">${esc(lesson.topic)}</div></details>` : ''}
+    ${lesson.topic ? `<div class="info-card info-topic"><div class="info-label">Тема урока</div>
+      <div class="info-value">${esc(lesson.topic)}</div></div>` : ''}
     ${blocks.join('') || '<div class="empty">Заданий на этот урок нет</div>'}`;
 
   bindSubject(body, lesson.subject, iso);
@@ -122,13 +122,24 @@ export function openLesson(lesson, iso) {
   );
 }
 
+/** Когда задание опубликовали и когда его заметила наша система. Второе —
+ *  только если разница больше 10 минут (или времени публикации нет):
+ *  иначе это одно и то же событие и строка лишняя. */
+export function homeworkTimes(item, format = compactTime) {
+  const published = format(item.published_at);
+  const observed = format(item.observed_at);
+  const close = published && observed
+    && Math.abs(new Date(item.observed_at) - new Date(item.published_at)) <= 10 * 60 * 1000;
+  return [
+    published ? `Опубликовано ${published}` : '',
+    observed && !close ? `Замечено системой ${observed}` : '',
+  ].filter(Boolean);
+}
+
 export function openHomework(item, topic = '') {
   topic = topic || item.topic || '';
   const body = pushScreen('Домашнее задание', forDate(item.date));
-  const observed = compactTime(item.observed_at);
-  const published = compactTime(item.published_at);
-  const closeTimes = published && observed && Math.abs(new Date(item.observed_at) - new Date(item.published_at)) <= 10 * 60 * 1000;
-  const timestamps = [published ? `Опубликовано ${published}` : '', observed && !closeTimes ? `Впервые замечено ${observed}` : ''].filter(Boolean);
+  const timestamps = homeworkTimes(item);
   body.innerHTML = `
     <div class="detail">
       <h2><button class="subject-link" data-subject-results>${esc(item.subject)}</button></h2>

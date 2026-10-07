@@ -10,6 +10,7 @@ import {
   parseIso, plural, showFailure, showLoading, skeleton, state, WEEKDAYS, WEEKDAYS_FULL, weekdayIndex, weekOffsetOf,
 } from './core.js';
 import { ICONS } from './icons.js';
+import { showWeekends } from './appearance.js';
 import { canGoBack } from './screens.js';
 import { EDGE_PX } from './swipeback.js';
 import { lessonStatus, markBox, openHomework, openLesson, realMarks } from './details.js';
@@ -80,10 +81,17 @@ function renderHeader() {
 
 /** Неделя полосой под датой (новый дизайн): день недели и число. Все семь
  *  дней всегда — иначе воскресенье появлялось и строка перестраивалась. */
+/** Суббота или воскресенье без уроков, а выходные показывать не просили. */
+export function isHiddenWeekend(iso) {
+  return weekdayIndex(iso) >= 5 && !showWeekends() && !days.get(iso)?.lessons?.length;
+}
+
 function renderWeekStrip() {
   const monday = mondayOf(state.date);
   const today = isoToday();
-  $('weekStrip').innerHTML = Array.from({ length: 7 }, (_, index) => addDays(monday, index)).map((iso) => {
+  const dates = Array.from({ length: 7 }, (_, index) => addDays(monday, index))
+    .filter((iso) => iso === state.date || !isHiddenWeekend(iso));
+  $('weekStrip').innerHTML = dates.map((iso) => {
     const classes = ['week-day', iso === state.date ? 'on' : '', iso === today ? 'today' : '',
       days.get(iso)?.lessons?.length ? '' : 'free'].filter(Boolean).join(' ');
     return `<button class="${classes}" data-week-day="${iso}">
@@ -194,7 +202,10 @@ export async function goToDay(iso) {
 }
 
 function shiftDay(delta) {
-  slideTo(addDays(state.date, delta));
+  // Стрелки перешагивают спрятанные выходные.
+  let iso = addDays(state.date, delta);
+  for (let step = 0; step < 2 && isHiddenWeekend(iso); step += 1) iso = addDays(iso, delta);
+  slideTo(iso);
 }
 
 /** Перейти на день с листанием в его сторону. */

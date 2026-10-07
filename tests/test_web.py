@@ -472,6 +472,13 @@ class TestNewFeatures:
         response = await client.post(url, params={"token": token}, json={"design": "retro"})
         assert response.status == 400
 
+    async def test_weekends_pref_is_validated(self, client, token):
+        url = f"{BASE}/api/prefs"
+        response = await client.post(url, params={"token": token}, json={"weekends": "show"})
+        assert (await response.json())["data"]["weekends"] == "show"
+        response = await client.post(url, params={"token": token}, json={"weekends": True})
+        assert response.status == 400
+
     async def test_grade_thresholds_are_saved(self, client, token):
         url = f"{BASE}/api/prefs"
         thresholds = {

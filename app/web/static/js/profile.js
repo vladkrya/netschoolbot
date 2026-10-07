@@ -3,7 +3,9 @@
 'use strict';
 
 import { $, api, banner, demo, esc, initData, pushEnabled, state, tg } from './core.js';
-import { ACCENTS, currentAccent, isNewDesign, saveAccent, saveDesign, syncChromeColor } from './appearance.js';
+import {
+  ACCENTS, currentAccent, isNewDesign, saveAccent, saveDesign, saveWeekends, showWeekends, syncChromeColor,
+} from './appearance.js';
 import { ICONS } from './icons.js';
 import { loadCalc } from './calc.js';
 import { loadTotals } from './totals.js';
@@ -321,6 +323,8 @@ function render() {
       <div class="drawer-heading">Оформление</div>
       <label class="switch-row design-row"><span>Новый дизайн<span class="design-tag">beta</span></span>
         <input type="checkbox" switch class="switch" id="designNew" ${isNewDesign() ? 'checked' : ''}></label>
+      <label class="switch-row"><span>Показывать выходные без уроков</span>
+        <input type="checkbox" switch class="switch" id="weekendsShow" ${showWeekends() ? 'checked' : ''}></label>
       ${radio('light', 'Светлая тема')}
       ${radio('auto', 'Как в системе')}
       ${radio('dark', 'Тёмная тема')}
@@ -360,6 +364,10 @@ function bindDrawer() {
       applyStoredTheme();
     })
   );
+  $('weekendsShow').addEventListener('change', (event) => {
+    select();
+    saveWeekends(event.target.checked);
+  });
   $('designNew').addEventListener('change', (event) => {
     select();
     saveDesign(event.target.checked);

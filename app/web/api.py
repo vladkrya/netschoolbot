@@ -1188,6 +1188,10 @@ async def save_prefs(request: web.Request) -> web.Response:
         if body["theme"] not in THEMES:
             return json_error("Неизвестная тема")
         changes["theme"] = body["theme"]
+    if "weekends" in body:
+        if body["weekends"] not in ("show", "hide"):
+            return json_error("Некорректная настройка выходных")
+        changes["weekends"] = body["weekends"]
     if "design" in body:
         if body["design"] not in DESIGNS:
             return json_error("Неизвестный дизайн")

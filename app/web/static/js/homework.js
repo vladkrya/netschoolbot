@@ -8,7 +8,7 @@ import {
   WEEKDAYS_FULL, weekdayIndex,
 } from './core.js';
 import { ICONS } from './icons.js';
-import { openHomework } from './details.js';
+import { homeworkTimes, openHomework } from './details.js';
 import { notify, select, tap } from './haptics.js';
 
 let query = '';
@@ -97,9 +97,7 @@ function render() {
               aria-label="${isDone ? 'Снять отметку' : 'Отметить выполненным'}">${isDone ? '✓' : ''}</button>` : ''}
           </div>
           <div class="hw-text">${esc(item.text) || '—'}</div>
-          ${item.published_at
-            ? `<div class="hw-observed">Опубликовано: ${esc(observedTime(item.published_at))}</div>`
-            : item.observed_at ? `<div class="hw-observed">Замечено ботом: ${esc(observedTime(item.observed_at))}</div>` : ''}
+          ${homeworkTimes(item, observedTime).map((line) => `<div class="hw-observed">${esc(line)}</div>`).join('')}
           <div class="hw-foot">
             <span><span class="hw-badge">Д/З</span>${item.attachments.length ? `<span class="hw-badge clip">${ICONS.clip}</span>` : ''}</span>
             <span class="muted small">${esc(dayMonth(item.date))}</span>

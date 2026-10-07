@@ -6,7 +6,7 @@ import {
   $, addDays, dayMonth, errorCard, esc, isoToday, mondayOf, showFailure, showLoading, skeleton, state,
   WEEKDAYS_FULL, weekOffsetOf,
 } from './core.js';
-import { dayData, ensureWeek, goToDay, openCalendar } from './day.js';
+import { dayData, ensureWeek, goToDay, isHiddenWeekend, openCalendar } from './day.js';
 import { isNewDesign } from './appearance.js';
 import { select, tap } from './haptics.js';
 
@@ -51,8 +51,9 @@ function render(monday) {
   for (let index = 0; index < 7; index += 1) {
     const iso = addDays(monday, index);
     const lessons = dayData(iso)?.lessons || [];
-    // Воскресенье без уроков не показываем — в приложении его тоже нет.
-    if (!lessons.length && index === 6) continue;
+    // Субботу и воскресенье без уроков не показываем, если не включено
+    // «Показывать выходные» в меню.
+    if (isHiddenWeekend(iso)) continue;
 
     const first = lessons[0];
     const last = lessons[lessons.length - 1];
