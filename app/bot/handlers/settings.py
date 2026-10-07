@@ -467,4 +467,4 @@ async def reset_app_lock(message: Message, user: User, app: AppContext) -> None:
     async with app.db.transaction() as db:
         for table in ("app_locks", "app_unlocks", "app_passkeys", "app_biometrics", "app_lock_challenges"):
             await db.execute(f"DELETE FROM {table} WHERE telegram_id = ?", (user.telegram_id,))
-    await message.answer("Защита входа в веб-приложение сброшена. Откройте дневник и задайте новый пароль в меню → Защита входа.")
+    await message.answer("Защита входа в веб-приложение сброшена. Откройте дневник и задайте новый PIN в меню → Защита входа.")

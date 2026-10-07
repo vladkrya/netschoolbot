@@ -295,6 +295,11 @@ MIGRATIONS: list[str] = [
         rp_id TEXT NOT NULL, expires_at REAL NOT NULL
     );
     """,
+    # 16 — новые блокировки используют четырёхзначный PIN; старые пароли
+    # сохраняются до подтверждённой пользователем замены, без потери доступа.
+    """
+    ALTER TABLE app_locks ADD COLUMN is_pin INTEGER NOT NULL DEFAULT 0;
+    """,
 ]
 
 

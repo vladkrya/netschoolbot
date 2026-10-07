@@ -1236,3 +1236,42 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
 .lock-actions button[type="submit"] { background: var(--head, #4a6fae); color: white; font-weight: 600; }
 .lock-actions button:disabled { opacity: .6; cursor: wait; }
 .lock-fields .switch-row { display: flex; }
+
+/* PIN: мягкие клавиши, четыре светящихся точки, лёгкий отклик на касание. */
+.app-lock.pin-screen {
+  background: radial-gradient(ellipse at 50% 18%, color-mix(in srgb, var(--head, #4a6fae) 14%, transparent), transparent 60%), var(--bg, #eef1f6);
+  padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
+}
+.pin-screen .app-lock-card { width: min(100%, 340px); padding: 24px 18px; background: transparent; text-align: center; }
+.pin-screen h2 { font-size: 25px; font-weight: 650; letter-spacing: -.6px; margin: 12px 0 6px; }
+.pin-emblem { display: grid; place-items: center; width: 52px; height: 52px; margin: 0 auto; border-radius: 18px; color: var(--head, #4a6fae); background: color-mix(in srgb, var(--head, #4a6fae) 12%, var(--card, white)); box-shadow: inset 0 1px 0 #ffffff50; }
+.pin-emblem svg { width: 26px; height: 26px; }
+.pin-hint { min-height: 22px; margin: 0 0 22px !important; font-size: 14px; }
+.pin-dots { display: flex; justify-content: center; gap: 18px; margin: 24px 0 32px; }
+.pin-dots i { width: 13px; height: 13px; border: 1.5px solid color-mix(in srgb, var(--text2, #999) 45%, transparent); border-radius: 50%; transition: background .15s, transform .15s, box-shadow .15s; }
+.pin-dots i.filled { border-color: var(--head, #4a6fae); background: var(--head, #4a6fae); transform: scale(1.1); box-shadow: 0 0 14px color-mix(in srgb, var(--head, #4a6fae) 30%, transparent); }
+.pin-grid { display: grid; grid-template-columns: repeat(3, 76px); justify-content: center; gap: 14px 22px; }
+.pin-key { display: grid; place-items: center; width: 76px; height: 68px; padding: 0; border-radius: 24px; border: 1px solid color-mix(in srgb, var(--text2, #999) 8%, transparent); background: var(--card, white); color: var(--text, #202733); font-size: 30px; font-weight: 450; font-variant-numeric: tabular-nums; box-shadow: 0 3px 12px #00000004, inset 0 1px 0 #ffffff30; transition: transform .12s, background .12s; touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+.pin-key:active { transform: scale(.91); background: color-mix(in srgb, var(--head, #4a6fae) 15%, var(--card, white)); }
+.pin-key:focus-visible { outline: 2px solid var(--head, #4a6fae); outline-offset: 3px; }
+.pin-key:disabled { opacity: .55; }
+.pin-key.pin-aux { font-size: 11px; font-weight: 600; line-height: 1.3; padding: 8px; color: var(--head, #4a6fae); background: transparent; border-color: transparent; box-shadow: none; }
+.pin-key.pin-aux svg { width: 25px; height: 25px; }
+.pin-key[hidden] { display: block; visibility: hidden; }
+.pin-screen .lock-error { min-height: 20px; margin: 18px 0 8px; }
+.pin-screen .lock-actions { max-width: 272px; margin: 0 auto; }
+.pin-screen .lock-actions button { background: transparent; color: var(--text2); font-size: 14px; }
+.pin-progress { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.pin-setting-status { padding: 14px 16px; background: var(--bg); border-radius: 12px; font-size: 14px; font-weight: 600; }
+.lock-actions [data-pin] { background: var(--head, #4a6fae); color: white; font-weight: 600; }
+@media (max-height: 580px) {
+  .pin-screen .app-lock-card { padding: 8px 18px; }
+  .pin-emblem { width: 38px; height: 38px; border-radius: 13px; }
+  .pin-dots { margin: 16px 0 20px; }
+  .pin-grid { gap: 8px 22px; }
+  .pin-key { height: 56px; }
+}
+@media (prefers-reduced-motion: reduce) { .pin-key, .pin-dots i { transition: none; } }
+.app-lock:focus { outline: none; }
+/* Сохраняем пустую левую ячейку, чтобы 0 оставался по центру без биометрии. */
+.pin-key[hidden] { display: grid !important; visibility: hidden; }

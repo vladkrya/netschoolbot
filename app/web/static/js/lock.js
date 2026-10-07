@@ -1,6 +1,7 @@
 // Блокировка запрашивается до любых данных дневника; секрет сессии только в памяти.
 import { api, demo, setUnlock, tg } from './core.js';
 import { biometricLabel, nativeBiometricEnabled } from './biometrics.js';
+import { mountPinpad } from './pinpad.js';
 
 let active = false;
 let pending = null;
@@ -23,7 +24,7 @@ function panel(title) {
 
 function error(root, failure) {
   root.querySelector('.lock-error').textContent = failure.name === 'NotAllowedError'
-    ? 'Биометрия отменена. Можно войти по паролю.' : failure.message || 'Не удалось подтвердить биометрию';
+    ? 'Биометрия отменена. Можно войти по PIN.' : failure.message || 'Не удалось подтвердить биометрию';
 }
 
 function decode(value) {
@@ -80,7 +81,7 @@ async function supportsBiometry() {
 async function biometry(register = false) {
   const manager = await nativeManager();
   if (!manager) {
-    if (tg?.initData) throw new Error('Биометрия недоступна в Telegram на этом устройстве. Используйте пароль.');
+    if (tg?.initData) throw new Error('Биометрия недоступна в Telegram на этом устройстве. Используйте PIN.');
     return passkey(register);
   }
   biometricPrompt = true;
@@ -88,16 +89,16 @@ async function biometry(register = false) {
     if (register) {
       if (!manager.isAccessGranted) {
         const granted = await new Promise(resolve => manager.requestAccess({ reason: 'Разблокировка школьного дневника' }, resolve));
-        if (!granted) throw new Error('Разрешите биометрию в настройках Telegram или используйте пароль.');
+        if (!granted) throw new Error('Разрешите биометрию в настройках Telegram или используйте PIN.');
       }
       const { data } = await post('biometric/register', { device: manager.deviceId });
       const saved = await new Promise(resolve => manager.updateBiometricToken(data.token, resolve));
-      if (!saved) throw new Error('Не удалось сохранить ключ биометрии. Вход по паролю работает.');
+      if (!saved) throw new Error('Не удалось сохранить ключ биометрии. Вход по PIN работает.');
     } else {
       const token = await new Promise((resolve, reject) => {
         manager.authenticate({ reason: 'Открыть школьный дневник' }, (ok, secret) => {
           if (ok && secret) resolve(secret);
-          else reject(new Error('Биометрия отменена. Можно войти по паролю.'));
+          else reject(new Error('Биометрия отменена. Можно войти по PIN.'));
         });
       });
       const result = await post('biometric/unlock', { device: manager.deviceId, token });
@@ -106,18 +107,49 @@ async function biometry(register = false) {
   } finally { biometricPrompt = false; }
 }
 
+function statusPath(native) {
+  const params = new URLSearchParams({ origin: location.origin });
+  if (native) params.set('device', native.deviceId);
+  return `/api/lock/status?${params}`;
+}
+
+function choosePin({ required = false, changing = false } = {}) {
+  const root = panel(changing ? 'Новый PIN' : 'Создайте PIN');
+  root.querySelector('.lock-actions').innerHTML = required ? '' : '<button type="button" data-close>Отмена</button>';
+  let first = '';
+  return new Promise(resolve => {
+    const close = result => { pad.destroy(); first = ''; root.close(); resolve(result); };
+    const pad = mountPinpad(root, async (pin, controls) => {
+      if (!first) {
+        first = pin;
+        root.querySelector('h2').textContent = 'Повторите PIN';
+        controls.reset('Ещё раз те же 4 цифры');
+        return;
+      }
+      if (pin !== first) {
+        controls.failure();
+        root.querySelector('.lock-error').textContent = 'Коды не совпали. Попробуйте ещё раз.';
+        controls.reset('Повторите выбранный PIN');
+        return;
+      }
+      const result = await post('pin', { pin });
+      setUnlock(result.data.unlock); active = true;
+      await clearOffline(); close(true);
+    }, { hint: 'Придумайте 4 цифры для входа' });
+    root.querySelector('[data-close]')?.addEventListener('click', () => close(false));
+  });
+}
+
 export async function unlockApp() {
   if (demo) { document.documentElement.classList.remove('app-locked'); return; }
   if (pending) return pending;
   pending = (async () => {
     const root = panel('Вход в дневник');
-    root.querySelector('.lock-error').textContent = 'Проверяем блокировку…';
+    root.querySelector('.lock-error').textContent = 'Проверяем защиту…';
     const native = await nativeManager();
-    const statusPath = native ? `/api/lock/status?device=${encodeURIComponent(native.deviceId)}` : '/api/lock/status';
     let status;
-    // При отсутствии сети не открываем ранее сохранённые данные в обход блокировки.
     while (!status) {
-      try { status = (await api(statusPath)).data; }
+      try { status = (await api(statusPath(native))).data; }
       catch (failure) {
         error(root, failure);
         root.querySelector('.lock-actions').innerHTML = '<button type="button">Повторить</button>';
@@ -128,30 +160,46 @@ export async function unlockApp() {
     if (!active) { root.close(); return; }
     await clearOffline();
     root.querySelector('.lock-error').textContent = '';
-    root.querySelector('.lock-fields').innerHTML = '<label>Пароль<input type="password" autocomplete="current-password" required maxlength="128" autofocus></label>';
-    root.querySelector('.lock-actions').innerHTML = '<button type="submit">Открыть</button>';
-    if (nativeBiometricEnabled(native, status.biometric) || (!tg?.initData && status.passkeys && await supportsBiometry())) {
-      const button = document.createElement('button');
-      button.type = 'button'; button.textContent = native
-        ? `Войти с ${biometricLabel(native.biometricType, tg.platform)}` : 'Войти с Passkey';
-      root.querySelector('.lock-actions').append(button);
-      button.onclick = async () => {
-        try { await biometry(); finish(); } catch (failure) { error(root, failure); }
-      };
-    }
-    let finish;
+    root.querySelector('.lock-actions').innerHTML = '';
+    const canBiometric = nativeBiometricEnabled(native, status.biometric) ||
+      (!tg?.initData && status.passkeys && await supportsBiometry());
+    const label = native ? biometricLabel(native.biometricType, tg.platform) : 'Touch ID / Face ID';
     await new Promise(resolve => {
-      finish = () => { root.close(); resolve(); };
-      root.querySelector('form').onsubmit = async event => {
-        event.preventDefault();
-        const submit = root.querySelector('[type="submit"]');
-        submit.disabled = true;
-        try {
-          const result = await post('unlock', { password: root.querySelector('input').value });
-          setUnlock(result.data.unlock); finish();
-        } catch (failure) { error(root, failure); }
-        finally { submit.disabled = false; }
+      let pad;
+      const finish = async () => {
+        pad?.destroy();
+        // Уже заданные пароли не сбрасываем: сначала подтверждение, затем выбор PIN.
+        if (!status.pin) {
+          root.remove();
+          await choosePin({ required: true });
+        } else root.close();
+        resolve();
       };
+      const biometric = canBiometric ? { label, run: async () => { await biometry(); await finish(); } } : null;
+      if (status.pin) {
+        pad = mountPinpad(root, async pin => {
+          const result = await post('unlock', { pin });
+          setUnlock(result.data.unlock); await finish();
+        }, { biometric });
+      } else {
+        root.querySelector('.lock-fields').innerHTML = '<p>Введите прежний пароль, затем замените его на PIN из 4 цифр.</p><label>Прежний пароль<input type="password" autocomplete="current-password" required maxlength="128" autofocus></label>';
+        root.querySelector('.lock-actions').innerHTML = '<button type="submit">Продолжить</button>';
+        root.querySelector('form').onsubmit = async event => {
+          event.preventDefault();
+          const button = root.querySelector('[type="submit"]'); button.disabled = true;
+          try {
+            const result = await post('unlock', { password: root.querySelector('input').value });
+            setUnlock(result.data.unlock); await finish();
+          } catch (failure) { error(root, failure); }
+          finally { button.disabled = false; }
+        };
+        if (biometric) {
+          const button = document.createElement('button'); button.type = 'button';
+          button.textContent = `Войти с ${label}`;
+          button.onclick = () => biometric.run().catch(failure => error(root, failure));
+          root.querySelector('.lock-actions').append(button);
+        }
+      }
     });
   })();
   try { await pending; } finally { pending = null; }
@@ -167,75 +215,51 @@ async function clearOffline() {
 
 export async function openLockSettings() {
   const native = await nativeManager();
-  const { data } = await api(native ? `/api/lock/status?device=${encodeURIComponent(native.deviceId)}` : '/api/lock/status');
+  const { data } = await api(statusPath(native));
   const root = panel('Защита входа');
-  root.querySelector('.lock-fields').innerHTML = `<p>Пароль защищает дневник при открытии и возвращении в приложение. Он действует на всех устройствах.</p>
-    <label>${data.enabled ? 'Новый пароль' : 'Пароль'}<input type="password" autocomplete="new-password" minlength="6" maxlength="128" required></label>
-    <label>Повторите пароль<input type="password" autocomplete="new-password" minlength="6" maxlength="128" required></label>
-    <p>От 6 символов. Если пароль забыт, сбросьте защиту командой /resetapplock в личном чате с ботом.</p>`;
-  root.querySelector('.lock-actions').innerHTML = '<button type="submit">Сохранить пароль</button><button type="button" data-close>Закрыть</button>';
+  root.querySelector('.lock-fields').innerHTML = `<p>Четыре цифры, чтобы открыть дневник. PIN действует на всех ваших устройствах.</p>
+    <div class="pin-setting-status">${data.enabled && data.pin ? 'PIN установлен · 4 цифры' : 'Установите PIN для защиты дневника'}</div>`;
+  root.querySelector('.lock-actions').innerHTML = `<button type="button" data-pin>${data.enabled && data.pin ? 'Изменить PIN' : 'Задать PIN'}</button><button type="button" data-close>Готово</button>`;
   root.querySelector('[data-close]').onclick = root.close;
-  root.querySelector('form').onsubmit = async event => {
-    event.preventDefault();
-    const inputs = root.querySelectorAll('input[type="password"]');
-    if (inputs[0].value !== inputs[1].value) { error(root, new Error('Пароли не совпадают')); return; }
-    try {
-      const result = await post('password', { password: inputs[0].value });
-      setUnlock(result.data.unlock); active = true;
-      await clearOffline(); root.close(); await openLockSettings();
-    } catch (failure) { error(root, failure); }
+  root.querySelector('[data-pin]').onclick = async () => {
+    root.remove();
+    await choosePin({ changing: data.pin });
+    await openLockSettings();
   };
-  if (data.enabled) {
-    if (native) {
-      const label = biometricLabel(native.biometricType, tg.platform);
-      const row = document.createElement('label');
-      row.className = 'switch-row';
-      const text = document.createElement('span');
-      text.textContent = label;
+  const hint = document.createElement('p');
+  hint.textContent = 'Забыли PIN? Отправьте /resetapplock в личный чат с ботом.';
+  root.querySelector('.lock-fields').append(hint);
+  if (data.enabled && data.pin) {
+    const supported = native || (!tg?.initData && await supportsBiometry());
+    if (supported) {
+      const label = native ? biometricLabel(native.biometricType, tg.platform) : 'Touch ID / Face ID';
+      const row = document.createElement('label'); row.className = 'switch-row';
+      const text = document.createElement('span'); text.textContent = `Вход по ${label}`;
       const toggle = document.createElement('input');
       toggle.type = 'checkbox'; toggle.className = 'switch'; toggle.setAttribute('switch', '');
-      toggle.checked = nativeBiometricEnabled(native, data.biometric);
-      row.append(text, toggle);
-      root.querySelector('.lock-fields').append(row);
+      toggle.checked = native ? nativeBiometricEnabled(native, data.biometric) : data.passkeys > 0;
+      row.append(text, toggle); root.querySelector('.lock-fields').append(row);
       const hint = document.createElement('p');
-      hint.textContent = 'Вход с биометрией на этом устройстве. Включается только этим тумблером.';
+      hint.textContent = native ? 'Подтверждение на этом устройстве вместо PIN.' : 'Устройство подтверждает вход лицом, отпечатком или своим кодом. Выключение отзывает ключи входа для этого адреса дневника.';
       root.querySelector('.lock-fields').append(hint);
       toggle.onchange = async () => {
-        const wanted = toggle.checked;
-        toggle.disabled = true;
+        const wanted = toggle.checked; toggle.disabled = true;
         try {
-          if (wanted) {
-            await biometry(true);
-            root.querySelector('.lock-error').textContent = `${label} включён`;
-          } else {
-            // Сначала отзыв на сервере: даже оставшийся в Telegram секрет больше не действует.
+          if (wanted) await biometry(true);
+          else if (native) {
             await post('biometric/disable', { device: native.deviceId });
             biometricPrompt = true;
-            try {
-              await new Promise(resolve => native.updateBiometricToken('', resolve));
-            } catch { /* секрет уже отозван; его удаление не должно возвращать тумблер */ }
+            try { await new Promise(resolve => native.updateBiometricToken('', resolve)); }
+            catch { /* Сервер уже отозвал секрет. */ }
             finally { biometricPrompt = false; }
-            root.querySelector('.lock-error').textContent = `${label} выключен`;
-          }
+          } else await post('passkey/disable');
           toggle.checked = wanted;
+          root.querySelector('.lock-error').textContent = wanted ? 'Вход с биометрией включён' : 'Вход с биометрией выключен';
         } catch (failure) { toggle.checked = !wanted; error(root, failure); }
         finally { toggle.disabled = false; }
       };
-    } else if (!tg?.initData && await supportsBiometry()) {
-      const button = document.createElement('button');
-      button.type = 'button'; button.textContent = 'Настроить Passkey';
-      root.querySelector('.lock-actions').prepend(button);
-      button.onclick = async () => {
-        try { await passkey(true); root.querySelector('.lock-error').textContent = 'Passkey настроен'; }
-        catch (failure) { error(root, failure); }
-      };
-    } else {
-      root.querySelector('.lock-error').textContent = tg?.initData
-        ? 'Биометрия недоступна в Telegram на этом устройстве. Вход по паролю работает.'
-        : 'Passkey недоступен в этом браузере. Вход по паролю работает.';
-    }
-    const disable = document.createElement('button');
-    disable.type = 'button'; disable.textContent = 'Выключить защиту';
+    } else root.querySelector('.lock-error').textContent = 'Биометрия недоступна на этом устройстве. Вход по PIN работает.';
+    const disable = document.createElement('button'); disable.type = 'button'; disable.textContent = 'Выключить защиту';
     root.querySelector('.lock-actions').append(disable);
     disable.onclick = async () => {
       try { await post('disable'); active = false; setUnlock(''); root.close(); }

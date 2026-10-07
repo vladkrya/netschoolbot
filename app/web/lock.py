@@ -6,6 +6,7 @@ import hashlib
 import hmac
 import json
 import secrets
+import re
 import time
 from urllib.parse import urlsplit
 
@@ -62,25 +63,31 @@ async def session(request):
 @routes.get('/api/lock/status')
 async def status(request):
     db, uid = context(request).db, current_user(request).telegram_id
-    keys = await db.fetch_one('SELECT COUNT(*) AS n FROM app_passkeys WHERE telegram_id = ?', (uid,))
+    origin = request.query.get('origin', '')
+    allowed = [context(request).settings.web.public_url, context(request).settings.web.mirror_url]
+    rp = urlsplit(origin).hostname if origin and origin in [url.rstrip('/') for url in allowed if url] else None
+    keys = await db.fetch_one('SELECT COUNT(*) AS n FROM app_passkeys WHERE telegram_id = ?' +
+                             (' AND rp_id = ?' if rp else ''), (uid, rp) if rp else (uid,))
+    row = await enabled(db, uid)
     device = request.query.get('device', '')
     biometric = await db.fetch_one('SELECT 1 FROM app_biometrics WHERE telegram_id=? AND device_id=?', (uid, device)) if device else None
     return web.json_response({'ok': True, 'data': {
-        'enabled': bool(await enabled(db, uid)), 'passkeys': keys['n'], 'biometric': bool(biometric)}})
+        'enabled': bool(row), 'pin': bool(row and row['is_pin']), 'passkeys': keys['n'], 'biometric': bool(biometric)}})
 
 
+@routes.post('/api/lock/pin')
 @routes.post('/api/lock/password')
 async def password(request):
     data = await request.json()
-    value = data.get('password', '')
-    if not isinstance(value, str) or not 6 <= len(value) <= 128:
-        return json_error('Пароль должен содержать от 6 до 128 символов')
+    value = data.get('pin', data.get('password', ''))
+    if not isinstance(value, str) or not re.fullmatch(r'[0-9]{4}', value):
+        return json_error('PIN должен состоять ровно из 4 цифр')
     salt = secrets.token_bytes(16)
     hashed = await asyncio.to_thread(hashlib.scrypt, value.encode(), salt=salt, n=16384, r=8, p=1)
     db, uid = context(request).db, current_user(request).telegram_id
     async with db.transaction() as conn:
-        await conn.execute('INSERT INTO app_locks (telegram_id, salt, password_hash) VALUES (?, ?, ?) '
-                           'ON CONFLICT(telegram_id) DO UPDATE SET salt=excluded.salt, password_hash=excluded.password_hash, failures=0, retry_at=0',
+        await conn.execute('INSERT INTO app_locks (telegram_id, salt, password_hash, is_pin) VALUES (?, ?, ?, 1) '
+                           'ON CONFLICT(telegram_id) DO UPDATE SET salt=excluded.salt, password_hash=excluded.password_hash, failures=0, retry_at=0, is_pin=1',
                            (uid, salt, hashed))
         await conn.execute('DELETE FROM app_unlocks WHERE telegram_id = ?', (uid,))
     return await session(request)
@@ -92,15 +99,18 @@ async def unlock(request):
     row = await enabled(db, uid)
     if not row:
         return json_error('Блокировка не включена')
-    value = (await request.json()).get('password', '')
+    data = await request.json()
+    value = data.get('pin', data.get('password', ''))
     if not isinstance(value, str) or len(value) > 128:
-        return json_error('Неверный пароль', status=403)
+        return json_error('Неверный PIN' if row and row['is_pin'] else 'Неверный пароль', status=403)
     # Serialize attempts, including hashing: concurrent requests cannot bypass backoff.
     async with db.transaction() as conn:
         cursor = await conn.execute('SELECT * FROM app_locks WHERE telegram_id = ?', (uid,))
         row = await cursor.fetchone()
         if not row:
             return json_error('Блокировка не включена')
+        if row['is_pin'] and not re.fullmatch(r'[0-9]{4}', value):
+            return json_error('Введите 4 цифры PIN', status=403)
         if row['retry_at'] > time.time():
             return json_error('Слишком много попыток. Попробуйте позже.', status=429)
         hashed = await asyncio.to_thread(hashlib.scrypt, value.encode(), salt=row['salt'], n=16384, r=8, p=1)
@@ -108,7 +118,7 @@ async def unlock(request):
             failures = row['failures'] + 1
             await conn.execute('UPDATE app_locks SET failures=?, retry_at=? WHERE telegram_id=?',
                                (failures, time.time() + min(300, 2 ** min(failures, 9)), uid))
-            return json_error('Неверный пароль', status=403)
+            return json_error('Неверный PIN' if row and row['is_pin'] else 'Неверный пароль', status=403)
         await conn.execute('UPDATE app_locks SET failures=0, retry_at=0 WHERE telegram_id=?', (uid,))
     return await session(request)
 
@@ -145,7 +155,7 @@ async def options(request, kind):
     origin, rp = site(request)
     db, uid = context(request).db, current_user(request).telegram_id
     if not await enabled(db, uid):
-        return json_error('Сначала установите пароль')
+        return json_error('Сначала установите PIN')
     keys = await db.fetch_all('SELECT credential_id FROM app_passkeys WHERE telegram_id=? AND rp_id=?', (uid, rp))
     descriptors = [PublicKeyCredentialDescriptor(id=row['credential_id']) for row in keys]
     if kind == 'register':
@@ -156,7 +166,7 @@ async def options(request, kind):
                 user_verification=UserVerificationRequirement.REQUIRED))
     else:
         if not keys:
-            return json_error('На этом адресе Face ID ещё не настроен')
+            return json_error('Вход с биометрией ещё не настроен')
         opts = generate_authentication_options(rp_id=rp, allow_credentials=descriptors,
                                                user_verification=UserVerificationRequirement.REQUIRED)
     cid = secrets.token_urlsafe(32)
@@ -230,7 +240,7 @@ async def biometric_register(request):
     """Random unlock secret held by Telegram's native biometric storage."""
     db, uid = context(request).db, current_user(request).telegram_id
     if not await enabled(db, uid):
-        return json_error('Сначала установите пароль')
+        return json_error('Сначала установите PIN')
     device = (await request.json()).get('device', '')
     if not isinstance(device, str) or not 1 <= len(device) <= 256:
         return json_error('Неизвестное устройство')
@@ -250,7 +260,7 @@ async def biometric_unlock(request):
         return json_error('Биометрия не подтверждена', status=403)
     row = await db.fetch_one('SELECT token_hash FROM app_biometrics WHERE telegram_id=? AND device_id=?', (uid, device))
     if not row or not await enabled(db, uid) or not hmac.compare_digest(row['token_hash'], digest(token)):
-        return json_error('Биометрия не подтверждена. Войдите по паролю.', status=403)
+        return json_error('Биометрия не подтверждена. Введите PIN.', status=403)
     return await session(request)
 
 
@@ -261,4 +271,14 @@ async def biometric_disable(request):
         return json_error('Неизвестное устройство')
     await context(request).db.execute('DELETE FROM app_biometrics WHERE telegram_id=? AND device_id=?',
                                      (current_user(request).telegram_id, device))
+    return web.json_response({'ok': True, 'data': {}})
+
+
+@routes.post('/api/lock/passkey/disable')
+async def passkey_disable(request):
+    _, rp = site(request)
+    uid = current_user(request).telegram_id
+    async with context(request).db.transaction() as conn:
+        await conn.execute('DELETE FROM app_passkeys WHERE telegram_id=? AND rp_id=?', (uid, rp))
+        await conn.execute('DELETE FROM app_lock_challenges WHERE telegram_id=? AND rp_id=?', (uid, rp))
     return web.json_response({'ok': True, 'data': {}})
