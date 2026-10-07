@@ -187,6 +187,10 @@ async def auth_middleware(request: web.Request, handler):
         )
 
     request[USER] = user
+    from .lock import guard
+    blocked = await guard(request)
+    if blocked is not None:
+        return blocked
     response = await handler(request)
 
     # Токен из ссылки переносим в cookie, чтобы он не тянулся в каждом URL

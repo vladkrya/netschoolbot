@@ -14,6 +14,7 @@ import { notify, select, tap } from './haptics.js';
 import { getPref, setPref } from './prefs.js';
 import { closeSheet, openSheet } from './sheet.js';
 import { openBugReport } from './bugreport.js';
+import { openLockSettings } from './lock.js';
 
 export async function loadProfile(force = false) {
   if (state.profile && !force) return state.profile;
@@ -314,6 +315,7 @@ function render() {
     </section>
     <section class="drawer-section">
       <div class="drawer-heading">Дополнительно</div>
+      ${demo ? '' : '<button class="drawer-link" id="drawerLock">Защита входа</button>'}
       ${demo ? '' : `<button class="drawer-link" id="drawerBug">${ICONS.chat} Сообщить об ошибке</button>`}
       <button class="drawer-link" id="drawerCalc">${ICONS.calc} Калькулятор баллов</button>
       <button class="drawer-link" id="drawerHistory">${ICONS.clock} История оценок</button>
@@ -414,6 +416,7 @@ function bindDrawer() {
     loadCalc();
   });
   $('drawerHistory').addEventListener('click', () => { tap(); openHistory(); });
+  $('drawerLock')?.addEventListener('click', () => { closeDrawer(); openLockSettings().catch(error => banner(error.message, true)); });
   $('drawerCalendar')?.addEventListener('click', () => { tap(); openCalendar(); });
   $('drawerBug')?.addEventListener('click', () => { tap(); closeDrawer(); openBugReport(); });
   bindPushToggle();

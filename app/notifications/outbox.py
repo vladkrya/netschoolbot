@@ -31,6 +31,7 @@ class OutboxKind(str, Enum):
     HOMEWORK = "homework"
     ABSENCES = "absences"
     SCHEDULE = "schedule"
+    MAIL = "mail"
 
 
 @dataclass(frozen=True, slots=True)
@@ -166,12 +167,14 @@ _ENCODERS = {
     OutboxKind.HOMEWORK: _homework_to_dict,
     OutboxKind.ABSENCES: _absence_to_dict,
     OutboxKind.SCHEDULE: _schedule_to_dict,
+    OutboxKind.MAIL: dict,
 }
 _DECODERS = {
     OutboxKind.MARKS: _event_from_dict,
     OutboxKind.HOMEWORK: _homework_from_dict,
     OutboxKind.ABSENCES: _absence_from_dict,
     OutboxKind.SCHEDULE: _schedule_from_dict,
+    OutboxKind.MAIL: dict,
 }
 
 

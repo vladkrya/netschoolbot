@@ -1220,3 +1220,19 @@ body::after {
 .student-option .student-name { flex: 1; min-width: 0; }
 .student-option .check { color: var(--primary); font-weight: 700; }
 .student-option:disabled { opacity: .6; }
+
+/* Закрытая страница не показывает дневник, включая снимок при возврате. */
+html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
+.app-lock { position: fixed; inset: 0; z-index: 10000; background: var(--bg, #eef1f6); display: flex; align-items: center; justify-content: center; padding: 24px; overflow: auto; }
+.app-lock-card { width: min(100%, 380px); padding: 24px; border-radius: 20px; background: var(--card, white); }
+.app-lock-card h2 { margin: 0 0 18px; }
+.lock-fields label { display: block; margin: 12px 0; }
+.lock-fields input[type="password"] { display: block; box-sizing: border-box; width: 100%; padding: 12px; margin-top: 6px; font-size: 16px; border: 1px solid var(--border, #aaa); border-radius: 10px; color: var(--text); background: var(--bg); }
+.lock-fields p { font-size: 14px; color: var(--text2); }
+.lock-error { color: var(--text2); font-size: 14px; }
+.lock-actions { display: grid; gap: 10px; }
+.lock-actions button { padding: 12px; border-radius: 10px; font-size: 16px; cursor: pointer; }
+.lock-actions button { background: var(--bg, #eef1f6); color: var(--text, #202733); }
+.lock-actions button[type="submit"] { background: var(--head, #4a6fae); color: white; font-weight: 600; }
+.lock-actions button:disabled { opacity: .6; cursor: wait; }
+.lock-fields .switch-row { display: flex; }

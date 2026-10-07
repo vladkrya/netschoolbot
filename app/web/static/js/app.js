@@ -17,6 +17,7 @@ import { clearScreens, handleBack, hasScreens, setFallbackBack } from './screens
 import { initSwipeBack } from './swipeback.js';
 import { initIosHaptics, notify, tap } from './haptics.js';
 import { syncPrefs } from './prefs.js';
+import { unlockApp } from './lock.js';
 
 const TABS = {
   day: loadDay,
@@ -362,6 +363,7 @@ async function start() {
   applyStoredTheme();
   applyAccent();
   applyDesign();
+  await unlockApp();
   // Тема, дизайн и цвет, выбранные в Telegram, — и на сайте (и наоборот).
   syncPrefs().then((changed) => {
     if (!changed) return;

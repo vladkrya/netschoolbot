@@ -828,3 +828,91 @@ class TestStartOfYear:
         diary.homework.append(HomeworkRecord("Физика", dt.date(2026, 9, 3), "ДЗ", "§ 1"))
         await watcher.run_once()
         assert [h.subject for h in notifier.homework] == ["Физика"]
+
+class TestMailNotifications:
+    async def test_baseline_new_mail_and_no_duplicates(self, users, marks, watcher, diary, notifier):
+        user = make_user()
+        from dataclasses import replace
+        user = replace(user, notifications=replace(user.notifications, mail=True))
+        await users.save(user)
+        inbox = [{'id': 1, 'subject': 'Старое', 'author': 'Учитель', 'read': False}]
+        async def mail(user, limit=20):
+            return list(inbox)
+        diary.fetch_mail = mail
+        await watcher.run_once()
+        assert not notifier.texts
+        inbox.append({'id': 2, 'subject': '<Новое>', 'author': 'Учитель', 'read': True})
+        # Mail is checked even when mobile event feed avoids full diary sync.
+        diary.events = RecentEvents(keys=frozenset())
+        await watcher.run_once()
+        await watcher.run_once()
+        assert len(notifier.texts) == 1
+        assert '&lt;Новое&gt;' in notifier.texts[0]
+        assert await marks.seen_mail_ids(1) == {1, 2}
+
+    async def test_disabled_mail_is_still_seen(self, users, marks, watcher, diary, notifier):
+        await users.save(make_user())
+        inbox = []
+        async def mail(user, limit=20): return list(inbox)
+        diary.fetch_mail = mail
+        await watcher.run_once()
+        inbox.append({'id': 2, 'subject': 'Новое'})
+        await watcher.run_once()
+        assert await marks.seen_mail_ids(1) == {2}
+        assert not notifier.texts
+
+    async def test_quiet_hours_queue_and_retry(self, users, marks, watcher, diary, notifier):
+        from dataclasses import replace
+        user = make_user()
+        user = replace(user, notifications=replace(user.notifications, mail=True),
+                       quiet_hours=QuietHours(start=dt.time(0), end=dt.time(0)))
+        await users.save(user)
+        inbox = []
+        async def mail(user, limit=20): return list(inbox)
+        diary.fetch_mail = mail
+        await watcher.run_once()
+        inbox.append({'id': 3, 'subject': 'Письмо'})
+        await watcher.run_once()
+        assert not notifier.texts
+        assert len(await marks.pending_outbox(1)) == 1
+        await users.save(replace(user, quiet_hours=QuietHours()))
+        await watcher.run_once()
+        assert len(notifier.texts) == 1
+        assert not await marks.pending_outbox(1)
+
+    async def test_delivery_failure_survives_watcher_restart(self, users, marks, watcher, diary, notifier):
+        from dataclasses import replace
+        user = make_user()
+        await users.save(replace(user, notifications=replace(user.notifications, mail=True)))
+        inbox = []
+        async def mail(user, limit=20): return list(inbox)
+        diary.fetch_mail = mail
+        await watcher.run_once()
+        inbox.append({'id': 7, 'subject': 'Новое'})
+        original = notifier.send_text
+        async def fail(*args, **kwargs): raise RuntimeError('Telegram unavailable')
+        notifier.send_text = fail
+        await watcher.run_once()
+        assert len(await marks.pending_outbox(1)) == 1
+        notifier.send_text = original
+        restarted = UserWatcher(1, users=users, state=marks, diary=diary, notifier=notifier)
+        await restarted.run_once()
+        assert len(notifier.texts) == 1
+        assert not await marks.pending_outbox(1)
+
+    async def test_mail_checked_when_diary_fails_and_mail_failure_does_not_seed(self, users, marks, watcher, diary, notifier):
+        from dataclasses import replace
+        user = make_user()
+        await users.save(replace(user, notifications=replace(user.notifications, mail=True)))
+        async def failed_mail(user, limit=20): raise RuntimeError('school offline')
+        diary.fetch_mail = failed_mail
+        await watcher.run_once()
+        inbox = [{'id': 1, 'subject': 'Старое'}]
+        async def mail(user, limit=20): return list(inbox)
+        diary.fetch_mail = mail
+        await watcher.run_once()
+        assert not notifier.texts
+        diary.error = RuntimeError('diary offline')
+        inbox.append({'id': 2, 'subject': 'Новое'})
+        await watcher.run_once()
+        assert len(notifier.texts) == 1

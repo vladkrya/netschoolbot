@@ -140,6 +140,15 @@ class UserWatcher:
             logger.info("Проверка для %s больше не нужна", self._user_id)
             return float(MAX_BACKOFF)
 
+        # Почта не связана с лентой оценок и проверяется даже при её неизменности.
+        try:
+            messages = await self._diary.fetch_mail(user, limit=50)
+            await self._state.save_mail_check(user.telegram_id, messages, notify=user.notifications.mail)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.warning("Проверка почты %s не завершилась: %s", user.telegram_id, type(exc).__name__)
+
         try:
             await self._check(user)
         except NetSchoolError as exc:
@@ -288,6 +297,14 @@ class UserWatcher:
             await self._notifier.send_homework(user, items)
         elif kind is OutboxKind.ABSENCES:
             await self._notifier.send_absences(user, items)
+        elif kind is OutboxKind.MAIL:
+            import html
+            lines = ["📬 Новая школьная почта"]
+            for item in items:
+                lines.append(f"\n<b>{html.escape(str(item.get('subject') or 'Без темы'))}</b>"
+                             f"\n{html.escape(str(item.get('author') or 'Без отправителя'))}")
+            preview = str(items[0].get("subject") or "Без темы")
+            await self._notifier.send_text(user, "\n".join(lines), push=("Школьная почта", preview))
         elif kind is OutboxKind.SCHEDULE:
             await self._notifier.send_text(
                 user,

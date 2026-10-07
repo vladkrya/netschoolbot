@@ -23,7 +23,7 @@ import jinja2
 from aiohttp import web
 
 from ..context import AppContext
-from . import api, bugreport, caldav, captcha_proxy
+from . import api, bugreport, caldav, captcha_proxy, lock
 from .api import BOT, CONTEXT
 
 logger = logging.getLogger("netschoolbot.web")
@@ -84,6 +84,7 @@ def create_app(context: AppContext, bot=None) -> web.Application:
         inner.cleanup_ctx.append(calendar_lifecycle)
     inner.add_routes(caldav.routes)
     inner.add_routes(api.routes)
+    inner.add_routes(lock.routes)
     inner.add_routes(bugreport.routes)
     inner.add_routes(captcha_proxy.routes)
     inner.add_routes(page_routes)
@@ -216,6 +217,7 @@ async def index(request: web.Request) -> web.Response:
     if telegram_id := await context.miniapp.resolve_token(token):
         user = await context.users.get(telegram_id)
 
+    protected = bool(user and await lock.enabled(context.db, user.telegram_id))
     response = aiohttp_jinja2.render_template(
         "app.html",
         request,
@@ -224,8 +226,8 @@ async def index(request: web.Request) -> web.Response:
             "version": STATIC_VERSION,
             "modules": JS_MODULES,
             "token": token,
-            "student": user.student_name if user else "",
-            "school": user.school.name if user else "",
+            "student": user.student_name if user and not protected else "",
+            "school": user.school.name if user and not protected else "",
             "push_enabled": context.settings.push.configured,
         },
     )

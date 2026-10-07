@@ -8,9 +8,9 @@
 // новые адреса, поэтому её можно брать из кэша без риска устареть.
 'use strict';
 
-const CACHE = 'ns-offline-v1';
+const CACHE = 'ns-offline-v2';
 // Вложения и служебные запросы не храним: большие и бессмысленные без сети.
-const SKIP = [/\/api\/attachment\//, /\/api\/push\//, /\/api\/pwa-link/, /\/api\/caldav-/];
+const SKIP = [/\/api\/lock\//, /\/api\/attachment\//, /\/api\/push\//, /\/api\/pwa-link/, /\/api\/caldav-/];
 
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', (event) => event.waitUntil((async () => {
@@ -91,7 +91,7 @@ async function cacheFirst(request) {
 
 self.addEventListener('fetch', (event) => {
   const { request } = event;
-  if (request.method !== 'GET') return;
+  if (request.method !== 'GET' || request.headers.has('X-Netschool-Unlock')) return;
   const url = new URL(request.url);
   if (url.origin !== self.location.origin || SKIP.some((re) => re.test(url.pathname))) return;
   if (STATIC_VERSION.test(url.pathname)) {

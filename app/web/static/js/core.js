@@ -158,6 +158,9 @@ function clearNotices() {
   dismissedNotice = '';
 }
 
+let unlockToken = '';
+export function setUnlock(value) { unlockToken = value; }
+
 const REQUEST_TIMEOUT_MS = 75000;
 // Кэш моложе минуты — его только что получили со школьного сервера,
 // перепроверять незачем.
@@ -182,6 +185,7 @@ async function request(path, options = {}) {
   // токену из ссылки, поэтому шлём оба и приоритет отдаёт он.
   if (initData) headers['X-Telegram-Init-Data'] = initData;
   if (token) headers['X-Netschool-Token'] = token;
+  if (unlockToken) headers['X-Netschool-Unlock'] = unlockToken;
 
   // Без предела запрос к зависшему школьному серверу крутил загрузку
   // бесконечно. Сервер сам отвечает не дольше минуты при обновлении.
@@ -472,3 +476,18 @@ export function weekOffsetOf(iso) {
   const diff = parseIso(mondayOf(iso)) - parseIso(mondayOf(isoToday()));
   return Math.round(diff / (7 * 24 * 3600 * 1000));
 }
+
+// Вложения при блокировке загружаются с секретом в заголовке, без URL-секретов.
+document.addEventListener('click', async event => {
+  const link = event.target.closest('a.attach');
+  if (!link || !unlockToken) return;
+  event.preventDefault();
+  try {
+    const response = await fetch(link.href, { headers: { 'X-Netschool-Unlock': unlockToken } });
+    if (!response.ok) throw new Error('Не удалось скачать вложение');
+    const url = URL.createObjectURL(await response.blob());
+    const download = document.createElement('a');
+    download.href = url; download.download = link.textContent.trim(); download.click();
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  } catch (error) { banner(error.message, true); }
+});

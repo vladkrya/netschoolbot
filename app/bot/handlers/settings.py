@@ -459,3 +459,12 @@ async def set_api(callback: CallbackQuery, user: User, app: AppContext) -> None:
             parse_mode="HTML",
             reply_markup=keyboards.settings_menu(updated),
         )
+
+
+@router.message(Command("resetapplock"), F.chat.type == "private")
+async def reset_app_lock(message: Message, user: User, app: AppContext) -> None:
+    """Восстановление доступа через подтверждённый Telegram-аккаунт."""
+    async with app.db.transaction() as db:
+        for table in ("app_locks", "app_unlocks", "app_passkeys", "app_biometrics", "app_lock_challenges"):
+            await db.execute(f"DELETE FROM {table} WHERE telegram_id = ?", (user.telegram_id,))
+    await message.answer("Защита входа в веб-приложение сброшена. Откройте дневник и задайте новый пароль в меню → Защита входа.")

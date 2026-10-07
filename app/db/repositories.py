@@ -647,6 +647,34 @@ class MarkStateRepository:
             [(telegram_id, mid) for mid in message_ids],
         )
 
+    async def save_mail_check(self, telegram_id: int, messages: list[dict], *, notify: bool) -> None:
+        """Снимок почты и очередь атомарны; первая сверка всегда молчит."""
+        from ..notifications.outbox import OutboxKind, encode
+
+        async with self._db.transaction() as db:
+            cursor = await db.execute("SELECT 1 FROM mail_baselines WHERE telegram_id = ?", (telegram_id,))
+            initialized = await cursor.fetchone() is not None
+            cursor = await db.execute("SELECT message_id FROM seen_mail WHERE telegram_id = ?", (telegram_id,))
+            known = {int(row[0]) for row in await cursor.fetchall()}
+            fresh = []
+            current = set()
+            for message in messages:
+                try:
+                    mid = int(message["id"])
+                except (KeyError, ValueError, TypeError):
+                    continue
+                if mid <= 0 or mid in current:
+                    continue
+                current.add(mid)
+                if mid not in known:
+                    fresh.append(message)
+            if initialized and notify and fresh:
+                await db.execute("INSERT INTO outbox (telegram_id, kind, payload) VALUES (?, ?, ?)",
+                                 (telegram_id, OutboxKind.MAIL.value, encode(OutboxKind.MAIL, fresh)))
+            await db.executemany("INSERT OR IGNORE INTO seen_mail (telegram_id, message_id) VALUES (?, ?)",
+                                 [(telegram_id, mid) for mid in current])
+            await db.execute("INSERT OR IGNORE INTO mail_baselines (telegram_id) VALUES (?)", (telegram_id,))
+
     async def done_homework(self, telegram_id: int) -> set[str]:
         rows = await self._db.fetch_all(
             "SELECT homework_key FROM homework_done WHERE telegram_id = ?", (telegram_id,)
@@ -669,7 +697,7 @@ class MarkStateRepository:
         """Сбросить слежение — например при смене школы или ученика."""
         async with self._db.transaction() as db:
             for table in (
-                "tracked_marks", "tracked_homework", "seen_mail", "tracked_absences",
+                "tracked_marks", "tracked_homework", "seen_mail", "mail_baselines", "tracked_absences",
                 "outbox", "mark_history", "homework_done", "tracked_schedule",
             ):
                 await db.execute(f"DELETE FROM {table} WHERE telegram_id = ?", (telegram_id,))

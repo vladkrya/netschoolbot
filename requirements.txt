@@ -32,3 +32,6 @@ python-dotenv>=1.0.0
 
 # CalDAV (встроенный WSGI-сервер календарей)
 radicale==3.8.1
+
+# Face ID / Touch ID / системные ключи доступа
+webauthn==2.7.0

@@ -263,6 +263,38 @@ MIGRATIONS: list[str] = [
     """
     ALTER TABLE users ADD COLUMN notify_telegram INTEGER NOT NULL DEFAULT 1;
     """,
+    # 15 — независимая базовая сверка почты и блокировка веб-приложения.
+    """
+    CREATE TABLE mail_baselines (
+        telegram_id INTEGER PRIMARY KEY REFERENCES users(telegram_id) ON DELETE CASCADE
+    );
+    CREATE TABLE app_locks (
+        telegram_id INTEGER PRIMARY KEY REFERENCES users(telegram_id) ON DELETE CASCADE,
+        salt BLOB NOT NULL, password_hash BLOB NOT NULL,
+        failures INTEGER NOT NULL DEFAULT 0, retry_at REAL NOT NULL DEFAULT 0
+    );
+    CREATE TABLE app_unlocks (
+        token_hash TEXT PRIMARY KEY,
+        telegram_id INTEGER NOT NULL REFERENCES users(telegram_id) ON DELETE CASCADE,
+        expires_at REAL NOT NULL
+    );
+    CREATE TABLE app_biometrics (
+        telegram_id INTEGER NOT NULL REFERENCES users(telegram_id) ON DELETE CASCADE,
+        device_id TEXT NOT NULL, token_hash TEXT NOT NULL,
+        PRIMARY KEY (telegram_id, device_id)
+    );
+    CREATE TABLE app_passkeys (
+        credential_id BLOB PRIMARY KEY,
+        telegram_id INTEGER NOT NULL REFERENCES users(telegram_id) ON DELETE CASCADE,
+        public_key BLOB NOT NULL, sign_count INTEGER NOT NULL, rp_id TEXT NOT NULL
+    );
+    CREATE TABLE app_lock_challenges (
+        id TEXT PRIMARY KEY,
+        telegram_id INTEGER NOT NULL REFERENCES users(telegram_id) ON DELETE CASCADE,
+        kind TEXT NOT NULL, challenge BLOB NOT NULL, origin TEXT NOT NULL,
+        rp_id TEXT NOT NULL, expires_at REAL NOT NULL
+    );
+    """,
 ]
 
 
