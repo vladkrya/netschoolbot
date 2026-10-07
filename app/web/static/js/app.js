@@ -363,6 +363,8 @@ async function start() {
   applyStoredTheme();
   applyAccent();
   applyDesign();
+  // Telegram должен скрыть свой экран загрузки до ввода PIN.
+  initTelegram();
   await unlockApp();
   // Тема, дизайн и цвет, выбранные в Telegram, — и на сайте (и наоборот).
   syncPrefs().then((changed) => {
@@ -373,7 +375,6 @@ async function start() {
     window.dispatchEvent(new CustomEvent('netschool:design'));
   });
   renderIcons();
-  initTelegram();
   initFullscreen();
   initSheet();
   initDay();
