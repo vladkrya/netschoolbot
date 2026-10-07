@@ -187,6 +187,7 @@ async def auth_middleware(request: web.Request, handler):
         )
 
     request[USER] = user
+    request['verified_telegram'] = method == 'telegram'
     from .lock import guard
     blocked = await guard(request)
     if blocked is not None:

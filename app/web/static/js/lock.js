@@ -157,7 +157,7 @@ export async function unlockApp() {
         await new Promise(resolve => { root.querySelector('button').onclick = resolve; });
       }
     }
-    active = status.enabled;
+    active = status.required;
     if (!active) { root.close(); return; }
     await clearOffline();
     root.querySelector('.lock-error').textContent = '';
@@ -234,6 +234,7 @@ async function clearOffline() {
 export async function openLockSettings() {
   const native = await nativeManager();
   const { data } = await api(statusPath(native));
+  active = data.required;
   const root = panel('Защита входа');
   root.querySelector('.lock-fields').innerHTML = `<p>Четыре цифры, чтобы открыть дневник. PIN действует на всех ваших устройствах.</p>
     <div class="pin-setting-status">${data.enabled && data.pin ? 'PIN установлен · 4 цифры' : 'Установите PIN для защиты дневника'}</div>`;
@@ -248,6 +249,24 @@ export async function openLockSettings() {
   hint.textContent = 'Забыли PIN? Отправьте /resetapplock в личный чат с ботом.';
   root.querySelector('.lock-fields').append(hint);
   if (data.enabled && data.pin) {
+    const telegramRow = document.createElement('label'); telegramRow.className = 'switch-row';
+    const telegramText = document.createElement('span'); telegramText.textContent = 'Запрашивать PIN в Telegram';
+    const telegramToggle = document.createElement('input');
+    telegramToggle.type = 'checkbox'; telegramToggle.className = 'switch'; telegramToggle.setAttribute('switch', '');
+    telegramToggle.checked = data.require_telegram;
+    telegramRow.append(telegramText, telegramToggle); root.querySelector('.lock-fields').append(telegramRow);
+    const telegramHint = document.createElement('p');
+    telegramHint.textContent = 'В миниаппе Telegram можно входить без PIN. В веб-приложении PIN остаётся включён.';
+    root.querySelector('.lock-fields').append(telegramHint);
+    telegramToggle.onchange = async () => {
+      const wanted = telegramToggle.checked; telegramToggle.disabled = true;
+      try {
+        const result = await post('settings', { require_telegram: wanted });
+        setUnlock(result.data.unlock); active = tg?.initData ? wanted : data.enabled;
+        data.require_telegram = wanted;
+      } catch (failure) { telegramToggle.checked = !wanted; error(root, failure); }
+      finally { telegramToggle.disabled = false; }
+    };
     const supported = native || (!tg?.initData && await supportsBiometry());
     if (supported) {
       const label = native ? biometricLabel(native.biometricType, tg.platform) : 'Touch ID / Face ID';

@@ -214,3 +214,41 @@ async def test_passkey_toggle_revokes_keys_and_pending_registration(client, toke
     response = await client.get(f'{BASE}/api/lock/status', headers=headers, params={'origin': 'https://example.ru'})
     assert (await response.json())['data']['passkeys'] == 0
     assert (await client.post(f'{BASE}/api/lock/authenticate/options', headers=headers, json={})).status == 400
+
+
+async def test_telegram_pin_toggle_only_bypasses_verified_telegram(client, token):
+    from tests.test_web import TestTelegramMiniApp
+    session = await enable(client, token)
+    web_headers = {'X-Netschool-Token': token}
+    tg_headers = {'X-Telegram-Init-Data': TestTelegramMiniApp.init_data(1)}
+    assert (await client.get(f'{BASE}/api/profile', headers=tg_headers)).status == 423
+    assert (await client.post(f'{BASE}/api/lock/settings', headers=web_headers,
+                              json={'require_telegram': False})).status == 423
+    confirmed = {**web_headers, 'X-Netschool-Unlock': session}
+    assert (await client.post(f'{BASE}/api/lock/settings', headers=confirmed,
+                              json={'require_telegram': False})).status == 200
+    response = await client.get(f'{BASE}/api/lock/status', headers=tg_headers)
+    status = (await response.json())['data']
+    assert status['enabled'] and status['pin'] and not status['required'] and not status['require_telegram']
+    assert (await client.get(f'{BASE}/api/profile', headers=tg_headers)).status == 200
+    assert (await client.get(f'{BASE}/api/profile', headers=web_headers)).status == 423
+    forged = {**web_headers, 'X-Telegram-Init-Data': TestTelegramMiniApp.init_data(1, token='forged')}
+    assert (await client.get(f'{BASE}/api/profile', headers=forged)).status == 423
+    response = await client.post(f'{BASE}/api/lock/settings', headers=tg_headers,
+                                 json={'require_telegram': True})
+    assert response.status == 200
+    # Переключение не обрывает текущий вход, но новый запрос без сессии требует PIN.
+    current = {**tg_headers, 'X-Netschool-Unlock': (await response.json())['data']['unlock']}
+    assert (await client.get(f'{BASE}/api/profile', headers=current)).status == 200
+    assert (await client.get(f'{BASE}/api/profile', headers=tg_headers)).status == 423
+    response = await client.get(f'{BASE}/api/lock/status', headers=tg_headers)
+    assert (await response.json())['data']['required']
+
+
+async def test_telegram_pin_toggle_rejects_non_boolean(client, token):
+    session = await enable(client, token)
+    headers = {'X-Netschool-Token': token, 'X-Netschool-Unlock': session}
+    for value in ('false', 0, None):
+        response = await client.post(f'{BASE}/api/lock/settings', headers=headers,
+                                     json={'require_telegram': value})
+        assert response.status == 400

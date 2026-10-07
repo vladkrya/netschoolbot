@@ -300,6 +300,10 @@ MIGRATIONS: list[str] = [
     """
     ALTER TABLE app_locks ADD COLUMN is_pin INTEGER NOT NULL DEFAULT 0;
     """,
+    # 17 — дополнительная блокировка Telegram настраивается отдельно от веб-входа.
+    """
+    ALTER TABLE app_locks ADD COLUMN require_telegram INTEGER NOT NULL DEFAULT 1;
+    """,
 ]
 
 

@@ -1,10 +1,12 @@
 // Быстрый старт: PIN и проверка доступа не ждут загрузки всех экранов приложения.
 import { api, demo, state, tg } from './core.js';
 import { unlockApp } from './lock.js';
+import { initIosHaptics } from './haptics.js';
 
 async function boot() {
   tg?.ready();
   tg?.expand();
+  initIosHaptics();
   await unlockApp();
   // Первый запрос идёт параллельно загрузке модулей интерфейса, после разблокировки.
   if (!demo) state.initialDiary = api('/api/diary?week=0&window=current', {

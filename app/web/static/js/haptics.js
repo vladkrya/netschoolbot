@@ -16,6 +16,7 @@ const haptic = initData ? tg?.HapticFeedback : null;
 
 // Что щёлкает на iPhone: всё, что в приложении «проседает» от касания.
 const IOS_TAPPABLE = [
+  'button', '[role="button"]',
   '.nav-item', '.btn', '.chip', '.topbar-btn', '.date-arrow', '.date-title', '.screen-back',
   '.lesson-card', '.hw-card', '.mail-card', '.ann-card', '.task-block', '.tile',
   'button.tt-cell', '.cal-day', '.cal-arrow', '.calc-btn', '.fab', '.sheet-close',
@@ -56,7 +57,16 @@ function armAll(root) {
 }
 
 /** Включить щелчки Safari на iPhone. Новые карточки подхватываются сами. */
+let initialized = false;
 export function initIosHaptics() {
+  if (initialized) return;
+  initialized = true;
+  // Делегирование охватывает также кнопки в новых модальных окнах и PIN.
+  document.addEventListener('click', event => {
+    const control = event.target.closest?.(`${IOS_TAPPABLE}, a, input.switch`);
+    if (!event.isTrusted || !control || control.disabled || control.getAttribute('aria-disabled') === 'true') return;
+    tap();
+  }, { capture: true });
   if (!iosSwitches) return;
   armAll(document.body);
   new MutationObserver((records) => {
@@ -76,13 +86,23 @@ function vibrate(pattern) {
 }
 
 /** Лёгкое касание: открыть экран, нажать кнопку. */
+let lastTap = -Infinity;
+function allowTap() {
+  const now = performance.now();
+  // Старые обработчики уже вызывают tap/select: один отклик на одно нажатие.
+  if (now - lastTap < 50) return false;
+  lastTap = now;
+  return true;
+}
 export function tap(style = 'light') {
+  if (!allowTap()) return;
   if (haptic) haptic.impactOccurred(style);
   else vibrate(style === 'light' || style === 'soft' ? 8 : 15);
 }
 
 /** Смена выбора: вкладка, день, дата в календаре, переключатель. */
 export function select() {
+  if (!allowTap()) return;
   if (haptic) haptic.selectionChanged();
   else vibrate(5);
 }

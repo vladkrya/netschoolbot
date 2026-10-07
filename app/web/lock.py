@@ -41,7 +41,8 @@ async def unlocked(request):
 
 async def guard(request):
     uid = current_user(request).telegram_id
-    if not await enabled(context(request).db, uid):
+    row = await enabled(context(request).db, uid)
+    if not row or (request.get('verified_telegram') and not row['require_telegram']):
         return None
     suffix = request.path.split('/api/lock/', 1)
     if len(suffix) == 2 and suffix[1] in PUBLIC:
@@ -72,7 +73,23 @@ async def status(request):
     device = request.query.get('device', '')
     biometric = await db.fetch_one('SELECT 1 FROM app_biometrics WHERE telegram_id=? AND device_id=?', (uid, device)) if device else None
     return web.json_response({'ok': True, 'data': {
-        'enabled': bool(row), 'pin': bool(row and row['is_pin']), 'passkeys': keys['n'], 'biometric': bool(biometric)}})
+        'enabled': bool(row), 'required': bool(row and (not request.get('verified_telegram') or row['require_telegram'])),
+        'require_telegram': bool(row and row['require_telegram']),
+        'pin': bool(row and row['is_pin']), 'passkeys': keys['n'], 'biometric': bool(biometric)}})
+
+
+@routes.post('/api/lock/settings')
+async def lock_settings(request):
+    data = await request.json()
+    wanted = data.get('require_telegram')
+    if not isinstance(wanted, bool):
+        return json_error('Укажите, нужен ли PIN в Telegram')
+    db, uid = context(request).db, current_user(request).telegram_id
+    if not await enabled(db, uid):
+        return json_error('Сначала задайте PIN')
+    await db.execute('UPDATE app_locks SET require_telegram=? WHERE telegram_id=?', (int(wanted), uid))
+    # При включении текущий подтверждённый вход не обрывается; следующий требует PIN.
+    return await session(request)
 
 
 @routes.post('/api/lock/pin')
