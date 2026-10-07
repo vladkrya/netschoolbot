@@ -39,7 +39,11 @@
      их высоту даёт appearance.js в --tg-top. */
   --safe-top: max(env(safe-area-inset-top, 0px), var(--tg-top, 0px));
   --safe-bottom: max(env(safe-area-inset-bottom, 0px), var(--tg-bottom, 0px));
-  --topbar-h: calc(52px + var(--safe-top));
+  /* Верх экрана iOS размывает (край прокрутки под строкой состояния) —
+     строку шапки опускаем чуть ниже. Только где сверху есть системная
+     область: на компьютере --safe-top равен нулю, и сдвига нет. */
+  --bar-top: calc(var(--safe-top) + min(var(--safe-top), 10px));
+  --topbar-h: calc(52px + var(--bar-top));
   --header-h: calc(var(--topbar-h) + 64px);
   --nav-h: calc(70px + var(--safe-bottom));
   --ease: cubic-bezier(.2, .8, .3, 1);
@@ -131,7 +135,7 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 }
 .topbar {
   height: var(--topbar-h);
-  padding: var(--safe-top) 6px 0;
+  padding: var(--bar-top) 6px 0;
   display: flex;
   align-items: center;
 }
@@ -426,7 +430,7 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
   display: flex;
   align-items: center;
   min-height: var(--topbar-h);
-  padding: var(--safe-top) 6px 6px;
+  padding: var(--bar-top) 6px 6px;
   background: var(--head);
   color: #fff;
   box-shadow: 0 2px 12px rgba(0, 0, 0, .18);
