@@ -4,6 +4,18 @@ import { biometricLabel, nativeBiometricEnabled } from './biometrics.js';
 import { mountPinpad } from './pinpad.js';
 
 let active = false;
+const FORGOT = 'Отправьте /resetapplock в личный чат с ботом — защита сбросится, и PIN можно будет задать заново.';
+// Последний ответ сервера о защите: без сети по нему решаем, можно ли
+// открыть сохранённые данные. Неизвестно — ждём сервер.
+const REQUIRED_KEY = 'lockRequired';
+function rememberedRequired() {
+  try { const value = localStorage.getItem(REQUIRED_KEY); return value === null ? null : value === '1'; }
+  catch { return null; }
+}
+function setActive(value) {
+  active = value;
+  try { localStorage.setItem(REQUIRED_KEY, value ? '1' : '0'); } catch { /* приватный режим */ }
+}
 let pending = null;
 let biometricPrompt = false;
 const post = (path, body = {}) => api(`/api/lock/${path}`, { method: 'POST', body: JSON.stringify(body) });
@@ -133,7 +145,7 @@ function choosePin({ required = false, changing = false } = {}) {
         return;
       }
       const result = await post('pin', { pin });
-      setUnlock(result.data.unlock); active = true;
+      setUnlock(result.data.unlock); setActive(true);
       await clearOffline(); close(true);
     }, { hint: 'Придумайте 4 цифры для входа' });
     root.querySelector('[data-close]')?.addEventListener('click', () => close(false));
@@ -148,16 +160,30 @@ export async function unlockApp() {
     root.querySelector('.lock-error').textContent = 'Проверяем защиту…';
     // Проверка PIN не должна ждать ответ Telegram о биометрии (до 5 с).
     const nativeReady = nativeManager();
+    const known = rememberedRequired();
     let status;
     while (!status) {
-      try { status = (await api(statusPath(null))).data; }
-      catch (failure) {
-        error(root, failure);
+      // Без сети сервер не спросить. Если защиты не было, сразу открываем
+      // сохранённые данные, а не крутим «Проверяем защиту…».
+      const offline = navigator.onLine === false;
+      if (offline && known === false) { root.close(); return; }
+      try {
+        if (offline) throw Object.assign(new Error('Нет интернета'), { reason: 'server' });
+        status = (await api(statusPath(null))).data;
+      } catch (failure) {
+        if (failure.reason === 'server' && known === false) { root.close(); return; }
+        root.querySelector('.lock-error').textContent = failure.reason === 'server'
+          ? 'Нет связи с сервером. Вход по PIN продолжится, когда появится интернет.' : failure.message;
         root.querySelector('.lock-actions').innerHTML = '<button type="button">Повторить</button>';
-        await new Promise(resolve => { root.querySelector('button').onclick = resolve; });
+        await new Promise(resolve => {
+          root.querySelector('button').onclick = resolve;
+          window.addEventListener('online', resolve, { once: true });
+        });
+        root.querySelector('.lock-error').textContent = 'Проверяем защиту…';
+        root.querySelector('.lock-actions').innerHTML = '';
       }
     }
-    active = status.required;
+    setActive(status.required);
     if (!active) { root.close(); return; }
     await clearOffline();
     root.querySelector('.lock-error').textContent = '';
@@ -187,7 +213,7 @@ export async function unlockApp() {
         pad = mountPinpad(root, async pin => {
           const result = await post('unlock', { pin });
           setUnlock(result.data.unlock); await finish();
-        });
+        }, { forgot: FORGOT });
         biometricReady.then(config => {
           if (config && root.isConnected) pad.setBiometric({ ...config, run: async () => { await biometry(); await finish(); } });
         }).catch(() => {});
@@ -231,78 +257,113 @@ async function clearOffline() {
   }
 }
 
+const CHEVRON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>';
+const SHIELD = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 5 6v5c0 4.5 3 8.3 7 10 4-1.7 7-5.5 7-10V6Z"/><path d="m9 12 2 2 4-4" stroke-linecap="round"/></svg>';
+
+/** Строка-переключатель настроек: подпись, тумблер и пояснение под ним. */
+function switchRow(group, title, note, checked) {
+  const row = document.createElement('label'); row.className = 'ls-row';
+  row.innerHTML = '<span class="ls-row-text"><span class="ls-row-title"></span><span class="ls-row-note"></span></span>' +
+    '<input type="checkbox" class="switch" switch>';
+  row.querySelector('.ls-row-title').textContent = title;
+  row.querySelector('.ls-row-note').textContent = note;
+  const toggle = row.querySelector('input'); toggle.checked = checked;
+  group.append(row);
+  return toggle;
+}
+
 export async function openLockSettings() {
   const native = await nativeManager();
   const { data } = await api(statusPath(native));
-  active = data.required;
-  const root = panel('Защита входа');
-  root.querySelector('.lock-fields').innerHTML = `<p>Четыре цифры, чтобы открыть дневник. PIN действует на всех ваших устройствах.</p>
-    <div class="pin-setting-status">${data.enabled && data.pin ? 'PIN установлен · 4 цифры' : 'Установите PIN для защиты дневника'}</div>`;
-  root.querySelector('.lock-actions').innerHTML = `<button type="button" data-pin>${data.enabled && data.pin ? 'Изменить PIN' : 'Задать PIN'}</button><button type="button" data-close>Готово</button>`;
+  setActive(data.required);
+  const on = data.enabled && data.pin;
+  const root = document.createElement('div');
+  root.className = 'app-lock lock-settings';
+  root.setAttribute('role', 'dialog'); root.setAttribute('aria-modal', 'true'); root.setAttribute('aria-label', 'Защита входа');
+  root.innerHTML = `<header class="ls-bar"><h2>Защита входа</h2><button type="button" class="ls-done" data-close>Готово</button></header>
+    <div class="ls-body">
+      <section class="ls-hero ${on ? 'on' : ''}"><div class="ls-hero-icon">${SHIELD}</div>
+        <h3>${on ? 'PIN включён' : 'PIN не задан'}</h3>
+        <p>${on ? 'Дневник открывается только после ввода 4 цифр. PIN общий для всех ваших устройств.'
+          : 'Задайте 4 цифры — без них никто не откроет дневник на вашем телефоне.'}</p></section>
+      <div class="ls-group"><button type="button" class="ls-row ls-link" data-pin>
+        <span class="ls-row-title">${on ? 'Изменить PIN' : 'Задать PIN'}</span>${CHEVRON}</button></div>
+      <p class="ls-status" role="status"></p>
+    </div>`;
+  document.body.append(root);
+  document.documentElement.classList.add('app-locked');
+  root.close = () => { root.remove(); document.documentElement.classList.remove('app-locked'); };
+  const body = root.querySelector('.ls-body');
+  const status = root.querySelector('.ls-status');
+  const say = (text, bad = false) => { status.textContent = text; status.classList.toggle('bad', bad); };
+  const fail = failure => say(failure.name === 'NotAllowedError' ? 'Биометрия отменена.' : failure.message || 'Не получилось', true);
   root.querySelector('[data-close]').onclick = root.close;
   root.querySelector('[data-pin]').onclick = async () => {
     root.remove();
     await choosePin({ changing: data.pin });
     await openLockSettings();
   };
-  const hint = document.createElement('p');
-  hint.textContent = 'Забыли PIN? Отправьте /resetapplock в личный чат с ботом.';
-  root.querySelector('.lock-fields').append(hint);
-  if (data.enabled && data.pin) {
-    const telegramRow = document.createElement('label'); telegramRow.className = 'switch-row';
-    const telegramText = document.createElement('span'); telegramText.textContent = 'Запрашивать PIN в Telegram';
-    const telegramToggle = document.createElement('input');
-    telegramToggle.type = 'checkbox'; telegramToggle.className = 'switch'; telegramToggle.setAttribute('switch', '');
-    telegramToggle.checked = data.require_telegram;
-    telegramRow.append(telegramText, telegramToggle); root.querySelector('.lock-fields').append(telegramRow);
-    const telegramHint = document.createElement('p');
-    telegramHint.textContent = 'В миниаппе Telegram можно входить без PIN. В веб-приложении PIN остаётся включён.';
-    root.querySelector('.lock-fields').append(telegramHint);
-    telegramToggle.onchange = async () => {
-      const wanted = telegramToggle.checked; telegramToggle.disabled = true;
+  root.tabIndex = -1; root.focus();
+  if (!on) return;
+
+  const heading = text => { const h = document.createElement('h4'); h.className = 'ls-caption'; h.textContent = text; return h; };
+  const group = document.createElement('div'); group.className = 'ls-group';
+  body.insertBefore(heading('Как входить'), status); body.insertBefore(group, status);
+
+  const supported = native || (!tg?.initData && await supportsBiometry());
+  if (supported) {
+    const label = native ? biometricLabel(native.biometricType, tg.platform) : 'Touch ID / Face ID';
+    const toggle = switchRow(group, label, native ? 'Вместо PIN на этом устройстве'
+      : 'Вместо PIN на этом устройстве. Выключение отзывает ключи для этого адреса.',
+    native ? nativeBiometricEnabled(native, data.biometric) : data.passkeys > 0);
+    toggle.onchange = async () => {
+      const wanted = toggle.checked; toggle.disabled = true;
       try {
-        const result = await post('settings', { require_telegram: wanted });
-        setUnlock(result.data.unlock); active = tg?.initData ? wanted : data.enabled;
-        data.require_telegram = wanted;
-      } catch (failure) { telegramToggle.checked = !wanted; error(root, failure); }
-      finally { telegramToggle.disabled = false; }
-    };
-    const supported = native || (!tg?.initData && await supportsBiometry());
-    if (supported) {
-      const label = native ? biometricLabel(native.biometricType, tg.platform) : 'Touch ID / Face ID';
-      const row = document.createElement('label'); row.className = 'switch-row';
-      const text = document.createElement('span'); text.textContent = `Вход по ${label}`;
-      const toggle = document.createElement('input');
-      toggle.type = 'checkbox'; toggle.className = 'switch'; toggle.setAttribute('switch', '');
-      toggle.checked = native ? nativeBiometricEnabled(native, data.biometric) : data.passkeys > 0;
-      row.append(text, toggle); root.querySelector('.lock-fields').append(row);
-      const hint = document.createElement('p');
-      hint.textContent = native ? 'Подтверждение на этом устройстве вместо PIN.' : 'Устройство подтверждает вход лицом, отпечатком или своим кодом. Выключение отзывает ключи входа для этого адреса дневника.';
-      root.querySelector('.lock-fields').append(hint);
-      toggle.onchange = async () => {
-        const wanted = toggle.checked; toggle.disabled = true;
-        try {
-          if (wanted) await biometry(true);
-          else if (native) {
-            await post('biometric/disable', { device: native.deviceId });
-            biometricPrompt = true;
-            try { await new Promise(resolve => native.updateBiometricToken('', resolve)); }
-            catch { /* Сервер уже отозвал секрет. */ }
-            finally { biometricPrompt = false; }
-          } else await post('passkey/disable');
-          toggle.checked = wanted;
-          root.querySelector('.lock-error').textContent = wanted ? 'Вход с биометрией включён' : 'Вход с биометрией выключен';
-        } catch (failure) { toggle.checked = !wanted; error(root, failure); }
-        finally { toggle.disabled = false; }
-      };
-    } else root.querySelector('.lock-error').textContent = 'Биометрия недоступна на этом устройстве. Вход по PIN работает.';
-    const disable = document.createElement('button'); disable.type = 'button'; disable.textContent = 'Выключить защиту';
-    root.querySelector('.lock-actions').append(disable);
-    disable.onclick = async () => {
-      try { await post('disable'); active = false; setUnlock(''); root.close(); }
-      catch (failure) { error(root, failure); }
+        if (wanted) await biometry(true);
+        else if (native) {
+          await post('biometric/disable', { device: native.deviceId });
+          biometricPrompt = true;
+          try { await new Promise(resolve => native.updateBiometricToken('', resolve)); }
+          catch { /* Сервер уже отозвал секрет. */ }
+          finally { biometricPrompt = false; }
+        } else await post('passkey/disable');
+        toggle.checked = wanted;
+        say(wanted ? `${label} включён` : `${label} выключен`);
+      } catch (failure) { toggle.checked = !wanted; fail(failure); }
+      finally { toggle.disabled = false; }
     };
   }
+  const telegramToggle = switchRow(group, 'PIN в Telegram',
+    'Если выключить, в миниаппе Telegram дневник откроется без PIN. В веб-приложении PIN остаётся.', data.require_telegram);
+  telegramToggle.onchange = async () => {
+    const wanted = telegramToggle.checked; telegramToggle.disabled = true;
+    try {
+      const result = await post('settings', { require_telegram: wanted });
+      setUnlock(result.data.unlock); setActive(tg?.initData ? wanted : data.enabled);
+      data.require_telegram = wanted;
+    } catch (failure) { telegramToggle.checked = !wanted; fail(failure); }
+    finally { telegramToggle.disabled = false; }
+  };
+
+  const danger = document.createElement('div'); danger.className = 'ls-group';
+  danger.innerHTML = '<button type="button" class="ls-row ls-link ls-danger"><span class="ls-row-title">Выключить защиту</span></button>';
+  body.insertBefore(danger, status);
+  const note = document.createElement('p'); note.className = 'ls-footnote';
+  note.textContent = `Забыли PIN? ${FORGOT}`;
+  body.append(note);
+  const disable = danger.querySelector('button');
+  let armed = 0;
+  // Выключение — второе нажатие в течение 4 с, чтобы не снять защиту случайно.
+  disable.onclick = async () => {
+    if (!armed) {
+      disable.querySelector('.ls-row-title').textContent = 'Нажмите ещё раз, чтобы выключить';
+      armed = setTimeout(() => { armed = 0; disable.querySelector('.ls-row-title').textContent = 'Выключить защиту'; }, 4000);
+      return;
+    }
+    clearTimeout(armed); armed = 0; disable.disabled = true;
+    try { await post('disable'); setActive(false); setUnlock(''); root.close(); }
+    catch (failure) { fail(failure); disable.disabled = false; }
+  };
 }
 
 // Скрываем данные немедленно; подтверждение требуется при каждом возвращении.
