@@ -30,8 +30,15 @@ async def test_lock_enforces_password_and_revokes_session(client, token):
 async def test_wrong_password_rate_limit_and_no_plaintext(client, token, app_context):
     await enable(client, token)
     headers = {'X-Netschool-Token': token}
+    # Одна опечатка не мешает сразу ввести верный PIN.
     assert (await client.post(f'{BASE}/api/lock/unlock', headers=headers, json={'password': '0000'})).status == 403
-    assert (await client.post(f'{BASE}/api/lock/unlock', headers=headers, json={'password': '1234'})).status == 429
+    assert (await client.post(f'{BASE}/api/lock/unlock', headers=headers, json={'password': '1234'})).status == 200
+    for _ in range(4):
+        assert (await client.post(f'{BASE}/api/lock/unlock', headers=headers, json={'password': '0000'})).status == 403
+    response = await client.post(f'{BASE}/api/lock/unlock', headers=headers, json={'password': '0000'})
+    assert response.status == 403 and 'через 30 с' in (await response.json())['error']
+    response = await client.post(f'{BASE}/api/lock/unlock', headers=headers, json={'password': '1234'})
+    assert response.status == 429 and 'Попробуйте через' in (await response.json())['error']
     row = await app_context.db.fetch_one('SELECT * FROM app_locks WHERE telegram_id=1')
     assert row['password_hash'] != b'1234'
 

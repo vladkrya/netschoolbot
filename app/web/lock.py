@@ -5,6 +5,7 @@ import asyncio
 import hashlib
 import hmac
 import json
+import math
 import secrets
 import re
 import time
@@ -59,6 +60,20 @@ async def session(request):
     await db.execute('INSERT INTO app_unlocks VALUES (?, ?, ?)',
                      (digest(token), current_user(request).telegram_id, time.time() + 12 * 3600))
     return web.json_response({'ok': True, 'data': {'unlock': token}})
+
+
+# Опечатки не наказываем: первые попытки без паузы, дальше пауза растёт до
+# 5 минут. Раньше пауза была уже после первой ошибки, и верный PIN, введённый
+# сразу следом, получал «Слишком много попыток».
+FREE_ATTEMPTS = 5
+
+
+def _backoff(failures: int) -> int:
+    return 0 if failures < FREE_ATTEMPTS else min(300, 30 * 2 ** (failures - FREE_ATTEMPTS))
+
+
+def _duration(seconds: int) -> str:
+    return f'{seconds} с' if seconds < 60 else f'{math.ceil(seconds / 60)} мин'
 
 
 @routes.get('/api/lock/status')
@@ -128,14 +143,20 @@ async def unlock(request):
             return json_error('Блокировка не включена')
         if row['is_pin'] and not re.fullmatch(r'[0-9]{4}', value):
             return json_error('Введите 4 цифры PIN', status=403)
-        if row['retry_at'] > time.time():
-            return json_error('Слишком много попыток. Попробуйте позже.', status=429)
+        wait = math.ceil(row['retry_at'] - time.time())
+        if wait > 0:
+            return json_error(f'Слишком много попыток. Попробуйте через {_duration(wait)}.', status=429)
         hashed = await asyncio.to_thread(hashlib.scrypt, value.encode(), salt=row['salt'], n=16384, r=8, p=1)
         if not hmac.compare_digest(hashed, row['password_hash']):
             failures = row['failures'] + 1
+            pause = _backoff(failures)
             await conn.execute('UPDATE app_locks SET failures=?, retry_at=? WHERE telegram_id=?',
-                               (failures, time.time() + min(300, 2 ** min(failures, 9)), uid))
-            return json_error('Неверный PIN' if row and row['is_pin'] else 'Неверный пароль', status=403)
+                               (failures, time.time() + pause, uid))
+            wrong = 'Неверный PIN' if row['is_pin'] else 'Неверный пароль'
+            if pause:
+                return json_error(f'{wrong}. Следующая попытка через {_duration(pause)}.', status=403)
+            left = FREE_ATTEMPTS - failures
+            return json_error(f'{wrong}. Осталось попыток без паузы: {left}.' if left <= 2 else wrong, status=403)
         await conn.execute('UPDATE app_locks SET failures=0, retry_at=0 WHERE telegram_id=?', (uid,))
     return await session(request)
 

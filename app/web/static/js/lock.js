@@ -1,6 +1,6 @@
 // Блокировка запрашивается до любых данных дневника; секрет сессии только в памяти.
 import { api, demo, setUnlock, tg } from './core.js';
-import { biometricLabel, nativeBiometricEnabled } from './biometrics.js';
+import { biometricLabel, nativeBiometricEnabled, webBiometricLabel } from './biometrics.js';
 import { mountPinpad } from './pinpad.js';
 
 let active = false;
@@ -30,8 +30,19 @@ function panel(title) {
     <p class="lock-error" role="alert"></p><div class="lock-actions"></div></form>`;
   document.body.append(root);
   document.documentElement.classList.add('app-locked');
-  root.close = () => { root.remove(); document.documentElement.classList.remove('app-locked'); };
+  root.close = () => closeAnimated(root);
   return root;
+}
+
+const reducedMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/** Экран защиты растворяется, открывая приложение под собой. */
+function closeAnimated(root, frames = [{ opacity: 1, transform: 'scale(1)' }, { opacity: 0, transform: 'scale(1.08)' }]) {
+  document.documentElement.classList.remove('app-locked');
+  if (reducedMotion() || !root.animate) { root.remove(); return; }
+  root.style.pointerEvents = 'none';
+  root.animate(frames, { duration: 380, easing: 'cubic-bezier(.3,.7,.2,1)', fill: 'forwards' })
+    .finished.catch(() => {}).then(() => root.remove());
 }
 
 function error(root, failure) {
@@ -145,7 +156,8 @@ function choosePin({ required = false, changing = false } = {}) {
         return;
       }
       const result = await post('pin', { pin });
-      setUnlock(result.data.unlock); setActive(true);
+      setUnlock(result.data.unlock); setActive(true); markUnlocked();
+      await controls.success();
       await clearOffline(); close(true);
     }, { hint: 'Придумайте 4 цифры для входа' });
     root.querySelector('[data-close]')?.addEventListener('click', () => close(false));
@@ -196,12 +208,12 @@ export async function unlockApp() {
       }
       const available = nativeBiometricEnabled(native, registered) ||
         (!tg?.initData && status.passkeys && await supportsBiometry());
-      return available ? { label: native ? biometricLabel(native.biometricType, tg.platform) : 'Touch ID / Face ID' } : null;
+      return available ? { label: native ? biometricLabel(native.biometricType, tg.platform) : webBiometricLabel() } : null;
     })();
     await new Promise(resolve => {
       let pad;
       const finish = async () => {
-        pad?.destroy();
+        pad?.destroy(); markUnlocked();
         // Уже заданные пароли не сбрасываем: сначала подтверждение, затем выбор PIN.
         if (!status.pin) {
           root.remove();
@@ -210,12 +222,12 @@ export async function unlockApp() {
         resolve();
       };
       if (status.pin) {
-        pad = mountPinpad(root, async pin => {
+        pad = mountPinpad(root, async (pin, controls) => {
           const result = await post('unlock', { pin });
-          setUnlock(result.data.unlock); await finish();
+          setUnlock(result.data.unlock); await controls.success(); await finish();
         }, { forgot: FORGOT });
         biometricReady.then(config => {
-          if (config && root.isConnected) pad.setBiometric({ ...config, run: async () => { await biometry(); await finish(); } });
+          if (config && root.isConnected) pad.setBiometric({ ...config, run: async () => { await biometry(); await pad.success(); await finish(); } });
         }).catch(() => {});
       } else {
         root.querySelector('.lock-fields').innerHTML = '<p>Введите прежний пароль, затем замените его на PIN из 4 цифр.</p><label>Прежний пароль<input type="password" autocomplete="current-password" required maxlength="128" autofocus></label>';
@@ -260,6 +272,40 @@ async function clearOffline() {
 const CHEVRON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>';
 const SHIELD = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 5 6v5c0 4.5 3 8.3 7 10 4-1.7 7-5.5 7-10V6Z"/><path d="m9 12 2 2 4-4" stroke-linecap="round"/></svg>';
 
+const BACK_ARROW = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 5-7 7 7 7"/></svg>';
+
+/** Свайп вправо закрывает страницу: она едет за пальцем, как в iOS. */
+function swipeToClose(root) {
+  let start = null;
+  root.addEventListener('touchstart', event => {
+    // Общий жест «назад» приложения сработал бы под страницей.
+    event.stopPropagation();
+    if (event.touches.length !== 1) return;
+    const touch = event.touches[0];
+    start = { x: touch.clientX, y: touch.clientY, dx: 0, at: Date.now(), dir: null };
+  }, { passive: true });
+  root.addEventListener('touchmove', event => {
+    if (!start) return;
+    const touch = event.touches[0];
+    const dx = touch.clientX - start.x, dy = touch.clientY - start.y;
+    if (!start.dir && Math.hypot(dx, dy) > 10) start.dir = Math.abs(dx) > Math.abs(dy) * 1.2 && dx > 0 ? 'x' : 'y';
+    if (start.dir !== 'x') return;
+    start.dx = Math.max(0, dx);
+    root.style.transform = `translateX(${start.dx}px)`;
+  }, { passive: true });
+  const end = () => {
+    if (!start) return;
+    const { dx, dir, at } = start; start = null;
+    if (dir !== 'x') return;
+    const fast = dx / Math.max(1, Date.now() - at) > 0.5;
+    if (dx > root.clientWidth * 0.33 || (fast && dx > 40)) { root.style.transform = ''; root.close(dx); return; }
+    root.animate([{ transform: `translateX(${dx}px)` }, { transform: 'translateX(0)' }], { duration: 220, easing: 'ease-out' });
+    root.style.transform = '';
+  };
+  root.addEventListener('touchend', end);
+  root.addEventListener('touchcancel', end);
+}
+
 /** Строка-переключатель настроек: подпись, тумблер и пояснение под ним. */
 function switchRow(group, title, note, checked) {
   const row = document.createElement('label'); row.className = 'ls-row';
@@ -280,7 +326,7 @@ export async function openLockSettings() {
   const root = document.createElement('div');
   root.className = 'app-lock lock-settings';
   root.setAttribute('role', 'dialog'); root.setAttribute('aria-modal', 'true'); root.setAttribute('aria-label', 'Защита входа');
-  root.innerHTML = `<header class="ls-bar"><h2>Защита входа</h2><button type="button" class="ls-done" data-close>Готово</button></header>
+  root.innerHTML = `<header class="ls-bar"><button type="button" class="ls-back" data-close aria-label="Назад">${BACK_ARROW}</button><h2>Защита входа</h2></header>
     <div class="ls-body">
       <section class="ls-hero ${on ? 'on' : ''}"><div class="ls-hero-icon">${SHIELD}</div>
         <h3>${on ? 'PIN включён' : 'PIN не задан'}</h3>
@@ -292,7 +338,9 @@ export async function openLockSettings() {
     </div>`;
   document.body.append(root);
   document.documentElement.classList.add('app-locked');
-  root.close = () => { root.remove(); document.documentElement.classList.remove('app-locked'); };
+  root.close = (from = 0) => closeAnimated(root, [{ transform: `translateX(${from}px)` }, { transform: 'translateX(100%)' }]);
+  if (!reducedMotion()) root.animate([{ transform: 'translateX(100%)' }, { transform: 'translateX(0)' }], { duration: 340, easing: 'cubic-bezier(.2,.8,.2,1)' });
+  swipeToClose(root);
   const body = root.querySelector('.ls-body');
   const status = root.querySelector('.ls-status');
   const say = (text, bad = false) => { status.textContent = text; status.classList.toggle('bad', bad); };
@@ -312,7 +360,7 @@ export async function openLockSettings() {
 
   const supported = native || (!tg?.initData && await supportsBiometry());
   if (supported) {
-    const label = native ? biometricLabel(native.biometricType, tg.platform) : 'Touch ID / Face ID';
+    const label = native ? biometricLabel(native.biometricType, tg.platform) : webBiometricLabel();
     const toggle = switchRow(group, label, native ? 'Вместо PIN на этом устройстве'
       : 'Вместо PIN на этом устройстве. Выключение отзывает ключи для этого адреса.',
     native ? nativeBiometricEnabled(native, data.biometric) : data.passkeys > 0);
@@ -345,6 +393,14 @@ export async function openLockSettings() {
     finally { telegramToggle.disabled = false; }
   };
 
+  const returnToggle = switchRow(group, 'PIN при возврате',
+    'Спрашивать и после сворачивания. Если выключить — только при запуске приложения. Для этого устройства.',
+    askOnReturn());
+  returnToggle.onchange = () => {
+    try { localStorage.setItem(RETURN_KEY, returnToggle.checked ? '1' : '0'); } catch { /* приватный режим */ }
+    say(returnToggle.checked ? 'PIN будет спрашиваться при каждом возврате' : 'При возврате PIN не спросим');
+  };
+
   const danger = document.createElement('div'); danger.className = 'ls-group';
   danger.innerHTML = '<button type="button" class="ls-row ls-link ls-danger"><span class="ls-row-title">Выключить защиту</span></button>';
   body.insertBefore(danger, status);
@@ -366,13 +422,29 @@ export async function openLockSettings() {
   };
 }
 
-// Скрываем данные немедленно; подтверждение требуется при каждом возвращении.
+// Свернули и вернулись. По умолчанию PIN не спрашиваем, пока приложение не
+// закрыто; можно включить проверку при каждом возврате. Вход на сервере
+// живёт 12 часов — после этого PIN нужен всё равно.
+const RETURN_KEY = 'lockOnReturn';
+const UNLOCK_TTL_MS = 11 * 3600 * 1000;
+let unlockedAt = 0;
+function markUnlocked() { unlockedAt = Date.now(); }
+function askOnReturn() {
+  try { return localStorage.getItem(RETURN_KEY) === '1'; } catch { return false; }
+}
+function relock() {
+  document.documentElement.classList.add('app-locked');
+  post('logout').catch(() => {});
+  setUnlock('');
+  unlockApp();
+}
+const expired = () => Date.now() - unlockedAt > UNLOCK_TTL_MS;
+
 document.addEventListener('visibilitychange', () => {
   if (!active || pending || biometricPrompt) return;
   if (document.hidden) {
-    document.documentElement.classList.add('app-locked');
-    post('logout').catch(() => {});
-    setUnlock('');
-  } else unlockApp();
+    // Скрываем данные сразу, чтобы их не было на снимке в переключателе приложений.
+    if (askOnReturn()) document.documentElement.classList.add('app-locked');
+  } else if (askOnReturn() || expired()) relock();
 });
-window.addEventListener('pageshow', event => { if (event.persisted && active) { setUnlock(''); unlockApp(); } });
+window.addEventListener('pageshow', event => { if (event.persisted && active && (askOnReturn() || expired())) relock(); });

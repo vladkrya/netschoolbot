@@ -3,6 +3,7 @@ import { tap, notify } from './haptics.js';
 const LOCK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="5" y="10" width="14" height="11" rx="4"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/><circle cx="12" cy="15" r="1"/></svg>';
 const BACK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="m8 5-6 7 6 7h12a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2Z"/><path d="m11 9 6 6m0-6-6 6"/></svg>';
 
+const OPEN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="5" y="10" width="14" height="11" rx="4"/><path d="M8 10V7a4 4 0 0 1 7.6-1.8"/><circle cx="12" cy="15" r="1"/></svg>';
 const FACE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M3 8V6a3 3 0 0 1 3-3h2M16 3h2a3 3 0 0 1 3 3v2M21 16v2a3 3 0 0 1-3 3h-2M8 21H6a3 3 0 0 1-3-3v-2"/><path d="M9 9v1.5M15 9v1.5M12 9v4h-1M9.5 16a4 4 0 0 0 5 0"/></svg>';
 const FINGER = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M6.5 5.5A8 8 0 0 1 20 11v1.5M4 9.5a8 8 0 0 0-.5 2.5v2M8 20.5c.6-1.5 1-3.4 1-6.5a3 3 0 0 1 6 0v1M12 14c0 3-.4 5.4-1.5 7.5M17.5 17c-.2 1.3-.6 2.6-1.1 3.6M7 15.5V12a5 5 0 0 1 8.5-3.6"/></svg>';
 
@@ -56,6 +57,25 @@ export function mountPinpad(root, complete, { hint = 'Введите 4 цифр�
       {transform: 'translateY(0) scale(1)', offset: 1},
     ], {duration: reduced ? 100 : 260, easing: 'cubic-bezier(.2,.8,.2,1)'});
   };
+  const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+  /** Верный код: точки по очереди вспыхивают зелёным, замок открывается. */
+  const success = async () => {
+    if (disposed) return;
+    notify('success');
+    const row = field.querySelector('.pin-dots');
+    row.classList.remove('wrong'); row.classList.add('ok');
+    dots.forEach(dot => dot.classList.add('filled'));
+    field.querySelector('.pin-progress').textContent = 'Код верный';
+    const emblem = root.querySelector('.pin-emblem');
+    if (emblem) { emblem.innerHTML = OPEN; emblem.classList.add('open'); }
+    if (reduced()) return;
+    dots.forEach((dot, i) => dot.animate([
+      { transform: 'scale(1)' }, { transform: 'scale(1.55)' }, { transform: 'scale(1)' },
+    ], { duration: 300, delay: i * 55, easing: 'cubic-bezier(.3,.7,.3,1)' }));
+    emblem?.animate([{ transform: 'scale(1) rotate(0)' }, { transform: 'scale(1.18) rotate(-8deg)' }, { transform: 'scale(1) rotate(0)' }],
+      { duration: 380, easing: 'cubic-bezier(.3,.7,.3,1)' });
+    await new Promise(resolve => setTimeout(resolve, 430));
+  };
   async function enter(digit) {
     if (disposed || busy || value.length >= 4) return;
     press(field.querySelector(`[data-digit="${digit}"]`));
@@ -64,7 +84,7 @@ export function mountPinpad(root, complete, { hint = 'Введите 4 цифр�
     if (value.length !== 4) return;
     busy = true; paint();
     const submitted = value;
-    try { await complete(submitted, {reset, failure}); }
+    try { await complete(submitted, {reset, failure, success}); }
     catch (error) {
       root.querySelector('.lock-error').textContent = error.message;
       failure(); value = '';
@@ -80,7 +100,7 @@ export function mountPinpad(root, complete, { hint = 'Введите 4 цифр�
     if (disposed || !biometric) return;
     const button = field.querySelector('[data-biometric]');
     button.hidden = false;
-    button.innerHTML = /touch|отпечат/i.test(biometric.label) ? FINGER : FACE;
+    button.innerHTML = /face|лиц|hello/i.test(biometric.label) ? FACE : FINGER;
     button.setAttribute('aria-label', `Войти с ${biometric.label}`);
     button.onclick = async () => {
       if (disposed || busy) return;
@@ -105,7 +125,11 @@ export function mountPinpad(root, complete, { hint = 'Введите 4 цифр�
   };
   root.addEventListener('keydown', keydown); root.addEventListener('paste', paste);
   root.tabIndex = -1; root.focus(); reset();
-  return { reset, setBiometric, destroy() {
+  // Появление: клавиши поднимаются волной.
+  if (!reduced()) field.querySelectorAll('.pin-key').forEach((key, i) => key.animate([
+    { opacity: 0, transform: 'translateY(14px) scale(.92)' }, { opacity: 1, transform: 'none' },
+  ], { duration: 360, delay: 40 + Math.floor(i / 3) * 45 + (i % 3) * 15, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'backwards' }));
+  return { reset, setBiometric, success, destroy() {
     value = ''; disposed = true;
     root.removeEventListener('keydown', keydown); root.removeEventListener('paste', paste);
   }};

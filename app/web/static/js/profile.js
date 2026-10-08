@@ -315,7 +315,7 @@ function render() {
     </section>
     <section class="drawer-section">
       <div class="drawer-heading">Дополнительно</div>
-      ${demo ? '' : '<button class="drawer-link" id="drawerLock">Защита входа</button>'}
+      ${demo ? '' : `<button class="drawer-link" id="drawerLock">${ICONS.shield} Защита входа</button>`}
       ${demo ? '' : `<button class="drawer-link" id="drawerBug">${ICONS.chat} Сообщить об ошибке</button>`}
       <button class="drawer-link" id="drawerCalc">${ICONS.calc} Калькулятор баллов</button>
       <button class="drawer-link" id="drawerHistory">${ICONS.clock} История оценок</button>

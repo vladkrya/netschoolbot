@@ -988,3 +988,13 @@ class TestFastStartup:
         assert partial.status == 206
         assert 'Content-Encoding' not in partial.headers
         assert len(await partial.read()) == 100
+
+
+class TestSecurityHeaders:
+    async def test_pages_and_api_carry_security_headers(self, client):
+        page = await client.get(f'{BASE}/')
+        assert page.headers['X-Content-Type-Options'] == 'nosniff'
+        assert page.headers['Referrer-Policy'] == 'no-referrer'
+        assert "frame-ancestors 'self'" in page.headers['Content-Security-Policy']
+        api = await client.get(f'{BASE}/api/profile')
+        assert api.headers['Cache-Control'] == 'no-store'

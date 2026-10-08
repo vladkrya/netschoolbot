@@ -71,9 +71,38 @@ async def compress_static(request: web.Request, handler):
     return response
 
 
+# Встраивать страницы можно только себе и веб-версии Telegram: чужой сайт не
+# подложит экран PIN в невидимую рамку и не перехватит нажатия.
+FRAME_ANCESTORS = "frame-ancestors 'self' https://web.telegram.org https://*.telegram.org"
+
+
+def _secure(request: web.Request, headers) -> None:
+    headers.setdefault('X-Content-Type-Options', 'nosniff')
+    headers.setdefault('Referrer-Policy', 'no-referrer')
+    headers.setdefault('Strict-Transport-Security', 'max-age=31536000')
+    headers.setdefault('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=()')
+    if 'X-Frame-Options' not in headers:
+        headers.setdefault('Content-Security-Policy', FRAME_ANCESTORS)
+    # Личные данные и ключи входа не оседают в кэшах браузера и прокси.
+    if '/api/' in request.path:
+        headers.setdefault('Cache-Control', 'no-store')
+
+
+@web.middleware
+async def security_headers(request: web.Request, handler):
+    """Защитные заголовки на всех ответах, в том числе на зеркале без nginx."""
+    try:
+        response = await handler(request)
+    except web.HTTPException as error:
+        _secure(request, error.headers)
+        raise
+    _secure(request, response.headers)
+    return response
+
+
 def create_app(context: AppContext, bot=None) -> web.Application:
     """Собрать сервер: подприложение под префиксом плюс проверка живости."""
-    inner = web.Application(middlewares=[caldav.root_discovery, compress_static, api.error_middleware, api.auth_middleware])
+    inner = web.Application(middlewares=[security_headers, caldav.root_discovery, compress_static, api.error_middleware, api.auth_middleware])
     inner[CONTEXT] = context
     inner[BOT] = bot
     async def stop_refreshes(app):
