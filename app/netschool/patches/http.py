@@ -13,7 +13,10 @@
   * поднимаем таймаут прямого соединения (медленный ответ ≠ недоступный хост);
   * переводим fallback с Tor на рабочий SOCKS5, если он поднят;
   * даём пометке «хост требует прокси» срок жизни, чтобы одна неудача не
-    выключала прямые запросы навсегда.
+    выключала прямые запросы навсегда;
+  * заданный прокси — основной маршрут, но не единственный: если он не
+    соединяется с сервером школы, тот же запрос уходит напрямую с сервера
+    бота (см. `ProxyFallbackTransport`).
 """
 
 from __future__ import annotations
@@ -24,11 +27,75 @@ import socket
 import time
 from urllib.parse import urlparse
 
+import httpx
+
 logger = logging.getLogger("netschoolbot.netschool")
 
 DEFAULT_FALLBACK_CANDIDATES = ("socks5://127.0.0.1:1080",)
 
 _applied = False
+
+# Сколько секунд после отказа прокси ходить к хосту сразу напрямую, не
+# тратя время на заведомо неудачную попытку.
+PROXY_RETRY_AFTER_S = 120
+
+
+# Отказ самого прокси: не соединился, оборвал рукопожатие SOCKS («Malformed
+# reply»), не дотянулся до сервера школы. Таймауты чтения сюда не входят —
+# запрос мог уже дойти до школы.
+_PROXY_FAILURES = (httpx.ProxyError, httpx.ConnectError, httpx.ConnectTimeout, httpx.ProtocolError)
+
+
+class ProxyFallbackTransport(httpx.AsyncBaseTransport):
+    """Транспорт httpx: сначала через прокси, при отказе — напрямую.
+
+    Повторяем только ошибки соединения: запрос до сервера школы ещё не дошёл,
+    повтор безопасен. Ответ сервера (в том числе 403) — это ответ, его не
+    подменяем. Куки и заголовки живут в клиенте, поэтому вход и сессия
+    переживают смену маршрута.
+    """
+
+    _down: dict[str, float] = {}
+
+    def __init__(self, proxy: str, **kwargs) -> None:
+        self._proxy = proxy
+        self._via_proxy = httpx.AsyncHTTPTransport(proxy=proxy, **kwargs)
+        self._direct = httpx.AsyncHTTPTransport(**kwargs)
+
+    async def handle_async_request(self, request):
+        host = request.url.host
+        if time.monotonic() - self._down.get(host, -PROXY_RETRY_AFTER_S) >= PROXY_RETRY_AFTER_S:
+            try:
+                response = await self._via_proxy.handle_async_request(request)
+                self._down.pop(host, None)
+                return response
+            except _PROXY_FAILURES as exc:
+                logger.warning("Прокси не довёл запрос до %s (%s), пробуем напрямую", host, exc)
+                self._down[host] = time.monotonic()
+        return await self._direct.handle_async_request(request)
+
+    async def aclose(self) -> None:
+        await self._via_proxy.aclose()
+        await self._direct.aclose()
+
+
+def _with_fallback(kwargs: dict) -> dict:
+    """Заменить `proxy=` у нового httpx-клиента транспортом с запасным маршрутом."""
+    proxy = kwargs.get("proxy")
+    if not proxy or kwargs.get("transport") is not None:
+        return kwargs
+    kwargs = {key: value for key, value in kwargs.items() if key != "proxy"}
+    kwargs["transport"] = ProxyFallbackTransport(str(proxy))
+    return kwargs
+
+
+def _install_proxy_fallback(ns_http) -> None:
+    import netschoolpy.mobile as ns_mobile
+
+    original_create = ns_http.HttpSession._create_async_client
+    original_mobile = ns_mobile._new_client
+    ns_http.HttpSession._create_async_client = staticmethod(lambda **kw: original_create(**_with_fallback(kw)))
+    ns_mobile._new_client = lambda **kw: original_mobile(**_with_fallback(kw))
 
 
 class ExpiringHostSet(set):
@@ -97,6 +164,7 @@ def apply(*, timeout: int, blocked_host_ttl: int, fallback_proxy: str = "") -> N
 
     ns_http._DEFAULT_TIMEOUT = timeout
     ns_http._tor_hosts = ExpiringHostSet(blocked_host_ttl)
+    _install_proxy_fallback(ns_http)
 
     disabled = fallback_proxy.lower() in {"off", "none", "no"}
     proxy = resolve_fallback_proxy(fallback_proxy)

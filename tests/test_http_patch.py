@@ -86,3 +86,41 @@ async def test_off_ignores_environment_proxy_for_web_and_mobile(direct_mode, mon
     finally:
         await session.close()
         await mobile.aclose()
+
+
+class _Failing(httpx.AsyncBaseTransport):
+    def __init__(self):
+        self.calls = 0
+
+    async def handle_async_request(self, request):
+        self.calls += 1
+        raise httpx.ProxyError('proxy refused')
+
+
+async def test_proxy_failure_falls_back_to_direct(monkeypatch):
+    monkeypatch.setattr(patch.ProxyFallbackTransport, '_down', {})
+    transport = patch.ProxyFallbackTransport('socks5://127.0.0.1:9')
+    failing = _Failing()
+    transport._via_proxy = failing
+    transport._direct = httpx.MockTransport(lambda request: httpx.Response(200, json={'ok': True}))
+    async with httpx.AsyncClient(transport=transport) as client:
+        assert (await client.get('https://school.example/webapi/x')).status_code == 200
+        # Пока прокси помечен упавшим, к хосту идём сразу напрямую.
+        assert (await client.get('https://school.example/webapi/y')).status_code == 200
+    assert failing.calls == 1
+
+
+async def test_proxy_answer_is_not_replaced(monkeypatch):
+    monkeypatch.setattr(patch.ProxyFallbackTransport, '_down', {})
+    transport = patch.ProxyFallbackTransport('socks5://127.0.0.1:9')
+    transport._via_proxy = httpx.MockTransport(lambda request: httpx.Response(403))
+    transport._direct = httpx.MockTransport(lambda request: httpx.Response(200))
+    async with httpx.AsyncClient(transport=transport) as client:
+        assert (await client.get('https://school.example/')).status_code == 403
+
+
+def test_client_with_proxy_gets_fallback_transport(direct_mode):
+    session = ns_http.HttpSession('https://school.example', proxy='socks5://127.0.0.1:9')
+    assert isinstance(session._client._transport, patch.ProxyFallbackTransport)
+    direct = ns_http.HttpSession('https://school.example')
+    assert not isinstance(direct._client._transport, patch.ProxyFallbackTransport)
