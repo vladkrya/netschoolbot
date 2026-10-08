@@ -4,7 +4,7 @@ Telegram-бот и PWA для «Сетевого города. Образова�
 оценках, их изменениях и удалениях, домашние задания, расписание, школьная
 почта и статистика.
 
-Домен: **https://ns.ikrya.ru** (ВМ yavds в Yandex Cloud, без Cloudflare — см. «Адрес на yavds»). Прежние `ns2.ikrya.ru` и `netschool.ikrya.ru` работают параллельно для уже открытых ссылок и установленных PWA.
+Домен: **https://ns.ikrya.ru** (на vdsru, без Cloudflare). После инцидента Yandex Cloud 08.10.2026 основной адрес перенесён на сервер бота; `ns2.ikrya.ru` остаётся резервным. Прежний `netschool.ikrya.ru` работает для уже открытых ссылок и установленных PWA.
 
 ## Что это за версия
 
@@ -161,6 +161,10 @@ systemctl stop netschoolbot && ./venv/bin/python -m app.tools.backup --restore F
 
 ### Адрес на yavds
 
+С 08.10.2026 основной `ns.ikrya.ru` направлен прямо на vdsru
+(`144.31.222.122`), резервный адрес — `ns2.ikrya.ru`. Описанный ниже
+маршрут через yavds сейчас не используется для основного адреса.
+
 Когда мобильный интернет урезают до белых списков, Cloudflare и vdsru не
 открываются. Поэтому приложение отдаётся с ВМ yavds в Yandex Cloud: адреса
 `https://ns.ikrya.ru` (основной, DNS без Cloudflare) и `https://yavds.ikrya.ru`.
@@ -173,6 +177,18 @@ systemctl stop netschoolbot && ./venv/bin/python -m app.tools.backup --restore F
 переадресуются на те же пути от корня.
 
 ### Доступ к школьным серверам через yavds
+
+Текущий режим — прямой выход с vdsru:
+
+```dotenv
+NETSCHOOL_PROXY_HOSTS=*=
+NETSCHOOL_FALLBACK_PROXY=off
+```
+
+`off` отключает автоматический переход на Tor; общие переменные прокси
+окружения не влияют на школьные HTTP-клиенты. Если школьный сервер не
+принимает соединения с vdsru, нужен доступный маршрут к нему. Старый
+маршрут через Yandex описан ниже для восстановления при необходимости.
 
 На сервере бота `deploy/systemd/asurso-socks.service` держит локальный SOCKS5
 `127.0.0.1:1082` через SSH на `yavds.ikrya.ru`. Ключ туннеля хранится вне

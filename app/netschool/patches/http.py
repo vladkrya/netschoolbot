@@ -18,6 +18,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import socket
 import time
@@ -97,8 +98,60 @@ def apply(*, timeout: int, blocked_host_ttl: int, fallback_proxy: str = "") -> N
     ns_http._DEFAULT_TIMEOUT = timeout
     ns_http._tor_hosts = ExpiringHostSet(blocked_host_ttl)
 
+    disabled = fallback_proxy.lower() in {"off", "none", "no"}
     proxy = resolve_fallback_proxy(fallback_proxy)
-    if proxy:
+    if disabled:
+        # В netschoolpy отсутствие SOCKS не отключает Tor. Явный off должен
+        # сохранять прямой маршрут даже при таймауте и не отправлять вход через Tor.
+        import httpx
+        from netschoolpy.exceptions import ServerUnavailable
+
+        original_send = ns_http.HttpSession._send
+        original_create = ns_http.HttpSession._create_async_client
+
+        def create_client(**kwargs):
+            kwargs['trust_env'] = False
+            return original_create(**kwargs)
+
+        async def direct_send(self, method, path, *, timeout=None, follow_redirects=False, **kwargs):
+            if self._external_proxy:
+                return await original_send(self, method, path, timeout=timeout,
+                                           follow_redirects=follow_redirects, **kwargs)
+
+            async def request():
+                retries = 0
+                while True:
+                    try:
+                        req = self._client.build_request(method, path,
+                            **{key: value for key, value in kwargs.items() if value is not None})
+                        return await self._client.send(req, follow_redirects=follow_redirects)
+                    except httpx.ReadTimeout:
+                        await asyncio.sleep(0.1)
+                    except httpx.HTTPStatusError as exc:
+                        if not 500 <= exc.response.status_code < 600 or retries >= 3:
+                            raise
+                        retries += 1
+                        await asyncio.sleep(0.2 * retries)
+
+            try:
+                return await asyncio.wait_for(request(), self._timeout if timeout is None else timeout)
+            except (asyncio.TimeoutError, httpx.ConnectError, httpx.ConnectTimeout) as exc:
+                raise ServerUnavailable('Школьный сервер недоступен при прямом подключении') from exc
+
+        ns_http.HttpSession._create_async_client = staticmethod(create_client)
+        ns_http.HttpSession._send = direct_send
+        # Мобильный API создаёт свой httpx-клиент: общий ALL_PROXY из .env
+        # (нужный Telegram) также не должен менять школьный маршрут.
+        import netschoolpy.mobile as ns_mobile
+        original_mobile_create = ns_mobile._new_client
+
+        def create_mobile_client(**kwargs):
+            kwargs['trust_env'] = False
+            return original_mobile_create(**kwargs)
+
+        ns_mobile._new_client = create_mobile_client
+        logger.info("Автоматический прокси/Tor отключён: прямое подключение к школьным серверам")
+    elif proxy:
         ns_http._TOR_PROXY = proxy
         logger.info("Fallback для «Сетевого города»: %s (вместо Tor)", proxy)
     else:
