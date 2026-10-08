@@ -178,11 +178,13 @@ class Settings:
             path.mkdir(parents=True, exist_ok=True)
 
 
-def _parse_proxy_hosts(raw: str, volgograd_proxy: str) -> dict[str, str]:
-    """`host=proxy,*=proxy` -> dict; `*` задаёт прокси для остальных хостов."""
-    if not raw:
-        return {"sgo.volganet.ru": volgograd_proxy} if volgograd_proxy else {}
-    hosts: dict[str, str] = {}
+def _parse_proxy_hosts(raw: str, default_proxy: str) -> dict[str, str]:
+    """`host=proxy,*=proxy` -> dict; `*` задаёт прокси для остальных хостов.
+
+    `default_proxy` (NETSCHOOL_PROXY) — прокси для всех школьных серверов;
+    записи из списка его уточняют, `host=` — напрямую.
+    """
+    hosts: dict[str, str] = {"*": default_proxy} if default_proxy else {}
     for chunk in raw.split(","):
         chunk = chunk.strip()
         if not chunk:
@@ -271,7 +273,7 @@ def load_settings(*, require_bot_token: bool = True) -> Settings:
             mobile_client_secret=_env("NETSCHOOL_MOBILE_CLIENT_SECRET"),
             proxy_hosts=_parse_proxy_hosts(
                 _env("NETSCHOOL_PROXY_HOSTS"),
-                _env("VOLGOGRAD_PROXY", "socks5://127.0.0.1:1080"),
+                _env("NETSCHOOL_PROXY"),
             ),
         ),
         debug=_env_bool("DEBUG_MODE", False),

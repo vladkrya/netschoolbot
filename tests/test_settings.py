@@ -13,7 +13,7 @@ from app.settings import SettingsError, load_settings
 @pytest.fixture(autouse=True)
 def clean_env(monkeypatch, tmp_path):
     for key in list(__import__("os").environ):
-        if key.startswith(("NETSCHOOL_", "TG_", "CHECK_INTERVAL", "DEBUG_MODE", "VOLGOGRAD_")):
+        if key.startswith(("NETSCHOOL_", "TG_", "CHECK_INTERVAL", "DEBUG_MODE")):
             monkeypatch.delenv(key, raising=False)
     monkeypatch.setenv("NETSCHOOL_DATA_DIR", str(tmp_path))
 
@@ -96,11 +96,19 @@ class TestToleranceToExistingEnv:
 
 
 class TestProxyHosts:
-    def test_default_keeps_volgograd(self, monkeypatch):
+    def test_default_is_direct(self, monkeypatch):
         monkeypatch.setenv("NETSCHOOL_BOT_TOKEN", "123:abc")
         settings = load_settings()
-        assert settings.netschool.proxy_for("https://sgo.volganet.ru/x") is not None
+        assert settings.netschool.proxy_for("https://sgo.volganet.ru/x") is None
         assert settings.netschool.proxy_for("https://sgo.example.ru") is None
+
+    def test_one_proxy_for_all_with_direct_override(self, monkeypatch):
+        monkeypatch.setenv("NETSCHOOL_BOT_TOKEN", "123:abc")
+        monkeypatch.setenv("NETSCHOOL_PROXY", "socks5://1:1080")
+        monkeypatch.setenv("NETSCHOOL_PROXY_HOSTS", "b.ru=")
+        settings = load_settings()
+        assert settings.netschool.proxy_for("https://a.ru/x") == "socks5://1:1080"
+        assert settings.netschool.proxy_for("https://b.ru/x") is None
 
     def test_explicit_list(self, monkeypatch):
         monkeypatch.setenv("NETSCHOOL_BOT_TOKEN", "123:abc")
