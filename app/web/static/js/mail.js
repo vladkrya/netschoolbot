@@ -141,7 +141,8 @@ async function canAttach() {
   }
 }
 
-export async function openCompose() {
+/** Новое письмо; `draft` — тема и текст, например из черновика помощника. */
+export async function openCompose(draft = {}) {
   const chosen = new Map();
   const files = [];
   const attach = await canAttach();
@@ -151,9 +152,9 @@ export async function openCompose() {
       <div class="detail-label">Кому</div>
       <button class="to-field" id="composeTo"><span class="muted">Выбрать получателя</span></button>
       <div class="detail-label">Тема</div>
-      <input class="field" id="composeSubject" maxlength="200" placeholder="Тема письма">
+      <input class="field" id="composeSubject" maxlength="200" placeholder="Тема письма" value="${esc(draft.subject || '')}">
       <div class="detail-label">Сообщение</div>
-      <textarea class="field" id="composeText" rows="8" maxlength="10000" placeholder="Текст письма"></textarea>
+      <textarea class="field" id="composeText" rows="8" maxlength="10000" placeholder="Текст письма">${esc(draft.text || '')}</textarea>
       <label class="switch-row compose-notify"><span>Уведомить о прочтении</span><input type="checkbox" class="switch" id="composeNotify"></label>
       ${attach ? `<div class="detail-label">Вложения</div>
         <div id="composeFiles" class="compose-files"></div>

@@ -8,6 +8,7 @@ import {
 } from './appearance.js';
 import { ICONS } from './icons.js';
 import { loadCalc } from './calc.js';
+import { openAssistant } from './assistant.js';
 import { loadTotals } from './totals.js';
 import { pushScreen, syncBackButton } from './screens.js';
 import { notify, select, tap } from './haptics.js';
@@ -315,6 +316,7 @@ function render() {
     </section>
     <section class="drawer-section">
       <div class="drawer-heading">Дополнительно</div>
+      ${data.assistant && !demo ? `<button class="drawer-link" id="drawerAssistant">${ICONS.sparkles} ИИ-помощник</button>` : ''}
       ${demo ? '' : `<button class="drawer-link" id="drawerLock">${ICONS.shield} Защита входа</button>`}
       ${demo ? '' : `<button class="drawer-link" id="drawerBug">${ICONS.chat} Сообщить об ошибке</button>`}
       <button class="drawer-link" id="drawerCalc">${ICONS.calc} Калькулятор баллов</button>
@@ -421,6 +423,7 @@ function bindDrawer() {
     screen.innerHTML = '<div id="calcContent"></div>';
     loadCalc();
   });
+  $('drawerAssistant')?.addEventListener('click', () => { closeDrawer(); openAssistant(); });
   $('drawerHistory').addEventListener('click', () => { tap(); openHistory(); });
   $('drawerLock')?.addEventListener('click', () => { closeDrawer(); openLockSettings().catch(error => banner(error.message, true)); });
   $('drawerCalendar')?.addEventListener('click', () => { tap(); openCalendar(); });

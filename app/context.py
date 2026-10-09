@@ -51,6 +51,8 @@ class AppContext:
     cache_refreshes: dict[tuple, asyncio.Task] = field(default_factory=dict)
     caldav: CaldavService | None = None
     login_tasks: dict[int, set[asyncio.Task]] = field(default_factory=dict)
+    # Вопросы ИИ-помощнику за сутки: {telegram_id: (день, сколько)}.
+    assistant_usage: dict[int, tuple] = field(default_factory=dict)
 
     @classmethod
     async def create(cls, settings: Settings, notifier: Notifier | None = None) -> "AppContext":

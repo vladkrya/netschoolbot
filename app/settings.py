@@ -148,6 +148,23 @@ class NetSchoolSettings:
 
 
 @dataclass(frozen=True, slots=True)
+class AssistantSettings:
+    """ИИ-помощник мини-приложения через OpenRouter. Без ключа он выключен."""
+
+    api_key: str = ""
+    model: str = "openrouter/free"
+    base_url: str = "https://openrouter.ai/api/v1"
+    proxy: str = ""
+    # Сколько вопросов в сутки у одного пользователя: бесплатные модели
+    # OpenRouter ограничены и по ключу, а не только по человеку.
+    daily_limit: int = 30
+
+    @property
+    def enabled(self) -> bool:
+        return bool(self.api_key)
+
+
+@dataclass(frozen=True, slots=True)
 class Settings:
     data_dir: Path
     db_path: Path
@@ -160,6 +177,7 @@ class Settings:
     secret_key: str = ""
     caldav_enabled: bool = True
     caldav_interval: int = 1800
+    assistant: AssistantSettings = field(default_factory=AssistantSettings)
 
     @property
     def logs_dir(self) -> Path:
@@ -280,4 +298,11 @@ def load_settings(*, require_bot_token: bool = True) -> Settings:
         secret_key=_env("NETSCHOOL_SECRET_KEY"),
         caldav_enabled=_env_bool("NETSCHOOL_CALDAV_ENABLED", True),
         caldav_interval=max(300, _env_int("NETSCHOOL_CALDAV_INTERVAL", 1800)),
+        assistant=AssistantSettings(
+            api_key=_env("NETSCHOOL_ASSISTANT_API_KEY") or _env("OPENROUTER_API_KEY"),
+            model=_env("NETSCHOOL_ASSISTANT_MODEL", "openrouter/free"),
+            base_url=_env("NETSCHOOL_ASSISTANT_URL", "https://openrouter.ai/api/v1").rstrip("/"),
+            proxy=_env("NETSCHOOL_ASSISTANT_PROXY"),
+            daily_limit=max(1, _env_int("NETSCHOOL_ASSISTANT_DAILY_LIMIT", 30)),
+        ),
     )

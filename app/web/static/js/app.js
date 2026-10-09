@@ -350,7 +350,7 @@ function initChrome() {
   $('menuBtn').addEventListener('click', openDrawer);
   $('drawerShade').addEventListener('click', closeDrawer);
   $('bellBtn').addEventListener('click', openAnnouncements);
-  $('composeBtn').addEventListener('click', openCompose);
+  $('composeBtn').addEventListener('click', () => openCompose());
   window.addEventListener('resize', syncHeaderHeight);
   new ResizeObserver(syncHeaderHeight).observe($('appHeader'));
   // «Перейти ко дню» из расписания.
