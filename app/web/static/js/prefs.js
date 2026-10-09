@@ -37,9 +37,15 @@ export function getPref(name) {
 // Частые изменения (несколько крестиков подряд) уходят одним запросом.
 let pending = {};
 let timer = null;
+// Что поменяли на устройстве, пока шёл запрос настроек с сервера: пришедший
+// ответ старше, и его значение откатило бы переключение (дизайн «не
+// включался», пока страницу не перезагрузишь).
+let syncStarted = false;
+const editedDuringSync = new Set();
 
 export function setPref(name, value) {
   writeLocal(name, value);
+  if (syncStarted) editedDuringSync.add(name);
   if (demo) return;
   pending[name] = value;
   clearTimeout(timer);
@@ -66,13 +72,17 @@ async function flush() {
 export async function syncPrefs() {
   if (demo) return false;
   let server;
+  syncStarted = true;
   try {
     ({ data: server } = await api('/api/prefs'));
   } catch {
     return false;
+  } finally {
+    syncStarted = false;
   }
   let changed = false;
   for (const name of Object.keys(KEYS)) {
+    if (editedDuringSync.has(name)) continue;
     const local = readLocal(name);
     if (name in server) {
       if (JSON.stringify(server[name]) !== JSON.stringify(local)) {

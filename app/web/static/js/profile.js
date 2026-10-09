@@ -392,6 +392,10 @@ function render() {
   const radio = (value, label) =>
     `<label class="drawer-option"><input type="radio" name="theme" value="${value}" ${theme === value ? 'checked' : ''}><span>${label}</span></label>`;
 
+  // Настройки живут в одном месте: копия в другом (вкладка или меню ☰)
+  // осталась бы с теми же id, и обработчики вешались бы на неё — после
+  // смены дизайна переключатели переставали работать до перезагрузки.
+  $(isNewDesign() ? 'drawerBody' : 'settingsContent').replaceChildren();
   settingsRoot().innerHTML = `
     ${demo ? '<div class="demo-badge">Демо-режим · данные выдуманные</div>' : ''}
     <section class="drawer-section">
