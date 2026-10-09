@@ -22,11 +22,15 @@
 from __future__ import annotations
 
 import asyncio
+import functools
 import logging
 import socket
+import ssl
 import time
+from pathlib import Path
 from urllib.parse import urlparse
 
+import certifi
 import httpx
 
 logger = logging.getLogger("netschoolbot.netschool")
@@ -79,13 +83,33 @@ class ProxyFallbackTransport(httpx.AsyncBaseTransport):
         await self._direct.aclose()
 
 
+RUSSIAN_CA = Path(__file__).resolve().parent.parent / "certs" / "russian_trusted_ca.pem"
+
+
+@functools.cache
+def school_ssl_context() -> ssl.SSLContext:
+    """Обычные доверенные центры плюс центр Минцифры.
+
+    Часть школьных серверов (Калуга) подписана «Russian Trusted Sub CA»,
+    которого нет в стандартном наборе, и соединение падало на проверке
+    сертификата. Только для школьных клиентов: Telegram и прочее не трогаем.
+    """
+    context = ssl.create_default_context(cafile=certifi.where())
+    context.load_verify_locations(cafile=str(RUSSIAN_CA))
+    return context
+
+
 def _with_fallback(kwargs: dict) -> dict:
-    """Заменить `proxy=` у нового httpx-клиента транспортом с запасным маршрутом."""
+    """Настроить новый httpx-клиент к школе: доверие к центру Минцифры и
+    запасной маршрут вместо `proxy=`."""
+    kwargs = dict(kwargs)
+    kwargs.setdefault("verify", school_ssl_context())
     proxy = kwargs.get("proxy")
     if not proxy or kwargs.get("transport") is not None:
         return kwargs
-    kwargs = {key: value for key, value in kwargs.items() if key != "proxy"}
-    kwargs["transport"] = ProxyFallbackTransport(str(proxy))
+    # С собственным транспортом httpx не смотрит на verify клиента — передаём его транспорту.
+    kwargs.pop("proxy")
+    kwargs["transport"] = ProxyFallbackTransport(str(proxy), verify=kwargs.pop("verify"))
     return kwargs
 
 

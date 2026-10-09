@@ -124,3 +124,15 @@ def test_client_with_proxy_gets_fallback_transport(direct_mode):
     assert isinstance(session._client._transport, patch.ProxyFallbackTransport)
     direct = ns_http.HttpSession('https://school.example')
     assert not isinstance(direct._client._transport, patch.ProxyFallbackTransport)
+
+
+def test_school_clients_trust_russian_ca(direct_mode):
+    import ssl
+    context = patch.school_ssl_context()
+    names = {dict(item[0] for item in cert['subject']).get('commonName') for cert in context.get_ca_certs()}
+    assert {'Russian Trusted Root CA', 'Russian Trusted Sub CA'} <= names
+    # Обычные центры никуда не делись.
+    assert len(names) > 50
+    session = ns_http.HttpSession('https://school.example')
+    assert session._client._transport._pool._ssl_context is context
+    assert isinstance(context, ssl.SSLContext)
