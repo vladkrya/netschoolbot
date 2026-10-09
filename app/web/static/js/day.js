@@ -59,13 +59,24 @@ export async function ensureWeek(iso, force = false) {
 }
 
 export async function loadDay(force = false) {
-  if (!state.date) state.date = isoToday();
+  const opening = !state.date;
+  if (opening) state.date = isoToday();
   renderHeader();
   const container = $('dayContent');
   if (force || !loadedWeeks.has(weekOffsetOf(state.date))) {
     showLoading(container, skeleton());
     try {
       await ensureWeek(state.date, force);
+      // Открыли в выходной, а выходные скрыты — сразу на понедельник, как
+      // стрелки. Спрятан ли день, ясно только после загрузки: субботу с
+      // уроками показываем.
+      if (opening && isHiddenWeekend(state.date)) {
+        let iso = state.date;
+        for (let step = 0; step < 2 && isHiddenWeekend(iso); step += 1) iso = addDays(iso, 1);
+        state.date = iso;
+        renderHeader();
+        await ensureWeek(iso);
+      }
     } catch (error) {
       showFailure(container, error, errorCard(error, 'dayRetry'));
       $('dayRetry')?.addEventListener('click', () => loadDay(true));
