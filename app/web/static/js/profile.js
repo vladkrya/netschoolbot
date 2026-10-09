@@ -4,7 +4,7 @@
 
 import { $, api, banner, demo, esc, initData, pushEnabled, state, tg } from './core.js';
 import {
-  ACCENTS, currentAccent, isNewDesign, saveAccent, saveDesign, saveWeekends, showWeekends, syncChromeColor,
+  ACCENTS, currentAccent, isNewDesign, saveAccent, saveBells, saveDesign, saveWeekends, showBells, showWeekends, syncChromeColor,
 } from './appearance.js';
 import { ICONS } from './icons.js';
 import { loadCalc } from './calc.js';
@@ -327,6 +327,8 @@ function render() {
         <input type="checkbox" switch class="switch" id="designNew" ${isNewDesign() ? 'checked' : ''}></label>
       <label class="switch-row"><span>Показывать выходные без уроков</span>
         <input type="checkbox" switch class="switch" id="weekendsShow" ${showWeekends() ? 'checked' : ''}></label>
+      <label class="switch-row"><span>Звонки вместо расписания недели</span>
+        <input type="checkbox" switch class="switch" id="bellsTab" ${showBells() ? 'checked' : ''}></label>
       ${radio('light', 'Светлая тема')}
       ${radio('auto', 'Как в системе')}
       ${radio('dark', 'Тёмная тема')}
@@ -369,6 +371,10 @@ function bindDrawer() {
   $('weekendsShow').addEventListener('change', (event) => {
     select();
     saveWeekends(event.target.checked);
+  });
+  $('bellsTab').addEventListener('change', (event) => {
+    select();
+    saveBells(event.target.checked);
   });
   $('designNew').addEventListener('change', (event) => {
     select();

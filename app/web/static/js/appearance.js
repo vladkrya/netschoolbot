@@ -3,6 +3,7 @@
 
 import { initData, tg } from './core.js';
 import { getPref, setPref } from './prefs.js';
+import { ICONS } from './icons.js';
 
 export const ACCENTS = [
   ['#4a6fae', 'Синий'],
@@ -101,6 +102,29 @@ export function saveWeekends(on) {
   setPref('weekends', on ? 'show' : 'hide');
   // Полоса недели и расписание перерисуются (слушатель в app.js).
   window.dispatchEvent(new CustomEvent('netschool:design'));
+}
+
+/** Вторая вкладка: расписание звонков (по умолчанию) или неделя уроков. */
+export function showBells() {
+  return getPref('scheduleTab') !== 'week';
+}
+
+export function saveBells(on) {
+  setPref('scheduleTab', on ? 'bells' : 'week');
+  applyScheduleTab();
+  window.dispatchEvent(new CustomEvent('netschool:design'));
+}
+
+/** Подпись и значок второй вкладки в нижнем меню. */
+export function applyScheduleTab() {
+  const item = document.querySelector('.nav-item[data-tab="schedule"]');
+  if (!item) return;
+  const bells = showBells();
+  const icon = item.querySelector('.ico');
+  icon.dataset.icon = bells ? 'clock' : 'calendar';
+  icon.innerHTML = ICONS[icon.dataset.icon];
+  item.querySelector('.lbl-old').textContent = bells ? 'Звонки' : 'Расписание';
+  item.querySelector('.lbl-new').textContent = bells ? 'Звонки' : 'Неделя';
 }
 
 export function saveAccent(color) {

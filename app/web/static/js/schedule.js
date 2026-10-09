@@ -1,13 +1,15 @@
-// «Расписание»: неделя карточками дней — время занятий, число уроков,
-// раскрывающийся список и переход на день.
+// Вторая вкладка: расписание звонков (по умолчанию) или неделя карточками
+// дней — время занятий, число уроков, раскрывающийся список и переход на день.
+// Отдельного API звонков у «Сетевого города» нет в netschoolpy, но у каждого
+// урока недели есть номер и время — из них и собираем звонки.
 'use strict';
 
 import {
-  $, addDays, dayMonth, errorCard, esc, isoToday, mondayOf, showFailure, showLoading, skeleton, state,
-  WEEKDAYS_FULL, weekOffsetOf,
+  $, addDays, dayMonth, errorCard, esc, isoToday, mondayOf, plural, showFailure, showLoading, skeleton, state,
+  WEEKDAYS, WEEKDAYS_FULL, weekOffsetOf,
 } from './core.js';
 import { dayData, ensureWeek, goToDay, isHiddenWeekend, openCalendar } from './day.js';
-import { isNewDesign } from './appearance.js';
+import { isNewDesign, showBells } from './appearance.js';
 import { select, tap } from './haptics.js';
 
 const expanded = new Set();
@@ -46,6 +48,10 @@ export async function loadSchedule(force = false) {
 }
 
 function render(monday) {
+  if (showBells()) {
+    renderBells(monday);
+    return;
+  }
   const today = isoToday();
   const cards = [];
   for (let index = 0; index < 7; index += 1) {
@@ -128,7 +134,152 @@ function weekCard(iso, index, lessons, range, isToday) {
     </button>`;
 }
 
+/* ─────────────────────────── Звонки ─────────────────────────── */
+
+function minutesOf(text) {
+  const [hours, minutes] = String(text || '').split(':').map(Number);
+  return Number.isFinite(hours) && Number.isFinite(minutes) ? hours * 60 + minutes : null;
+}
+
+/** Уроки дня без повторов: «номер, начало, конец», по времени начала. */
+function dayBells(lessons) {
+  const rows = new Map();
+  for (const lesson of lessons) {
+    const start = minutesOf(lesson.start);
+    const end = minutesOf(lesson.end);
+    if (start == null || end == null || end <= start) continue;
+    rows.set(`${start}-${end}`, { number: lesson.number || '', start, end, text: `${lesson.start}–${lesson.end}` });
+  }
+  return [...rows.values()].sort((a, b) => a.start - b.start);
+}
+
+/** Дни недели с одинаковыми звонками — в одну карточку. У урока с номером
+ *  обычное время — самое частое за неделю; день, где хоть один урок идёт
+ *  в другое время (сокращённый, суббота), получает свою карточку. */
+function bellGroups(monday) {
+  const days = [];
+  for (let index = 0; index < 7; index += 1) {
+    const iso = addDays(monday, index);
+    const rows = dayBells(dayData(iso)?.lessons || []);
+    if (rows.length) days.push({ iso, index, rows });
+  }
+  const votes = new Map();
+  for (const { rows } of days) {
+    for (const row of rows) {
+      if (!row.number) continue;
+      const counts = votes.get(row.number) || new Map();
+      counts.set(row.text, (counts.get(row.text) || 0) + 1);
+      votes.set(row.number, counts);
+    }
+  }
+  const usual = new Map([...votes].map(([number, counts]) =>
+    [number, [...counts].sort((a, b) => b[1] - a[1])[0][0]]));
+
+  const groups = new Map();
+  // Один урок не в своё время (факультатив после уроков) не уводит день
+  // в отдельную карточку: он идёт строкой под общими звонками с пометкой дня.
+  const extras = new Map();
+  for (const day of days) {
+    // Номер, который бывает лишь в один день, — тоже «только Чт»: без него
+    // перед ним рисовалась бы «перемена» в пару часов.
+    const unique = day.rows.filter((row) => days.length > 1 && row.number
+      && [...votes.get(row.number).values()].reduce((sum, count) => sum + count, 0) === 1);
+    const conflicts = day.rows.filter((row) => !unique.includes(row)
+      && (!row.number || usual.get(row.number) !== row.text));
+    const regular = conflicts.length === 0 || (conflicts.length === 1 && day.rows.length >= 3);
+    const odd = regular ? [...unique, ...conflicts] : [];
+    const key = regular ? 'usual' : day.rows.map((row) => `${row.number}@${row.text}`).join('|');
+    const group = groups.get(key) || { days: [], rows: new Map() };
+    group.days.push(day);
+    for (const row of day.rows) {
+      const id = `${row.start}-${row.end}`;
+      if (odd.includes(row)) {
+        const extra = extras.get(id) || { row, days: [] };
+        extra.days.push(day);
+        extras.set(id, extra);
+      } else {
+        group.rows.set(id, row);
+      }
+    }
+    groups.set(key, group);
+  }
+  return [...groups.entries()].map(([key, group]) => ({
+    days: group.days,
+    rows: [...group.rows.values()].sort((a, b) => a.start - b.start),
+    extras: key === 'usual' ? [...extras.values()].sort((a, b) => a.row.start - b.row.start) : [],
+  }));
+}
+
+/** «Пн–Пт», «Пн, Ср, Чт», «Сб». */
+function daysTitle(days) {
+  const parts = [];
+  let run = [];
+  const flush = () => {
+    if (run.length >= 3) parts.push(`${WEEKDAYS[run[0]]}–${WEEKDAYS[run[run.length - 1]]}`);
+    else parts.push(...run.map((index) => WEEKDAYS[index]));
+    run = [];
+  };
+  for (const { index } of days) {
+    if (run.length && index !== run[run.length - 1] + 1) flush();
+    run.push(index);
+  }
+  flush();
+  return parts.join(', ');
+}
+
+function renderBells(monday) {
+  const today = isoToday();
+  const now = new Date();
+  const minute = now.getHours() * 60 + now.getMinutes();
+  const groups = bellGroups(monday);
+  const container = $('scheduleContent');
+  if (!groups.length) {
+    container.innerHTML = `<div class="card bells-card"><div class="muted">На этой неделе уроков нет — звонки появятся вместе с расписанием.</div></div>`;
+    return;
+  }
+  container.innerHTML = groups.map((group) => {
+    const isToday = group.days.some((day) => day.iso === today);
+    const items = [];
+    group.rows.forEach((row, index) => {
+      const current = isToday && minute >= row.start && minute < row.end;
+      items.push(`<div class="bell-row${current ? ' now' : ''}">
+          <span class="lc-num">${esc(row.number)}</span>
+          <span class="bell-time">${esc(row.text)}</span>
+          <span class="bell-len muted small">${row.end - row.start} мин</span>
+        </div>`);
+      const next = group.rows[index + 1];
+      const gap = next ? next.start - row.end : 0;
+      if (gap > 0) {
+        const breakNow = isToday && minute >= row.end && minute < next.start;
+        items.push(`<div class="bell-break${breakNow ? ' now' : ''}">перемена ${gap} ${plural(gap, 'минута', 'минуты', 'минут')}</div>`);
+      }
+    });
+    return `<div class="card bells-card${isToday ? ' current' : ''}">
+        <div class="sched-top">
+          <div class="sched-day">${esc(daysTitle(group.days))}</div>
+          <div class="sched-range">${esc(`${group.rows[0].text.split('–')[0]}–${group.rows[group.rows.length - 1].text.split('–')[1]}`)}</div>
+        </div>
+        <div class="bells-list">${items.join('')}</div>
+        ${group.extras.length ? `<div class="bells-extra">${group.extras.map(({ row, days }) => {
+          const current = days.some((day) => day.iso === today) && minute >= row.start && minute < row.end;
+          return `<div class="bell-row${current ? ' now' : ''}">
+              <span class="lc-num">${esc(row.number)}</span>
+              <span class="bell-time">${esc(row.text)}</span>
+              <span class="bell-len muted small">только ${esc(daysTitle(days))}</span>
+            </div>`;
+        }).join('')}</div>` : ''}
+      </div>`;
+  }).join('');
+}
+
 export function initSchedule() {
+  // Подсветка идущего урока или перемены.
+  setInterval(() => {
+    if (state.tab === 'schedule' && showBells() && state.scheduleWeek === 0) {
+      const monday = mondayOf(isoToday());
+      if (dayData(monday)) renderBells(monday);
+    }
+  }, 30000);
   $('schedPrev').addEventListener('click', () => {
     select();
     state.scheduleWeek -= 1;

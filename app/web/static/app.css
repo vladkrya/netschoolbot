@@ -1318,3 +1318,13 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
 .ls-status { min-height: 20px; margin: 12px 16px 0; color: var(--text2, #6c7280); font-size: 14px; text-align: center; }
 .ls-status.bad { color: var(--red, #e5484d); }
 .ls-footnote { margin: 8px 16px 0; color: var(--text2, #6c7280); font-size: 13px; line-height: 1.4; }
+
+/* Расписание звонков */
+.bells-list { margin-top: 6px; }
+.bell-row { display: flex; align-items: center; gap: 10px; padding: 9px 8px; margin: 0 -8px; border-radius: 10px; font-size: 16px; }
+.bell-row .lc-num { min-width: 24px; height: 24px; font-size: 12px; border-radius: 7px; }
+.bell-time { flex: 1; font-variant-numeric: tabular-nums; font-weight: 600; }
+.bell-break { padding: 2px 0 2px 34px; color: var(--text2); font-size: 13px; border-radius: 8px; }
+.bell-row.now { background: color-mix(in srgb, var(--primary) 16%, transparent); }
+.bell-break.now { color: var(--primary); font-weight: 600; }
+.bells-extra { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--border); }

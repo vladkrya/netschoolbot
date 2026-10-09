@@ -1215,6 +1215,10 @@ async def save_prefs(request: web.Request) -> web.Response:
         if body["weekends"] not in ("show", "hide"):
             return json_error("Некорректная настройка выходных")
         changes["weekends"] = body["weekends"]
+    if "scheduleTab" in body:
+        if body["scheduleTab"] not in ("bells", "week"):
+            return json_error("Некорректная настройка вкладки")
+        changes["scheduleTab"] = body["scheduleTab"]
     if "design" in body:
         if body["design"] not in DESIGNS:
             return json_error("Неизвестный дизайн")
