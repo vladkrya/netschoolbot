@@ -9,9 +9,13 @@ import { initSchedule, loadSchedule } from './schedule.js';
 import { initHomework, loadHomework } from './homework.js';
 import { loadTotals } from './totals.js';
 import { loadMail, openAnnouncements, openCompose } from './mail.js';
-import { applyAccent, applyDesign, applyScheduleTab, initFullscreen } from './appearance.js';
+import { applyAccent, applyDesign, applyScheduleTab, initFullscreen, isNewDesign } from './appearance.js';
 import { ICONS } from './icons.js';
-import { applyStoredTheme, closeDrawer, initStudentSwitch, isDrawerOpen, loadProfile, openDrawer, syncTimezone } from './profile.js';
+import {
+  applyStoredTheme, closeDrawer, initStudentSwitch, isDrawerOpen, loadProfile, loadSettings, openDrawer, syncTimezone,
+} from './profile.js';
+import { loadAssistantTab } from './assistant.js';
+import { navTabs, renderNav } from './tabs.js';
 import { closeSheet, initSheet } from './sheet.js';
 import { clearScreens, handleBack, hasScreens, setFallbackBack } from './screens.js';
 import { initSwipeBack } from './swipeback.js';
@@ -21,9 +25,11 @@ import { syncPrefs } from './prefs.js';
 const TABS = {
   day: loadDay,
   schedule: loadSchedule,
+  assistant: loadAssistantTab,
   homework: loadHomework,
   totals: loadTotals,
   mail: loadMail,
+  settings: loadSettings,
 };
 
 // Перелёт пружины cubic-bezier(.34, y1, .5, 1) — доля пути, а не пиксели: на
@@ -45,11 +51,7 @@ function switchTab(name) {
   document.querySelectorAll('.panel').forEach((panel) => {
     panel.classList.toggle('active', panel.id === `panel-${name}`);
   });
-  document.querySelectorAll('.nav-item').forEach((item, index) => {
-    const active = item.dataset.tab === name;
-    item.classList.toggle('active', active);
-    if (active) moveLens(index);
-  });
+  syncNav();
   // Полоса под шапкой (дата, поиск) — своя у каждой вкладки.
   document.querySelectorAll('.subbar').forEach((bar) => {
     bar.hidden = bar.dataset.for !== name;
@@ -57,10 +59,20 @@ function switchTab(name) {
   syncHeaderHeight();
   window.scrollTo(0, 0);
   banner('');
-  TABS[name]();
+  return TABS[name]();
 }
 
-/** «Назад» вне стека экранов: закрыть шторку, меню, вернуться на «День». */
+/** Активный пункт и линза — под текущую вкладку. Вкладки нет в панели —
+ *  линза прячется. */
+function syncNav() {
+  const items = [...document.querySelectorAll('.nav-item')];
+  items.forEach((item) => item.classList.toggle('active', item.dataset.tab === state.tab));
+  const index = items.findIndex((item) => item.dataset.tab === state.tab);
+  $('bottomNav').classList.toggle('no-lens', index < 0);
+  if (index >= 0) moveLens(index);
+}
+
+/** «Назад» вне стека экранов: закрыть шторку, меню, вернуться на первую вкладку. */
 function fallbackBack(dryRun) {
   if (!$('sheet').hidden) {
     if (!dryRun) closeSheet();
@@ -70,8 +82,9 @@ function fallbackBack(dryRun) {
     if (!dryRun) closeDrawer();
     return true;
   }
-  if (state.tab !== 'day') {
-    if (!dryRun) switchTab('day');
+  const home = navTabs()[0];
+  if (state.tab !== home) {
+    if (!dryRun) switchTab(home);
     return true;
   }
   return false;
@@ -103,7 +116,8 @@ function bindPullToRefresh() {
   let startY = null;
   let pulled = 0;
   document.addEventListener('touchstart', (event) => {
-    if (hasScreens() || isDrawerOpen() || window.scrollY > 0) return;
+    // В чате помощника жест вниз — прокрутка переписки, обновлять нечего.
+    if (hasScreens() || isDrawerOpen() || state.tab === 'assistant' || window.scrollY > 0) return;
     startY = event.touches[0].clientY;
     pulled = 0;
   }, { passive: true });
@@ -153,7 +167,9 @@ function bindPullToRefresh() {
 // CSS: те перезапускались на каждое движение пальца, и капля дёргалась.
 function initNav() {
   const nav = $('bottomNav');
-  const items = [...nav.querySelectorAll('.nav-item')];
+  // Пункты меняются, когда человек настраивает панель, — берём каждый раз.
+  let items = [...nav.querySelectorAll('.nav-item')];
+  window.addEventListener('netschool:nav', () => { items = [...nav.querySelectorAll('.nav-item')]; });
   // Масштаб раздутой капли в покое; по ходу движения она вытягивается.
   const BASE_SX = 1.22;
   const BASE_SY = 1.18;
@@ -284,11 +300,10 @@ function initNav() {
   nav.addEventListener('lostpointercapture', (event) => release(event, false));
 
   // Тап и клавиатура. Клик сразу после перетаскивания уже обработан выше.
-  items.forEach((item) => {
-    item.addEventListener('click', () => {
-      if (performance.now() - lastRelease < 500) return;
-      activate(item.dataset.tab, false);
-    });
+  nav.addEventListener('click', (event) => {
+    const item = event.target.closest('.nav-item');
+    if (!item || performance.now() - lastRelease < 500) return;
+    activate(item.dataset.tab, false);
   });
 }
 
@@ -333,7 +348,7 @@ async function quietly(render) {
  *  при переключении вкладка берёт готовое из state. По одной, чтобы не
  *  забить школьный сервер пачкой запросов. */
 async function prefetch() {
-  for (const name of ['schedule', 'homework', 'totals', 'mail']) {
+  for (const name of ['day', 'schedule', 'homework', 'totals', 'mail']) {
     if (name === state.tab) continue;
     try {
       await TABS[name]();
@@ -349,15 +364,37 @@ function initChrome() {
   initFresh();
   $('menuBtn').addEventListener('click', openDrawer);
   $('drawerShade').addEventListener('click', closeDrawer);
+  // Панель пересобрали в настройках: подписи второй вкладки и линза.
+  window.addEventListener('netschool:nav', () => {
+    applyScheduleTab();
+    syncNav();
+  });
   $('bellBtn').addEventListener('click', openAnnouncements);
   $('composeBtn').addEventListener('click', () => openCompose());
   window.addEventListener('resize', syncHeaderHeight);
   new ResizeObserver(syncHeaderHeight).observe($('appHeader'));
   // «Перейти ко дню» из расписания.
   window.addEventListener('netschool:tab', (event) => switchTab(event.detail));
-  window.addEventListener('netschool:design', () => { if (state.tab) quietly(() => TABS[state.tab]()); });
+  window.addEventListener('netschool:design', onDesign);
   // Вошли без сети, сеть вернулась и сервер принял PIN — показываем свежее.
   window.addEventListener('netschool:unlocked', () => { if (state.tab) quietly(() => TABS[state.tab]()); });
+}
+
+/** Сменили дизайн: у нового своя панель и вкладка «Настройки» вместо ☰.
+ *  Переключали из настроек — в них и остаёмся: во вкладке или в меню. */
+function onDesign() {
+  const fromSettings = isDrawerOpen() || state.tab === 'settings';
+  renderNav();
+  if (!state.tab) return;
+  if (isNewDesign() && isDrawerOpen()) {
+    closeDrawer();
+    switchTab('settings');
+  } else if (!navTabs().includes(state.tab)) {
+    switchTab(navTabs()[0]);
+    if (fromSettings) openDrawer();
+  } else {
+    quietly(() => TABS[state.tab]());
+  }
 }
 
 async function start() {
@@ -372,9 +409,10 @@ async function start() {
     applyStoredTheme();
     applyAccent();
     applyDesign();
-    applyScheduleTab();
+    renderNav();
     window.dispatchEvent(new CustomEvent('netschool:design'));
   });
+  renderNav();
   renderIcons();
   applyScheduleTab();
   initFullscreen();
@@ -388,8 +426,8 @@ async function start() {
   setFallbackBack(fallbackBack);
 
   $('topName').textContent = studentFirstName(student) || school || 'Дневник';
-  state.tab = 'day';
-  await loadDay();
+  // Первая вкладка панели — та, с которой открывается приложение.
+  await switchTab(navTabs()[0]);
   // Остальные запросы идут только после первого экрана, не конкурируют с ним.
   setTimeout(prefetch, 600);
 

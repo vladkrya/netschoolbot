@@ -4,6 +4,8 @@
 import { ICONS } from './icons.js';
 
 export const { base, token, pushEnabled, student, school, demo } = window.NETSCHOOL;
+/** Есть ли ИИ-помощник: на сервере задан ключ, и это не демо. */
+export const assistantEnabled = Boolean(window.NETSCHOOL.assistant);
 
 /** СГО отдаёт ученика в порядке «Фамилия Имя Отчество». */
 export function studentFirstName(name) {

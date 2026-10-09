@@ -472,6 +472,23 @@ class TestNewFeatures:
         response = await client.post(url, params={"token": token}, json={"design": "retro"})
         assert response.status == 400
 
+    async def test_nav_tabs_pref_is_validated(self, client, token):
+        url = f"{BASE}/api/prefs"
+        tabs = ["day", "assistant", "homework", "totals", "mail", "settings"]
+        response = await client.post(url, params={"token": token}, json={"tabs": tabs})
+        assert (await response.json())["data"]["tabs"] == tabs
+        for bad in (
+            ["day", "homework"],  # без «Настроек» панель уже не вернуть
+            ["day", "day", "settings"],
+            ["day", "schedule", "assistant", "homework", "totals", "mail", "settings"],
+            ["settings"],
+            ["day", "news", "settings"],
+            [{"x": 1}, "settings"],
+            "day,settings",
+        ):
+            response = await client.post(url, params={"token": token}, json={"tabs": bad})
+            assert response.status == 400, bad
+
     async def test_weekends_pref_is_validated(self, client, token):
         url = f"{BASE}/api/prefs"
         response = await client.post(url, params={"token": token}, json={"weekends": "show"})

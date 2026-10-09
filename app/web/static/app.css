@@ -686,7 +686,8 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .nav-glider {
   position: absolute;
   top: 4px; bottom: 4px; left: 4px;
-  width: calc((100% - 8px) / 5);
+  /* Число пунктов задаёт tabs.js: в новом дизайне панель настраивается. */
+  width: calc((100% - 8px) / var(--n, 5));
   border-radius: 26px;
   background: var(--lens);
   box-shadow: inset 0 1px 0 var(--lens-shine), inset 0 -1px 0 rgba(255, 255, 255, .08);
@@ -705,6 +706,7 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
    снизу, как у настоящего стекла. Положение и растяжение каждый кадр
    задаёт app.js, поэтому переходов на них нет. Своего backdrop-filter у неё
    тоже нет: внутри стеклянной панели WebKit рисовал его с двоением. */
+.bottom-nav.no-lens:not(.dragging) .nav-glider { opacity: 0; }
 .bottom-nav.dragging .nav-glider {
   z-index: 2;
   translate: var(--x, 0) 0;
@@ -1434,3 +1436,8 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
   .ai-msg.typing span, .ai-hello svg { animation: none; }
   .ai-send, .ai-send.ready { transition: none; }
 }
+
+/* Помощник во вкладке: страница прокручивается целиком, поле ввода — над
+   нижней панелью. */
+.ai-body.in-tab { min-height: calc(100dvh - var(--header-h) - var(--nav-h) - 32px); }
+.ai-body.in-tab .ai-input { bottom: calc(var(--nav-h) + 4px); }

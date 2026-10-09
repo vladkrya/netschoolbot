@@ -1102,6 +1102,9 @@ async def mark_history(request: web.Request) -> web.Response:
 
 
 THEMES = ("auto", "light", "dark")
+# Вкладки нижней панели (tabs.js); «Настройки» убрать нельзя — иначе их не вернуть.
+NAV_TABS = ("day", "schedule", "assistant", "homework", "totals", "mail", "settings")
+MAX_NAV_TABS = 6
 DESIGNS = ("classic", "new")
 ACCENT_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 
@@ -1233,6 +1236,18 @@ async def save_prefs(request: web.Request) -> web.Response:
         if weights is None:
             return json_error("Некорректные веса")
         changes["weights"] = weights
+    if "tabs" in body:
+        tabs = body["tabs"]
+        if (
+            not isinstance(tabs, list)
+            or not all(isinstance(tab, str) for tab in tabs)
+            or not 2 <= len(tabs) <= MAX_NAV_TABS
+            or len(set(tabs)) != len(tabs)
+            or any(tab not in NAV_TABS for tab in tabs)
+            or "settings" not in tabs
+        ):
+            return json_error("Некорректный набор вкладок")
+        changes["tabs"] = tabs
     if "periods" in body:
         setting = _clean_periods(body["periods"])
         if setting is None:

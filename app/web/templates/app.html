@@ -74,6 +74,8 @@
      была липкой внутри страницы и при прокрутке отрывалась от шапки. -->
 <header class="app-header" id="appHeader">
   <div class="topbar">
+    <!-- Меню ☰ — только в классическом дизайне; в новом настройки живут во
+         вкладке, а кнопка остаётся пустым местом, чтобы имя было по центру. -->
     <button class="topbar-btn" id="menuBtn" aria-label="Меню" data-icon="menu"></button>
     <!-- Имя ученика; у родителя с несколькими детьми — стрелка и выбор ребёнка. -->
     <button class="topbar-title" id="topTitle" type="button"><span id="topName">Дневник</span><span class="title-switch" id="titleSwitch" data-icon="down" hidden></span></button>
@@ -134,17 +136,15 @@
     <div class="list" id="mailContent"></div>
     <button class="fab" id="composeBtn" aria-label="Написать письмо" data-icon="plus"></button>
   </section>
+  <section class="panel" id="panel-assistant"><div id="assistantContent"></div></section>
+  <section class="panel" id="panel-settings"><div class="settings-page" id="settingsContent"></div></section>
 </main>
 
 <div id="screens"></div>
 
+<!-- Пункты собирает tabs.js: в новом дизайне набор и порядок настраиваются. -->
 <nav class="bottom-nav" id="bottomNav">
   <span class="nav-glider" aria-hidden="true"></span>
-  <button class="nav-item active" data-tab="day"><span class="ico" data-icon="clock"></span><span>День</span></button>
-  <button class="nav-item" data-tab="schedule"><span class="ico" data-icon="clock"></span><span class="lbl-old">Звонки</span><span class="lbl-new">Звонки</span></button>
-  <button class="nav-item" data-tab="homework"><span class="ico" data-icon="home"></span><span class="lbl-old">Д/З</span><span class="lbl-new">Задания</span></button>
-  <button class="nav-item" data-tab="totals"><span class="ico" data-icon="book"></span><span class="lbl-old">Итоги</span><span class="lbl-new">Оценки</span></button>
-  <button class="nav-item" data-tab="mail"><span class="ico" data-icon="megaphone"></span><span class="lbl-old">Сообщения</span><span class="lbl-new">Почта</span></button>
 </nav>
 
 <aside class="drawer" id="drawer">
@@ -169,6 +169,7 @@
     base: {{ base | tojson }},
     token: {{ token | tojson }},
     pushEnabled: {{ push_enabled | tojson }},
+    assistant: {{ (assistant and not demo) | tojson }},
     student: {{ student | tojson }},
     school: {{ school | tojson }},
     demo: {{ (demo or false) | tojson }}

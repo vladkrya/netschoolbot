@@ -698,3 +698,44 @@
   box-shadow: 0 8px 24px rgba(16, 24, 40, .08), inset 0 1px 0 var(--glass-shine);
 }
 :root[data-design="new"] .screen.glassy .dist { border-radius: 14px; }
+
+/* ─────────────────── Вкладка «Настройки» и панель ─────────────────── */
+
+/* Меню ☰ в новом дизайне нет — настройки во вкладке. Кнопка остаётся
+   пустым местом, чтобы имя ученика стояло по центру. */
+:root[data-design="new"] #menuBtn { visibility: hidden; pointer-events: none; }
+.settings-page .drawer-section:first-child { margin-top: 0; }
+
+.tab-list { display: grid; margin: 2px 0 8px; }
+.tab-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 10px;
+}
+.tab-row:last-child { border-bottom: 0; }
+.tab-row-name { flex: 1; min-width: 0; }
+.tab-row.off .tab-row-name { color: var(--text2); }
+.tab-move {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--soft, var(--card-2));
+  color: var(--primary);
+  transition: transform .15s var(--ease), opacity .2s;
+}
+.tab-move.down svg { rotate: 180deg; }
+.tab-move:active { transform: scale(.88); }
+.tab-move:disabled { opacity: .3; }
+.tab-row.moved { animation: tab-moved .6s var(--ease); }
+@keyframes tab-moved {
+  from { background: color-mix(in srgb, var(--primary) 18%, transparent); transform: scale(1.02); }
+}
+@media (prefers-reduced-motion: reduce) { .tab-row.moved { animation: none; } }
+/* Шесть вкладок на узком телефоне: подписи плотнее, иначе «Настройки»
+   обрезаются. */
+:root[data-design="new"] .bottom-nav[data-count="6"] .nav-item .lbl-new { font-size: clamp(8.5px, 2.5vw, 10px); letter-spacing: -.35px; max-width: 100%; }

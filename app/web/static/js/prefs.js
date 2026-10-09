@@ -7,10 +7,10 @@
 import { api, demo } from './core.js';
 
 const KEYS = {
-  theme: 'ns-theme', design: 'ns-design', weekends: 'ns-weekends', scheduleTab: 'ns-schedule-tab', accent: 'ns-accent', weights: 'ns-weights', thresholds: 'ns-thresholds',
+  theme: 'ns-theme', design: 'ns-design', weekends: 'ns-weekends', scheduleTab: 'ns-schedule-tab', accent: 'ns-accent', weights: 'ns-weights', thresholds: 'ns-thresholds', tabs: 'ns-tabs',
 };
 // Тема, дизайн и цвет лежат строкой (их читает скрипт в <head>), остальное — JSON.
-const JSON_PREFS = new Set(['weights', 'thresholds']);
+const JSON_PREFS = new Set(['weights', 'thresholds', 'tabs']);
 
 function readLocal(name) {
   try {

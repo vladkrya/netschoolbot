@@ -1,5 +1,6 @@
-// Боковое меню (☰): ученик, оформление, уведомления, калькулятор —
-// как в официальном приложении, где настройки живут в выдвижной панели.
+// Настройки: ученик, оформление, уведомления, калькулятор. В классическом
+// дизайне — выдвижное меню ☰, как в официальном приложении; в новом —
+// вкладка «Настройки» с ещё одним разделом: какие вкладки в нижней панели.
 'use strict';
 
 import { $, api, banner, demo, esc, initData, pushEnabled, state, tg } from './core.js';
@@ -9,6 +10,7 @@ import {
 import { ICONS } from './icons.js';
 import { loadCalc } from './calc.js';
 import { openAssistant } from './assistant.js';
+import { MAX_TABS, TAB_NAMES, availableTabs, navTabs, resetTabs, saveTabs } from './tabs.js';
 import { loadTotals } from './totals.js';
 import { pushScreen, syncBackButton } from './screens.js';
 import { notify, select, tap } from './haptics.js';
@@ -55,11 +57,15 @@ export function applyStoredTheme() {
   syncChromeColor();
 }
 
+/** Куда рисовать настройки: вкладка в новом дизайне, меню ☰ в классическом. */
+const settingsRoot = () => $(isNewDesign() ? 'settingsContent' : 'drawerBody');
+
 export function isDrawerOpen() {
   return $('drawer').classList.contains('open');
 }
 
 export function closeDrawer() {
+  if (!isDrawerOpen()) return;
   $('drawer').classList.remove('open');
   syncBackButton();
 }
@@ -68,17 +74,99 @@ export async function openDrawer() {
   tap();
   $('drawer').classList.add('open');
   syncBackButton();
-  const panel = $('drawerBody');
-  if (!state.profile) {
-    panel.innerHTML = '<div class="muted small">Загрузка…</div>';
+  await loadSettings();
+}
+
+/** Настройки: вкладка «Настройки» или меню ☰. Профиль нужен для имени,
+ *  детей и уведомлений. */
+export async function loadSettings(force = false) {
+  const panel = settingsRoot();
+  if (!state.profile || force) {
+    if (!state.profile) panel.innerHTML = '<div class="muted small">Загрузка…</div>';
     try {
-      await loadProfile();
+      await loadProfile(force);
     } catch (error) {
       panel.innerHTML = `<div class="muted small">${esc(error.message)}</div>`;
       return;
     }
   }
   render();
+}
+
+/** Нижняя панель: включённые вкладки по порядку, за ними выключенные. */
+function tabRows() {
+  const on = navTabs();
+  const off = availableTabs().filter((tab) => !on.includes(tab));
+  const row = (tab, enabled, index) => `<div class="tab-row ${enabled ? '' : 'off'}" data-tab-row="${tab}">
+      <input type="checkbox" switch class="switch" data-tab-on="${tab}" ${enabled ? 'checked' : ''} ${tab === 'settings' ? 'disabled' : ''} aria-label="${TAB_NAMES[tab]}">
+      <span class="tab-row-name">${TAB_NAMES[tab]}</span>
+      ${enabled ? `<button class="tab-move" data-tab-move="${tab}" data-dir="-1" aria-label="Выше" ${index === 0 ? 'disabled' : ''}>${ICONS.up}</button>
+      <button class="tab-move down" data-tab-move="${tab}" data-dir="1" aria-label="Ниже" ${index === on.length - 1 ? 'disabled' : ''}>${ICONS.up}</button>` : ''}
+    </div>`;
+  return on.map((tab, index) => row(tab, true, index)).join('') + off.map((tab) => row(tab, false)).join('');
+}
+
+function tabsSection() {
+  return `<section class="drawer-section">
+      <div class="drawer-heading">Нижняя панель</div>
+      <div class="tab-list" id="tabList">${tabRows()}</div>
+      <div class="muted small">До ${MAX_TABS} вкладок. Первая открывается при входе. <button class="link" id="tabsReset">Как было</button></div>
+    </section>`;
+}
+
+function bindTabs() {
+  const list = $('tabList');
+  if (!list) return;
+  // Строка, которую двигали или включали, мягко подсвечивается — видно,
+  // куда она переехала.
+  const apply = (tabs, touched) => {
+    select();
+    saveTabs(tabs);
+    list.innerHTML = tabRows();
+    list.querySelector(`[data-tab-row="${touched}"]`)?.classList.add('moved');
+  };
+  // Строки перерисовываются, поэтому слушаем сам список.
+  list.addEventListener('change', (event) => {
+    const input = event.target.closest('[data-tab-on]');
+    if (!input) return;
+    const tab = input.dataset.tabOn;
+    const tabs = navTabs();
+    if (input.checked) {
+      if (tabs.length >= MAX_TABS) {
+        input.checked = false;
+        notify('error');
+        banner(`Помещается до ${MAX_TABS} вкладок — сначала уберите какую-нибудь`, true, 3000);
+        return;
+      }
+      // Новая вкладка встаёт перед «Настройками».
+      const at = tabs.indexOf('settings');
+      tabs.splice(at < 0 ? tabs.length : at, 0, tab);
+    } else {
+      if (tabs.length <= 2) {
+        input.checked = true;
+        notify('error');
+        return;
+      }
+      tabs.splice(tabs.indexOf(tab), 1);
+    }
+    apply(tabs, tab);
+  });
+  list.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-tab-move]');
+    if (!button) return;
+    const tab = button.dataset.tabMove;
+    const tabs = navTabs();
+    const from = tabs.indexOf(tab);
+    const to = from + Number(button.dataset.dir);
+    if (to < 0 || to >= tabs.length) return;
+    [tabs[from], tabs[to]] = [tabs[to], tabs[from]];
+    apply(tabs, tab);
+  });
+  $('tabsReset').addEventListener('click', () => {
+    tap();
+    resetTabs();
+    list.innerHTML = tabRows();
+  });
 }
 
 const NOTIFY_LABELS = {
@@ -304,7 +392,7 @@ function render() {
   const radio = (value, label) =>
     `<label class="drawer-option"><input type="radio" name="theme" value="${value}" ${theme === value ? 'checked' : ''}><span>${label}</span></label>`;
 
-  $('drawerBody').innerHTML = `
+  settingsRoot().innerHTML = `
     ${demo ? '<div class="demo-badge">Демо-режим · данные выдуманные</div>' : ''}
     <section class="drawer-section">
       <div class="drawer-heading">Аккаунт ученика</div>
@@ -316,7 +404,7 @@ function render() {
     </section>
     <section class="drawer-section">
       <div class="drawer-heading">Дополнительно</div>
-      ${data.assistant && !demo ? `<button class="drawer-link" id="drawerAssistant">${ICONS.sparkles} ИИ-помощник</button>` : ''}
+      ${data.assistant && !demo && !navTabs().includes('assistant') ? `<button class="drawer-link" id="drawerAssistant">${ICONS.sparkles} ИИ-помощник</button>` : ''}
       ${demo ? '' : `<button class="drawer-link" id="drawerLock">${ICONS.shield} Защита входа</button>`}
       ${demo ? '' : `<button class="drawer-link" id="drawerBug">${ICONS.chat} Сообщить об ошибке</button>`}
       <button class="drawer-link" id="drawerCalc">${ICONS.calc} Калькулятор баллов</button>
@@ -341,6 +429,7 @@ function render() {
           <input type="color" id="accentCustom" value="${accent}">＋</label>
       </div>
     </section>
+    ${isNewDesign() ? tabsSection() : ''}
     <section class="drawer-section">
       <div class="drawer-heading">Уведомления</div>
       ${toggle('telegram', 'В Telegram', data.notifications.telegram !== false)}
@@ -362,7 +451,7 @@ function render() {
 }
 
 function bindDrawer() {
-  const body = $('drawerBody');
+  const body = settingsRoot();
   body.querySelectorAll('input[name="theme"]').forEach((input) =>
     input.addEventListener('change', () => {
       select();
@@ -428,6 +517,7 @@ function bindDrawer() {
   $('drawerLock')?.addEventListener('click', () => { closeDrawer(); openLockSettings().catch(error => banner(error.message, true)); });
   $('drawerCalendar')?.addEventListener('click', () => { tap(); openCalendar(); });
   $('drawerBug')?.addEventListener('click', () => { tap(); closeDrawer(); openBugReport(); });
+  bindTabs();
   bindPushToggle();
   $('pwaOpen')?.addEventListener('click', openInBrowser);
   if (demo) bindDemo();

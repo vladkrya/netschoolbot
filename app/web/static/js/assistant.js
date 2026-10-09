@@ -86,11 +86,26 @@ function copy(text) {
   );
 }
 
+/** Отдельным экраном — из настроек, когда вкладки «Помощник» в панели нет. */
 export function openAssistant() {
+  mount(pushScreen('Помощник', 'ИИ · может ошибаться, проверяйте'));
+}
+
+/** Вкладка «Помощник» (новый дизайн): чат собирается один раз и живёт,
+ *  пока открыто приложение. */
+export function loadAssistantTab() {
+  const container = $('assistantContent');
+  if (!container.childElementCount) mount(container, { tab: true });
+  else requestAnimationFrame(() => window.scrollTo({ top: document.body.scrollHeight }));
+}
+
+function mount(body, { tab = false } = {}) {
   state.assistant ??= { messages: [], left: null };
   const chat = state.assistant;
-  const body = pushScreen('Помощник', 'ИИ · может ошибаться, проверяйте');
   body.classList.add('ai-body');
+  body.classList.toggle('in-tab', tab);
+  // Чат может быть и во вкладке, и экраном сразу — ищем только в своём.
+  const q = (id) => body.querySelector(`#${id}`);
   body.innerHTML = `
     <div class="ai-log" id="aiLog"></div>
     <div class="ai-intro" id="aiIntro">
@@ -103,12 +118,13 @@ export function openAssistant() {
       <button class="ai-send" id="aiSend" aria-label="Отправить">${ICONS.send}</button>
     </form>`;
 
-  const log = $('aiLog');
-  const input = $('aiText');
-  const screen = body.closest('.screen');
-  const scroll = () => requestAnimationFrame(() => screen?.scrollTo({ top: screen.scrollHeight, behavior: 'smooth' }));
-  const syncIntro = () => { $('aiIntro').hidden = chat.messages.length > 0; };
-  const syncSend = () => $('aiSend').classList.toggle('ready', Boolean(input.value.trim()) && !busy);
+  const log = q('aiLog');
+  const input = q('aiText');
+  // Экран прокручивается сам, вкладка — вместе со страницей.
+  const scroller = () => body.closest('.screen') || document.scrollingElement;
+  const scroll = () => requestAnimationFrame(() => scroller().scrollTo({ top: scroller().scrollHeight, behavior: 'smooth' }));
+  const syncIntro = () => { q('aiIntro').hidden = chat.messages.length > 0; };
+  const syncSend = () => q('aiSend').classList.toggle('ready', Boolean(input.value.trim()) && !busy);
 
   /* ── Карточка письма ── */
 
@@ -297,7 +313,7 @@ export function openAssistant() {
     typing.innerHTML = '<span></span><span></span><span></span>';
     log.appendChild(typing);
     scroll();
-    $('aiSend').disabled = true;
+    q('aiSend').disabled = true;
     try {
       await preload();
       const { data } = await api('/api/assistant', {
@@ -321,13 +337,13 @@ export function openAssistant() {
       banner(error.message, true);
     } finally {
       busy = false;
-      $('aiSend').disabled = false;
+      q('aiSend').disabled = false;
       syncSend();
       scroll();
     }
   }
 
-  $('aiForm').addEventListener('submit', (event) => {
+  q('aiForm').addEventListener('submit', (event) => {
     event.preventDefault();
     send(input.value);
   });

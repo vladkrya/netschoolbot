@@ -273,6 +273,7 @@ async def index(request: web.Request) -> web.Response:
             "student": user.student_name if user and not protected else "",
             "school": user.school.name if user and not protected else "",
             "push_enabled": context.settings.push.configured,
+            "assistant": context.settings.assistant.enabled,
         },
     )
     if token:
@@ -302,6 +303,7 @@ async def demo(request: web.Request) -> web.Response:
             "student": "Пятёркин Отличник",
             "school": "Демо-школа",
             "push_enabled": False,
+            "assistant": False,
             "demo": True,
         },
     )
