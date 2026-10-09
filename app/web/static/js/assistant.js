@@ -4,14 +4,15 @@
 // вопросом подгружаем оценки, задания и неделю — иначе модели не о чем
 // рассказывать. Переписка живёт, пока открыто приложение.
 //
-// Письмо помощник только предлагает: черновик приходит в чат карточкой, и
-// отправляет его человек сам — выбрав получателя и подтвердив.
+// Письмо помощник только предлагает: черновик приходит в чат карточкой, а
+// «Отправить» открывает почту с готовыми получателем, темой и текстом —
+// отправляет человек сам.
 'use strict';
 
 import { $, api, banner, esc, state } from './core.js';
 import { notify, select, tap } from './haptics.js';
 import { ICONS } from './icons.js';
-import { chooseRecipients, loadRecipients } from './mail.js';
+import { loadRecipients, openCompose } from './mail.js';
 import { pushScreen } from './screens.js';
 
 const SUGGESTIONS = [
@@ -131,10 +132,8 @@ function mount(body, { tab = false } = {}) {
   function letterCard(message, letter) {
     const card = document.createElement('div');
     card.className = 'ai-letter';
-    const chosen = letter.chosen ??= new Map();
-
     const draw = () => {
-      const to = [...chosen.values()].map((r) => r.name).join(', ');
+      const to = (letter.sentTo || []).map((r) => r.name).join(', ');
       if (letter.editing) {
         card.innerHTML = `
           <input class="field" data-f="subject" maxlength="200" placeholder="Тема письма" value="${esc(letter.subject)}">
@@ -159,17 +158,6 @@ function mount(body, { tab = false } = {}) {
           return `<div class="ai-letter-status sent"><span class="ai-check">✓</span> Отправлено${to ? `: ${esc(to)}` : ''}</div>`;
         case 'dropped':
           return `<div class="ai-letter-status">Не отправлено <button class="link" data-act="restore">вернуть</button></div>`;
-        case 'confirm':
-        case 'sending':
-          return `<div class="ai-panel">
-              <button class="to-field" data-act="recipients">${to
-                ? [...chosen.values()].map((r) => `<span class="to-chip">${esc(r.name)}</span>`).join('')
-                : '<span class="muted">Выбрать получателя</span>'}</button>
-              <div class="ai-letter-actions">
-                <button class="chip active" data-act="send" ${!to || letter.status === 'sending' ? 'disabled' : ''}>${letter.status === 'sending' ? 'Отправляю…' : 'Подтвердить отправку'}</button>
-                <button class="chip" data-act="back">Отмена</button>
-              </div>
-            </div>`;
         case 'fix':
           return `<div class="ai-letter-actions ai-panel">
               ${FIXES.map(([label], index) => `<button class="chip" data-fix="${index}">${label}</button>`).join('')}
@@ -179,7 +167,7 @@ function mount(body, { tab = false } = {}) {
             <div class="muted small ai-panel">Или напишите ниже, что поменять.</div>`;
         default:
           return `<div class="ai-letter-actions">
-              <button class="chip active" data-act="confirm">${ICONS.send} Отправить</button>
+              <button class="chip active" data-act="compose">${ICONS.send} Отправить</button>
               <button class="chip" data-act="fix">Подправить</button>
               <button class="chip" data-act="drop">Не отправлять</button>
               <button class="chip ghost" data-act="copy" aria-label="Копировать">Копировать</button>
@@ -191,18 +179,30 @@ function mount(body, { tab = false } = {}) {
 
     const bind = () => {
       const on = (act, handler) => card.querySelector(`[data-act="${act}"]`)?.addEventListener('click', handler);
-      on('confirm', async () => {
-        set('confirm');
-        if (chosen.size || !letter.to) return;
+      // Письмо открывается в почте уже готовым: получатель из «Кому»,
+      // тема и текст. Там же можно прикрепить файл; отправляет человек.
+      on('compose', async (event) => {
+        const button = event.currentTarget;
+        button.disabled = true;
+        let to = [];
         try {
-          const found = guessRecipient(await loadRecipients(), letter.to);
-          if (found && letter.status === 'confirm' && !chosen.size) {
-            chosen.set(found.id, found);
+          const found = letter.to && guessRecipient(await loadRecipients(), letter.to);
+          if (found) to = [found];
+        } catch { /* получателя выберут в почте */ }
+        button.disabled = false;
+        openCompose({
+          to,
+          subject: letter.subject,
+          text: letter.text,
+          onSent: (recipients) => {
+            letter.status = 'sent';
+            letter.sentTo = recipients;
+            // Во «Входящих» новое письмо появится после обновления.
+            state.mail = null;
             draw();
-          }
-        } catch { /* выберут руками */ }
+          },
+        });
       });
-      on('recipients', () => chooseRecipients(chosen, draw));
       on('back', () => set('draft'));
       on('fix', () => { set('fix'); input.focus({ preventScroll: true }); });
       on('drop', () => set('dropped'));
@@ -218,30 +218,6 @@ function mount(body, { tab = false } = {}) {
         message.content = message.content.replace(LETTER, letterBlock(letter));
         notify('success');
         draw();
-      });
-      on('send', async () => {
-        if (!letter.subject) {
-          notify('error');
-          banner('У письма нет темы — поправьте его вручную', true);
-          return;
-        }
-        set('sending');
-        try {
-          await api('/api/mail/send', {
-            method: 'POST',
-            body: JSON.stringify({ to: [...chosen.keys()], subject: letter.subject, text: letter.text, notify: false }),
-          });
-          letter.status = 'sent';
-          notify('success');
-          // Во «Входящих» новое письмо появится после обновления.
-          state.mail = null;
-          draw();
-        } catch (error) {
-          letter.status = 'confirm';
-          notify('error');
-          banner(error.message, true);
-          draw();
-        }
       });
       card.querySelectorAll('[data-fix]').forEach((button) =>
         button.addEventListener('click', () => {

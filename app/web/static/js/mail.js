@@ -147,9 +147,10 @@ async function canAttach() {
   }
 }
 
-/** Новое письмо; `draft` — тема и текст, например из черновика помощника. */
+/** Новое письмо. `draft` — готовое из черновика помощника: получатели
+ *  (`to`), тема и текст; `onSent` — сообщить, что письмо ушло. */
 export async function openCompose(draft = {}) {
-  const chosen = new Map();
+  const chosen = new Map((draft.to || []).map((recipient) => [recipient.id, recipient]));
   const files = [];
   const attach = await canAttach();
   const body = pushScreen('Новое письмо');
@@ -174,6 +175,7 @@ export async function openCompose(draft = {}) {
       ? [...chosen.values()].map((r) => `<span class="to-chip">${esc(r.name)}</span>`).join('')
       : '<span class="muted">Выбрать получателя</span>';
   };
+  renderTo();
 
   const renderFiles = () => {
     const list = $('composeFiles');
@@ -239,6 +241,7 @@ export async function openCompose(draft = {}) {
       await api('/api/mail/send', { method: 'POST', body: payload });
       notify('success');
       popScreen();
+      draft.onSent?.([...chosen.values()]);
       banner('Письмо отправлено ✓');
       setTimeout(() => banner(''), 3000);
     } catch (error) {
