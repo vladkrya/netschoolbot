@@ -122,6 +122,12 @@ export async function openAnnouncements() {
 
 let recipients = null;
 
+/** Адресная книга школы: загружается один раз за сеанс. */
+export async function loadRecipients() {
+  if (!recipients) recipients = (await api('/api/mail/recipients')).data.items;
+  return recipients;
+}
+
 // Те же пределы, что на сервере (api.py): лишнее отсекаем сразу, без загрузки.
 const MAX_FILES = 5;
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
@@ -203,50 +209,7 @@ export async function openCompose(draft = {}) {
     renderFiles();
   });
 
-  $('composeTo').addEventListener('click', async () => {
-    const sheet = openSheet('Получатели', skeleton(5));
-    try {
-      if (!recipients) recipients = (await api('/api/mail/recipients')).data.items;
-    } catch (error) {
-      sheet.innerHTML = errorCard(error);
-      return;
-    }
-    const draw = (query = '') => {
-      const needle = query.trim().toLowerCase();
-      const list = recipients.filter((r) => !needle || `${r.name} ${r.organization}`.toLowerCase().includes(needle));
-      const categories = ['Администрация', 'Учителя', 'Родители', 'Ученики', 'Другие'];
-      $('recipientList').innerHTML = categories.map((category) => {
-        const group = list.filter((r) => (r.category || 'Другие') === category).sort((a, b) => a.name.localeCompare(b.name, 'ru'));
-        if (!group.length) return '';
-        return `<details class="recipient-group"${needle ? ' open' : ''}><summary>${category}<span class="muted small">${group.length}</span></summary>` + group
-        .map((r) => `<button class="recipient ${chosen.has(r.id) ? 'on' : ''}" data-id="${esc(r.id)}">
-            <span class="avatar small" style="background:${avatarColor(r.name)}">${esc(r.name.trim()[0] || '?')}</span>
-            <span class="recipient-main"><span>${esc(r.name)}</span><span class="muted small">${esc(r.organization)}</span></span>
-            <span class="check">${chosen.has(r.id) ? '✓' : ''}</span>
-          </button>`)
-        .join('') + '</details>';
-      }).join('') || '<div class="empty">Никого не нашлось</div>';
-      $('recipientList').querySelectorAll('[data-id]').forEach((row) =>
-        row.addEventListener('click', () => {
-          select();
-          const recipient = recipients.find((r) => String(r.id) === row.dataset.id);
-          if (chosen.has(recipient.id)) chosen.delete(recipient.id);
-          else chosen.set(recipient.id, recipient);
-          const opened = [...$('recipientList').querySelectorAll('details[open]')].map((group) => group.querySelector('summary').textContent);
-          draw($('recipientSearch').value);
-          $('recipientList').querySelectorAll('details').forEach((group) => { group.open = opened.includes(group.querySelector('summary').textContent); });
-          renderTo();
-        })
-      );
-    };
-    sheet.innerHTML = `
-      <input class="field" id="recipientSearch" type="search" placeholder="Поиск по имени или предмету">
-      <div id="recipientList"></div>
-      <button class="btn" id="recipientDone">Готово</button>`;
-    $('recipientSearch').addEventListener('input', (event) => draw(event.target.value));
-    $('recipientDone').addEventListener('click', closeSheet);
-    draw();
-  });
+  $('composeTo').addEventListener('click', () => chooseRecipients(chosen, renderTo));
 
   $('composeSend').addEventListener('click', async (event) => {
     const button = event.currentTarget;
@@ -285,4 +248,50 @@ export async function openCompose(draft = {}) {
       button.classList.remove('loading');
     }
   });
+}
+
+/** Шторка выбора получателей. `chosen` — Map id → получатель, меняется на месте. */
+export async function chooseRecipients(chosen, onChange) {
+  const sheet = openSheet('Получатели', skeleton(5));
+  try {
+    await loadRecipients();
+  } catch (error) {
+    sheet.innerHTML = errorCard(error);
+    return;
+  }
+  const draw = (query = '') => {
+    const needle = query.trim().toLowerCase();
+    const list = recipients.filter((r) => !needle || `${r.name} ${r.organization}`.toLowerCase().includes(needle));
+    const categories = ['Администрация', 'Учителя', 'Родители', 'Ученики', 'Другие'];
+    $('recipientList').innerHTML = categories.map((category) => {
+      const group = list.filter((r) => (r.category || 'Другие') === category).sort((a, b) => a.name.localeCompare(b.name, 'ru'));
+      if (!group.length) return '';
+      return `<details class="recipient-group"${needle ? ' open' : ''}><summary>${category}<span class="muted small">${group.length}</span></summary>` + group
+      .map((r) => `<button class="recipient ${chosen.has(r.id) ? 'on' : ''}" data-id="${esc(r.id)}">
+          <span class="avatar small" style="background:${avatarColor(r.name)}">${esc(r.name.trim()[0] || '?')}</span>
+          <span class="recipient-main"><span>${esc(r.name)}</span><span class="muted small">${esc(r.organization)}</span></span>
+          <span class="check">${chosen.has(r.id) ? '✓' : ''}</span>
+        </button>`)
+      .join('') + '</details>';
+    }).join('') || '<div class="empty">Никого не нашлось</div>';
+    $('recipientList').querySelectorAll('[data-id]').forEach((row) =>
+      row.addEventListener('click', () => {
+        select();
+        const recipient = recipients.find((r) => String(r.id) === row.dataset.id);
+        if (chosen.has(recipient.id)) chosen.delete(recipient.id);
+        else chosen.set(recipient.id, recipient);
+        const opened = [...$('recipientList').querySelectorAll('details[open]')].map((group) => group.querySelector('summary').textContent);
+        draw($('recipientSearch').value);
+        $('recipientList').querySelectorAll('details').forEach((group) => { group.open = opened.includes(group.querySelector('summary').textContent); });
+        onChange();
+      })
+    );
+  };
+  sheet.innerHTML = `
+    <input class="field" id="recipientSearch" type="search" placeholder="Поиск по имени или предмету">
+    <div id="recipientList"></div>
+    <button class="btn" id="recipientDone">Готово</button>`;
+  $('recipientSearch').addEventListener('input', (event) => draw(event.target.value));
+  $('recipientDone').addEventListener('click', closeSheet);
+  draw();
 }
