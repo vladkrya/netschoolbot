@@ -213,16 +213,16 @@ export async function goToDay(iso) {
   await loadDay();
 }
 
-function shiftDay(delta) {
+function shiftDay(delta, felt = false) {
   // Стрелки перешагивают спрятанные выходные.
   let iso = addDays(state.date, delta);
   for (let step = 0; step < 2 && isHiddenWeekend(iso); step += 1) iso = addDays(iso, delta);
-  slideTo(iso);
+  slideTo(iso, felt);
 }
 
-/** Перейти на день с листанием в его сторону. */
-function slideTo(iso) {
-  select();
+/** Перейти на день с листанием в его сторону. felt — отклик уже был (свайп). */
+function slideTo(iso, felt = false) {
+  if (!felt) select();
   const container = $('dayContent');
   container.classList.remove('slide-left', 'slide-right');
   // Перезапуск анимации: без чтения layout класс не срабатывает повторно.
@@ -305,21 +305,34 @@ function bindSwipe() {
   let startX = 0;
   let startY = 0;
   let tracking = false;
+  let armed = false;
+  // Горизонтальный жест заметно длиннее вертикального — иначе это прокрутка.
+  const isSwipe = (dx, dy) => Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5;
   area.addEventListener('touchstart', (event) => {
     const touch = event.touches[0];
     startX = touch.clientX;
     startY = touch.clientY;
+    armed = false;
     // От самого края — жест «назад», если есть куда, а не листание дней.
     tracking = startX > EDGE_PX || !canGoBack();
+  }, { passive: true });
+  // Отклик — в момент, когда палец прошёл порог: как у нативного листания,
+  // ещё до того, как его отпустили. Вернул палец назад — щёлкнет снова.
+  area.addEventListener('touchmove', (event) => {
+    if (!tracking) return;
+    const touch = event.touches[0];
+    const swipe = isSwipe(touch.clientX - startX, touch.clientY - startY);
+    if (swipe && !armed) select();
+    armed = swipe;
   }, { passive: true });
   area.addEventListener('touchend', (event) => {
     if (!tracking) return;
     tracking = false;
     const touch = event.changedTouches[0];
     const dx = touch.clientX - startX;
-    const dy = touch.clientY - startY;
-    // Горизонтальный жест заметно длиннее вертикального — иначе это прокрутка.
-    if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) shiftDay(dx < 0 ? 1 : -1);
+    if (!isSwipe(dx, touch.clientY - startY)) return;
+    if (!armed) select();
+    shiftDay(dx < 0 ? 1 : -1, true);
   }, { passive: true });
 }
 

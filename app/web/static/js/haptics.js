@@ -104,7 +104,7 @@ export function tap(style = 'light') {
 export function select() {
   if (!allowTap()) return;
   if (haptic) haptic.selectionChanged();
-  else vibrate(5);
+  else vibrate(10);
 }
 
 /** Итог действия: обновление, смена ребёнка, подписка на push. */
