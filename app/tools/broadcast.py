@@ -1,7 +1,8 @@
-"""Рассылка всем пользователям бота: python -m app.tools.broadcast [--admin] [--dry-run] < текст.
+"""Рассылка пользователям бота: python -m app.tools.broadcast [--school X] [--admin] [--dry-run] < текст.
 
 --dry-run — только посчитать получателей; --admin — отправить одному админу
-для проверки текста. Текст — HTML-разметка Telegram, читается из stdin.
+для проверки текста; --school — только тем, чей адрес школы содержит X
+(можно несколько раз). Текст — HTML-разметка Telegram, читается из stdin.
 """
 
 from __future__ import annotations
@@ -21,9 +22,13 @@ from ..settings import load_settings
 PAUSE_S = 0.1
 
 
-def recipients(db_path) -> list[int]:
+def recipients(db_path, schools: list[str] | None = None) -> list[int]:
+    query, params = "SELECT telegram_id FROM users", []
+    if schools:
+        query += " WHERE " + " OR ".join("instr(school_url, ?) > 0" for _ in schools)
+        params = schools
     with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as db:
-        return [row[0] for row in db.execute("SELECT telegram_id FROM users ORDER BY telegram_id")]
+        return [row[0] for row in db.execute(query + " ORDER BY telegram_id", params)]
 
 
 async def send_all(text: str, ids: list[int]) -> None:
@@ -56,12 +61,13 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--admin", action="store_true", help="отправить только админу")
     parser.add_argument("--dry-run", action="store_true", help="только посчитать получателей")
+    parser.add_argument("--school", action="append", help="часть адреса школы; можно повторять")
     args = parser.parse_args()
     text = sys.stdin.read().strip()
     if not text:
         parser.error("пустой текст")
     settings = load_settings()
-    ids = [settings.telegram.admin_id] if args.admin else recipients(settings.db_path)
+    ids = [settings.telegram.admin_id] if args.admin else recipients(settings.db_path, args.school)
     if args.dry_run:
         print(f"Получателей: {len(ids)}\n\n{text}")
         return 0
