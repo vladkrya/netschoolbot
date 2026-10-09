@@ -46,12 +46,52 @@ async function rememberPin(pin) {
   } catch { /* без хеша вход без сети просто недоступен */ }
 }
 function forgetPin() {
-  try { localStorage.removeItem(VERIFIER_KEY); localStorage.removeItem(FAILS_KEY); } catch { /* приватный режим */ }
+  try {
+    localStorage.removeItem(VERIFIER_KEY); localStorage.removeItem(FAILS_KEY); localStorage.removeItem(PASSKEYS_KEY);
+  } catch { /* приватный режим */ }
+}
+
+// Ключ доступа (Face ID / Touch ID) без сети. Сервер не выдаст вызов и не
+// проверит подпись, поэтому без сети ключ подтверждает только то, что
+// телефон узнал владельца, — как и PIN, сверенный с хешем на устройстве.
+// Открываются лишь данные, уже сохранённые здесь; с сетью вход снова
+// проверит сервер. Идентификаторы ключей запоминаются после входа по ним.
+const PASSKEYS_KEY = 'offlinePasskeys';
+let offlineBiometric = false;
+function savedPasskeys() {
+  try { const ids = JSON.parse(localStorage.getItem(PASSKEYS_KEY) || '[]'); return Array.isArray(ids) ? ids : []; }
+  catch { return []; }
+}
+function rememberPasskey(id) {
+  try { localStorage.setItem(PASSKEYS_KEY, JSON.stringify([id, ...savedPasskeys().filter(item => item !== id)].slice(0, 5))); }
+  catch { /* без этого ключ без сети просто недоступен */ }
+}
+function forgetPasskeys() {
+  try { localStorage.removeItem(PASSKEYS_KEY); } catch { /* приватный режим */ }
+}
+async function offlinePasskey() {
+  let credential;
+  biometricPrompt = true;
+  try {
+    credential = await navigator.credentials.get({ publicKey: {
+      challenge: crypto.getRandomValues(new Uint8Array(32)),
+      allowCredentials: savedPasskeys().map(id => ({ type: 'public-key', id: decode(id) })),
+      userVerification: 'required',
+      timeout: 60000,
+    } });
+  } catch (failure) {
+    throw new Error(failure.name === 'NotAllowedError' ? 'Биометрия отменена. Можно войти по PIN.' : 'Не удалось подтвердить биометрию');
+  } finally { biometricPrompt = false; }
+  // Флаг UV (бит 2 байта флагов): телефон действительно узнал владельца,
+  // а не просто нашёл ключ.
+  const flags = new Uint8Array(credential.response.authenticatorData)[32];
+  if (!(flags & 0x04)) throw new Error('Телефон не подтвердил владельца. Войдите по PIN.');
+  offlineBiometric = true;
 }
 /** Сверить PIN с хешем на устройстве. Много ошибок — стираем и хеш, и данные. */
 async function checkOffline(pin) {
   const saved = savedVerifier();
-  if (!saved) throw new Error('Без интернета PIN не проверить. Подключитесь к сети.');
+  if (!saved) throw new Error(savedPasskeys().length ? 'Без интернета PIN не проверить — войдите по биометрии.' : 'Без интернета PIN не проверить. Подключитесь к сети.');
   if (await pinHash(pin, decode(saved.salt)) === saved.hash) {
     try { localStorage.removeItem(FAILS_KEY); } catch { /* приватный режим */ }
     return;
@@ -85,7 +125,13 @@ function resync() {
   return resyncing;
 }
 window.addEventListener('online', () => { resync(); });
-onLocked(resync);
+// Сервер ответил «закрыто»: вошли без сети. По PIN — тихо входим им же;
+// по ключу доступа тихо нельзя — спросим снова, уже с проверкой сервером.
+onLocked(() => {
+  if (offlinePin) return resync();
+  if (offlineBiometric) { offlineBiometric = false; relock(); }
+  return Promise.resolve(false);
+});
 
 const serverDown = () => Object.assign(new Error('Нет связи с сервером'), { reason: 'server' });
 const within = (promise, ms) => ms
@@ -151,6 +197,7 @@ async function passkey(register = false) {
     clientExtensionResults: credential.getClientExtensionResults(),
   } });
   if (!register) setUnlock(result.data.unlock);
+  rememberPasskey(encode(credential.rawId));
 }
 
 let nativeManagerPromise;
@@ -247,7 +294,9 @@ export async function unlockApp() {
     const known = rememberedRequired();
     // PIN можно проверить и без сети — тогда сервер долго не ждём: iPhone
     // без интернета держал запрос до 10 с на «Проверяем защиту…».
-    const canOffline = known === true && !!savedVerifier();
+    // Чем открыть без сети: хешем PIN или ключом доступа этого устройства.
+    const offlineReady = () => !!savedVerifier() || savedPasskeys().length > 0;
+    const canOffline = known === true && offlineReady();
     let status;
     while (!status) {
       // Без сети сервер не спросить. Если защиты не было, сразу открываем
@@ -259,7 +308,7 @@ export async function unlockApp() {
         status = (await within(api(statusPath(null)), canOffline ? 4000 : 0)).data;
       } catch (failure) {
         if (failure.reason === 'server' && known === false) { root.close(); return; }
-        if (failure.reason === 'server' && canOffline && savedVerifier()) {
+        if (failure.reason === 'server' && canOffline && offlineReady()) {
           status = { required: true, pin: true, offline: true };
           break;
         }
@@ -279,7 +328,11 @@ export async function unlockApp() {
     root.querySelector('.lock-error').textContent = '';
     root.querySelector('.lock-actions').innerHTML = '';
     const biometricReady = (async () => {
-      if (status.offline) return null;
+      if (status.offline) {
+        // Без сети — только ключ доступа, которым уже входили на этом устройстве.
+        if (tg?.initData || !savedPasskeys().length || !await supportsBiometry()) return null;
+        return { label: webBiometricLabel(), offline: true };
+      }
       const native = await nativeReady;
       let registered = false;
       if (native) {
@@ -313,7 +366,10 @@ export async function unlockApp() {
           if (offlinePin && navigator.onLine !== false) resync();
         }, { forgot: FORGOT });
         biometricReady.then(config => {
-          if (config && root.isConnected) pad.setBiometric({ ...config, run: async () => { await biometry(); await pad.success(); await finish(); } });
+          if (config && root.isConnected) pad.setBiometric({ ...config, run: async () => {
+            await (config.offline ? offlinePasskey() : biometry());
+            await pad.success(); await finish();
+          } });
         }).catch(() => {});
       } else {
         root.querySelector('.lock-fields').innerHTML = '<p>Введите прежний пароль, затем замените его на PIN из 4 цифр.</p><label>Прежний пароль<input type="password" autocomplete="current-password" required maxlength="128" autofocus></label>';
@@ -460,7 +516,7 @@ export async function openLockSettings() {
           try { await new Promise(resolve => native.updateBiometricToken('', resolve)); }
           catch { /* Сервер уже отозвал секрет. */ }
           finally { biometricPrompt = false; }
-        } else await post('passkey/disable');
+        } else { await post('passkey/disable'); forgetPasskeys(); }
         toggle.checked = wanted;
         say(wanted ? `${label} включён` : `${label} выключен`);
       } catch (failure) { toggle.checked = !wanted; fail(failure); }
@@ -521,7 +577,7 @@ function askOnReturn() {
 function relock() {
   document.documentElement.classList.add('app-locked');
   post('logout').catch(() => {});
-  setUnlock(''); offlinePin = '';
+  setUnlock(''); offlinePin = ''; offlineBiometric = false;
   unlockApp();
 }
 const expired = () => Date.now() - unlockedAt > UNLOCK_TTL_MS;

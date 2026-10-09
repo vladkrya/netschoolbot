@@ -96,7 +96,10 @@ async function cacheFirst(request) {
 
 self.addEventListener('fetch', (event) => {
   const { request } = event;
-  if (request.method !== 'GET' || request.headers.has('X-Netschool-Unlock')) return;
+  // Запросы с X-Netschool-Unlock (включён PIN) раньше шли мимо: с PIN в
+  // кэш не попадало ничего, и без сети после ввода PIN показывать было
+  // нечего. Копию отдаём только без сети и только за экраном PIN.
+  if (request.method !== 'GET') return;
   const url = new URL(request.url);
   if (url.origin !== self.location.origin || SKIP.some((re) => re.test(url.pathname))) return;
   if (STATIC_VERSION.test(url.pathname)) {
