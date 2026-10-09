@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import datetime as dt
 import logging
+import re
 from typing import Any
 
 import aiohttp
@@ -42,14 +43,59 @@ MAX_HOMEWORK_TEXT = 300
 DEFAULT_THRESHOLDS = {"5": 4.5, "4": 3.5, "3": 2.5}
 WEEKDAYS = ("понедельник", "вторник", "среда", "четверг", "пятница", "суббота", "воскресенье")
 
-APP_GUIDE = """\
-Как устроено приложение «Дневник» (мини-приложение Telegram и сайт):
-- Нижние вкладки: «День» (уроки, оценки и задания на выбранный день; дни листаются стрелками в шапке или свайпом, нажатие на дату открывает выбор дня), «Звонки» (расписание звонков; в меню можно переключить на расписание недели), «Задания» (домашние задания с поиском и фильтрами «Не сделано», «Прошедшие»; задание можно отметить выполненным), «Оценки» (таблица предмет × четверть, средние, официальные итоговые оценки; нажатие на предмет открывает все его оценки и расчёт «что если»), «Почта» (письма «Сетевого города», кнопка «+» — написать письмо учителю).
+TAB_GUIDE = {
+    "day": "«День» (уроки, оценки и задания на выбранный день; дни листаются стрелками в шапке или свайпом, нажатие на дату открывает выбор дня)",
+    "schedule": "«Звонки» (расписание звонков; в настройках можно переключить на расписание недели)",
+    "assistant": "«Помощник» (этот чат)",
+    "homework": "«Задания» (домашние задания с поиском и фильтрами «Не сделано», «Прошедшие»; задание можно отметить выполненным)",
+    "totals": "«Оценки» (таблица предмет × четверть, средние, официальные итоговые оценки; нажатие на предмет открывает все его оценки и расчёт «что если»)",
+    "mail": "«Почта» (письма «Сетевого города», кнопка «+» — написать письмо учителю)",
+    "settings": "«Настройки» (значок шестерёнки)",
+}
+CLASSIC_TABS = ("day", "schedule", "homework", "totals", "mail")
+DEFAULT_NEW_TABS = ("day", "assistant", "homework", "totals", "mail", "settings")
+
+SETTINGS_CONTENT = (
+    "«Защита входа» (PIN-код, Face ID / Touch ID), «Сообщить об ошибке», «Калькулятор баллов» (сколько и каких "
+    "оценок нужно до нужной итоговой), «История оценок» (что и когда менялось), «Расписание в календаре» (подписка "
+    "на календарь в телефоне), «Оформление» (переключатель «Новый дизайн», тема, цвет меню), уведомления (в Telegram "
+    "и push), пороги оценок и учебные периоды"
+)
+
+COMMON_GUIDE = """\
 - Колокольчик справа вверху — объявления школы. Имя ученика вверху — переключение между детьми у родителя.
-- Меню ☰ слева вверху: «Защита входа» (PIN-код, Face ID / Touch ID), «Сообщить об ошибке», «Калькулятор баллов» (сколько и каких оценок нужно до нужной итоговой), «История оценок» (что и когда менялось), «Расписание в календаре» (подписка на календарь в телефоне), оформление (новый дизайн, тема, цвет меню), уведомления (в Telegram и push), пороги оценок и учебные периоды.
 - Обновить данные — потянуть экран вниз.
 - Команды бота: /app — открыть дневник, /app_install — установить на телефон, /login и /logout — вход и выход, /child — переключить ребёнка, /settings — настройки и интервал проверки, /status — состояние проверки, /changeapi — веб или мобильное API, /timezone — часовой пояс, /delete_data — удалить свои данные.
 - Бот сам присылает новые оценки и домашние задания, проверяя дневник раз в несколько минут."""
+
+
+def app_guide(design: str = "classic", tabs: list[str] | None = None) -> str:
+    """Как устроено приложение — под дизайн, который у человека сейчас.
+
+    В новом дизайне нет меню ☰: всё в вкладке «Настройки», а набор вкладок
+    человек выбирает сам. Без этого модель отправляла искать три полоски,
+    которых нет на экране.
+    """
+    if design == "new":
+        tabs = [tab for tab in tabs or DEFAULT_NEW_TABS if tab in TAB_GUIDE] or list(DEFAULT_NEW_TABS)
+        hidden = [TAB_GUIDE[tab] for tab in TAB_GUIDE if tab not in tabs]
+        lines = [
+            "Как устроено приложение «Дневник» (сейчас у человека включён новый дизайн):",
+            "- Нижние вкладки слева направо: " + ", ".join(TAB_GUIDE[tab] for tab in tabs) + ".",
+            "- Меню ☰ (три полоски) в новом дизайне НЕТ. Все настройки — во вкладке «Настройки» внизу: " + SETTINGS_CONTENT + ".",
+            "- Там же раздел «Нижняя панель»: какие вкладки показывать и в каком порядке (до 6).",
+        ]
+        if hidden:
+            lines.append("- Вкладки, которые человек убрал с панели (вернуть — в «Настройки» → «Нижняя панель»): " + ", ".join(hidden) + ".")
+        lines.append("- Выключить новый дизайн: «Настройки» → «Оформление» → переключатель «Новый дизайн».")
+    else:
+        lines = [
+            "Как устроено приложение «Дневник» (сейчас у человека классический дизайн):",
+            "- Нижние вкладки: " + ", ".join(TAB_GUIDE[tab] for tab in CLASSIC_TABS) + ".",
+            "- Меню ☰ (три полоски) слева вверху: " + SETTINGS_CONTENT + ".",
+            "- Включить новый дизайн: меню ☰ → «Оформление» → переключатель «Новый дизайн».",
+        ]
+    return "\n".join(lines) + "\n" + COMMON_GUIDE
 
 RULES = """\
 Ты — помощник в школьном электронном дневнике «Сетевой город». Отвечай по-русски, коротко и по делу, дружелюбно, без канцелярита. Форматирование — только простой текст и списки с «- », без таблиц и заголовков.
@@ -223,6 +269,17 @@ async def build_context(app: AppContext, user: User) -> str:
     return "\n".join(lines)
 
 
+# openrouter/free иногда отдаёт запрос модели-фильтру (Llama Guard и т. п.):
+# вместо ответа приходит только вердикт «User Safety: safe». Такое не
+# показываем, а спрашиваем ещё раз — роутер выберет другую модель.
+_MODERATION_ONLY = re.compile(r"^(\s*(user|response|prompt)?\s*safety\s*:\s*\w+[.\s]*|\s*(safe|unsafe)\s*(\n\s*S\d+\s*)?)+$", re.I)
+ATTEMPTS = 3
+
+
+def is_moderation_verdict(text: str) -> bool:
+    return bool(_MODERATION_ONLY.fullmatch(text.strip()))
+
+
 class AssistantError(Exception):
     def __init__(self, message: str, *, status: int = 502, reason: str = "assistant"):
         super().__init__(message)
@@ -322,9 +379,19 @@ async def ask(request: web.Request) -> web.Response:
     if left is None:
         return json_error("На сегодня вопросы закончились. Возвращайтесь завтра!", status=429, reason="limit")
 
-    system = f"{RULES}\n\n{APP_GUIDE}\n\nДанные ученика:\n{await build_context(app, user)}"
+    ui = body.get("ui") if isinstance(body.get("ui"), dict) else {}
+    design = "new" if ui.get("design") == "new" else "classic"
+    tabs = [tab for tab in ui.get("tabs") or [] if isinstance(tab, str)][:7] if isinstance(ui.get("tabs"), list) else None
+    guide = app_guide(design, tabs)
+    system = f"{RULES}\n\n{guide}\n\nДанные ученика:\n{await build_context(app, user)}"
     try:
-        reply = await complete(app.settings.assistant, [{"role": "system", "content": system}, *history])
+        for _ in range(ATTEMPTS):
+            reply = await complete(app.settings.assistant, [{"role": "system", "content": system}, *history])
+            if not is_moderation_verdict(reply):
+                break
+            logger.info("Модель вернула только вердикт модерации, спрашиваю снова: %r", reply[:80])
+        else:
+            raise AssistantError("Помощник не придумал ответ. Попробуйте ещё раз.")
     except AssistantError as exc:
         # Сбой модели — не вина человека, вопрос не сгорает.
         _refund_quota(app, user)

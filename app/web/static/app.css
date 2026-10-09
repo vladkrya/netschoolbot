@@ -1440,4 +1440,19 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
 /* Помощник во вкладке: страница прокручивается целиком, поле ввода — над
    нижней панелью. */
 .ai-body.in-tab { min-height: calc(100dvh - var(--header-h) - var(--nav-h) - 32px); }
-.ai-body.in-tab .ai-input { bottom: calc(var(--nav-h) + 4px); }
+/* Поле прилипает к самому низу, а фон тянется под нижнюю панель: иначе
+   переписка просвечивала под полем и между ним и панелью. Сверху — мягкий
+   переход, чтобы текст уходил под поле, а не обрезался. */
+.ai-body.in-tab .ai-input {
+  bottom: 0;
+  margin-bottom: calc(-1 * (var(--nav-h) + 12px));
+  padding-bottom: calc(var(--nav-h) + 20px);
+}
+.ai-input::before {
+  content: '';
+  position: absolute;
+  left: 0; right: 0; bottom: 100%;
+  height: 16px;
+  background: linear-gradient(to bottom, transparent, var(--bg));
+  pointer-events: none;
+}

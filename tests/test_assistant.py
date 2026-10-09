@@ -119,3 +119,43 @@ class TestApi:
     async def test_profile_flag(self, client, token, enabled):
         response = await client.get(f"{BASE}/api/profile", params={"token": token})
         assert (await response.json())["data"]["assistant"] is True
+
+
+class TestGuide:
+    def test_new_design_has_no_hamburger_menu(self):
+        text = assistant.app_guide("new", ["day", "assistant", "mail", "settings"])
+        assert "в новом дизайне НЕТ" in text
+        assert "«Настройки» → «Оформление» → переключатель «Новый дизайн»" in text
+        assert "убрал с панели" in text and "«Оценки»" in text
+
+    def test_classic_design_points_to_menu(self):
+        text = assistant.app_guide()
+        assert "Меню ☰ (три полоски) слева вверху" in text
+        assert "«Помощник»" not in text
+
+
+class TestModerationVerdict:
+    async def test_verdict_is_retried(self, client, token, enabled, monkeypatch):
+        replies = iter(["User Safety: safe\nResponse Safety: safe", "Настоящий ответ"])
+        prompts = []
+
+        async def fake(settings, messages):
+            prompts.append(messages[0]["content"])
+            return next(replies)
+
+        monkeypatch.setattr(assistant, "complete", fake)
+        body = {"messages": [{"role": "user", "content": "как выключить новый дизайн"}],
+                "ui": {"design": "new", "tabs": ["day", "assistant", "settings"]}}
+        response = await client.post(f"{BASE}/api/assistant", params={"token": token}, json=body)
+        assert (await response.json())["data"]["reply"] == "Настоящий ответ"
+        assert "в новом дизайне НЕТ" in prompts[0]
+
+    async def test_only_verdicts_give_an_error(self, client, token, enabled, monkeypatch):
+        async def fake(settings, messages):
+            return "safe"
+
+        monkeypatch.setattr(assistant, "complete", fake)
+        body = {"messages": [{"role": "user", "content": "?"}]}
+        response = await client.post(f"{BASE}/api/assistant", params={"token": token}, json=body)
+        assert response.status == 502
+        assert enabled.assistant_usage[1][1] == 0

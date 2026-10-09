@@ -14,6 +14,8 @@ import { notify, select, tap } from './haptics.js';
 import { ICONS } from './icons.js';
 import { loadRecipients, openCompose } from './mail.js';
 import { pushScreen } from './screens.js';
+import { isNewDesign } from './appearance.js';
+import { navTabs } from './tabs.js';
 
 const SUGGESTIONS = [
   'Что задали на завтра?',
@@ -294,7 +296,12 @@ function mount(body, { tab = false } = {}) {
       await preload();
       const { data } = await api('/api/assistant', {
         method: 'POST',
-        body: JSON.stringify({ messages: chat.messages.slice(-12).map(({ role, content }) => ({ role, content })) }),
+        body: JSON.stringify({
+          messages: chat.messages.slice(-12).map(({ role, content }) => ({ role, content })),
+          // Что у человека на экране: без этого помощник отправлял искать
+          // меню ☰, которого в новом дизайне нет.
+          ui: { design: isNewDesign() ? 'new' : 'classic', tabs: navTabs() },
+        }),
       });
       const reply = { role: 'assistant', content: data.reply };
       chat.messages.push(reply);
