@@ -162,6 +162,9 @@ function clearNotices() {
 
 let unlockToken = '';
 export function setUnlock(value) { unlockToken = value; }
+// Вход был без сети: на 423 пробуем войти на сервере и повторить запрос.
+let lockedHandler = null;
+export function onLocked(handler) { lockedHandler = handler; }
 
 const REQUEST_TIMEOUT_MS = 75000;
 // Кэш моложе минуты — его только что получили со школьного сервера,
@@ -193,7 +196,7 @@ async function request(path, options = {}) {
   // бесконечно. Сервер сам отвечает не дольше минуты при обновлении.
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), path.startsWith('/api/lock/') ? 10000 : REQUEST_TIMEOUT_MS);
-  const { onFresh, ...init } = options;
+  const { onFresh, retried, ...init } = options;
   let response;
   try {
     response = await fetch(base + path, {
@@ -216,6 +219,10 @@ async function request(path, options = {}) {
     throw new Error('Сервер ответил неожиданным образом');
   }
   if (!response.ok || !payload.ok) {
+    if (payload.reason === 'locked' && lockedHandler && !retried && !path.startsWith('/api/lock/') &&
+        await lockedHandler()) {
+      return request(path, { ...options, retried: true });
+    }
     const error = new Error(payload.error || `Ошибка ${response.status}`);
     error.reason = payload.reason;
     throw error;

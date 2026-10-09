@@ -356,6 +356,8 @@ function initChrome() {
   // «Перейти ко дню» из расписания.
   window.addEventListener('netschool:tab', (event) => switchTab(event.detail));
   window.addEventListener('netschool:design', () => { if (state.tab) quietly(() => TABS[state.tab]()); });
+  // Вошли без сети, сеть вернулась и сервер принял PIN — показываем свежее.
+  window.addEventListener('netschool:unlocked', () => { if (state.tab) quietly(() => TABS[state.tab]()); });
 }
 
 async function start() {

@@ -27,10 +27,13 @@ function cacheKey(request) {
   return url.toString();
 }
 
-// Сколько ждать страницу из сети, прежде чем открыть сохранённую. На
-// iPhone после сна сеть «просыпается» секунды, и без предела приложение
-// стояло на чёрном экране, пока iOS сама не оборвёт запрос.
+// Сколько ждать сеть, прежде чем отдать сохранённую копию. На iPhone после
+// сна сеть «просыпается» секунды, а мобильный интернет с белыми списками
+// не обрывает запрос, а держит его — без предела приложение стояло на
+// чёрном экране или с вечной загрузкой. Запрос с refresh=1 — сознательная
+// сверка со школьным сервером, она может идти до минуты.
 const PAGE_TIMEOUT_MS = 3000;
+const API_TIMEOUT_MS = 6000;
 
 async function networkFirst(request, event) {
   const cache = await caches.open(CACHE);
@@ -46,15 +49,17 @@ async function networkFirst(request, event) {
     headers.set('X-Netschool-Offline', '1');
     return new Response(await saved.blob(), { status: saved.status, headers });
   };
-  if (request.mode !== 'navigate') return network.catch(fromCache);
+  const navigate = request.mode === 'navigate';
+  const wait = navigate ? PAGE_TIMEOUT_MS
+    : new URL(request.url).searchParams.has('refresh') ? 0 : API_TIMEOUT_MS;
+  if (!wait) return network.catch(fromCache);
 
-  // Страница: сеть или, если она медлит, сохранённая копия. Страница сама по
-  // себе почти статична — данные приложение всё равно запросит заново.
-  // Запрос из сети при этом не бросаем: он обновит копию к следующему разу.
+  // Сеть или, если она медлит, сохранённая копия. Запрос из сети при этом
+  // не бросаем: он обновит копию к следующему разу.
   event.waitUntil(network.catch(() => {}));
   let timer;
-  const slow = new Promise((resolve) => { timer = setTimeout(resolve, PAGE_TIMEOUT_MS); })
-    .then(async () => (await cache.match(cacheKey(request))) || network);
+  const slow = new Promise((resolve) => { timer = setTimeout(resolve, wait); })
+    .then(() => fromCache(null).catch(() => network));
   try {
     return await Promise.race([network, slow]);
   } catch (error) {

@@ -1,5 +1,5 @@
 // Блокировка запрашивается до любых данных дневника; секрет сессии только в памяти.
-import { api, demo, setUnlock, tg } from './core.js';
+import { api, demo, onLocked, setUnlock, tg } from './core.js';
 import { biometricLabel, nativeBiometricEnabled, webBiometricLabel } from './biometrics.js';
 import { mountPinpad } from './pinpad.js';
 
@@ -18,6 +18,78 @@ function setActive(value) {
 }
 let pending = null;
 let biometricPrompt = false;
+
+// PIN без сети. Сервер не спросить, поэтому после каждого входа по PIN
+// на устройстве хранится его PBKDF2-хеш с солью: без интернета PIN
+// сверяется с ним и открывает сохранённые данные. Сами данные и так лежат
+// в кэше этого устройства — хеш их не раскрывает сверх того.
+const VERIFIER_KEY = 'offlinePin';
+const FAILS_KEY = 'offlinePinFails';
+const OFFLINE_ATTEMPTS = 10;
+// Введённый без сети PIN в памяти: когда сеть вернётся, им же тихо
+// входим на сервере, чтобы не спрашивать второй раз.
+let offlinePin = '';
+
+async function pinHash(pin, salt) {
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(pin), 'PBKDF2', false, ['deriveBits']);
+  return encode(await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt, iterations: 200000 }, key, 256));
+}
+function savedVerifier() {
+  try { return window.crypto?.subtle ? JSON.parse(localStorage.getItem(VERIFIER_KEY) || 'null') : null; }
+  catch { return null; }
+}
+async function rememberPin(pin) {
+  try {
+    const salt = crypto.getRandomValues(new Uint8Array(16));
+    localStorage.setItem(VERIFIER_KEY, JSON.stringify({ salt: encode(salt), hash: await pinHash(pin, salt) }));
+    localStorage.removeItem(FAILS_KEY);
+  } catch { /* без хеша вход без сети просто недоступен */ }
+}
+function forgetPin() {
+  try { localStorage.removeItem(VERIFIER_KEY); localStorage.removeItem(FAILS_KEY); } catch { /* приватный режим */ }
+}
+/** Сверить PIN с хешем на устройстве. Много ошибок — стираем и хеш, и данные. */
+async function checkOffline(pin) {
+  const saved = savedVerifier();
+  if (!saved) throw new Error('Без интернета PIN не проверить. Подключитесь к сети.');
+  if (await pinHash(pin, decode(saved.salt)) === saved.hash) {
+    try { localStorage.removeItem(FAILS_KEY); } catch { /* приватный режим */ }
+    return;
+  }
+  let fails = 1;
+  try { fails += Number(localStorage.getItem(FAILS_KEY) || 0); localStorage.setItem(FAILS_KEY, String(fails)); } catch { /* приватный режим */ }
+  if (fails >= OFFLINE_ATTEMPTS) {
+    forgetPin(); await clearOffline();
+    throw new Error('Слишком много ошибок. Сохранённые данные удалены — войдите, когда появится интернет.');
+  }
+  throw new Error('Неверный PIN');
+}
+
+let resyncing = null;
+/** Сеть вернулась после входа без сети — получаем вход на сервере тем же PIN. */
+function resync() {
+  if (!offlinePin) return Promise.resolve(false);
+  if (!resyncing) resyncing = (async () => {
+    const pin = offlinePin;
+    try {
+      const result = await post('unlock', { pin });
+      setUnlock(result.data.unlock); offlinePin = ''; markUnlocked();
+      window.dispatchEvent(new CustomEvent('netschool:unlocked'));
+      return true;
+    } catch (failure) {
+      // PIN сменили на другом устройстве или сервер его не принял — спросим заново.
+      if (failure.reason !== 'server') { forgetPin(); relock(); }
+      return false;
+    }
+  })().finally(() => { resyncing = null; });
+  return resyncing;
+}
+window.addEventListener('online', () => { resync(); });
+onLocked(resync);
+
+const serverDown = () => Object.assign(new Error('Нет связи с сервером'), { reason: 'server' });
+const within = (promise, ms) => ms
+  ? Promise.race([promise, new Promise((_, reject) => setTimeout(() => reject(serverDown()), ms))]) : promise;
 const post = (path, body = {}) => api(`/api/lock/${path}`, { method: 'POST', body: JSON.stringify(body) });
 
 function panel(title) {
@@ -156,9 +228,9 @@ function choosePin({ required = false, changing = false } = {}) {
         return;
       }
       const result = await post('pin', { pin });
-      setUnlock(result.data.unlock); setActive(true); markUnlocked();
+      setUnlock(result.data.unlock); setActive(true); markUnlocked(); rememberPin(pin);
       await controls.success();
-      await clearOffline(); close(true);
+      close(true);
     }, { hint: 'Придумайте 4 цифры для входа' });
     root.querySelector('[data-close]')?.addEventListener('click', () => close(false));
   });
@@ -173,6 +245,9 @@ export async function unlockApp() {
     // Проверка PIN не должна ждать ответ Telegram о биометрии (до 5 с).
     const nativeReady = nativeManager();
     const known = rememberedRequired();
+    // PIN можно проверить и без сети — тогда сервер долго не ждём: iPhone
+    // без интернета держал запрос до 10 с на «Проверяем защиту…».
+    const canOffline = known === true && !!savedVerifier();
     let status;
     while (!status) {
       // Без сети сервер не спросить. Если защиты не было, сразу открываем
@@ -180,10 +255,14 @@ export async function unlockApp() {
       const offline = navigator.onLine === false;
       if (offline && known === false) { root.close(); return; }
       try {
-        if (offline) throw Object.assign(new Error('Нет интернета'), { reason: 'server' });
-        status = (await api(statusPath(null))).data;
+        if (offline) throw serverDown();
+        status = (await within(api(statusPath(null)), canOffline ? 4000 : 0)).data;
       } catch (failure) {
         if (failure.reason === 'server' && known === false) { root.close(); return; }
+        if (failure.reason === 'server' && canOffline && savedVerifier()) {
+          status = { required: true, pin: true, offline: true };
+          break;
+        }
         root.querySelector('.lock-error').textContent = failure.reason === 'server'
           ? 'Нет связи с сервером. Вход по PIN продолжится, когда появится интернет.' : failure.message;
         root.querySelector('.lock-actions').innerHTML = '<button type="button">Повторить</button>';
@@ -196,11 +275,11 @@ export async function unlockApp() {
       }
     }
     setActive(status.required);
-    if (!active) { root.close(); return; }
-    await clearOffline();
+    if (!active) { forgetPin(); root.close(); return; }
     root.querySelector('.lock-error').textContent = '';
     root.querySelector('.lock-actions').innerHTML = '';
     const biometricReady = (async () => {
+      if (status.offline) return null;
       const native = await nativeReady;
       let registered = false;
       if (native) {
@@ -223,8 +302,15 @@ export async function unlockApp() {
       };
       if (status.pin) {
         pad = mountPinpad(root, async (pin, controls) => {
-          const result = await post('unlock', { pin });
-          setUnlock(result.data.unlock); await controls.success(); await finish();
+          let result = null;
+          if (!status.offline) {
+            try { result = await post('unlock', { pin }); }
+            catch (failure) { if (failure.reason !== 'server' || !savedVerifier()) throw failure; }
+          }
+          if (result) { setUnlock(result.data.unlock); rememberPin(pin); }
+          else { await checkOffline(pin); offlinePin = pin; }
+          await controls.success(); await finish();
+          if (offlinePin && navigator.onLine !== false) resync();
         }, { forgot: FORGOT });
         biometricReady.then(config => {
           if (config && root.isConnected) pad.setBiometric({ ...config, run: async () => { await biometry(); await pad.success(); await finish(); } });
@@ -417,7 +503,7 @@ export async function openLockSettings() {
       return;
     }
     clearTimeout(armed); armed = 0; disable.disabled = true;
-    try { await post('disable'); setActive(false); setUnlock(''); root.close(); }
+    try { await post('disable'); setActive(false); forgetPin(); setUnlock(''); root.close(); }
     catch (failure) { fail(failure); disable.disabled = false; }
   };
 }
@@ -435,7 +521,7 @@ function askOnReturn() {
 function relock() {
   document.documentElement.classList.add('app-locked');
   post('logout').catch(() => {});
-  setUnlock('');
+  setUnlock(''); offlinePin = '';
   unlockApp();
 }
 const expired = () => Date.now() - unlockedAt > UNLOCK_TTL_MS;
