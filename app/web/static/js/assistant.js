@@ -40,6 +40,13 @@ function parseLetter(block) {
   return { subject, text: lines.join('\n').trim() };
 }
 
+/** Текст ответа: модели любят **жирный** — показываем его, остальное как есть. */
+function rich(text) {
+  return esc(text).replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>');
+}
+
+const plain = (text) => text.replace(/\*\*([^*\n]+)\*\*/g, '$1');
+
 function copy(text) {
   navigator.clipboard?.writeText(text).then(
     () => { notify('success'); banner('Скопировано', false, 1500); },
@@ -57,9 +64,9 @@ function bubble(message) {
   const match = message.content.match(LETTER);
   const before = match ? message.content.slice(0, match.index).trim() : message.content;
   const after = match ? message.content.slice(match.index + match[0].length).trim() : '';
-  el.innerHTML = `${before ? `<div class="ai-text">${esc(before)}</div>` : ''}
+  el.innerHTML = `${before ? `<div class="ai-text">${rich(before)}</div>` : ''}
     ${match ? '<div class="ai-letter"><div class="ai-letter-subject"></div><div class="ai-letter-text"></div><div class="ai-letter-actions"><button class="chip" data-act="mail">Открыть в почте</button><button class="chip" data-act="copy-letter">Копировать</button></div></div>' : ''}
-    ${after ? `<div class="ai-text">${esc(after)}</div>` : ''}
+    ${after ? `<div class="ai-text">${rich(after)}</div>` : ''}
     ${match ? '' : '<button class="ai-copy" data-act="copy">Копировать</button>'}`;
   if (match) {
     const letter = parseLetter(match[1]);
@@ -69,7 +76,7 @@ function bubble(message) {
     el.querySelector('[data-act="copy-letter"]').addEventListener('click', () =>
       copy(letter.subject ? `${letter.subject}\n\n${letter.text}` : letter.text));
   } else {
-    el.querySelector('[data-act="copy"]').addEventListener('click', () => copy(message.content));
+    el.querySelector('[data-act="copy"]').addEventListener('click', () => copy(plain(message.content)));
   }
   return el;
 }
