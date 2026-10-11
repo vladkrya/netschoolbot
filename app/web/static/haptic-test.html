@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Проверка отклика</title>
+<style>
+  body { margin: 0; padding: 16px; font: 17px/1.4 -apple-system, system-ui, sans-serif; background: #111; color: #eee; }
+  h1 { font-size: 20px; }
+  .zone { margin: 12px 0; padding: 22px 16px; border-radius: 14px; background: #2a2f3a; text-align: center; user-select: none; -webkit-user-select: none; }
+  .zone small { display: block; color: #9aa; margin-top: 4px; }
+  #swipe { padding: 60px 16px; background: #23402f; }
+  #log { white-space: pre-wrap; font: 12px/1.4 ui-monospace, monospace; color: #7f7; }
+  .hidden { position: absolute; left: -9999px; }
+</style>
+</head>
+<body>
+<h1>Проверка отклика на iPhone</h1>
+<p>Для каждой зоны: был щелчок или нет?</p>
+
+<!-- Скрытый переключатель для программного клика. -->
+<input type="checkbox" switch id="haptic-switch" class="hidden">
+<label for="haptic-switch" id="haptic-trigger" class="hidden">.</label>
+
+<label class="zone" style="display:block">1. Тап прямо по подписи переключателя<small>для сравнения: должен щёлкать</small>
+  <input type="checkbox" switch class="hidden"></label>
+<div class="zone" id="tapScripted">2. Тап, скрипт кликает по подписи<small>label.click() из click</small></div>
+<div class="zone" id="swipe">3. Свайп влево/вправо здесь<small>label.click() из touchend</small></div>
+<div class="zone" id="swipeInput">4. Свайп здесь<small>input.click() из touchend</small></div>
+
+<div id="log"></div>
+<script>
+  const log = (text) => { document.getElementById('log').textContent = `${text}\n` + document.getElementById('log').textContent; };
+  const label = document.getElementById('haptic-trigger');
+  const input = document.getElementById('haptic-switch');
+  input.addEventListener('change', () => log(`change → ${input.checked}`));
+  document.getElementById('tapScripted').addEventListener('click', () => { label.click(); log('2: label.click()'); });
+  function swipeZone(id, fire) {
+    let x = 0;
+    const zone = document.getElementById(id);
+    zone.addEventListener('touchstart', (e) => { x = e.changedTouches[0].screenX; }, { passive: true });
+    zone.addEventListener('touchend', (e) => {
+      const dx = e.changedTouches[0].screenX - x;
+      if (Math.abs(dx) > 60) { fire(); log(`${id}: свайп ${Math.round(dx)}`); }
+    }, { passive: true });
+  }
+  swipeZone('swipe', () => label.click());
+  swipeZone('swipeInput', () => input.click());
+  log(navigator.userAgent.match(/OS [\d_]+/)?.[0] || navigator.userAgent);
+</script>
+</body>
+</html>
