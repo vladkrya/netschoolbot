@@ -365,6 +365,7 @@ function initChrome() {
   initIosHaptics();
   initFresh();
   $('menuBtn').addEventListener('click', openDrawer);
+  $('navMenuBtn').addEventListener('click', openDrawer);
   $('drawerShade').addEventListener('click', closeDrawer);
   // Панель пересобрали в настройках: подписи второй вкладки и линза.
   window.addEventListener('netschool:nav', () => {

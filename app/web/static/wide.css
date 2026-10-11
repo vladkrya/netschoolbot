@@ -7,6 +7,9 @@
    Подключается последним: правила для нового дизайна повторяют
    селекторы new.css, чтобы перебить их. */
 
+/* Пункт «Меню» в боковой панели — только на компьютере (ниже). */
+.nav-menu { display: none; }
+
 @media (min-width: 720px) {
   :root {
     --col: 720px;
@@ -147,6 +150,27 @@
   .nav-item.active .ico { animation: none; }
   .nav-item:hover { opacity: 1; }
   .nav-item:not(.active):hover { background: color-mix(in srgb, var(--text) 6%, transparent); }
+
+  /* Меню ☰ — внизу боковой панели, а не в шапке. В новом дизайне меню нет:
+     настройки во вкладке. */
+  :root:not([data-design="new"]) #menuBtn { visibility: hidden; pointer-events: none; }
+  :root:not([data-design="new"]) .nav-menu {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    height: 46px;
+    /* В разметке пункт раньше вкладок: tabs.js дописывает их в конец. */
+    order: 1;
+    margin-top: auto;
+    padding: 0 14px;
+    border-radius: 16px;
+    color: var(--text);
+    opacity: .72;
+    font-size: 15px;
+    font-weight: 500;
+  }
+  .nav-menu .ico { display: flex; }
+  .nav-menu:hover { opacity: 1; background: color-mix(in srgb, var(--text) 6%, transparent); }
 
   /* Меню ☰ открывается поверх панели вкладок. */
   .drawer { z-index: 55; }
