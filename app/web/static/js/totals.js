@@ -19,6 +19,9 @@ const SHORT = { q1: '1/4', q2: '2/4', q3: '3/4', q4: '4/4' };
 const SCHEME_TITLE = { q: 'Четверти', t: 'Триместры', h: 'Полугодия' };
 
 const shortLabel = (q) => q.short || SHORT[q.key] || q.key;
+// Переключатель периода в новом дизайне: «1 четв.» понятнее, чем «1/4».
+const SEG_WORD = { q: 'четв.', t: 'трим.', h: 'полуг.' };
+const segLabel = (q) => (/^[qth]\d$/.test(q.key) ? `${q.key[1]} ${SEG_WORD[q.key[0]]}` : shortLabel(q));
 
 let selectedYear = null;
 let loadVersion = 0;
@@ -170,14 +173,14 @@ function heroHtml(rows, quarter) {
   const total = counts[5] + counts[4] + counts[3] + counts[2];
   const strong = rows.filter((row) => row.avg != null && avgClass(row.avg, thresholdsFor(row.subject.subject)) === 'g5').length;
   return `<div class="totals-hero glass">
+      <div class="th-label">Средний балл · ${esc(quarter?.label || shortLabel(quarter || { key: period }))}</div>
       <div class="th-top">
         <div>
-          <div class="th-label">Средний балл · ${esc(quarter?.label || shortLabel(quarter || { key: period }))}</div>
           <div class="th-avg ${overall == null ? '' : avgClass(overall)}">${formatAverage(overall)}</div>
         </div>
         <div class="th-side">
           <div class="th-stat"><b>${total}</b><span>${plural(total, 'оценка', 'оценки', 'оценок')}</span></div>
-          <div class="th-stat"><b>${strong}</b><span>на «5»</span></div>
+          <div class="th-stat"><b>${strong}</b><span>${plural(strong, 'предмет', 'предмета', 'предметов')} на «5»</span></div>
         </div>
       </div>
       ${total ? `<div class="th-bar">${[5, 4, 3, 2].filter((v) => counts[v])
@@ -224,7 +227,7 @@ function renderCards(data, quarters) {
         <div class="period-row">
           <div class="seg-glass glass" style="--n:${quarters.length};--i:${index}">
             <span class="seg-lens" aria-hidden="true"></span>
-            ${quarters.map((q) => `<button class="${q.key === period ? 'on' : ''}" data-period="${q.key}">${esc(shortLabel(q))}</button>`).join('')}
+            ${quarters.map((q) => `<button class="${q.key === period ? 'on' : ''}" data-period="${q.key}">${esc(segLabel(q))}</button>`).join('')}
           </div>
         </div>
         <div class="period-row tools">

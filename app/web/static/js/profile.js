@@ -391,6 +391,14 @@ function render() {
   const accent = currentAccent();
   const radio = (value, label) =>
     `<label class="drawer-option"><input type="radio" name="theme" value="${value}" ${theme === value ? 'checked' : ''}><span>${label}</span></label>`;
+  // Новый дизайн: тема — капсулой с линзой, как переключатель периода в «Оценках».
+  const themes = [['light', 'Светлая'], ['auto', 'Авто'], ['dark', 'Тёмная']];
+  const themeIndex = Math.max(0, themes.findIndex(([value]) => value === theme));
+  const themeSegment = `<div class="drawer-sub">Тема</div>
+      <div class="seg-glass theme-seg" role="radiogroup" aria-label="Тема" style="--n:3;--i:${themeIndex}">
+        <span class="seg-lens" aria-hidden="true"></span>
+        ${themes.map(([value, label]) => `<button type="button" role="radio" class="${value === theme ? 'on' : ''}" aria-checked="${value === theme}" data-theme-set="${value}">${label}</button>`).join('')}
+      </div>`;
 
   // Настройки живут в одном месте: копия в другом (вкладка или меню ☰)
   // осталась бы с теми же id, и обработчики вешались бы на неё — после
@@ -423,10 +431,10 @@ function render() {
         <input type="checkbox" switch class="switch" id="weekendsShow" ${showWeekends() ? 'checked' : ''}></label>
       <label class="switch-row"><span>Звонки вместо расписания недели</span>
         <input type="checkbox" switch class="switch" id="bellsTab" ${showBells() ? 'checked' : ''}></label>
-      ${radio('light', 'Светлая тема')}
+      ${isNewDesign() ? themeSegment : `${radio('light', 'Светлая тема')}
       ${radio('auto', 'Как в системе')}
-      ${radio('dark', 'Тёмная тема')}
-      <div class="drawer-sub">${ICONS.palette} Цвет меню</div>
+      ${radio('dark', 'Тёмная тема')}`}
+      <div class="drawer-sub">${ICONS.palette} ${isNewDesign() ? 'Цвет акцента' : 'Цвет меню'}</div>
       <div class="swatches">
         ${ACCENTS.map(([color, name]) => `<button class="swatch ${color === accent ? 'on' : ''}" data-accent="${color}" style="background:${color}" aria-label="${name}" title="${name}"></button>`).join('')}
         <label class="swatch custom ${ACCENTS.some(([c]) => c === accent) ? '' : 'on'}" title="Свой цвет" style="background:${accent}">
@@ -463,6 +471,20 @@ function bindDrawer() {
       applyStoredTheme();
     })
   );
+  const themeSeg = body.querySelector('.theme-seg');
+  themeSeg?.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-theme-set]');
+    if (!button || button.classList.contains('on')) return;
+    select();
+    const buttons = [...themeSeg.querySelectorAll('[data-theme-set]')];
+    buttons.forEach((item) => {
+      item.classList.toggle('on', item === button);
+      item.setAttribute('aria-checked', String(item === button));
+    });
+    themeSeg.style.setProperty('--i', buttons.indexOf(button));
+    setPref('theme', button.dataset.themeSet);
+    applyStoredTheme();
+  });
   $('weekendsShow').addEventListener('change', (event) => {
     select();
     saveWeekends(event.target.checked);

@@ -7,10 +7,13 @@ const svg = (body, size = 24) =>
 
 export const ICONS = {
   clock: svg('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'),
+  // День: листок календаря с одним отмеченным числом — не путать с
+  // «Неделей» (calendar, сетка) и «Звонками» (clock).
+  today: svg('<rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/><rect x="7.5" y="13" width="4" height="4" rx="1"/>'),
+  checklist: svg('<path d="m4 7 1.8 1.8L9 5.5M4 16l1.8 1.8L9 14.5M12.5 7.5H20M12.5 16.5H20"/>'),
+  mail: svg('<rect x="3" y="5.5" width="18" height="13" rx="2.5"/><path d="m3.5 7.5 8.5 6 8.5-6"/>'),
   calendar: svg('<rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4M7.5 14h2M11 14h2M14.5 14h2M7.5 17.5h2M11 17.5h2"/>'),
-  home: svg('<path d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-4.5v-6h-5v6H5a1 1 0 0 1-1-1z"/>'),
   book: svg('<path d="M12 6.5C10.5 5 8 4.5 4 4.5v14c4 0 6.5.5 8 2 1.5-1.5 4-2 8-2v-14c-4 0-6.5.5-8 2z"/><path d="M12 6.5v14"/>'),
-  megaphone: svg('<path d="M4 10v4a1 1 0 0 0 1 1h2l6 4V5L7 9H5a1 1 0 0 0-1 1z"/><path d="M17 9a4 4 0 0 1 0 6M8 15l1 5"/>'),
   menu: svg('<path d="M4 7h16M4 12h16M4 17h16"/>'),
   bell: svg('<path d="M6 10a6 6 0 0 1 12 0c0 5 2 6 2 6H4s2-1 2-6"/><path d="M10 20a2 2 0 0 0 4 0"/>'),
   back: svg('<path d="M19 12H5M11 6l-6 6 6 6"/>'),

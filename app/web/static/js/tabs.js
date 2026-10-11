@@ -15,12 +15,12 @@ import { isNewDesign } from './appearance.js';
 
 // Подписи: классический дизайн и новый (lbl-old / lbl-new в app.css).
 export const TAB_DEFS = {
-  day: { icon: 'clock', old: 'День', fresh: 'День' },
+  day: { icon: 'today', old: 'День', fresh: 'День' },
   schedule: { icon: 'clock', old: 'Звонки', fresh: 'Звонки' },
   assistant: { icon: 'sparkles', old: 'Помощник', fresh: 'Помощник' },
-  homework: { icon: 'home', old: 'Д/З', fresh: 'Задания' },
+  homework: { icon: 'checklist', old: 'Д/З', fresh: 'Задания' },
   totals: { icon: 'book', old: 'Итоги', fresh: 'Оценки' },
-  mail: { icon: 'megaphone', old: 'Сообщения', fresh: 'Почта' },
+  mail: { icon: 'mail', old: 'Сообщения', fresh: 'Почта' },
   settings: { icon: 'gear', old: 'Настройки', fresh: 'Настройки' },
 };
 

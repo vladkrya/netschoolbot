@@ -10,7 +10,8 @@ import {
   parseIso, plural, showFailure, showLoading, skeleton, state, WEEKDAYS, WEEKDAYS_FULL, weekdayIndex, weekOffsetOf,
 } from './core.js';
 import { ICONS } from './icons.js';
-import { showWeekends } from './appearance.js';
+import { isNewDesign, showWeekends } from './appearance.js';
+import { bellsHtml } from './schedule.js';
 import { canGoBack } from './screens.js';
 import { EDGE_PX } from './swipeback.js';
 import { lessonStatus, markBox, openHomework, openLesson, realMarks } from './details.js';
@@ -140,7 +141,8 @@ function renderWeekStrip() {
 }
 
 /** Сводка дня над уроками (новый дизайн): сколько уроков, с какого по какое
- *  время, сколько заданий и какие оценки. */
+ *  время, сколько заданий и какие оценки. Нажатие — звонки шторкой: вкладки
+ *  «Звонки» в панели может и не быть. */
 function daySummary(lessons) {
   const first = lessons.find((lesson) => lesson.start)?.start;
   const last = [...lessons].reverse().find((lesson) => lesson.end)?.end;
@@ -148,13 +150,19 @@ function daySummary(lessons) {
   const marks = lessons.flatMap((lesson) => realMarks(lesson.marks)).map((m) => markBox(m.mark)).join('');
   const parts = [`${lessons.length} ${plural(lessons.length, 'урок', 'урока', 'уроков')}`];
   if (first && last) parts.push(`${first}–${last}`);
-  return `<div class="day-summary">
+  return `<button class="day-summary" type="button" data-bells>
       <div class="ds-main">
         <div class="ds-title">${esc(parts.join(' · '))}</div>
         <div class="ds-sub">${homework ? `Д/З по ${homework} ${plural(homework, 'предмету', 'предметам', 'предметам')}` : 'Без домашних заданий'}</div>
       </div>
       ${marks ? `<div class="ds-marks">${marks}</div>` : ''}
-    </div>`;
+      <span class="ds-more">Звонки${ICONS.right}</span>
+    </button>`;
+}
+
+function openBells() {
+  tap();
+  openSheet('Звонки', `<div class="bells-sheet">${bellsHtml(mondayOf(state.date))}</div>`);
 }
 
 let renderedKey = '';
@@ -181,11 +189,12 @@ function renderDay(quiet = false) {
   container.classList.toggle('quiet', quiet);
   container.innerHTML = daySummary(lessons)
     + lessons.map((lesson, index) => lessonCard(lesson, index, progress?.index === index ? progress : null)).join('');
+  container.querySelector('[data-bells]')?.addEventListener('click', openBells);
   container.querySelectorAll('[data-lesson]').forEach((card) => {
     card.addEventListener('click', (event) => {
       tap();
       const lesson = lessons[Number(card.dataset.lesson)];
-      // Бейдж «Д/З» открывает задание сразу, минуя экран урока.
+      // Бейдж «Д/З» и строка задания открывают его сразу, минуя экран урока.
       if (event.target.closest('[data-hw-badge]') && lesson.homework.length) {
         openHomework(lesson.homework[0], lesson.topic);
         return;
@@ -218,6 +227,10 @@ function lessonCard(lesson, index, progress) {
   const marks = realMarks(lesson.marks).map((m) => markBox(m.mark)).join('');
   const hasFiles = lesson.homework.some((h) => (h.attachments || []).length);
   const time = lesson.time || [lesson.start, lesson.end].filter(Boolean).join(' – ');
+  // Новый дизайн: вместо бейджа «Д/З» — начало самого задания.
+  const preview = isNewDesign()
+    ? lesson.homework.map((item) => String(item.text || '').replace(/\s+/g, ' ').trim()).filter(Boolean).join(' · ')
+    : '';
   return `<div class="lesson-card" data-lesson="${index}">
       <div class="lc-top">
         <span class="lc-num">${esc(lesson.number ?? '')}</span>
@@ -225,10 +238,11 @@ function lessonCard(lesson, index, progress) {
         <span class="lc-marks">${marks}</span>
       </div>
       ${lesson.is_elective ? '<div class="lc-badges"><span class="elective-badge">Факультатив</span></div>' : ''}
-      ${lesson.homework.length ? `<div class="lc-badges">
+      ${lesson.homework.length && !preview ? `<div class="lc-badges">
         <span class="hw-badge" data-hw-badge>Д/З</span>
         ${hasFiles ? `<span class="hw-badge clip">${ICONS.clip}</span>` : ''}
       </div>` : ''}
+      ${preview ? `<div class="lc-hw" data-hw-badge>${hasFiles ? ICONS.clip : ''}<span>${esc(preview)}</span></div>` : ''}
       ${progress ? `<div class="lesson-progress-label">${esc(progress.label)}</div><div class="lesson-progress"><span style="width:${Math.max(0, Math.min(100, progress.percent))}%"></span></div>` : ''}
       <div class="lc-bottom"><span>${esc(time)}</span><span>${esc(lessonStatus(lesson, state.date))}</span></div>
     </div>`;

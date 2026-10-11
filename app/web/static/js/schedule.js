@@ -30,8 +30,17 @@ function weekTitle(offset) {
   return offset > 0 ? `Через ${offset} нед.` : `${-offset} нед. назад`;
 }
 
+/** Новый дизайн, режим звонков: звонки одни на все недели, листать недели
+ *  незачем — полосы со стрелками нет, показываем текущую неделю. */
+function bellsOnly() {
+  return isNewDesign() && showBells();
+}
+
 export async function loadSchedule(force = false) {
-  const monday = addDays(mondayOf(isoToday()), state.scheduleWeek * 7);
+  const plain = bellsOnly();
+  $('schedPrev').closest('.date-bar').hidden = plain;
+  if (plain) state.scheduleWeek = 0;
+  let monday = addDays(mondayOf(isoToday()), state.scheduleWeek * 7);
   $('schedLabel').textContent = weekTitle(state.scheduleWeek);
   $('schedSub').textContent = `${dayMonth(monday)} – ${dayMonth(addDays(monday, 6))}`;
 
@@ -43,6 +52,16 @@ export async function loadSchedule(force = false) {
     showFailure(container, error, errorCard(error, 'schedRetry'));
     $('schedRetry')?.addEventListener('click', () => loadSchedule(true));
     return;
+  }
+  // Каникулы: на этой неделе уроков нет — звонки берём со следующей.
+  if (plain && !bellGroups(monday).length) {
+    const next = addDays(monday, 7);
+    try {
+      await ensureWeek(next, force);
+      if (bellGroups(next).length) monday = next;
+    } catch {
+      /* останется «уроков нет» */
+    }
   }
   render(monday);
 }
@@ -228,16 +247,19 @@ function daysTitle(days) {
 }
 
 function renderBells(monday) {
+  $('scheduleContent').innerHTML = bellsHtml(monday);
+}
+
+/** Карточки звонков недели — для вкладки и для шторки из «Дня». */
+export function bellsHtml(monday) {
   const today = isoToday();
   const now = new Date();
   const minute = now.getHours() * 60 + now.getMinutes();
   const groups = bellGroups(monday);
-  const container = $('scheduleContent');
   if (!groups.length) {
-    container.innerHTML = `<div class="card bells-card"><div class="muted">На этой неделе уроков нет — звонки появятся вместе с расписанием.</div></div>`;
-    return;
+    return `<div class="card bells-card"><div class="muted">На этой неделе уроков нет — звонки появятся вместе с расписанием.</div></div>`;
   }
-  container.innerHTML = groups.map((group) => {
+  return groups.map((group) => {
     const isToday = group.days.some((day) => day.iso === today);
     const items = [];
     group.rows.forEach((row, index) => {

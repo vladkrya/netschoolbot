@@ -182,7 +182,9 @@
   box-shadow: var(--lift);
   font-weight: 500;
 }
-:root[data-design="new"] .chip.active { background: var(--primary); color: #fff; box-shadow: none; }
+/* Залитые акцентом элементы с белым текстом — на --head, а не на --primary:
+   в тёмной теме --primary осветлён, и белый текст на нём не читался. */
+:root[data-design="new"] .chip.active { background: var(--head); color: #fff; box-shadow: none; }
 
 :root[data-design="new"] .field,
 :root[data-design="new"] .to-field,
@@ -242,6 +244,21 @@
 }
 :root[data-design="new"] .hw-badge.clip { padding: 3px 6px; }
 :root[data-design="new"] .lesson-progress-label { font-weight: 600; }
+/* Начало задания вместо бейджа «Д/З»: одна строка, нажатие открывает его. */
+:root[data-design="new"] .lc-hw {
+  position: relative;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 6px 0 0 46px;
+  color: var(--text2);
+  font-size: 14px;
+  line-height: 1.35;
+}
+:root[data-design="new"] .lc-hw span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+:root[data-design="new"] .lc-hw .icon { flex: none; width: 15px; height: 15px; color: var(--primary); }
+:root[data-design="new"] .lesson-card:has(.lc-num:empty) .lc-hw { margin-left: 0; }
 :root[data-design="new"] .lesson-progress { height: 6px; background: var(--card-2); }
 
 /* Идущий или ближайший урок — подсвечен рамкой акцента. */
@@ -410,7 +427,7 @@
 /* ─────────────────────── Нижняя шторка ─────────────────────── */
 
 :root[data-design="new"] .sheet-head h3 { font-size: 17px; font-weight: 700; }
-:root[data-design="new"] .cal-day.selected { background: var(--primary); }
+:root[data-design="new"] .cal-day.selected { background: var(--head); color: #fff; }
 :root[data-design="new"] .cal-day.today { background: var(--soft); box-shadow: none; color: var(--primary); font-weight: 700; }
 
 /* ─────────────────── Полоса недели и сводка дня ─────────────────── */
@@ -437,33 +454,32 @@
 :root[data-design="new"] .wd-num { font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; }
 :root[data-design="new"] .week-day.free { opacity: .45; }
 :root[data-design="new"] .week-day.today .wd-num { color: var(--primary); }
-:root[data-design="new"] .week-day.on { background: var(--primary); color: #fff; opacity: 1; }
+:root[data-design="new"] .week-day.on { background: var(--head); color: #fff; opacity: 1; }
 :root[data-design="new"] .week-day.on :is(.wd-name, .wd-num) { color: #fff; }
 
 :root[data-design="new"] .day-summary {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin-bottom: 12px;
-  padding: 14px 16px;
-  border-radius: var(--radius);
-  background: linear-gradient(135deg, var(--head), color-mix(in srgb, var(--head) 70%, #000));
-  color: #fff;
-  box-shadow: 0 10px 28px color-mix(in srgb, var(--head) 30%, transparent);
+  gap: 10px;
+  width: 100%;
+  margin-bottom: 10px;
+  padding: 10px 12px 10px 16px;
+  border-radius: 16px;
+  background: var(--soft);
+  color: var(--text);
+  text-align: left;
+  transition: transform .15s var(--ease), background-color .2s;
 }
+:root[data-design="new"] .day-summary:active { transform: scale(.98); background: var(--soft-2); }
 :root[data-design="new"] .ds-main { flex: 1; min-width: 0; }
-:root[data-design="new"] .ds-title { font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; }
-:root[data-design="new"] .ds-sub { margin-top: 2px; font-size: 13px; opacity: .8; }
-:root[data-design="new"] .ds-marks { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; max-width: 50%; }
-:root[data-design="new"] .ds-marks .mark-box,
-:root[data-design="new"] .ds-marks .mark-box:is(.m2, .m3, .m4, .m5) {
-  min-width: 30px;
-  height: 30px;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, .92);
-  color: var(--c, var(--text));
-  font-size: 15px;
-}
+:root[data-design="new"] .ds-title { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
+:root[data-design="new"] .ds-sub { margin-top: 1px; font-size: 13px; color: var(--text2); }
+:root[data-design="new"] .ds-marks { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 5px; max-width: 40%; }
+:root[data-design="new"] .ds-marks .mark-box { min-width: 28px; height: 28px; border-radius: 9px; font-size: 14px; }
+:root[data-design="new"] .ds-more { flex: none; display: flex; align-items: center; color: var(--primary); font-size: 13px; font-weight: 600; }
+:root[data-design="new"] .ds-more .icon { width: 16px; height: 16px; }
+/* Звонки шторкой из «Дня»: карточки без своей подложки. */
+:root[data-design="new"] .bells-sheet .card { margin: 0 0 8px; padding: 4px 0; box-shadow: none; background: none; }
 
 /* Вкладки подписаны короче: «Неделя», «Задания», «Оценки», «Почта». */
 :root[data-design="new"] .lbl-old { display: none; }
@@ -492,6 +508,11 @@
 }
 /* Дата уже в заголовке — в карточке её не повторяем. */
 :root[data-design="new"] .hw-foot > .muted { display: none; }
+/* Во вкладке «Задания» всё — домашка: ни заголовка со счётчиком, ни бейджа
+   «Д/З». Скрепка остаётся, если есть файлы. */
+:root[data-design="new"] #hwCount { display: none; }
+:root[data-design="new"] .hw-foot .hw-badge:not(.clip) { display: none; }
+:root[data-design="new"] .hw-foot:not(:has(.clip)) { display: none; }
 :root[data-design="new"] .hw-card { margin-bottom: 8px; }
 
 /* ───────────────── «Неделя»: дни целиком ───────────────── */
@@ -553,7 +574,7 @@
 
 :root[data-design="new"] .totals-hero { margin-bottom: 12px; padding: 18px; border-radius: 26px; }
 :root[data-design="new"] .th-top { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; margin-bottom: 14px; }
-:root[data-design="new"] .th-label { font-size: 13px; color: var(--text2); }
+:root[data-design="new"] .th-label { margin-bottom: 4px; font-size: 13px; color: var(--text2); }
 :root[data-design="new"] .th-avg {
   margin-top: 2px;
   font-size: 52px;
@@ -739,3 +760,6 @@
 /* Шесть вкладок на узком телефоне: подписи плотнее, иначе «Настройки»
    обрезаются. */
 :root[data-design="new"] .bottom-nav[data-count="6"] .nav-item .lbl-new { font-size: clamp(8.5px, 2.5vw, 10px); letter-spacing: -.35px; max-width: 100%; }
+
+/* Тема в настройках — капсула с линзой (стили .seg-glass выше). */
+:root[data-design="new"] .theme-seg { background: var(--card-2); margin-bottom: 4px; }
