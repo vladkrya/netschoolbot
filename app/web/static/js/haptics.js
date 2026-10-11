@@ -32,10 +32,45 @@ const OWN_CONTROLS = 'a, input, select, textarea, button, label';
 const iosSwitches = !haptic && !('vibrate' in navigator)
   && window.matchMedia?.('(pointer: coarse)').matches;
 
+// Опыт (только по флагу): свайп по дню на iPhone. Свайп — не касание, подпись
+// от него не щёлкает. Но сам переключатель iOS даёт протянуть пальцем и
+// щёлкает, когда он перещёлкнулся. Поэтому на карточках уроков вместо подписи
+// лежит сам невидимый переключатель во всю карточку.
+// ?swipehaptic=1 — включить на этом устройстве, ?swipehaptic=0 — выключить;
+// ?hapticdebug=1 — журнал касаний поверх экрана.
+function deviceFlag(name) {
+  try {
+    const value = new URLSearchParams(location.search).get(name);
+    if (value === '1') localStorage.setItem(`ns-${name}`, '1');
+    if (value === '0') localStorage.removeItem(`ns-${name}`);
+    return localStorage.getItem(`ns-${name}`) === '1';
+  } catch {
+    return false;
+  }
+}
+const dragSwitches = iosSwitches && deviceFlag('swipehaptic');
+const DRAG_HOSTS = '#dayContent .lesson-card';
+
+function armDragSwitch(host) {
+  const input = document.createElement('input');
+  input.type = 'checkbox';
+  input.setAttribute('switch', '');
+  input.className = 'haptic-hit haptic-drag';
+  input.tabIndex = -1;
+  input.ariaHidden = 'true';
+  if (getComputedStyle(host).position === 'static') host.style.position = 'relative';
+  host.append(input);
+}
+
 function armSwitch(host) {
   if (host.querySelector(':scope > .haptic-hit')) return;
   const controls = [...host.querySelectorAll(OWN_CONTROLS)].filter((el) => !el.closest('.haptic-hit'));
   if (controls.length) return;
+  // Клик по переключателю всплывает к карточке сам — второго клика нет.
+  if (dragSwitches && host.matches(DRAG_HOSTS)) {
+    armDragSwitch(host);
+    return;
+  }
   const label = document.createElement('label');
   label.className = 'haptic-hit';
   label.ariaHidden = 'true';
@@ -67,11 +102,34 @@ export function initIosHaptics() {
     if (!event.isTrusted || !control || control.disabled || control.getAttribute('aria-disabled') === 'true') return;
     tap();
   }, { capture: true });
+  if (deviceFlag('hapticdebug')) showDebugLog();
   if (!iosSwitches) return;
   armAll(document.body);
   new MutationObserver((records) => {
     for (const record of records) record.addedNodes.forEach((node) => node.nodeType === 1 && armAll(node));
   }).observe(document.body, { childList: true, subtree: true });
+}
+
+/** Журнал касаний на экране: проверить отклик можно только на самом iPhone. */
+function showDebugLog() {
+  const log = document.createElement('pre');
+  log.className = 'haptic-debug';
+  document.body.append(log);
+  const lines = [`switches=${iosSwitches} drag=${dragSwitches}`];
+  const write = (text) => {
+    lines.push(`${(performance.now() / 1000).toFixed(1)} ${text}`);
+    log.textContent = lines.slice(-10).join('\n');
+  };
+  write('ready');
+  const describe = (target) => (target.classList?.contains('haptic-drag') ? `drag(${target.checked ? 'on' : 'off'})`
+    : target.closest?.('.haptic-hit') ? 'label' : target.className || target.tagName);
+  for (const type of ['touchstart', 'touchend', 'touchcancel', 'click', 'change']) {
+    document.addEventListener(type, (event) => {
+      if (event.target === log) return;
+      const touch = event.changedTouches?.[0];
+      write(`${type} ${describe(event.target)}${touch ? ` x=${Math.round(touch.clientX)}` : ''}`);
+    }, { capture: true, passive: true });
+  }
 }
 
 function vibrate(pattern) {
