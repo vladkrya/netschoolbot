@@ -1,0 +1,193 @@
+/* Планшеты и компьютеры. Разметка та же, что на телефоне, но:
+   — от 720px всё собрано в колонку по центру, а не растянуто на экран:
+     шапка, вкладки, экраны поверх, баннер и кнопка «написать»;
+   — шторка снизу становится окном по центру;
+   — от 1024px панель вкладок — боковая колонка слева, а неделя, задания
+     и карточки оценок раскладываются сеткой.
+   Подключается последним: правила для нового дизайна повторяют
+   селекторы new.css, чтобы перебить их. */
+
+@media (min-width: 720px) {
+  :root {
+    --col: 720px;
+    /* Поле по бокам: колонка по центру, но не ближе 12px к краю. Проценты
+       считаются там, где переменная применена, — от ширины родителя. */
+    --gut: max(12px, calc((100% - var(--col)) / 2));
+  }
+
+  /* Шапка: фон на всю ширину, содержимое — по колонке. */
+  .topbar,
+  :root[data-design="new"] .topbar { padding-left: var(--gut); padding-right: var(--gut); }
+  .date-bar { padding-left: var(--gut); padding-right: var(--gut); }
+  .filter-bar,
+  :root[data-design="new"] .filter-bar { padding-left: var(--gut); padding-right: var(--gut); }
+  :root[data-design="new"] .date-bar,
+  :root[data-design="new"] .week-strip { margin-left: var(--gut); margin-right: var(--gut); }
+  :root[data-design="new"] .date-bar { padding-left: 4px; padding-right: 4px; }
+
+  .panel,
+  :root[data-design="new"] .panel { padding-left: var(--gut); padding-right: var(--gut); }
+  .screen-head { padding-left: var(--gut); padding-right: var(--gut); }
+  .screen-body,
+  :root[data-design="new"] .screen-body { padding-left: var(--gut); padding-right: var(--gut); }
+  :root[data-design="new"] .screen-back { margin-left: 0; }
+
+  /* Таблица итогов больше не выходит за края колонки. */
+  .totals-table { margin: 0; border-radius: var(--radius); }
+
+  .bottom-nav {
+    left: max(12px, calc(50% - 300px));
+    right: max(12px, calc(50% - 300px));
+  }
+  .nav-item .lbl-old, .nav-item .lbl-new,
+  :root[data-design="new"] .bottom-nav[data-count="6"] .nav-item .lbl-new { font-size: 11px; letter-spacing: 0; }
+
+  .banner {
+    left: max(12px, calc(50% - var(--col) / 2));
+    right: max(12px, calc(50% - var(--col) / 2));
+  }
+  .fab { right: max(18px, calc((100vw - var(--col)) / 2)); }
+
+  /* Шторка — окно по центру, а не лист во всю ширину снизу. */
+  .overlay { align-items: center; justify-content: center; padding: 24px; }
+  .sheet,
+  .overlay .sheet {
+    width: min(100%, 560px);
+    max-height: min(84vh, 760px);
+    margin: 0;
+    padding-bottom: 6px;
+    border-radius: 24px;
+    animation: sheet-pop .22s var(--ease);
+  }
+  .sheet-grip { display: none; }
+  .sheet-head { padding: 12px 14px 8px 18px; }
+  .sheet-body { padding: 0 18px 18px; }
+  @keyframes sheet-pop { from { opacity: 0; transform: translateY(16px) scale(.97); } }
+
+  /* Список предметов в «Оценках» и сетки ниже: карточки без своих отступов,
+     расстояние даёт gap. */
+  :root[data-design="new"] .totals-cards [data-list] {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+  :root[data-design="new"] .totals-cards [data-list] > .subject-card { margin: 0; }
+  /* Узкой карточке не хватает строки на «Английский язык» — переносим. */
+  :root[data-design="new"] .totals-cards [data-list] .sc-name { white-space: normal; overflow-wrap: anywhere; line-height: 1.25; }
+}
+
+/* ─────────────────── Компьютер: панель вкладок слева ─────────────────── */
+
+@media (min-width: 1024px) {
+  :root {
+    --rail: 232px;
+    --col: 880px;
+    /* Снизу панели больше нет: всё, что от неё отступало, встаёт к краю. */
+    --nav-h: 0px;
+  }
+
+  body { padding-left: var(--rail); padding-bottom: 24px; }
+  .app-header, .pull-indicator { left: var(--rail); }
+  .screen { left: var(--rail); padding-bottom: 24px; }
+  /* Размытие под нижней панелью — не нужно. */
+  body::after { display: none; }
+
+  .banner {
+    left: max(calc(var(--rail) + 12px), calc(50% + var(--rail) / 2 - var(--col) / 2));
+    right: max(12px, calc(50% - var(--rail) / 2 - var(--col) / 2));
+  }
+  .fab {
+    right: max(24px, calc((100vw - var(--rail) - var(--col)) / 2));
+    bottom: 24px;
+  }
+
+  /* Панель вкладок — колонка во всю высоту: иконка и подпись в строку. */
+  .bottom-nav {
+    top: calc(12px + var(--safe-top));
+    bottom: 12px;
+    left: 12px;
+    right: auto;
+    width: calc(var(--rail) - 24px);
+    height: auto;
+    padding: 8px;
+    flex-direction: column;
+    gap: 4px;
+    border-radius: 26px;
+    touch-action: auto;
+  }
+  .nav-glider {
+    top: 8px;
+    left: 8px;
+    right: 8px;
+    bottom: auto;
+    width: auto;
+    height: 46px;
+    border-radius: 16px;
+    /* Шаг — высота пункта и зазор между пунктами. */
+    translate: 0 calc(var(--i, 0) * 50px);
+  }
+  .nav-item {
+    flex: none;
+    height: 46px;
+    flex-direction: row;
+    justify-content: flex-start;
+    gap: 12px;
+    padding: 0 14px;
+    border-radius: 16px;
+    font-size: 15px;
+  }
+  .nav-item .lbl-old, .nav-item .lbl-new,
+  :root[data-design="new"] .bottom-nav[data-count="6"] .nav-item .lbl-new {
+    max-width: none;
+    font-size: 15px;
+    line-height: 1.2;
+    letter-spacing: -.01em;
+  }
+  .nav-item .ico { transform: none; }
+  .nav-item.active .ico { animation: none; }
+  .nav-item:hover { opacity: 1; }
+  .nav-item:not(.active):hover { background: color-mix(in srgb, var(--text) 6%, transparent); }
+
+  /* Меню ☰ открывается поверх панели вкладок. */
+  .drawer { z-index: 55; }
+
+  /* Неделя: дни карточками в ряд. */
+  #scheduleContent {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 12px;
+    align-items: start;
+  }
+  #scheduleContent > .card { margin: 0; }
+  #scheduleContent > .empty { grid-column: 1 / -1; }
+
+  /* Задания: две колонки, заголовок дня — через всю строку. */
+  #homeworkContent {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    align-items: start;
+  }
+  #homeworkContent > .card,
+  :root[data-design="new"] #homeworkContent > .hw-card { margin: 0; }
+  #homeworkContent > .hw-day,
+  #homeworkContent > .empty { grid-column: 1 / -1; }
+  :root[data-design="new"] #homeworkContent > .hw-day { margin: 14px 4px 0; }
+  :root[data-design="new"] #homeworkContent > .hw-day:first-child { margin-top: 2px; }
+
+  :root[data-design="new"] .totals-cards [data-list] { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+/* Мышь: подсказка, что карточка нажимается. */
+@media (hover: hover) and (pointer: fine) {
+  .lesson-card, .hw-card, .mail-card, .ann-card, .task-block, .week-card, .subject-card {
+    transition: transform .15s var(--ease), filter .15s, background-color .2s, box-shadow .2s;
+  }
+  .lesson-card:hover, .hw-card:hover, .mail-card:hover, .ann-card:hover,
+  .task-block:hover, .week-card:hover, .subject-card:hover { filter: brightness(1.03); }
+  :root[data-theme="dark"] :is(.lesson-card, .hw-card, .mail-card, .ann-card, .task-block, .week-card, .subject-card):hover { filter: brightness(1.15); }
+  .date-arrow:hover, .topbar-btn:hover, .screen-back:hover { filter: brightness(1.1); }
+}
+@media (hover: hover) and (pointer: fine) and (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) :is(.lesson-card, .hw-card, .mail-card, .ann-card, .task-block, .week-card, .subject-card):hover { filter: brightness(1.15); }
+}

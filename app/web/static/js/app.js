@@ -262,6 +262,8 @@ function initNav() {
 
   nav.addEventListener('pointerdown', (event) => {
     if (event.button !== 0 || drag || pending) return;
+    // На компьютере панель — колонка слева (wide.css): там капля не нужна.
+    if (getComputedStyle(nav).flexDirection === 'column') return;
     pending = { id: event.pointerId, x: event.clientX, startX: event.clientX, mouse: event.pointerType === 'mouse' };
     holdTimer = setTimeout(begin, HOLD_MS);
   });
