@@ -488,11 +488,32 @@ export function weekOffsetOf(iso) {
   return Math.round(diff / (7 * 24 * 3600 * 1000));
 }
 
+/** Крутилка на вложении, пока файл качается: школьный сервер отдаёт его
+ *  секундами, и без неё было непонятно, нажалось или зависло. */
+function attachBusy(link, busy) {
+  link.classList.toggle('loading', busy);
+  link.setAttribute('aria-busy', String(busy));
+}
+
 // Вложения при блокировке загружаются с секретом в заголовке, без URL-секретов.
 document.addEventListener('click', async event => {
   const link = event.target.closest('a.attach');
-  if (!link || !unlockToken) return;
+  if (!link) return;
+  if (link.classList.contains('loading')) {
+    event.preventDefault();
+    return;
+  }
+  if (!unlockToken) {
+    // Обычная ссылка: файл открывает браузер. Крутилка — пока страница не
+    // ушла в фон (открылся просмотр) или не вышло время.
+    attachBusy(link, true);
+    const done = () => attachBusy(link, false);
+    document.addEventListener('visibilitychange', done, { once: true });
+    setTimeout(done, 8000);
+    return;
+  }
   event.preventDefault();
+  attachBusy(link, true);
   try {
     const response = await fetch(link.href, { headers: { 'X-Netschool-Unlock': unlockToken } });
     if (!response.ok) throw new Error('Не удалось скачать вложение');
@@ -500,5 +521,9 @@ document.addEventListener('click', async event => {
     const download = document.createElement('a');
     download.href = url; download.download = link.textContent.trim(); download.click();
     setTimeout(() => URL.revokeObjectURL(url), 60000);
-  } catch (error) { banner(error.message, true); }
+  } catch (error) {
+    banner(error.message, true);
+  } finally {
+    attachBusy(link, false);
+  }
 });

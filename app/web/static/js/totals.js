@@ -7,6 +7,7 @@ import {
 } from './core.js';
 import { markBox, openMark } from './details.js';
 import { pushScreen } from './screens.js';
+import { ICONS } from './icons.js';
 import { openSheet, closeSheet } from './sheet.js';
 import { select, tap } from './haptics.js';
 import { getPref, setPref } from './prefs.js';
@@ -115,9 +116,49 @@ const writeLocal = (key, value) => {
   try { localStorage.setItem(key, value); } catch { /* приватный режим */ }
 };
 let view = readLocal(VIEW_KEY, 'cards');
-// alpha — по алфавиту, weak — слабые предметы сверху.
+// alpha — по алфавиту, weak — слабые сверху, strong — сильные сверху.
+const SORTS = { alpha: 'По алфавиту', weak: 'Слабые сверху', strong: 'Сильные сверху' };
 let sort = readLocal(SORT_KEY, 'alpha');
+if (!(sort in SORTS)) sort = 'alpha';
+// Что считают плашки 5/4/3/2 в сводке: subjects — сколько предметов выходит
+// на «5», «4»…, marks — сколько всего таких оценок.
+const COUNTS_KEY = 'ns-totals-counts';
+let countMode = readLocal(COUNTS_KEY, 'subjects') === 'marks' ? 'marks' : 'subjects';
 let period = null;
+
+/** Закреплённые предметы — сверху списка, в общих настройках. */
+const pins = () => new Set(Array.isArray(getPref('pins')) ? getPref('pins') : []);
+function togglePin(name) {
+  const set = pins();
+  if (set.has(name)) set.delete(name);
+  else set.add(name);
+  setPref('pins', [...set]);
+}
+
+const normName = (value) => String(value || '').toLowerCase().split(/\s+/).filter(Boolean).join(' ');
+
+/** Архивный год приходит без оценок: период подгружается целиком, когда его
+ *  выбирают. Без этого карточки показывали «Оценок пока нет». */
+async function ensureArchivedPeriod(data, key) {
+  data.loadedPeriods = data.loadedPeriods || new Set();
+  if (!data.archived || data.loadedPeriods.has(key)) return false;
+  const params = new URLSearchParams({ year: data.year_id, quarter: key });
+  const merge = (payload) => {
+    const byName = new Map();
+    for (const mark of payload.marks || []) {
+      const name = normName(mark.subject);
+      byName.set(name, [...(byName.get(name) || []), mark]);
+    }
+    for (const subject of data.subjects) {
+      subject.marks = subject.marks.filter((mark) => mark.quarter !== key)
+        .concat(byName.get(normName(subject.subject)) || []);
+    }
+    data.loadedPeriods.add(key);
+  };
+  const { data: payload } = await api(`/api/marks/period?${params}`, { onFresh: (fresh) => merge(fresh.data) });
+  merge(payload);
+  return true;
+}
 
 function setView(next) {
   view = next;
@@ -163,37 +204,67 @@ function periodRows(data) {
   });
 }
 
+/** Какая оценка за период выходит по предмету: выставленная или по среднему. */
+function expectedGrade(row) {
+  const grade = row.official ? markGrade(row.official)
+    : row.avg == null ? '' : avgClass(row.avg, thresholdsFor(row.subject.subject));
+  const digit = Number(String(grade).slice(1));
+  return digit >= 2 && digit <= 5 ? digit : null;
+}
+
+/** Сводка периода: сколько предметов выходит на «5», «4»… или сколько всего
+ *  таких оценок — переключателем. Общий средний балл по всем предметам ничего
+ *  не говорит, его здесь больше нет. */
 function heroHtml(rows, quarter) {
-  const averages = rows.map((row) => row.avg).filter((value) => value != null);
-  const overall = averages.length ? averages.reduce((a, b) => a + b, 0) / averages.length : null;
   const counts = { 5: 0, 4: 0, 3: 0, 2: 0 };
-  for (const row of rows) {
-    for (const mark of row.marks) if (Number(mark.mark) in counts) counts[Number(mark.mark)] += 1;
+  if (countMode === 'subjects') {
+    for (const row of rows) {
+      const grade = expectedGrade(row);
+      if (grade) counts[grade] += 1;
+    }
+  } else {
+    for (const row of rows) {
+      for (const mark of row.marks) if (Number(mark.mark) in counts) counts[Number(mark.mark)] += 1;
+    }
   }
   const total = counts[5] + counts[4] + counts[3] + counts[2];
-  const strong = rows.filter((row) => row.avg != null && avgClass(row.avg, thresholdsFor(row.subject.subject)) === 'g5').length;
+  const caption = countMode === 'subjects'
+    ? (total ? `Выходит по ${total} ${plural(total, 'предмету', 'предметам', 'предметам')}` : 'Оценок за период пока нет')
+    : `${total} ${plural(total, 'оценка', 'оценки', 'оценок')} за период`;
+  const unit = (value) => (countMode === 'subjects' ? plural(value, 'предмет', 'предмета', 'предметов') : plural(value, 'оценка', 'оценки', 'оценок'));
   return `<div class="totals-hero glass">
-      <div class="th-label">Средний балл · ${esc(quarter?.label || shortLabel(quarter || { key: period }))}</div>
-      <div class="th-top">
+      <div class="th-head">
         <div>
-          <div class="th-avg ${overall == null ? '' : avgClass(overall)}">${formatAverage(overall)}</div>
+          <div class="th-label">${esc(quarter?.label || shortLabel(quarter || { key: period }))}</div>
+          <div class="th-caption">${esc(caption)}</div>
         </div>
-        <div class="th-side">
-          <div class="th-stat"><b>${total}</b><span>${plural(total, 'оценка', 'оценки', 'оценок')}</span></div>
-          <div class="th-stat"><b>${strong}</b><span>${plural(strong, 'предмет', 'предмета', 'предметов')} на «5»</span></div>
+        <div class="seg-glass th-mode" style="--n:2;--i:${countMode === 'subjects' ? 0 : 1}">
+          <span class="seg-lens" aria-hidden="true"></span>
+          <button class="${countMode === 'subjects' ? 'on' : ''}" data-count="subjects">Итоговые</button>
+          <button class="${countMode === 'marks' ? 'on' : ''}" data-count="marks">Все</button>
         </div>
       </div>
       ${total ? `<div class="th-bar">${[5, 4, 3, 2].filter((v) => counts[v])
         .map((v) => `<span class="d${v}" style="flex:${counts[v]}"></span>`).join('')}</div>` : ''}
-      <div class="th-counts">${[5, 4, 3, 2].map((v) => `<span class="c${v}"><b>${v}</b>${counts[v]}</span>`).join('')}</div>
+      <div class="th-counts">${[5, 4, 3, 2].map((v) => `<span class="c${v}"><b>${v}</b><span>${counts[v]} <small>${unit(counts[v])}</small></span></span>`).join('')}</div>
     </div>`;
 }
 
+/** Порядок карточек: закреплённые сверху, внутри — по выбранной сортировке. */
+function orderRows(rows) {
+  const score = (row) => row.avg ?? expectedGrade(row);
+  const ordered = [...rows];
+  if (sort === 'weak') ordered.sort((a, b) => (score(a) ?? 9) - (score(b) ?? 9));
+  if (sort === 'strong') ordered.sort((a, b) => (score(b) ?? -1) - (score(a) ?? -1));
+  const pinned = pins();
+  return [...ordered.filter((row) => pinned.has(row.subject.subject)),
+    ...ordered.filter((row) => !pinned.has(row.subject.subject))];
+}
+
 function cardsHtml(rows) {
-  const ordered = sort === 'weak'
-    ? [...rows].sort((a, b) => (a.avg ?? 9) - (b.avg ?? 9))
-    : rows;
-  return ordered.map((row) => {
+  const pinned = pins();
+  return orderRows(rows).map((row) => {
+    const isPinned = pinned.has(row.subject.subject);
     const grade = row.official ? markGrade(row.official)
       : row.avg == null ? '' : avgClass(row.avg, thresholdsFor(row.subject.subject));
     const recent = row.marks.slice(-10).map((mark) => markBox(mark.mark, '', mark.weight || 1)).join('');
@@ -203,6 +274,8 @@ function cardsHtml(rows) {
     const goal = goalText(row);
     return `<button class="card subject-card glass" data-subject="${row.index}">
         <div class="sc-top">
+          <span class="sc-pin${isPinned ? ' on' : ''}" role="button" data-pin aria-pressed="${isPinned}"
+            aria-label="${isPinned ? 'Открепить' : 'Закрепить сверху'}">${ICONS.pin}</span>
           <div class="sc-name">${esc(row.subject.subject)}</div>
           ${trend}
           <div class="sc-avg ${grade}">${row.official ? esc(row.official) : formatAverage(row.avg)}</div>
@@ -231,7 +304,7 @@ function renderCards(data, quarters) {
           </div>
         </div>
         <div class="period-row tools">
-          <button class="glass-pill glass ${sort === 'weak' ? 'on' : ''}" data-sort>${sort === 'weak' ? 'Слабые сверху' : 'По алфавиту'}</button>
+          <button class="glass-pill glass ${sort === 'alpha' ? '' : 'on'}" data-sort>${SORTS[sort]}</button>
           ${viewToggle('Таблица', 'table')}
         </div>
         <div data-list></div>
@@ -248,8 +321,26 @@ function renderCards(data, quarters) {
     list.innerHTML = cardsHtml(rows);
     // Лесенка появления — только при открытии вкладки, не при смене периода.
     list.classList.toggle('rise', animate);
+    if (data.archived && !data.loadedPeriods?.has(period)) {
+      const key = period;
+      list.insertAdjacentHTML('afterbegin', '<div class="muted small archive-loading">Загружаем оценки за период…</div>');
+      ensureArchivedPeriod(data, key).then(() => {
+        if (key === period && list.isConnected) fill(false);
+      }, () => {
+        list.querySelector('.archive-loading')?.replaceWith(Object.assign(document.createElement('div'),
+          { className: 'muted small archive-loading', textContent: 'Не удалось загрузить оценки за этот период.' }));
+      });
+    }
   };
   fill(true);
+  hero.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-count]');
+    if (!button || button.dataset.count === countMode) return;
+    select();
+    countMode = button.dataset.count;
+    writeLocal(COUNTS_KEY, countMode);
+    hero.innerHTML = heroHtml(periodRows(data), quarters.find((q) => q.key === period));
+  });
 
   // Период меняется на месте: линза переезжает, карточки перерисовываются.
   const control = container.querySelector('.seg-glass');
@@ -266,16 +357,23 @@ function renderCards(data, quarters) {
   });
   container.querySelector('[data-sort]').addEventListener('click', (event) => {
     select();
-    sort = sort === 'weak' ? 'alpha' : 'weak';
+    const order = Object.keys(SORTS);
+    sort = order[(order.indexOf(sort) + 1) % order.length];
     writeLocal(SORT_KEY, sort);
-    event.currentTarget.classList.toggle('on', sort === 'weak');
-    event.currentTarget.textContent = sort === 'weak' ? 'Слабые сверху' : 'По алфавиту';
+    event.currentTarget.classList.toggle('on', sort !== 'alpha');
+    event.currentTarget.textContent = SORTS[sort];
     fill(false);
   });
   container.querySelector('[data-view]')?.addEventListener('click', () => setView('table'));
   list.addEventListener('click', (event) => {
     const card = event.target.closest('[data-subject]');
     if (!card) return;
+    if (event.target.closest('[data-pin]')) {
+      select();
+      togglePin(data.subjects[Number(card.dataset.subject)].subject);
+      fill(false);
+      return;
+    }
     tap();
     openSubject(data.subjects[Number(card.dataset.subject)], period);
   });

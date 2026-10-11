@@ -39,6 +39,7 @@ function bellsOnly() {
 export async function loadSchedule(force = false) {
   const plain = bellsOnly();
   $('schedPrev').closest('.date-bar').hidden = plain;
+  $('bellsNote').hidden = !plain;
   if (plain) state.scheduleWeek = 0;
   let monday = addDays(mondayOf(isoToday()), state.scheduleWeek * 7);
   $('schedLabel').textContent = weekTitle(state.scheduleWeek);

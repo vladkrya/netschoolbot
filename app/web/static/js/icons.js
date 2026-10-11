@@ -22,7 +22,7 @@ export const ICONS = {
   down: svg('<path d="m6 9 6 6 6-6"/>', 16),
   clip: svg('<path d="m20 11.5-8.2 8.2a5 5 0 0 1-7-7L13 4.5a3.3 3.3 0 0 1 4.7 4.7l-8.2 8.3a1.7 1.7 0 0 1-2.4-2.4L14.8 7.4"/>', 16),
   chat: svg('<path d="M20 12a8 8 0 0 1-11.6 7.1L4 20l1-4.2A8 8 0 1 1 20 12z"/>', 20),
-  homework: svg('<path d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-4.5v-6h-5v6H5a1 1 0 0 1-1-1z"/>', 20),
+  homework: svg('<path d="m4 7 1.8 1.8L9 5.5M4 16l1.8 1.8L9 14.5M12.5 7.5H20M12.5 16.5H20"/>', 20),
   plus: svg('<path d="M12 5v14M5 12h14"/>'),
   send: svg('<path d="M4 12 20 4l-4 16-4-7z"/><path d="m12 13 8-9"/>'),
   close: svg('<path d="M6 6l12 12M18 6 6 18"/>', 20),
@@ -31,6 +31,7 @@ export const ICONS = {
   search: svg('<circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/>', 18),
   sparkles: svg('<path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M6 18l2.5-2.5M15.5 8.5 18 6"/>', 20),
   gear: svg('<circle cx="12" cy="12" r="3"/><path d="M12 2.8v2.4M12 18.8v2.4M2.8 12h2.4M18.8 12h2.4M5.5 5.5l1.7 1.7M16.8 16.8l1.7 1.7M5.5 18.5l1.7-1.7M16.8 7.2l1.7-1.7"/><circle cx="12" cy="12" r="6.3"/>'),
+  pin: svg('<path d="M9 4h6l-1 5 3 3v2H7v-2l3-3z"/><path d="M12 14v6"/>', 18),
   up: svg('<path d="m6 15 6-6 6 6"/>', 18),
   palette: svg('<path d="M12 3a9 9 0 0 0 0 18c1.1 0 2-.9 2-2 0-.5-.2-1-.5-1.3-.3-.4-.5-.8-.5-1.2 0-1.1.9-2 2-2h2.3A4.7 4.7 0 0 0 21 9.8C21 6 17 3 12 3z"/><circle cx="7.5" cy="11" r="1"/><circle cx="10" cy="7" r="1"/><circle cx="15" cy="7" r="1"/>', 20),
 };

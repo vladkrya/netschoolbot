@@ -515,6 +515,31 @@ class TestTelegramNotifier:
         assert len(bot.sent) == 1
         assert "Изменения в оценках" in bot.sent[0][1]
 
+    async def test_push_goes_out_even_when_telegram_fails_and_only_once(self, users):
+        from aiogram.exceptions import TelegramNetworkError
+
+        class Push:
+            def __init__(self):
+                self.sent = []
+
+            async def send(self, telegram_id, title, body):
+                self.sent.append((telegram_id, title, body))
+                return 1
+
+        push = Push()
+        bot = self.Bot(error=TelegramNetworkError(method=None, message="record layer failure"))
+        user = await users.save(make_user())
+        notifier = TelegramNotifier(bot, users, push)
+        events = [MarkEvent(MarkKind.NEW, record())]
+        with pytest.raises(TelegramNetworkError):
+            await notifier.send_mark_events(user, events)
+        # Telegram лёг — push уже на телефоне, а не ждёт его.
+        assert len(push.sent) == 1
+        # Повтор из очереди: Telegram дошёл, push второй раз не шлём.
+        await notifier.send_mark_events(user, events)
+        assert len(bot.sent) == 1
+        assert len(push.sent) == 1
+
     async def test_blocked_user_is_disabled(self, users):
         from aiogram.exceptions import TelegramForbiddenError
 

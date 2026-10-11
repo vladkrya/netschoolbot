@@ -8,6 +8,7 @@ import {
 } from './core.js';
 import { pushScreen } from './screens.js';
 import { ICONS } from './icons.js';
+import { isNewDesign } from './appearance.js';
 
 /** Статус урока справа от времени, как в официальном приложении. */
 export function lessonStatus(lesson, iso, now = new Date()) {
@@ -86,7 +87,8 @@ export function openLesson(lesson, iso) {
         </div>
         <span class="task-go">Перейти ›</span>
       </button>`),
-    ...(lesson.homework || []).map((item, index) => `
+    // Новый дизайн: задание целиком прямо здесь, без отдельного экрана.
+    ...(lesson.homework || []).map((item, index) => isNewDesign() ? homeworkBlock(item) : `
       <button class="task-block task-hw" data-hw="${index}">
         <div class="task-head">
           <span class="task-icon">${ICONS.homework}</span>
@@ -120,6 +122,21 @@ export function openLesson(lesson, iso) {
   body.querySelectorAll('[data-hw]').forEach((el) =>
     el.addEventListener('click', () => openHomework(lesson.homework[Number(el.dataset.hw)], lesson.topic))
   );
+}
+
+/** Домашнее задание на экране урока: текст, файлы и когда опубликовано. */
+function homeworkBlock(item) {
+  const timestamps = homeworkTimes(item);
+  return `<div class="task-block task-hw hw-inline">
+      <div class="task-head">
+        <span class="task-icon">${ICONS.homework}</span>
+        <span class="task-kind">Домашнее задание</span>
+        ${Number(item.weight) > 1 ? `<span class="hw-weight">вес ${esc(item.weight)}</span>` : ''}
+      </div>
+      <div class="detail-text">${escRich(item.text) || '<span class="muted">—Не указано—</span>'}</div>
+      ${attachmentsHtml(item.attachments)}
+      ${timestamps.length ? `<div class="hw-times">${timestamps.map(esc).join(' · ')}</div>` : ''}
+    </div>`;
 }
 
 /** Когда задание опубликовали и когда его заметила наша система. Второе —

@@ -18,13 +18,15 @@ const haptic = initData ? tg?.HapticFeedback : null;
 const IOS_TAPPABLE = [
   'button', '[role="button"]',
   '.nav-item', '.btn', '.chip', '.topbar-btn', '.date-arrow', '.date-title', '.screen-back',
-  '.lesson-card', '.hw-card', '.mail-card', '.ann-card', '.task-block', '.tile',
+  '.lesson-card', '.hw-card', '.mail-card', '.ann-card', '.task-block:not(.hw-inline)', '.tile',
   'button.tt-cell', '.cal-day', '.cal-arrow', '.calc-btn', '.fab', '.sheet-close',
   '.swatch', '.recipient', '.drawer-link', '.sched-toggle',
   // Калькулятор «что если» в итогах по предмету.
   '.whatif-add .mark-box', '.whatif-item', '.whatif-clear', '.wchip-x', '.thr-edit',
   // Значок «Д/З» в карточке урока открывает домашку — своя подпись поверх.
   '[data-hw-badge]',
+  // Скрепка «закрепить предмет» на карточке в «Оценках».
+  '.sc-pin',
 ].join(',');
 // Внутри них не должно быть своих ссылок и полей — подпись перехватила бы касание.
 const OWN_CONTROLS = 'a, input, select, textarea, button, label';
@@ -70,7 +72,14 @@ export function initIosHaptics() {
   if (!iosSwitches) return;
   armAll(document.body);
   new MutationObserver((records) => {
-    for (const record of records) record.addedNodes.forEach((node) => node.nodeType === 1 && armAll(node));
+    for (const record of records) {
+      record.addedNodes.forEach((node) => node.nodeType === 1 && armAll(node));
+      // Кнопке переписали содержимое (иконка через innerHTML, «✓» через
+      // textContent) — подпись стёрлась вместе с ним, кладём заново. Так
+      // пропадал отклик у колокольчика и стрелок в шапке: boot.js
+      // раскладывает подписи раньше, чем app.js вставляет иконки.
+      if (record.removedNodes.length && record.target.matches?.(IOS_TAPPABLE)) armSwitch(record.target);
+    }
   }).observe(document.body, { childList: true, subtree: true });
 }
 

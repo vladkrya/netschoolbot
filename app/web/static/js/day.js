@@ -156,7 +156,7 @@ function daySummary(lessons) {
         <div class="ds-sub">${homework ? `Д/З по ${homework} ${plural(homework, 'предмету', 'предметам', 'предметам')}` : 'Без домашних заданий'}</div>
       </div>
       ${marks ? `<div class="ds-marks">${marks}</div>` : ''}
-      <span class="ds-more">Звонки${ICONS.right}</span>
+      <span class="ds-more" aria-label="Звонки">${ICONS.right}</span>
     </button>`;
 }
 

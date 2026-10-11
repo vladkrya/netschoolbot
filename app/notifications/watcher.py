@@ -147,7 +147,7 @@ class UserWatcher:
         except asyncio.CancelledError:
             raise
         except Exception as exc:
-            logger.warning("Проверка почты %s не завершилась: %s", user.telegram_id, type(exc).__name__)
+            logger.warning("Проверка почты %s не завершилась: %s", user.telegram_id, exc)
 
         try:
             await self._check(user)

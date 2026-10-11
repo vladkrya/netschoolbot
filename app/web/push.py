@@ -56,9 +56,15 @@ class PushSender:
         try:
             status = await asyncio.to_thread(self._blocking_send, subscription, payload)
         except Exception as exc:
-            logger.debug("Push на %s не ушёл: %s", _short(endpoint), exc)
-            await self._miniapp.note_push_failure(endpoint)
-            return False
+            # pywebpush сам бросает WebPushException на ответ 4xx/5xx — код
+            # ответа внутри. Раньше 404/410 сюда и попадали, и отозванная
+            # подписка удалялась лишь после пяти неудач.
+            response = getattr(exc, "response", None)
+            status = getattr(response, "status_code", None)
+            if status is None:
+                logger.warning("Push не ушёл: %s", exc)
+                await self._miniapp.note_push_failure(endpoint)
+                return False
 
         if status in GONE_STATUSES:
             # Подписка отозвана в браузере. Узнать об этом иначе нельзя.

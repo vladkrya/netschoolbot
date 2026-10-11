@@ -489,6 +489,14 @@ class TestNewFeatures:
             response = await client.post(url, params={"token": token}, json={"tabs": bad})
             assert response.status == 400, bad
 
+    async def test_pinned_subjects_pref_is_validated(self, client, token):
+        url = f"{BASE}/api/prefs"
+        response = await client.post(url, params={"token": token}, json={"pins": ["Алгебра", "Физика", "Алгебра"]})
+        assert (await response.json())["data"]["pins"] == ["Алгебра", "Физика"]
+        for bad in ("Алгебра", [1], [""], ["x" * 121], ["П"] * 41):
+            response = await client.post(url, params={"token": token}, json={"pins": bad})
+            assert response.status == 400, bad
+
     async def test_weekends_pref_is_validated(self, client, token):
         url = f"{BASE}/api/prefs"
         response = await client.post(url, params={"token": token}, json={"weekends": "show"})

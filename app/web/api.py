@@ -637,20 +637,7 @@ async def archived_subject_marks(request: web.Request) -> web.Response:
         return json_error("Не указан предмет, учебный год или период")
 
     async def produce(app: AppContext, user: User):
-        years = await app.diary.fetch_school_years(user) or []
-        selected = next((year for year in years if year["id"] == year_id and not year["current"]), None)
-        if selected is None:
-            raise NetSchoolError(Reason.UNKNOWN, "Этот архивный год недоступен для выбранного ученика")
-        terms = await app.diary.fetch_terms(user, school_year_id=year_id) or []
-        term = next((item for item in terms if term_key(item.get("name")) == key), None)
-        try:
-            start = dt.date.fromisoformat(str((term or {}).get("startDate") or "")[:10])
-            end = dt.date.fromisoformat(str((term or {}).get("endDate") or "")[:10])
-            if end < start or (end - start).days > 366:
-                raise ValueError
-        except ValueError:
-            raise NetSchoolError(Reason.SERVER_UNAVAILABLE, "Школа не вернула даты выбранного периода")
-        days = await app.diary.fetch_period(user, start, end, today=user.today())
+        start, end, days = await _archived_period(app, user, year_id, key)
         items = []
         topics = {}
         teachers = {}
@@ -687,6 +674,58 @@ async def archived_subject_marks(request: web.Request) -> web.Response:
         }}
 
     return await _cached(request, f"marks:subject:{year_id}:{key}:{normalize(subject)}", produce)
+
+
+async def _archived_period(app: AppContext, user: User, year_id: int, key: str):
+    """Границы периода архивного года и дневник за него."""
+    years = await app.diary.fetch_school_years(user) or []
+    selected = next((year for year in years if year["id"] == year_id and not year["current"]), None)
+    if selected is None:
+        raise NetSchoolError(Reason.UNKNOWN, "Этот архивный год недоступен для выбранного ученика")
+    terms = await app.diary.fetch_terms(user, school_year_id=year_id) or []
+    term = next((item for item in terms if term_key(item.get("name")) == key), None)
+    try:
+        start = dt.date.fromisoformat(str((term or {}).get("startDate") or "")[:10])
+        end = dt.date.fromisoformat(str((term or {}).get("endDate") or "")[:10])
+        if end < start or (end - start).days > 366:
+            raise ValueError
+    except ValueError:
+        raise NetSchoolError(Reason.SERVER_UNAVAILABLE, "Школа не вернула даты выбранного периода")
+    days = await app.diary.fetch_period(user, start, end, today=user.today())
+    return start, end, days
+
+
+@routes.get("/api/marks/period")
+async def archived_period_marks(request: web.Request) -> web.Response:
+    """Оценки всех предметов архивного года за один период.
+
+    Архивные итоги приходят без оценок (их много и они дорогие), и карточки
+    предметов в «Оценках» показывали «Оценок пока нет». Экран просит этот
+    период целиком, когда его выбирают.
+    """
+    key = request.query.get("quarter") or ""
+    try:
+        year_id = int(request.query.get("year", ""))
+        if year_id <= 0 or key not in PERIOD_KEYS:
+            raise ValueError
+    except ValueError:
+        return json_error("Не указан учебный год или период")
+
+    async def produce(app: AppContext, user: User):
+        start, end, days = await _archived_period(app, user, year_id, key)
+        marks = []
+        for day in days:
+            if not start <= day.day <= end:
+                continue
+            excluded = {record for lesson in day.lessons if lesson.is_elective for record in lesson.marks}
+            topics = {record: lesson.topic for lesson in day.lessons for record in lesson.marks}
+            marks.extend({**_mark_to_json(record), "quarter": key, "lesson_topic": topics.get(record, "")}
+                         for record in day.marks
+                         if record not in excluded and start <= record.date <= end)
+        marks.sort(key=lambda mark: mark["date"])
+        return {"quarter": key, "marks": marks}
+
+    return await _cached(request, f"marks:period:{year_id}:{key}", produce)
 
 
 def _attendance_to_json(lesson, day, key):
@@ -1105,6 +1144,8 @@ THEMES = ("auto", "light", "dark")
 # Вкладки нижней панели (tabs.js); «Настройки» убрать нельзя — иначе их не вернуть.
 NAV_TABS = ("day", "schedule", "assistant", "homework", "totals", "mail", "settings")
 MAX_NAV_TABS = 6
+# Закреплённые предметы в «Оценках» — с запасом на все предметы года.
+MAX_PINS = 40
 DESIGNS = ("classic", "new")
 ACCENT_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 
@@ -1248,6 +1289,15 @@ async def save_prefs(request: web.Request) -> web.Response:
         ):
             return json_error("Некорректный набор вкладок")
         changes["tabs"] = tabs
+    if "pins" in body:
+        pins = body["pins"]
+        if (
+            not isinstance(pins, list)
+            or len(pins) > MAX_PINS
+            or not all(isinstance(pin, str) and 0 < len(pin) <= 120 for pin in pins)
+        ):
+            return json_error("Некорректный список закреплённых предметов")
+        changes["pins"] = list(dict.fromkeys(pins))
     if "periods" in body:
         setting = _clean_periods(body["periods"])
         if setting is None:

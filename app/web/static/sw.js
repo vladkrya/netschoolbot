@@ -122,8 +122,8 @@ self.addEventListener('push', (event) => {
       icon: '/static/icon-192.png',
       badge: '/static/icon-192.png',
       data: { url: payload.url || '/' },
-      tag: 'netschool',
-      renotify: true,
+      // Без общего tag: с ним каждое уведомление заменяло предыдущее, и из
+      // «оценки + задания» на экране оставалось только последнее.
     })
   );
 });

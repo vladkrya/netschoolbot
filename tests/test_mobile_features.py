@@ -1170,6 +1170,41 @@ class TestSchoolYearHistory:
             assert not (await response.json())["ok"]
         assert period.await_count == 1
 
+    async def test_archive_period_returns_marks_of_all_subjects(self, client, app_context, users, monkeypatch):
+        from unittest.mock import AsyncMock
+        from app.domain.records import DiaryDay, Lesson, MarkRecord
+        from tests.test_web import BASE
+
+        user = await users.save(mobile_user())
+        token = await app_context.miniapp.issue_token(user.telegram_id)
+        monkeypatch.setattr(app_context.diary, "fetch_school_years", AsyncMock(return_value=[
+            {"id": 65, "name": "2025/2026", "current": False},
+        ]))
+        monkeypatch.setattr(app_context.diary, "fetch_terms", AsyncMock(return_value=[
+            {"name": "1 четверть", "startDate": "2025-09-01", "endDate": "2025-10-25"}]))
+        day = dt.date(2025, 9, 3)
+        mark = MarkRecord("Алгебра", day, "Контрольная работа", "Дроби", "4")
+        other = replace(mark, subject="Физика", mark="2", date=dt.date(2025, 9, 2))
+        elective = replace(mark, mark="5")
+        outside = replace(mark, date=dt.date(2025, 10, 26))
+        monkeypatch.setattr(app_context.diary, "fetch_period", AsyncMock(return_value=[
+            DiaryDay(day, lessons=[Lesson(1, "Алгебра", topic="Тема", marks=(mark,)),
+                                   Lesson(2, "Алгебра", is_elective=True, marks=(elective,))],
+                     marks=[mark, other, elective]),
+            DiaryDay(outside.date, marks=[outside]),
+        ]))
+        params = {"token": token, "year": 65, "quarter": "q1"}
+        result = await (await client.get(f"{BASE}/api/marks/period", params=params)).json()
+        assert result["ok"]
+        marks = result["data"]["marks"]
+        # Все предметы, по дате, без факультатива и без дней за границей периода.
+        assert [(m["subject"], m["mark"], m["quarter"]) for m in marks] == [
+            ("Физика", "2", "q1"), ("Алгебра", "4", "q1")]
+        assert marks[1]["lesson_topic"] == "Тема"
+        for changes in ({"year": 999}, {"quarter": "q9"}, {"year": "wrong"}):
+            response = await client.get(f"{BASE}/api/marks/period", params={**params, **changes})
+            assert not (await response.json())["ok"]
+
     async def test_history_uses_school_class_names(self, service, holder, users):
         from unittest.mock import AsyncMock
         user = await users.save(mobile_user())

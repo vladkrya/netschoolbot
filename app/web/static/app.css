@@ -986,6 +986,21 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .demo-badge { margin: -4px 0 8px; padding: 8px 10px; border-radius: 10px; background: color-mix(in srgb, var(--head) 20%, transparent); color: var(--primary); font-size: 13px; font-weight: 600; text-align: center; }
 .demo-box .drawer-heading { display: flex; align-items: center; gap: 6px; }
 .attach { display: flex; align-items: center; gap: 8px; }
+/* Вложение качается: справа крутилка и «Загрузка…», сама плашка бледнеет. */
+.attach.loading { opacity: .75; pointer-events: none; }
+.attach.loading::after {
+  content: '';
+  flex: none;
+  width: 16px;
+  height: 16px;
+  order: 3;
+  border: 2px solid color-mix(in srgb, currentColor 25%, transparent);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: boot-spin .8s linear infinite;
+}
+.attach.loading::before { content: 'Загрузка…'; order: 2; margin-left: auto; font-size: 12px; color: var(--text2); }
+@keyframes boot-spin { to { transform: rotate(360deg); } }
 
 /* ─────────────────────── Стекло повсюду ─────────────────────── */
 
@@ -1439,14 +1454,21 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
 
 /* Помощник во вкладке: страница прокручивается целиком, поле ввода — над
    нижней панелью. */
-.ai-body.in-tab { min-height: calc(100dvh - var(--header-h) - var(--nav-h) - 32px); }
+/* Ровно по экрану: шапка, отступ панели сверху (12px), панель вкладок и
+   отступ body под ней (12px). Раньше вычитали 32px при отступах панели
+   12+20 (в новом дизайне 14+24), страница была выше экрана, и при открытии
+   вкладки её прокручивало вниз — экран «чуть съезжал». */
+#panel-assistant { padding-bottom: 0; }
+.ai-body.in-tab { min-height: calc(100dvh - var(--header-h) - var(--nav-h) - 24px); }
 /* Поле прилипает к самому низу, а фон тянется под нижнюю панель: иначе
    переписка просвечивала под полем и между ним и панелью. Сверху — мягкий
    переход, чтобы текст уходил под поле, а не обрезался. */
 .ai-body.in-tab .ai-input {
   bottom: 0;
   margin-bottom: calc(-1 * (var(--nav-h) + 12px));
-  padding-bottom: calc(var(--nav-h) + 20px);
+  /* Ровно столько, сколько забирает отрицательный отступ: на 8px больше —
+     и страница становилась выше экрана. */
+  padding-bottom: calc(var(--nav-h) + 12px);
 }
 .ai-input::before {
   content: '';

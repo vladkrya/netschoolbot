@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import datetime as dt
 import logging
+import time
 
 from aiogram import Bot
 from aiogram.exceptions import TelegramForbiddenError, TelegramRetryAfter
@@ -34,6 +35,9 @@ def _events_preview(events: list[MarkEvent]) -> str:
 # Больше этого числа событий — присылаем одну сводку вместо потока сообщений.
 DIGEST_THRESHOLD = 5
 BETWEEN_MESSAGES = 2.0
+# Сколько помнить отправленный push: уведомление, которое не дошло до
+# Telegram, остаётся в очереди и повторяется — push второй раз не нужен.
+PUSH_DEDUP_SECONDS = 24 * 3600
 
 
 class TelegramNotifier:
@@ -43,10 +47,16 @@ class TelegramNotifier:
         # Push в браузер — дополнение к Telegram, а не замена: приложение
         # может быть не установлено, а подписка — отозвана без уведомления.
         self._push = push
+        self._pushed: dict[tuple[int, str, str], float] = {}
+
+    # Push уходит раньше Telegram: раньше сбой Telegram (а он бывает — сеть
+    # до api.telegram.org рвётся) держал в очереди и push, и на телефон не
+    # приходило ничего, пока не оживёт Telegram.
 
     async def send_mark_events(self, user: User, events: list[MarkEvent]) -> None:
         if not events:
             return
+        await self._push_notify(user, "Новые оценки", _events_preview(events))
         if len(events) > DIGEST_THRESHOLD:
             await self._notify(user, formatting.mark_events_digest(events))
         else:
@@ -54,27 +64,26 @@ class TelegramNotifier:
                 if index and user.notifications.telegram:
                     await asyncio.sleep(BETWEEN_MESSAGES)
                 await self._notify(user, formatting.mark_event(event))
-        await self._push_notify(user, "Новые оценки", _events_preview(events))
 
     async def send_homework(self, user: User, items: list[HomeworkRecord]) -> None:
         if not items:
             return
-        await self._notify(user, formatting.homework_digest(items, tz=user.tz))
         await self._push_notify(
             user,
             "Новые задания",
             ", ".join(sorted({item.subject for item in items})[:4]),
         )
+        await self._notify(user, formatting.homework_digest(items, tz=user.tz))
 
     async def send_absences(self, user: User, items: list[AbsenceRecord]) -> None:
         if not items:
             return
-        await self._notify(user, formatting.absences_digest(items))
         await self._push_notify(
             user,
             "Отметки посещаемости",
             ", ".join(sorted({item.subject for item in items})[:4]),
         )
+        await self._notify(user, formatting.absences_digest(items))
 
     async def send_token_expiring(self, user: User, expires_at: dt.datetime) -> None:
         await self._send(user, formatting.token_expiring(expires_at, tz=user.tz))
@@ -83,16 +92,22 @@ class TelegramNotifier:
         """Отправить push, не давая его сбою повлиять на Telegram."""
         if self._push is None:
             return
+        now = time.monotonic()
+        self._pushed = {key: at for key, at in self._pushed.items() if now - at < PUSH_DEDUP_SECONDS}
+        key = (user.telegram_id, title, body)
+        if key in self._pushed:
+            return
         try:
-            await self._push.send(user.telegram_id, title, body)
+            if await self._push.send(user.telegram_id, title, body):
+                self._pushed[key] = now
         except Exception as exc:  # noqa: BLE001
-            logger.debug("Push для %s не ушёл: %s", user.telegram_id, exc)
+            logger.warning("Push для %s не ушёл: %s", user.telegram_id, exc)
 
     async def send_text(self, user: User, text: str, *, push: tuple[str, str] | None = None) -> None:
         """Уведомление-текст (замены, сводки); push — заголовок и строка для браузера."""
-        await self._notify(user, text)
         if push:
             await self._push_notify(user, *push)
+        await self._notify(user, text)
 
     async def _notify(self, user: User, text: str) -> None:
         """Уведомление в Telegram, если человек его оттуда не выключил.
