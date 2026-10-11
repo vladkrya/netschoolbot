@@ -58,30 +58,45 @@ export async function ensureWeek(iso, force = false) {
   return request;
 }
 
+// Пока человек сам не выбрал день (стрелки, свайп, календарь), день
+// выбирает приложение: сегодня, а если сегодня спрятанный выходной — первый
+// учебный день после него. Выбор пересчитывается при каждой загрузке, а не
+// только при первой: настройка «выходные» приходит с сервера уже после
+// первого рисования (в Telegram и в веб-приложении она хранится на
+// устройстве отдельно), и раньше экран так и оставался на воскресенье.
+let autoDay = true;
+
+/** Сегодня или, если сегодня спрятанный выходной, следующий учебный день. */
+function pickDay() {
+  let iso = isoToday();
+  for (let step = 0; step < 2 && isHiddenWeekend(iso); step += 1) iso = addDays(iso, 1);
+  return iso;
+}
+
 export async function loadDay(force = false) {
-  const opening = !state.date;
-  if (opening) state.date = isoToday();
+  if (!state.date || autoDay) state.date = isoToday();
   renderHeader();
   const container = $('dayContent');
   if (force || !loadedWeeks.has(weekOffsetOf(state.date))) {
     showLoading(container, skeleton());
-    try {
-      await ensureWeek(state.date, force);
-      // Открыли в выходной, а выходные скрыты — сразу на понедельник, как
-      // стрелки. Спрятан ли день, ясно только после загрузки: субботу с
-      // уроками показываем.
-      if (opening && isHiddenWeekend(state.date)) {
-        let iso = state.date;
-        for (let step = 0; step < 2 && isHiddenWeekend(iso); step += 1) iso = addDays(iso, 1);
-        state.date = iso;
-        renderHeader();
-        await ensureWeek(iso);
+  }
+  try {
+    // Спрятан ли выходной, ясно только по загруженной неделе: субботу с
+    // уроками показываем.
+    if (force || !loadedWeeks.has(weekOffsetOf(state.date))) await ensureWeek(state.date, force);
+    if (autoDay) {
+      state.date = pickDay();
+      renderHeader();
+      const other = weekOffsetOf(state.date) !== weekOffsetOf(isoToday());
+      if (other && (force || !loadedWeeks.has(weekOffsetOf(state.date)))) {
+        showLoading(container, skeleton());
+        await ensureWeek(state.date, force);
       }
-    } catch (error) {
-      showFailure(container, error, errorCard(error, 'dayRetry'));
-      $('dayRetry')?.addEventListener('click', () => loadDay(true));
-      return;
     }
+  } catch (error) {
+    showFailure(container, error, errorCard(error, 'dayRetry'));
+    $('dayRetry')?.addEventListener('click', () => loadDay(true));
+    return;
   }
   renderDay();
 }
@@ -220,6 +235,8 @@ function lessonCard(lesson, index, progress) {
 }
 
 export async function goToDay(iso) {
+  // Человек выбрал день сам — дальше приложение его не переставляет.
+  autoDay = false;
   state.date = iso;
   await loadDay();
 }
