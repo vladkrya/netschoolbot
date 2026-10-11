@@ -334,7 +334,6 @@ function bindSwipe() {
   let startY = 0;
   let tracking = false;
   let armed = false;
-  let swipedAt = -Infinity;
   // Горизонтальный жест заметно длиннее вертикального — иначе это прокрутка.
   const isSwipe = (dx, dy) => Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5;
   area.addEventListener('touchstart', (event) => {
@@ -361,16 +360,8 @@ function bindSwipe() {
     const dx = touch.clientX - startX;
     if (!isSwipe(dx, touch.clientY - startY)) return;
     if (!armed) select();
-    swipedAt = performance.now();
     shiftDay(dx < 0 ? 1 : -1, true);
   }, { passive: true });
-  // Протянутый пальцем переключатель-отклик на iPhone (haptics.js) после
-  // свайпа присылает клик — урок от него открываться не должен.
-  area.addEventListener('click', (event) => {
-    if (performance.now() - swipedAt > 600) return;
-    event.preventDefault();
-    event.stopPropagation();
-  }, { capture: true });
 }
 
 export function initDay() {
