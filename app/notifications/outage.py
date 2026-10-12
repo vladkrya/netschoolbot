@@ -13,7 +13,11 @@ import time
 from collections import deque
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 from urllib.parse import urlparse
+
+if TYPE_CHECKING:
+    from .sgo_version import VersionTracker
 
 logger = logging.getLogger("netschoolbot.outage")
 
@@ -38,9 +42,15 @@ class OutageMonitor:
         self._send = send
         self._clock = clock
         self._hosts: dict[str, _Host] = {}
+        self._versions: VersionTracker | None = None
 
     def attach(self, send: Callable[[str], Awaitable[None]]) -> None:
         self._send = send
+
+    def track_versions(self, versions: VersionTracker) -> None:
+        """Сверять версию «Сетевого города»: раз в несколько часов и сразу
+        после простоя — сервер часто возвращается уже обновлённым."""
+        self._versions = versions
 
     async def record(self, school_url: str, *, ok: bool, server_down: bool = False) -> None:
         """Итог проверки. Ошибки не про сервер (вход, неизвестные) не считаем."""
@@ -58,16 +68,29 @@ class OutageMonitor:
             if state.down_since is not None and state.ok_streak >= RECOVERED_AFTER:
                 minutes = max(1, round((now - state.down_since) / 60))
                 state.down_since = None
-                await self._notify(f"✅ «Сетевой город» {host} снова отвечает (простой ~{minutes} мин)")
+                text = f"✅ «Сетевой город» {host} снова отвечает (простой ~{minutes} мин)"
+                if self._versions is not None:
+                    previous, version = await self._versions.check(host, school_url)
+                    if previous and version and previous != version:
+                        text += f", версия обновилась: {previous} → {version}"
+                    elif version:
+                        text += f", версия {version}"
+                logger.warning(text)
+                await self._notify(text)
+            elif self._versions is not None:
+                self._versions.check_later(host, school_url, self._notify)
             return
         state.ok_streak = 0
         failed = sum(1 for _, good in state.checks if not good)
         total = len(state.checks)
         if state.down_since is None and total >= MIN_CHECKS and failed / total >= FAIL_SHARE:
             state.down_since = now
-            await self._notify(
-                f"⚠️ «Сетевой город» {host} не отвечает: {failed} из {total} проверок "
-                f"за {WINDOW_S // 60} мин. Сообщу, когда оживёт.")
+            version = self._versions.known(host) if self._versions is not None else ""
+            text = (f"⚠️ «Сетевой город» {host} не отвечает: {failed} из {total} проверок "
+                    f"за {WINDOW_S // 60} мин" + (f" (версия до простоя {version})" if version else "")
+                    + ". Сообщу, когда оживёт.")
+            logger.warning(text)
+            await self._notify(text)
 
     async def _notify(self, text: str) -> None:
         if self._send is None:

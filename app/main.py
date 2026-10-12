@@ -125,6 +125,16 @@ async def run(settings: Settings, args: argparse.Namespace) -> int:
         async def tell_admin(text: str) -> None:
             await bot.send_message(settings.telegram.admin_id, text)
         context.watchers.outages.attach(tell_admin)
+    # Версии «Сетевого города» — в лог и админу о смене; пишутся и без админа.
+    from .db.repositories import SgoVersionRepository
+    from .notifications.sgo_version import VersionTracker, logindata_fetcher
+
+    versions = VersionTracker(SgoVersionRepository(context.db), logindata_fetcher(context))
+    try:
+        await versions.load()
+    except Exception as exc:  # noqa: BLE001 — без истории версий бот работает
+        logger.warning("Версии «Сетевого города» не загружены: %s", exc)
+    context.watchers.outages.track_versions(versions)
 
     tasks: list[asyncio.Task] = [
         asyncio.create_task(cleanup_sessions(context), name="session-cleanup"),

@@ -478,6 +478,17 @@ MIGRATIONS: list[str] = [
         expires_at REAL NOT NULL
     );
     """,
+    # 27 — версия «Сетевого города» по серверу: после простоя видно, обновили
+    # ли его, а смену версии можно сопоставить с новыми ошибками в логах.
+    """
+    CREATE TABLE sgo_versions (
+        host TEXT PRIMARY KEY,
+        version TEXT NOT NULL,
+        previous TEXT NOT NULL DEFAULT '',
+        changed_at REAL NOT NULL,
+        seen_at REAL NOT NULL
+    );
+    """,
 ]
 
 

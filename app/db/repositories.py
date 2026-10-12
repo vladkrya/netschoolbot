@@ -1075,3 +1075,36 @@ class CaldavRepository:
             await self._db.execute("UPDATE caldav_accounts SET last_error=? WHERE telegram_id=?", (error, telegram_id))
         else:
             await self._db.execute("UPDATE caldav_accounts SET last_sync_at=datetime('now'), last_error=NULL WHERE telegram_id=?", (telegram_id,))
+
+
+class SgoVersionRepository:
+    """Последняя увиденная версия «Сетевого города» на каждом сервере."""
+
+    def __init__(self, db: Database) -> None:
+        self._db = db
+
+    async def get(self, host: str) -> str:
+        row = await self._db.fetch_one("SELECT version FROM sgo_versions WHERE host=?", (host,))
+        return row["version"] if row else ""
+
+    async def save(self, host: str, version: str, now: float) -> str:
+        """Записать увиденную версию. Возвращает прежнюю ('' — сервер новый)."""
+        async with self._db.transaction() as conn:
+            cursor = await conn.execute("SELECT version FROM sgo_versions WHERE host=?", (host,))
+            row = await cursor.fetchone()
+            previous = row[0] if row else ""
+            if previous == version:
+                await conn.execute("UPDATE sgo_versions SET seen_at=? WHERE host=?", (now, host))
+            else:
+                await conn.execute(
+                    "INSERT INTO sgo_versions (host, version, previous, changed_at, seen_at) "
+                    "VALUES (?, ?, ?, ?, ?) ON CONFLICT(host) DO UPDATE SET "
+                    "version=excluded.version, previous=excluded.previous, "
+                    "changed_at=excluded.changed_at, seen_at=excluded.seen_at",
+                    (host, version, previous, now, now),
+                )
+        return previous
+
+    async def all(self) -> list[dict]:
+        rows = await self._db.fetch_all("SELECT * FROM sgo_versions ORDER BY host")
+        return [dict(row) for row in rows]
