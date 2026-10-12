@@ -8,7 +8,6 @@ import { notify, select } from './haptics.js';
 import { ICONS } from './icons.js';
 import { popScreen, pushScreen } from './screens.js';
 import { closeSheet, openSheet } from './sheet.js';
-import { isNewDesign } from './appearance.js';
 import { setNavBadge } from './tabs.js';
 
 const AVATAR_COLORS = ['#a7b83a', '#4a9fd8', '#d8844a', '#9a6ad8', '#d84a6a', '#3ab89a'];
@@ -28,10 +27,16 @@ let newestFirst = true;
 
 export async function loadMail(force = false) {
   const container = $('mailContent');
-  $('composeBtn').hidden = isNewDesign() && mode === 'ann';
-  $('mailTools').hidden = isNewDesign() && mode === 'ann';
-  if (isNewDesign() && mode === 'ann') {
+  // Новое письмо, поиск и фильтры — только в разделе писем.
+  $('composeBtn').hidden = mode !== 'mail';
+  $('mailTools').hidden = mode !== 'mail';
+  if (mode === 'ann') {
     await renderAnnouncements(container, force);
+    return;
+  }
+  if (mode === 'chat') {
+    const { renderChats } = await import('./chat.js');
+    await renderChats(container, force);
     return;
   }
   if (!state.mail || force) {
@@ -131,7 +136,7 @@ async function renderAnnouncements(body, force = false) {
   body.innerHTML = skeleton(4);
   try {
     const { data } = await api(`/api/announcements${force ? '?refresh=1' : ''}`);
-    if (isNewDesign() && body.id === 'mailContent' && mode !== 'ann') return;
+    if (body.id === 'mailContent' && mode !== 'ann') return;
     const items = data.items || [];
     if (!items.length) {
       body.innerHTML = '<div class="empty big">Объявлений нет</div>';
@@ -167,9 +172,7 @@ export function initMail() {
     select();
     mode = button.dataset.mailMode;
     seg.querySelectorAll('[data-mail-mode]').forEach((item) => item.classList.toggle('on', item === button));
-    seg.style.setProperty('--i', mode === 'ann' ? 1 : 0);
-    // Новое письмо — только в разделе писем.
-    $('composeBtn').hidden = mode === 'ann';
+    seg.style.setProperty('--i', ['mail', 'chat', 'ann'].indexOf(mode));
     loadMail();
   });
 

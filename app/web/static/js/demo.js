@@ -403,7 +403,79 @@ export async function demoApi(path, options = {}) {
     return ok({ url: location.href });
   }
 
+  if (route.startsWith('/api/chat')) return demoChat(route, url, options, body);
+
   const error = new Error('В демо это недоступно');
   error.reason = 'demo';
   throw error;
+}
+
+/* ───────── Чаты в демо: всё в памяти, сервер не участвует ───────── */
+
+const DEMO_ROOMS = [
+  { id: 'class:demo:9б', kind: 'class', title: '9б класс', subtitle: 'Демо-школа №1' },
+  { id: 'grade:demo:9', kind: 'grade', title: '9-е классы', subtitle: 'Демо-школа №1' },
+  { id: 'school:demo', kind: 'school', title: 'Вся школа', subtitle: 'Демо-школа №1' },
+  { id: 'global:8-9', kind: 'global', title: 'Общий чат · 8–9 классы', subtitle: 'Все школы' },
+];
+const demoChatState = { joined: false, nextId: 1, messages: {} };
+
+function demoChatSeed() {
+  if (demoChatState.seeded) return;
+  demoChatState.seeded = true;
+  const now = Date.now() / 1000;
+  const add = (room, author, grade, text, ago, extra = {}) => {
+    const id = demoChatState.nextId++;
+    (demoChatState.messages[room] ||= []).push({
+      id, author, grade, admin: false, mine: false, text, deleted: false, hidden: false, pinned: false,
+      at: now - ago, reply: null, reactions: {}, my_reactions: [], ...extra,
+    });
+  };
+  add('class:demo:9б', 'Маша', 9, 'Кто понял, что задали по алгебре?', 3600);
+  add('class:demo:9б', 'Артём', 9, '№272, №274 и №277, на завтра', 3400, { reactions: { '👍': 3 } });
+  add('class:demo:9б', 'Маша', 9, 'Спасибо!', 3300);
+  add('grade:demo:9', 'Даня', 9, 'В пятницу экскурсия у всех 9-х?', 7200);
+  add('global:8-9', 'Лиза', 8, 'Всем привет! Кто готовится к ОГЭ по биологии?', 600);
+}
+
+function demoChat(route, url, options, body) {
+  demoChatSeed();
+  const overview = () => ok({
+    joined: demoChatState.joined, admin: false, as_admin: false,
+    rules: ['В чатах только ученики: вход проверяется через «Сетевой город».',
+      'Другим видно только твоё имя и номер класса — без фамилии.',
+      'Администрация видит все чаты и может удалять сообщения и блокировать нарушителей.',
+      'В общем чате нельзя оставлять ссылки, телефоны и ники.'],
+    profile: demoChatState.joined ? { first_name: 'Отличник', class_name: '9б', grade: 9, banned: false, muted_until: 0 } : null,
+    rooms: demoChatState.joined ? DEMO_ROOMS.map((room) => {
+      const list = demoChatState.messages[room.id] || [];
+      const last = list[list.length - 1];
+      return { ...room, unread: room.kind === 'class' ? 2 : 0, muted: false,
+        last: last ? { author: last.author, text: last.text, at: last.at } : null };
+    }) : [],
+  });
+  if (route === '/api/chat') return overview();
+  if (route === '/api/chat/join') { demoChatState.joined = true; return overview(); }
+  if (route === '/api/chat/leave') { demoChatState.joined = false; return overview(); }
+  const match = route.match(/^\/api\/chat\/rooms\/([^/]+)\/(messages|read)$/);
+  if (!match) return overview();
+  const room = decodeURIComponent(match[1]);
+  const list = (demoChatState.messages[room] ||= []);
+  if (match[2] === 'read') return { ok: true };
+  if (options.method === 'POST') {
+    const reply = list.find((m) => m.id === body.reply_to);
+    const message = {
+      id: demoChatState.nextId++, author: 'Отличник', grade: 9, admin: false, mine: true, text: body.text,
+      deleted: false, hidden: false, pinned: false, at: Date.now() / 1000,
+      reply: reply ? { id: reply.id, author: reply.author, text: reply.text } : null, reactions: {}, my_reactions: [],
+    };
+    list.push(message);
+    return ok(message);
+  }
+  const after = url.searchParams.get('after');
+  return ok({
+    room: DEMO_ROOMS.find((r) => r.id === room), moderator: false, now: Date.now() / 1000,
+    messages: after != null ? list.filter((m) => m.id > Number(after)) : list.slice(-50),
+    changed: [],
+  });
 }
