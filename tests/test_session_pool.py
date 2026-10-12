@@ -387,3 +387,28 @@ class TestGosuslugiSession:
         pool._entries[1].last_used = dt.datetime.now() - dt.timedelta(hours=2)
         assert await pool.evict_idle() == 0
         assert client.closed is False
+
+
+@pytest.mark.parametrize('cause, expected', [
+    ('Expecting value: line 1 column 1 (char 0)', Reason.SERVER_UNAVAILABLE),
+    ('Технические работы', Reason.SERVER_UNAVAILABLE),
+    ('Неожиданный ответ HTML', Reason.UNKNOWN),
+])
+async def test_uncertain_session_validation_does_not_drop_session(pool, users, sessions, cause, expected):
+    from netschoolpy.exceptions import SessionExpired
+    user = make_user(credentials=Credentials(login_type=LoginType.PASSWORD))
+    await users.save(user)
+    await sessions.save(1, '{"cookies": "saved"}')
+    def factory(url, proxy):
+        client = FakeClient(url, proxy)
+        async def fail(payload):
+            raise SessionExpired(f'Сессия истекла или невалидна: {cause}')
+        client.import_session = fail
+        return client
+    pool._client_factory = factory
+    with pytest.raises(NetSchoolError) as info:
+        async with pool.acquire(user):
+            pass
+    assert info.value.reason is expected
+    assert await sessions.load(1) == '{"cookies": "saved"}'
+    assert FakeClient.instances[-1].closed

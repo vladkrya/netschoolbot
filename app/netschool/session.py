@@ -213,19 +213,23 @@ class SessionPool:
 
         client = self._new_client(user, user.effective_api_mode)
 
-        if await self._restore(user.telegram_id, client):
-            if await self._is_alive(client):
-                _apply_student(client, user)
-                entry.client = client
-                return client
-            # Сохранённая сессия протухла — она больше не пригодится.
-            await self._sessions.drop(user.telegram_id)
+        try:
+            if await self._restore(user.telegram_id, client):
+                if await self._is_alive(client):
+                    _apply_student(client, user)
+                    entry.client = client
+                    return client
+                # Сохранённая сессия протухла — она больше не пригодится.
+                await self._sessions.drop(user.telegram_id)
 
-        await self._login(user, client)
-        _apply_student(client, user)
-        await self._persist(user.telegram_id, client)
-        entry.client = client
-        return client
+            await self._login(user, client)
+            _apply_student(client, user)
+            await self._persist(user.telegram_id, client)
+            entry.client = client
+            return client
+        except BaseException:
+            await _close_client(client)
+            raise
 
     async def _restore(self, telegram_id: int, client: Any) -> bool:
         payload = await self._sessions.load(telegram_id)
@@ -242,7 +246,7 @@ class SessionPool:
             # входа, поэтому классифицируем исходную причину после него.
             cause = Exception(str(exc).split(": ", 1)[-1])
             reason = classify(cause)
-            if reason.is_retryable or reason is Reason.ESIA:
+            if reason is not Reason.AUTH:
                 raise wrap(cause, context=f"восстановление {telegram_id}") from exc
             logger.info("Сохранённая сессия %s не восстановилась: %s", telegram_id, exc)
             await self._sessions.drop(telegram_id)
@@ -274,7 +278,7 @@ class SessionPool:
                 "Сессия Госуслуг истекла. Войдите заново: /login",
             )
         if not user.credentials.can_relogin:
-            raise NetSchoolError(Reason.AUTH, "Логин или пароль не сохранены. Войдите: /login")
+            raise NetSchoolError(Reason.AUTH, "Не удалось восстановить вход в «Сетевой город». Для повторного входа используйте /login")
         try:
             await client.login(
                 user.credentials.login,

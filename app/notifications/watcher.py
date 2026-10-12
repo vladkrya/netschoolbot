@@ -115,8 +115,6 @@ class UserWatcher:
         self._diary = diary
         self._notifier = notifier
         self._backoff = 0.0
-        # Об одной и той же проблеме сообщаем один раз, а не каждый круг.
-        self._reported_reason: Reason | None = None
         # Что уже видели в ленте событий и когда в последний раз сверяли
         # дневник целиком. В памяти: после перезапуска первая проверка
         # просто пройдёт полным путём.
@@ -176,7 +174,6 @@ class UserWatcher:
         await self._send_digests(user)
 
         self._backoff = 0.0
-        self._reported_reason = None
         await self._record_status(ok=True, delay=float(user.check_interval))
         return float(user.check_interval)
 
@@ -485,16 +482,16 @@ class UserWatcher:
         return confirmed
 
     async def _handle_error(self, user: User, error: NetSchoolError) -> float:
-        if error.reason is not self._reported_reason:
-            # Первое появление проблемы — сообщаем. Повторы молчат, иначе
-            # недоступная школа шлёт сообщение каждые пять минут.
-            self._reported_reason = error.reason
-            # Вход через Госуслуги требует действий пользователя. Фоновая
-            # проверка не должна снова писать об этом после каждого рестарта
-            # бота или перезапуска проверки; при ручном запросе ошибка видна.
-            esia_expired = user.credentials.login_type.is_gosuslugi and error.reason.needs_relogin
-            if not esia_expired and (error.reason.needs_relogin or not error.reason.is_retryable):
+        # Памяти процесса недостаточно: перезапуски и чередование ошибок
+        # не должны снова слать просьбу войти при той же неисправности.
+        esia_expired = user.credentials.login_type.is_gosuslugi and error.reason.needs_relogin
+        should_notify = not esia_expired and (error.reason.needs_relogin or not error.reason.is_retryable)
+        if should_notify and await self._state.claim_error_notice(user.telegram_id, error.reason.value):
+            try:
                 await self._notifier.send_error(user, error)
+            except BaseException:
+                await self._state.release_error_notice(user.telegram_id, error.reason.value)
+                raise
 
         if error.reason.needs_relogin:
             # Без участия человека дальше двигаться некуда.

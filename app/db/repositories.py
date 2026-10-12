@@ -573,6 +573,7 @@ class MarkStateRepository:
         now = _utc_now_text()
         next_text = next_check_at.isoformat(timespec="seconds") if next_check_at else None
         if ok:
+            await self._db.execute("DELETE FROM watch_error_notices WHERE telegram_id = ?", (telegram_id,))
             sql = """INSERT INTO watch_status (telegram_id, last_ok_at, next_check_at)
                      VALUES (?, ?, ?)
                      ON CONFLICT(telegram_id) DO UPDATE SET
@@ -607,6 +608,18 @@ class MarkStateRepository:
                ON CONFLICT(telegram_id, kind) DO UPDATE SET period = excluded.period""",
             (telegram_id, kind, period),
         )
+
+    async def claim_error_notice(self, telegram_id: int, reason: str) -> bool:
+        """Один отправитель для каждой причины до следующей успешной проверки."""
+        async with self._db.transaction() as db:
+            cursor = await db.execute(
+                "INSERT OR IGNORE INTO watch_error_notices (telegram_id, reason) VALUES (?, ?)",
+                (telegram_id, reason))
+            return cursor.rowcount == 1
+
+    async def release_error_notice(self, telegram_id: int, reason: str) -> None:
+        await self._db.execute(
+            "DELETE FROM watch_error_notices WHERE telegram_id = ? AND reason = ?", (telegram_id, reason))
 
     async def watch_status(self, telegram_id: int) -> WatchStatus:
         row = await self._db.fetch_one(

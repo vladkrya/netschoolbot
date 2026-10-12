@@ -412,6 +412,18 @@ MIGRATIONS: list[str] = [
     );
     INSERT INTO chat_nicks SELECT telegram_id, nick, nick_key FROM chat_profiles WHERE nick IS NOT NULL;
     """,
+    # 22 — ошибки фоновой проверки не рассылаются заново после перезапуска.
+    """
+    CREATE TABLE watch_error_notices (
+        telegram_id INTEGER NOT NULL REFERENCES users(telegram_id) ON DELETE CASCADE,
+        reason TEXT NOT NULL,
+        PRIMARY KEY (telegram_id, reason)
+    );
+    INSERT INTO watch_error_notices (telegram_id, reason)
+    SELECT telegram_id, 'auth' FROM watch_status
+    WHERE last_error LIKE '%/login%' AND
+        (last_ok_at IS NULL OR last_error_at > last_ok_at);
+    """,
 ]
 
 

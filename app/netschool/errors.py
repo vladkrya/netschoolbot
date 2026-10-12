@@ -58,7 +58,7 @@ _AUTH_MARKERS = (
     # Так netschoolpy 3.x пишет о протухшей сессии («Сессия истекла.
     # Авторизуйтесь заново.») — без этих маркеров она считалась неизвестной
     # ошибкой, и мёртвая сессия выдавалась за живую.
-    "сессия истекла", "авторизуйтесь",
+    "сессия истекла", "авторизуйтесь", "не сессия мобильного api",
 )
 _SERVER_MARKERS = (
     "timeout", "temporarily unavailable", "service unavailable",
@@ -67,6 +67,8 @@ _SERVER_MARKERS = (
     # сервера — такой же временный сбой, а считался «неизвестной ошибкой»,
     # без повтора и без сохранённых данных.
     "500", "502", "503", "504", "internal server error",
+    "maintenance", "технические работы", "технических работ", "техработ",
+    "expecting value: line 1 column 1",
 )
 _ESIA_MARKERS = ("esia", "gosuslugi", "госуслуг")
 _RATE_MARKERS = ("429", "too many requests")
@@ -126,6 +128,8 @@ def _classify_by_type(exc: BaseException) -> Reason | None:
     ):
         exc_class = getattr(ns, attr, None)
         if exc_class is not None and isinstance(exc, exc_class):
+            if attr == "SessionExpired" and any(marker in str(exc).lower() for marker in _SERVER_MARKERS):
+                return Reason.SERVER_UNAVAILABLE
             return reason
     return None
 

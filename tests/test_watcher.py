@@ -930,3 +930,33 @@ class TestMailNotifications:
         inbox.append({'id': 2, 'subject': 'Новое'})
         await watcher.run_once()
         assert len(notifier.texts) == 1
+
+
+async def test_auth_notice_survives_restart_and_alternating_failures(users, marks, watcher, diary, notifier):
+    await users.save(make_user())
+    diary.error = NetSchoolError(Reason.AUTH, 'Войдите: /login')
+    await watcher.run_once()
+    diary.error = NetSchoolError(Reason.SERVER_UNAVAILABLE, 'Технические работы')
+    await watcher.run_once()
+    restarted = UserWatcher(1, users=users, state=marks, diary=diary, notifier=notifier)
+    diary.error = NetSchoolError(Reason.AUTH, 'Войдите: /login')
+    await restarted.run_once()
+    assert len(notifier.errors) == 1
+    diary.error = None
+    await restarted.run_once()
+    diary.error = NetSchoolError(Reason.AUTH, 'Новое истечение сессии')
+    await restarted.run_once()
+    assert len(notifier.errors) == 2
+
+async def test_failed_error_notice_can_be_retried(users, marks, watcher, diary, notifier):
+    await users.save(make_user())
+    original = notifier.send_error
+    async def fail(*args):
+        raise RuntimeError('Telegram unavailable')
+    notifier.send_error = fail
+    diary.error = NetSchoolError(Reason.AUTH, 'Войдите: /login')
+    with pytest.raises(RuntimeError):
+        await watcher.run_once()
+    notifier.send_error = original
+    await watcher.run_once()
+    assert len(notifier.errors) == 1

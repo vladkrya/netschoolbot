@@ -72,3 +72,10 @@ class TestWrap:
     def test_already_wrapped_passes_through(self):
         error = NetSchoolError(Reason.MFA, "нужен код")
         assert wrap(error) is error
+
+
+@pytest.mark.parametrize('text', ['Технические работы', 'Maintenance', 'Expecting value: line 1 column 1 (char 0)'])
+def test_maintenance_is_not_expired_session(text):
+    from netschoolpy.exceptions import SessionExpired
+    assert classify(Exception(text)) is Reason.SERVER_UNAVAILABLE
+    assert classify(SessionExpired(f'Сессия истекла или невалидна: {text}')) is Reason.SERVER_UNAVAILABLE
