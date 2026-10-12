@@ -353,7 +353,10 @@ export function attachmentUrl(id, name = '') {
   const filename = name ? `&name=${encodeURIComponent(name)}` : '';
   // Страница ожидания, а не сам файл: она показывает загрузку и ошибку,
   // пока перегруженный сервер школы отдаёт вложение.
-  return `${attachmentHost()}${base}/attachment/${id}?${credential}${filename}`;
+  const host = attachmentHost();
+  // via=pwa: страница вложения подскажет нажать компас «Открыть в Safari».
+  const via = host ? '&via=pwa' : '';
+  return `${host}${base}/attachment/${id}?${credential}${filename}${via}`;
 }
 
 // В установленном на iPhone приложении (PWA) ссылка на свой домен
