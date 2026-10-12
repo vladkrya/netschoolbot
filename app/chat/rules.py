@@ -6,8 +6,8 @@
 * ``class:<школа>:<класс>`` — свой класс («9б»);
 * ``grade:<школа>:<параллель>`` — все классы параллели своей школы;
 * ``school:<школа>`` — вся школа;
-* ``global:<группа>`` — общий чат всех школ, но по возрастным группам:
-  четвероклассник и одиннадцатиклассник в одну комнату не попадают.
+* ``global:6-11`` — общий чат всех школ, с 6 по 11 класс. Младшим он не
+  виден: им общий чат с подростками ни к чему.
 """
 
 from __future__ import annotations
@@ -16,8 +16,9 @@ import hashlib
 import re
 from dataclasses import dataclass
 
-# Возрастные группы общего чата: (первый класс, последний класс).
-AGE_BANDS: tuple[tuple[int, int], ...] = ((1, 4), (5, 7), (8, 9), (10, 11))
+# Общий чат: (первый класс, последний класс). Один на всех с 6 класса.
+AGE_BANDS: tuple[tuple[int, int], ...] = ((6, 11),)
+GLOBAL_TITLE = "Общий чат"
 
 MAX_TEXT = 2000
 ADMIN_NAME = "admin"
@@ -37,11 +38,12 @@ def grade_of(class_name: str) -> int | None:
     return grade if 1 <= grade <= 11 else None
 
 
-def band_of(grade: int) -> str:
+def band_of(grade: int) -> str | None:
+    """Комната общего чата для параллели; None — общий чат этому классу не положен."""
     for first, last in AGE_BANDS:
         if first <= grade <= last:
             return f"{first}-{last}"
-    return f"{AGE_BANDS[-1][0]}-{AGE_BANDS[-1][1]}"
+    return None
 
 
 def first_name(full_name: str) -> str:
@@ -70,22 +72,27 @@ class Room:
 
 def rooms_for(school: str, class_name: str, grade: int, school_name: str = "") -> list[Room]:
     """Комнаты ученика — в порядке списка на экране."""
-    first, last = map(int, band_of(grade).split("-"))
     cls = normalize_class(class_name)
-    return [
+    rooms = [
         Room(f"class:{school}:{cls}", "class", f"{class_name.strip()} класс", school_name),
         Room(f"grade:{school}:{grade}", "grade", f"{grade}-е классы", school_name),
         Room(f"school:{school}", "school", "Вся школа", school_name),
-        Room(f"global:{first}-{last}", "global", f"Общий чат · {first}–{last} классы", "Все школы"),
     ]
+    if band := band_of(grade):
+        rooms.append(_global_room(band))
+    return rooms
+
+
+def _global_room(band: str) -> Room:
+    first, last = band.split("-")
+    return Room(f"global:{band}", "global", GLOBAL_TITLE, f"Все школы · {first}–{last} классы")
 
 
 def describe(room_id: str) -> Room | None:
     """Комната по id — для администратора, у которого своих комнат нет."""
     kind, _, rest = room_id.partition(":")
-    if kind == "global" and re.fullmatch(r"\d{1,2}-\d{1,2}", rest):
-        first, last = rest.split("-")
-        return Room(room_id, "global", f"Общий чат · {first}–{last} классы", "Все школы")
+    if kind == "global" and rest in {f"{first}-{last}" for first, last in AGE_BANDS}:
+        return _global_room(rest)
     if kind == "school" and rest:
         return Room(room_id, "school", "Вся школа")
     if kind == "grade" and ":" in rest:

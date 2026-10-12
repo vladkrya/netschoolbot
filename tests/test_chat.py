@@ -54,7 +54,7 @@ async def send(client, token, room, text, **extra):
 class TestRules:
     def test_grades_and_bands(self):
         assert rules.grade_of("9б") == 9 and rules.grade_of("10-А") == 10 and rules.grade_of("Б") is None
-        assert [rules.band_of(g) for g in (3, 5, 9, 11)] == ["1-4", "5-7", "8-9", "10-11"]
+        assert [rules.band_of(g) for g in (3, 5, 6, 9, 11)] == [None, None, "6-11", "6-11", "6-11"]
 
     def test_only_first_name(self):
         assert rules.first_name("Соловьёв Владислав Игоревич") == "Владислав"
@@ -87,7 +87,7 @@ class TestJoin:
         assert status == 200 and body["data"]["joined"]
         rooms = body["data"]["rooms"]
         assert [room["kind"] for room in rooms] == ["class", "grade", "school", "global"]
-        assert rooms[3]["id"] == "global:8-9"
+        assert rooms[3]["id"] == "global:6-11" and rooms[3]["title"] == "Общий чат"
         assert body["data"]["profile"]["first_name"] == "Пётр"
 
 
@@ -111,7 +111,7 @@ class TestMessages:
 
     async def test_global_room_blocks_contacts(self, client, student_token):
         await join(client, student_token)
-        status, body = await send(client, student_token, "global:8-9", "пиши мне t.me/kek")
+        status, body = await send(client, student_token, "global:6-11", "пиши мне t.me/kek")
         assert status == 400 and "ссылки" in body["error"]
 
     async def test_other_school_room_is_closed(self, client, student_token):
@@ -121,13 +121,20 @@ class TestMessages:
         status, _ = await send(client, student_token, "global:1-4", "эй")
         assert status == 404
 
+    async def test_no_global_chat_below_sixth_grade(self, client, app_context, users):
+        token = await make_student(app_context, users, 60, "Малышев Коля", class_name="5а")
+        _, body = await join(client, token)
+        assert [room["kind"] for room in body["data"]["rooms"]] == ["class", "grade", "school"]
+        status, _ = await send(client, token, "global:6-11", "привет")
+        assert status == 404
+
     async def test_admin_sees_everything_and_signs_as_admin(self, client, admin_token, student_token):
         _, body = await join(client, student_token)
         class_room = body["data"]["rooms"][0]["id"]
         await send(client, student_token, class_room, "вопрос")
         overview = await (await client.get(f"{BASE}/api/chat", params={"token": admin_token})).json()
         ids = [room["id"] for room in overview["data"]["rooms"]]
-        assert overview["data"]["admin"] and class_room in ids and "global:1-4" in ids
+        assert overview["data"]["admin"] and class_room in ids and "global:6-11" in ids
         status, sent = await send(client, admin_token, class_room, "ответ")
         assert status == 200 and sent["data"]["author"] == "admin" and sent["data"]["grade"] is None
         # От своего профиля — после вступления и переключения.
@@ -229,7 +236,7 @@ class TestModeration:
         status, data = await send(client, student_token, room, "ещё спам")
         assert status == 403 and "мин" in data["error"]
         # В общем чате модератор школы — обычный участник.
-        _, glob = await send(client, mod, "global:10-11", "привет")
+        _, glob = await send(client, mod, "global:6-11", "привет")
         status, _ = await post(client, f"/api/chat/messages/{glob['data']['id']}/moderate", mod, {"action": "pin"})
         assert status == 403
 
@@ -270,7 +277,7 @@ class TestPollsAndNotifications:
         assert [o["votes"] for o in voted["data"]["poll"]["options"]] == [0, 1]
         _, voted = await post(client, f"/api/chat/messages/{mid}/vote", student_token, {"option": 1})
         assert voted["data"]["poll"]["my"] is None and voted["data"]["poll"]["total"] == 0
-        status, _ = await send(client, student_token, "global:8-9", "опрос", poll={"options": ["а", "б"]})
+        status, _ = await send(client, student_token, "global:6-11", "опрос", poll={"options": ["а", "б"]})
         assert status == 400
 
     async def test_mentions_and_replies_notify(self, client, app_context, users, student_token):

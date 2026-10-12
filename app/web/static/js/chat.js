@@ -40,7 +40,7 @@ function renderConsent(container, error = '') {
   container.innerHTML = `
     <div class="card chat-consent">
       <div class="card-title">Школьные чаты</div>
-      <p class="muted">Чат класса, параллели, всей школы и общий чат с ровесниками из других школ.</p>
+      <p class="muted">Чат класса, параллели, всей школы и — с 6 класса — общий чат учеников всех школ.</p>
       <ul class="chat-rules">${overview.rules.map((line) => `<li>${esc(line)}</li>`).join('')}</ul>
       <label class="chat-agree"><input type="checkbox" id="chatAgree">
         <span>Согласен с правилами и показом моего имени и номера класса</span></label>

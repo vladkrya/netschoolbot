@@ -120,7 +120,7 @@ async def visible_rooms(request: web.Request, profile: dict[str, Any] | None) ->
     for first, last in rules.AGE_BANDS:
         room_id = f"global:{first}-{last}"
         if room_id not in seen:
-            extra.append(rules.describe(room_id))
+            extra.append(rules.describe(room_id))  # type: ignore[arg-type]
             seen.add(room_id)
     for room_id in await repo(request).active_rooms():
         if room_id not in seen and (room := rules.describe(room_id)):
