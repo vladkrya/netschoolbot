@@ -130,8 +130,8 @@ function renderRooms(container) {
     <div class="card chat-identity">
       <span>Аккаунт</span>
       <div class="chips">
-        <button class="chip ${overview.as_admin ? 'active' : ''}" data-as-admin="1">Админ</button>
-        <button class="chip ${overview.as_admin ? '' : 'active'}" data-as-admin="0">${esc(overview.profile.nick)}</button>
+        <button class="chip ${overview.as_admin ? 'active' : ''}" data-as-admin="1">Админ${verifiedBadge('admin')}</button>
+        <button class="chip ${overview.as_admin ? '' : 'active'}" data-as-admin="0">${esc(overview.profile.nick)}${verifiedBadge(overview.role)}</button>
       </div>
     </div>` : '';
   const reports = overview.moderator ? `
@@ -149,16 +149,16 @@ function renderRooms(container) {
     <button class="card chat-room" data-room="${index}">
       <span class="chat-room-icon kind-${room.kind}">${ICONS.mail}</span>
       <span class="chat-room-main">
-        <span class="chat-room-title">${esc(room.title)}</span>
+        <span class="chat-room-title">${esc(room.title)}${verifiedBadge(room.role)}</span>
         <span class="chat-room-last">${room.last
-          ? `<b>${esc(room.last.author)}:</b> ${esc(room.last.text)}` : `<span class="muted">${esc(room.subtitle || 'Пока тихо')}</span>`}</span>
+          ? `<b>${esc(room.last.author)}${verifiedBadge(room.last.role)}:</b> ${esc(room.last.text)}` : `<span class="muted">${esc(room.subtitle || 'Пока тихо')}</span>`}</span>
       </span>
       <span class="chat-room-side">
         ${room.last ? `<span class="muted small">${esc(timeLabel(room.last.at))}</span>` : ''}
         ${room.unread ? `<span class="nav-badge chat-unread">${room.unread > 99 ? '99+' : room.unread}</span>` : ''}
       </span>
     </button>`).join('') + (overview.joined
-    ? `${overview.admin ? '<span class="muted small">Ник:' : '<button class="link chat-leave" id="chatEditNick">Ник:'} ${esc(overview.profile.nick)}${overview.admin ? '</span>' : ' · смена через админа</button>'}
+    ? `${overview.admin ? '<span class="muted small">Ник:' : '<button class="link chat-leave" id="chatEditNick">Ник:'} ${esc(overview.profile.nick)}${verifiedBadge(overview.role)}${overview.admin ? '</span>' : ' · смена через админа</button>'}
        <button class="link chat-leave" id="chatLeave">Выйти из чатов</button>` : '');
   container.querySelector('#chatStartPrivate')?.addEventListener('click', () => chooseParticipant(() => renderChats(container, true)));
   container.querySelector('#chatEditNick')?.addEventListener('click', () => {
@@ -201,7 +201,7 @@ async function chooseParticipant(onClose) {
     const input = sheet.querySelector('input');
     const draw = () => {
       const items = data.items.filter(item => `${item.nick} ${item.school}`.toLowerCase().includes(input.value.trim().toLowerCase()));
-      list.innerHTML = items.map((item, index) => `<button class="card chat-room" data-participant="${index}"><span>${esc(item.nick)}<br><span class="muted small">${item.grade} класс · ${esc(item.school)}</span></span></button>`).join('') || '<p class="muted">Участников нет</p>';
+      list.innerHTML = items.map((item, index) => `<button class="card chat-room" data-participant="${index}"><span>${esc(item.nick)}${verifiedBadge(item.role)}<br><span class="muted small">${item.grade} класс · ${esc(item.school)}</span></span></button>`).join('') || '<p class="muted">Участников нет</p>';
       list.querySelectorAll('[data-participant]').forEach(button => button.addEventListener('click', () => {
         const item = items[Number(button.dataset.participant)];
         closeSheet();
@@ -215,9 +215,15 @@ async function chooseParticipant(onClose) {
 
 /* ─────────────────────────── Переписка ─────────────────────────── */
 
+function verifiedBadge(role) {
+  const label = role === 'admin' ? 'Администратор' : role === 'moderator' ? 'Модератор' : '';
+  if (!label) return '';
+  return `<span class="chat-verified" role="img" aria-label="${label}" title="${label}"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="9" fill="currentColor"/><path d="m5.5 10 3 3 6-6" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>`;
+}
+
 function authorLabel(message) {
-  if (message.admin) return '<span class="chat-admin">admin</span>';
-  return `${esc(message.author)}${message.grade ? ` <span class="muted">· ${message.grade}</span>` : ''}`;
+  if (message.admin) return `<span class="chat-admin">admin</span>${verifiedBadge(message.role)}`;
+  return `${esc(message.author)}${verifiedBadge(message.role)}${message.grade ? ` <span class="muted">· ${message.grade}</span>` : ''}`;
 }
 
 function bodyText(message) {
@@ -259,8 +265,8 @@ function messageHtml(message) {
   return `<div class="chat-msg ${message.mine ? 'mine' : ''} ${message.admin ? 'admin' : ''} ${message.hidden ? 'hidden-msg' : ''}"
       data-id="${message.id}">
       <div class="chat-bubble">
-        ${message.mine ? '' : `<div class="chat-author">${authorLabel(message)}</div>`}
-        ${message.reply ? `<div class="chat-quote" data-jump="${message.reply.id}"><b>${esc(message.reply.author)}</b>
+        ${message.mine && !message.role ? '' : `<div class="chat-author">${authorLabel(message)}</div>`}
+        ${message.reply ? `<div class="chat-quote" data-jump="${message.reply.id}"><b>${esc(message.reply.author)}${verifiedBadge(message.reply.role)}</b>
           <span>${message.reply.text == null ? 'сообщение скрыто' : esc(message.reply.text)}</span></div>` : ''}
         <div class="chat-text">${bodyText(message)}</div>
         <div class="chat-meta">${message.pinned ? '📌 ' : ''}${message.hidden ? 'скрыто · ' : ''}${esc(timeLabel(message.at))}${message.mine ? ` <span class="chat-read" aria-label="${message.read ? 'Прочитано' : 'Отправлено'}">${message.read ? '✓✓' : '✓'}</span>` : ''}</div>
@@ -519,7 +525,7 @@ export function openRoom(room, onClose, targetId = null) {
       try {
         const { data } = await api(`/api/chat/rooms/${encodeURIComponent(room.id)}/members?q=${encodeURIComponent(match[1])}`);
         if (version !== suggestVersion || !body.isConnected) return;
-        suggestions.innerHTML = data.items.map((item, index) => `<button type="button" data-member="${index}">@${esc(item.nick)}${item.grade ? ` · ${item.grade}` : ''}</button>`).join('');
+        suggestions.innerHTML = data.items.map((item, index) => `<button type="button" data-member="${index}">@${esc(item.nick)}${verifiedBadge(item.role)}${item.grade ? ` · ${item.grade}` : ''}</button>`).join('');
         suggestions.hidden = !data.items.length;
         suggestions.querySelectorAll('button').forEach(button => button.addEventListener('click', () => {
           const at = before.length - match[1].length - 1;
@@ -664,7 +670,7 @@ function openActions(message, { setReply, update, moderator, admin, room, mentio
     const view = openSheet('Кто прочитал', skeleton(2));
     try {
       const { data } = await api(`${path}/reads`);
-      view.innerHTML = data.items.map(item => `<div class="chat-reader">${esc(item.nick)}${item.grade ? ` · ${item.grade}` : ''}</div>`).join('') || '<p class="muted">Пока никто не прочитал</p>';
+      view.innerHTML = data.items.map(item => `<div class="chat-reader">${esc(item.nick)}${verifiedBadge(item.role)}${item.grade ? ` · ${item.grade}` : ''}</div>`).join('') || '<p class="muted">Пока никто не прочитал</p>';
     } catch (error) { view.innerHTML = errorCard(error); }
   });
   on('rename', () => adminRename(message.author_id, message.author, () => { refreshChatUnread(); }));

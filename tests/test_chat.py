@@ -54,6 +54,82 @@ async def send(client, token, room, text, **extra):
     return response.status, await response.json()
 
 
+class TestChatRolesAndActivity:
+    async def test_badge_uses_current_role_and_applies_to_old_messages_and_replies(
+        self, client, app_context, student_token, admin_token,
+    ):
+        from app.chat.repository import ChatRepository
+
+        _, joined = await join(client, student_token, 'Cosmos_9')
+        room = next(item['id'] for item in joined['data']['rooms'] if item['kind'] == 'global')
+        _, sent = await send(client, student_token, room, 'Привет', role='admin')
+        assert sent['data']['role'] is None  # Роль из тела запроса не принимается.
+        mid = sent['data']['id']
+        _, reply = await send(client, admin_token, room, 'Ответ', reply_to=mid)
+        assert reply['data']['role'] == 'admin'
+        assert reply['data']['reply']['role'] is None
+        chats = ChatRepository(app_context.db)
+        school = rules.school_key(make_user(2).school.url, make_user(2).school.name)
+        response = await client.get(f'{BASE}/api/chat/rooms/{room}/messages', params={'token': student_token})
+        since = (await response.json())['data']['now']
+        await chats.set_moderator(2, school, True)
+        response = await client.get(f'{BASE}/api/chat/rooms/{room}/messages', params={
+            'token': student_token, 'after': reply['data']['id'], 'since': since,
+        })
+        changed = {item['id']: item for item in (await response.json())['data']['changed']}
+        assert changed[mid]['role'] == 'moderator'
+        assert changed[reply['data']['id']]['reply']['role'] == 'moderator'
+
+        async def messages():
+            response = await client.get(f'{BASE}/api/chat/rooms/{room}/messages', params={'token': student_token})
+            return {item['id']: item for item in (await response.json())['data']['messages']}
+
+        current = await messages()
+        assert current[mid]['role'] == 'moderator'
+        assert current[reply['data']['id']]['reply']['role'] == 'moderator'
+        # Галочка не расширяет права модератора школы в общем чате.
+        assert (await post(client, f'/api/chat/messages/{mid}/moderate', student_token, {'action': 'pin'}))[0] == 403
+        await chats.set_moderator(2, school, False)
+        current = await messages()
+        assert current[mid]['role'] is None
+        assert current[reply['data']['id']]['reply']['role'] is None
+
+    async def test_admin_personal_profile_still_has_role_without_changing_identity(
+        self, client, student_token, admin_token,
+    ):
+        await join(client, student_token, 'Cosmos_9')
+        _, joined = await join(client, admin_token, 'Vlad_9')
+        room = next(item['id'] for item in joined['data']['rooms'] if item['kind'] == 'school')
+        await post(client, '/api/chat/identity', admin_token, {'as_admin': False})
+        _, message = await send(client, admin_token, room, 'От себя')
+        assert message['data']['role'] == 'admin'
+        assert message['data']['author'] == 'Vlad_9'
+        assert message['data']['admin'] is False
+
+    async def test_rooms_follow_latest_message_and_empty_rooms_come_last(self, client, student_token, admin_token):
+        _, joined = await join(client, student_token, 'Cosmos_9')
+        rooms = {item['kind']: item['id'] for item in joined['data']['rooms']}
+
+        async def order():
+            response = await client.get(f'{BASE}/api/chat', params={'token': student_token})
+            return (await response.json())['data']['rooms']
+
+        await send(client, student_token, rooms['grade'], 'Первое')
+        await send(client, admin_token, rooms['global'], 'Второе')
+        current = await order()
+        assert [item['id'] for item in current[:2]] == [rooms['global'], rooms['grade']]
+        assert current[-1]['id'] == rooms['support'] and current[-1]['last'] is None
+        await send(client, student_token, rooms['grade'], 'Третье')
+        current = await order()
+        assert [item['id'] for item in current[:2]] == [rooms['grade'], rooms['global']]
+        assert current[1]['last']['role'] == 'admin'
+        # Реакция к старому сообщению не поднимает его комнату.
+        response = await client.get(f"{BASE}/api/chat/rooms/{rooms['global']}/messages", params={'token': student_token})
+        message_id = (await response.json())['data']['messages'][-1]['id']
+        await post(client, f'/api/chat/messages/{message_id}/react', student_token, {'emoji': '👍'})
+        assert [item['id'] for item in (await order())[:2]] == [rooms['grade'], rooms['global']]
+
+
 class TestRules:
     def test_grades_and_bands(self):
         assert rules.grade_of("9б") == 9 and rules.grade_of("10-А") == 10 and rules.grade_of("Б") is None
@@ -96,9 +172,11 @@ class TestJoin:
         status, body = await join(client, student_token)
         assert status == 200 and body["data"]["joined"]
         rooms = body["data"]["rooms"]
-        assert [room["kind"] for room in rooms] == ["grade", "school", "global", "support"]
-        assert [room["title"] for room in rooms[:2]] == ["9-е классы · школа №1", "Школа №1"]
-        assert rooms[2]["id"] == "global:6-11" and rooms[2]["title"] == "Общий чат"
+        assert {room["kind"] for room in rooms} == {"grade", "school", "global", "support"}
+        titles = {room["kind"]: room["title"] for room in rooms}
+        assert titles["grade"] == "9-е классы · школа №1" and titles["school"] == "Школа №1"
+        assert next(room for room in rooms if room["kind"] == "global")["id"] == "global:6-11"
+        assert titles["global"] == "Общий чат"
         assert body["data"]["profile"]["nick"].startswith("Student_")
         assert "first_name" not in body["data"]["profile"]
 
@@ -136,7 +214,7 @@ class TestMessages:
     async def test_no_global_chat_below_sixth_grade(self, client, app_context, users):
         token = await make_student(app_context, users, 60, "Малышев Коля", class_name="5а")
         _, body = await join(client, token)
-        assert [room["kind"] for room in body["data"]["rooms"]] == ["grade", "school", "support"]
+        assert {room["kind"] for room in body["data"]["rooms"]} == {"grade", "school", "support"}
         status, _ = await send(client, token, "global:6-11", "привет")
         assert status == 404
 
@@ -233,7 +311,8 @@ class TestModeration:
         mod = await make_student(app_context, users, 30, "Сидорова Аня", class_name="11а")
         _, mod_body = await join(client, mod)
         # Модератора назначает администратор — по его сообщению.
-        _, sent = await send(client, mod, mod_body["data"]["rooms"][1]["id"], "я тут")
+        school_room = next(room["id"] for room in mod_body["data"]["rooms"] if room["kind"] == "school")
+        _, sent = await send(client, mod, school_room, "я тут")
         status, _ = await post(client, f"/api/chat/messages/{sent['data']['id']}/author", student_token,
                                {"action": "moderator"})
         assert status == 403
@@ -365,7 +444,7 @@ class TestChatContinuation:
         status, _ = await post(client, '/api/chat/nick', student_token, {'nick': 'Other_9'})
         assert status == 403  # смена только через администратора
         response = await client.get(f'{BASE}/api/chat/rooms/{room}/members', params={'token': other, 'q': 'Cos'})
-        assert (await response.json())['data']['items'] == [{'nick': 'Cosmos_9', 'grade': 9}]
+        assert (await response.json())['data']['items'] == [{'nick': 'Cosmos_9', 'grade': 9, 'role': None}]
 
     async def test_existing_profile_requires_nick_and_migration_scrubs_names(self, client, db, student_token):
         from app.chat.repository import ChatRepository
@@ -410,7 +489,7 @@ class TestChatContinuation:
         assert (await post(client, f'/api/chat/rooms/{room}/read', other, {'last_id': 99999999}))[0] == 404
         assert (await post(client, f'/api/chat/rooms/{room}/read', other, {'last_id': mid}))[0] == 200
         readers = await (await client.get(f'{BASE}/api/chat/messages/{mid}/reads', params={'token': student_token})).json()
-        assert readers['data'] == {'items': [{'nick': 'Moon_9', 'grade': 9}], 'count': 1}
+        assert readers['data'] == {'items': [{'nick': 'Moon_9', 'grade': 9, 'role': None}], 'count': 1}
         assert (await client.get(f'{BASE}/api/chat/messages/{mid}/reads', params={'token': other})).status == 403
         listing = await (await client.get(f'{BASE}/api/chat/rooms/{room}/messages', params={'token': student_token})).json()
         assert listing['data']['messages'][-1]['read']
@@ -570,7 +649,7 @@ class TestAdminPrivateChats:
         assert messages['data']['messages'][0]['author'] == 'New_9'
         assert 'author_id' not in messages['data']['messages'][0] or messages['data']['messages'][0]['author_id'] is None
         readers = await (await client.get(f'{BASE}/api/chat/messages/{mid}/reads', params={'token': student_token})).json()
-        assert readers['data']['items'] == [{'nick': 'admin', 'grade': None}]
+        assert readers['data']['items'] == [{'nick': 'admin', 'grade': None, 'role': 'admin'}]
         await post(client, '/api/chat/leave', student_token, {})
         _, joined = await join(client, student_token, 'Bypass_9')
         assert joined['data']['profile']['nick'] == 'New_9'

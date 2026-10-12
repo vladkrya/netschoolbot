@@ -236,6 +236,14 @@ def _deleted_by(row: dict[str, Any], admin: int) -> str | None:
     return "admin" if admin and row["deleted_by"] == admin else "moderator"
 
 
+async def author_roles(request: web.Request, ids: list[int]) -> dict[int, str]:
+    """Значок отражает текущую роль аккаунта, не ник или подпись сообщения."""
+    roles = {uid: "moderator" for uid in await repo(request).moderator_ids(ids)}
+    if admin_id(request) in ids and admin_id(request):
+        roles[admin_id(request)] = "admin"
+    return roles
+
+
 async def message_json(
     request: web.Request, rows: list[dict[str, Any]], *, moderator: bool, others_read: int = 0,
 ) -> list[dict[str, Any]]:
@@ -245,6 +253,7 @@ async def message_json(
     reply_ids = sorted({row["reply_to"] for row in rows if row["reply_to"]})
     replies = {row["id"]: row for row in await _messages_by_id(chats, reply_ids)}
     profiles = await chats.profiles(sorted({row["author_id"] for row in [*rows, *replies.values()]}))
+    roles = await author_roles(request, sorted({row["author_id"] for row in [*rows, *replies.values()]}))
     admin = admin_id(request)
     acting_admin = await admin_mode(request)
     result = []
@@ -264,6 +273,7 @@ async def message_json(
             "author_id": row["author_id"] if acting_admin else None,
             "grade": row["author_grade"],
             "admin": bool(row["is_admin"]),
+            "role": roles.get(row["author_id"]),
             "mine": row["author_id"] == uid and bool(row["is_admin"]) == acting_admin,
             "text": None if hidden_for_me else row["text"],
             "deleted": row["deleted_at"] is not None,
@@ -274,6 +284,7 @@ async def message_json(
             "read": row["author_id"] == uid and bool(row["is_admin"]) == acting_admin and others_read >= row["id"],
             "reply": {
                 "id": reply["id"], "author": _author(reply, profiles),
+                "role": roles.get(reply["author_id"]),
                 "text": None if reply["deleted_at"] is not None or (reply["hidden"] and not moderator)
                 else reply["text"][:140],
             } if reply else None,
@@ -360,6 +371,11 @@ async def overview(request: web.Request) -> dict[str, Any]:
     schools = None if acting_admin else await chats.moderated_schools(uid)
     reports = len(await chats.reported(schools)) if acting_admin or schools else 0
     authors = await chats.profiles(sorted({row["author_id"] for row in last.values()}))
+    role_ids = {uid, admin_id(request), *(row["author_id"] for row in last.values())}
+    role_ids.update(rules.support_owner(room.id) for room in rooms if room.kind == "support")
+    roles = await author_roles(request, sorted(role_ids - {None, 0}))
+    # Новые сообщения поднимают комнату вверх; пустые комнаты идут последними.
+    rooms.sort(key=lambda room: last.get(room.id, {}).get("id", 0), reverse=True)
     return {
         "joined": profile is not None,
         "admin": admin,
@@ -368,18 +384,21 @@ async def overview(request: web.Request) -> dict[str, Any]:
         "reports": reports,
         "reactions": list(REACTIONS),
         "as_admin": acting_admin,
+        "role": roles.get(uid),
         "rules": RULES_TEXT,
         "nick_hint": rules.NICK_HINT,
         "profile": _profile_json(profile) if profile else None,
         "unread_total": await unread_total(request),
         "rooms": [{
             "id": room.id, "kind": room.kind, "title": room.title, "subtitle": room.subtitle,
+            "role": roles.get(rules.support_owner(room.id) if acting_admin else admin_id(request)) if room.kind == "support" else None,
             "unread": unread.get(room.id, 0), "notify": _notify_mode(reads, room),
             "owner_id": rules.support_owner(room.id) if acting_admin else None,
             "owner_nick": (await chats.profile(rules.support_owner(room.id)) or {}).get("nick") if acting_admin and room.kind == "support" else None,
             "own": room.id in {own.id for own in profile_rooms(profile)},
             "last": {
                 "author": _author(last[room.id], authors), "kind": last[room.id]["kind"],
+                "role": roles.get(last[room.id]["author_id"]),
                 "text": last[room.id]["text"][:120], "at": last[room.id]["created_at"],
             } if room.id in last else None,
         } for room in rooms],
@@ -409,12 +428,14 @@ async def chat_participants(request: web.Request) -> web.Response:
     if not await admin_mode(request):
         return json_error("Переключитесь на аккаунт Админ", status=403, reason="chat")
     items = []
-    for profile in await repo(request).all_profiles():
+    profiles = await repo(request).all_profiles()
+    roles = await author_roles(request, [profile["telegram_id"] for profile in profiles])
+    for profile in profiles:
         uid = profile["telegram_id"]
         if uid == admin_id(request):
             continue
         room = await describe(request, f"support:{uid}")
-        items.append({"id": uid, "nick": participant_label(profile), "grade": profile["grade"],
+        items.append({"id": uid, "nick": participant_label(profile), "grade": profile["grade"], "role": roles.get(uid),
                       "school": profile["school_name"], "room": {
                           "id": room.id, "kind": room.kind, "title": room.title,
                           "owner_id": uid, "owner_nick": profile["nick"], "notify": "all"}})
@@ -693,11 +714,13 @@ async def chat_members(request: web.Request) -> web.Response:
         return _denied(exc)
     prefix = request.query.get("q", "").strip().lstrip("@")[:20]
     uid = current_user(request).telegram_id
-    found = [{"nick": member["nick"], "grade": member["grade"]}
-             for member in await repo(request).search_members(room_id, prefix)
+    members = await repo(request).search_members(room_id, prefix)
+    roles = await author_roles(request, [member["telegram_id"] for member in members])
+    found = [{"nick": member["nick"], "grade": member["grade"], "role": roles.get(member["telegram_id"])}
+             for member in members
              if member["telegram_id"] != uid]
     if admin_id(request) and rules.ADMIN_NAME.startswith(prefix.lower()) and not await admin_mode(request):
-        found.insert(0, {"nick": rules.ADMIN_NAME, "grade": None})
+        found.insert(0, {"nick": rules.ADMIN_NAME, "grade": None, "role": "admin"})
     return web.json_response({"ok": True, "data": {"items": found[:8]}})
 
 
@@ -790,12 +813,13 @@ async def chat_reads(request: web.Request) -> web.Response:
         excluded.add(admin_id(request))
     ids = await chats.readers(message["room"], message["id"], excluded)
     profiles = await chats.profiles(ids)
+    roles = await author_roles(request, ids)
     items = sorted(
-        ({"nick": profile["nick"], "grade": profile["grade"]} for profile in profiles.values()
+        ({"nick": profile["nick"], "grade": profile["grade"], "role": roles.get(profile["telegram_id"])} for profile in profiles.values()
          if profile["nick"] and room.id in {own.id for own in profile_rooms(profile)}),
         key=lambda item: item["nick"].lower())
     if room.kind == "support" and admin_id(request) in ids:
-        items.append({"nick": rules.ADMIN_NAME, "grade": None})
+        items.append({"nick": rules.ADMIN_NAME, "grade": None, "role": "admin"})
     return web.json_response({"ok": True, "data": {"items": items, "count": len(items)}})
 
 
@@ -883,7 +907,9 @@ async def chat_author(request: web.Request) -> web.Response:
     elif action in ("moderator", "unmoderator"):
         if not acting_admin:
             return json_error("Только для администратора", status=403, reason="chat")
-        await chats.set_moderator(target["telegram_id"], target["school_key"], action == "moderator")
+        affected_rooms = await chats.set_moderator(target["telegram_id"], target["school_key"], action == "moderator")
+        for room_id in affected_rooms:
+            await hub(request).publish(room_id, {"t": "upd", "room": room_id})
         details = target["school_key"]
     else:
         return json_error("Неизвестное действие")

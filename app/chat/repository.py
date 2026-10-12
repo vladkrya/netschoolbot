@@ -249,6 +249,16 @@ class ChatRepository:
         return bool(school) and bool(await self._db.fetch_one(
             "SELECT 1 FROM chat_moderators WHERE telegram_id = ? AND school_key = ?", (telegram_id, school)))
 
+    async def moderator_ids(self, telegram_ids: list[int]) -> set[int]:
+        if not telegram_ids:
+            return set()
+        placeholders = ",".join("?" for _ in telegram_ids)
+        rows = await self._db.fetch_all(
+            f"SELECT DISTINCT telegram_id FROM chat_moderators WHERE telegram_id IN ({placeholders})",
+            tuple(telegram_ids),
+        )
+        return {row["telegram_id"] for row in rows}
+
     # ─────────────────────── Реакции, жалобы, модерация ───────────────────────
 
     async def toggle_reaction(self, message_id: int, telegram_id: int, emoji: str) -> bool:
@@ -314,13 +324,19 @@ class ChatRepository:
         rows = await self._db.fetch_all("SELECT school_key FROM chat_moderators WHERE telegram_id = ?", (telegram_id,))
         return [row["school_key"] for row in rows]
 
-    async def set_moderator(self, telegram_id: int, school: str, on: bool) -> None:
-        if on:
-            await self._db.execute(
-                "INSERT OR IGNORE INTO chat_moderators (telegram_id, school_key) VALUES (?, ?)", (telegram_id, school))
-        else:
-            await self._db.execute(
-                "DELETE FROM chat_moderators WHERE telegram_id = ? AND school_key = ?", (telegram_id, school))
+    async def set_moderator(self, telegram_id: int, school: str, on: bool) -> list[str]:
+        async with self._db.transaction() as conn:
+            if on:
+                await conn.execute(
+                    "INSERT OR IGNORE INTO chat_moderators (telegram_id, school_key) VALUES (?, ?)", (telegram_id, school))
+            else:
+                await conn.execute(
+                    "DELETE FROM chat_moderators WHERE telegram_id = ? AND school_key = ?", (telegram_id, school))
+            affected = "author_id = ? OR reply_to IN (SELECT id FROM chat_messages WHERE author_id = ?)"
+            cursor = await conn.execute(f"SELECT DISTINCT room FROM chat_messages WHERE {affected}", (telegram_id, telegram_id))
+            rooms = [row["room"] for row in await cursor.fetchall()]
+            await conn.execute(f"UPDATE chat_messages SET updated_at = ? WHERE {affected}", (time.time(), telegram_id, telegram_id))
+            return rooms
 
     async def log(self, actor: int, action: str, target: str, details: str = "") -> None:
         await self._db.execute(
