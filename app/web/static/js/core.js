@@ -38,10 +38,13 @@ export const state = {
 
 export const $ = (id) => document.getElementById(id);
 
+/** Текст для вставки в HTML — и в содержимое, и в значение атрибута.
+ *  Кавычки тоже: иначе «МОУ "Школа № 24"» в data-атрибуте обрывался на
+ *  кавычке, а чужой текст (имя вложения в письме) мог дописать свой атрибут. */
 export function esc(value) {
-  const div = document.createElement('div');
-  div.textContent = value == null ? '' : String(value);
-  return div.innerHTML;
+  return (value == null ? '' : String(value))
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
 /** Экранирование плюс переносы строк и кликабельные ссылки. */

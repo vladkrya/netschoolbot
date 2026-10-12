@@ -90,7 +90,9 @@ async def status(request):
     return web.json_response({'ok': True, 'data': {
         'enabled': bool(row), 'required': bool(row and (not request.get('verified_telegram') or row['require_telegram'])),
         'require_telegram': bool(row and row['require_telegram']),
-        'pin': bool(row and row['is_pin']), 'passkeys': keys['n'], 'biometric': bool(biometric)}})
+        'pin': bool(row and row['is_pin']), 'passkeys': keys['n'], 'biometric': bool(biometric),
+        # Забытый PIN можно сбросить паролем, только если аккаунт с паролем есть.
+        'password_reset': bool(await context(request).accounts.by_user(uid))}})
 
 
 @routes.post('/api/lock/settings')

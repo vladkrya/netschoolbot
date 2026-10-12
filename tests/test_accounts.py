@@ -212,3 +212,13 @@ async def test_paused_notifications_do_not_ask_to_log_in_again(client, app_conte
     token = await app_context.miniapp.issue_token(6)
     info = await (await client.get(f"{BASE}/api/account", params={"token": token})).json()
     assert info["data"]["needs_sgo"] is False
+
+
+async def test_lock_status_offers_password_reset_only_with_account(client, app_context, users):
+    await users.save(make_user(7))
+    token = await app_context.miniapp.issue_token(7)
+    status = await (await client.get(f"{BASE}/api/lock/status", params={"token": token})).json()
+    assert status["data"]["password_reset"] is False
+    _, body, _ = await register(client)
+    status = await (await client.get(f"{BASE}/api/lock/status", params={"token": body["data"]["token"]})).json()
+    assert status["data"]["password_reset"] is True

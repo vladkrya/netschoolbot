@@ -232,9 +232,9 @@ export function showSgoLogin(info = {}) {
   const schoolStep = () => {
     const card = screen(`
       <h2>Вход в «Сетевой город»</h2>
-      <p class="muted">Шаг 2 из 3. ${esc(choice.region || choice.url)}: найдите школу по названию или номеру.</p>
+      <p class="muted">Шаг 2 из 3. ${esc(choice.region || choice.url)}: найдите свою школу.</p>
       <form class="account-form account-row">
-        <input class="field" name="q" placeholder="Например, 93 или лицей" required>
+        <input class="field" name="q" placeholder="Название или номер школы" required>
         <button class="btn" type="submit">Найти</button>
       </form>
       <div class="account-list"></div>

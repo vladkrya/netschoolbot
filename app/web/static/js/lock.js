@@ -6,7 +6,8 @@ import { mountPinpad } from './pinpad.js';
 let active = false;
 const FORGOT_TELEGRAM = 'Отправьте /resetapplock в личный чат с ботом — защита сбросится, и PIN можно будет задать заново.';
 // Вне Telegram (вход по почте) PIN сбрасывается паролем от аккаунта.
-const FORGOT = tg?.initData ? FORGOT_TELEGRAM : (root) => {
+// Вне Telegram и только при аккаунте с паролем — сброс паролем; иначе бот.
+const FORGOT_PASSWORD = (root) => {
   const box = root.querySelector('.lock-error');
   box.textContent = 'Введите пароль от аккаунта (почта и пароль) — PIN сбросится. Или отправьте боту /resetapplock.';
   // Форма — рядом с подсказкой, а не внутри: подсказка — абзац, и форму в нём браузер не создаёт.
@@ -386,7 +387,7 @@ export async function unlockApp() {
           else { await checkOffline(pin); offlinePin = pin; }
           await controls.success(); await finish();
           if (offlinePin && navigator.onLine !== false) resync();
-        }, { forgot: FORGOT });
+        }, { forgot: status.password_reset && !tg?.initData ? FORGOT_PASSWORD : FORGOT_TELEGRAM });
         biometricReady.then(config => {
           if (config && root.isConnected) pad.setBiometric({ ...config, run: async () => {
             await (config.offline ? offlinePasskey() : biometry());
@@ -570,8 +571,7 @@ export async function openLockSettings() {
   danger.innerHTML = '<button type="button" class="ls-row ls-link ls-danger"><span class="ls-row-title">Выключить защиту</span></button>';
   body.insertBefore(danger, status);
   const note = document.createElement('p'); note.className = 'ls-footnote';
-  note.textContent = tg?.initData ? `Забыли PIN? ${FORGOT_TELEGRAM}`
-    : 'Забыли PIN? На экране PIN нажмите «Забыли PIN?» и введите пароль от аккаунта или отправьте боту /resetapplock.';
+  note.textContent = `Забыли PIN? ${FORGOT_TELEGRAM}`;
   body.append(note);
   const disable = danger.querySelector('button');
   let armed = 0;
