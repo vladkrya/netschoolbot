@@ -19,8 +19,6 @@
   @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 3s; } }
   .btn { display: inline-block; margin-top: 14px; padding: 11px 18px; border-radius: 12px; border: 0; background: var(--accent); color: #fff;
          font: inherit; font-weight: 600; text-decoration: none; cursor: pointer; }
-  .btn.secondary { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
-  .actions { display: flex; flex-wrap: wrap; gap: 0 10px; justify-content: center; }
   .error { color: var(--bad); }
   .small { font-size: 14px; margin-top: 16px; }
   .small a { color: var(--accent); }
@@ -44,10 +42,6 @@
   <h1>{{ name or "Вложение" }}</h1>
   <p id="state">Скачиваем файл из «Сетевого города»…</p>
   <p id="slow" hidden>Сервер школы отвечает медленно — подождите, загрузка не остановилась.</p>
-  <div class="actions">
-    <a class="btn" id="open" hidden>Открыть</a>
-    <a class="btn secondary" id="save" hidden>Скачать</a>
-  </div>
   <button class="btn" id="retry" hidden type="button">Повторить</button>
   <p class="hint" id="safari" hidden>Нажмите <svg class="compass" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M15.5 8.5l-2 5-5 2 2-5z" fill="currentColor" stroke-linejoin="round"/></svg> компас справа внизу — файл откроется в Safari, и там его можно посмотреть или сохранить.</p>
   <p class="small"><a id="direct" hidden>Не получается? Открыть файл напрямую</a></p>
@@ -76,12 +70,10 @@
   // а потом браузер открывает обычную ссылку. Так pdf показывается
   // просмотром, имя файла берётся из заголовка сервера, и всё работает
   // во встроенных браузерах, где blob-ссылки не открываются.
-  $('open').href = file;
-  $('save').href = file + (location.search ? '&' : '?') + 'download=1';
   $('direct').href = file;
 
   function show(ids) {
-    ['spinner', 'slow', 'open', 'save', 'retry', 'direct'].forEach(function (id) {
+    ['spinner', 'slow', 'retry', 'direct'].forEach(function (id) {
       $(id).hidden = ids.indexOf(id) < 0;
     });
   }
@@ -99,6 +91,7 @@
   function fail(message) {
     clearTimeout(slowTimer); clearInterval(tick);
     show(['retry', 'direct']);
+    $('direct').textContent = 'Не получается? Открыть файл напрямую';
     $('state').textContent = message; $('state').className = 'error';
   }
 
@@ -127,8 +120,11 @@
       $('state').textContent = 'Файл готов.';
       return;
     }
-    show(['open', 'save']);
-    $('state').textContent = 'Файл готов. «Открыть» — посмотреть, «Скачать» — сохранить в «Файлы».';
+    // Кнопок «Открыть» и «Скачать» нет: файл открываем сразу, а показать или
+    // сохранить его браузер спрашивает сам. Ссылка — если он не открылся.
+    show(['direct']);
+    $('state').textContent = 'Файл готов и открывается.';
+    $('direct').textContent = 'Не открылся? Открыть ещё раз';
     location.href = file;
   }
 
