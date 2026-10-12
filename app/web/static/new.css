@@ -795,9 +795,8 @@
 
 /* «День»: кнопка «Звонки и неделя» в полосе даты, за разделителем. */
 :root[data-design="new"] .day-bells { display: flex; margin-right: 4px; background: var(--card-2); color: var(--text); }
-/* Справа две кнопки (звонки и «вперёд»), слева одна — без отступа слева
-   «Сегодня» стояло левее середины полосы и имени в шапке. */
-:root[data-design="new"] .date-bar:has(.day-bells:not([hidden])) #dayPrev { margin-right: 44px; }
+:root[data-design="new"] .day-bells { margin-right: 0; }
+:root[data-design="new"] .date-today { background: var(--soft); color: var(--primary); }
 :root[data-design="new"] .day-bells .icon { width: 21px; height: 21px; }
 :root[data-design="new"] .week-seg { margin-bottom: 12px; background: var(--card-2); }
 :root[data-design="new"] .sheet-body .bells-note { margin: 0 0 12px; }

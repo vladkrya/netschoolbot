@@ -161,7 +161,7 @@ def homework_list(
             current_date = item.due_date
             lines.append(f"\n📅 <b>{date_label(item.due_date)}</b>")
         suffix = f" ({files_label(len(item.attachments))})" if item.attachments else ""
-        bullet = "✅" if done and item.key in done else "•"
+        bullet = "✅" if item.nothing_to_do or (done and item.key in done) else "•"
         lines.append(f"{bullet} {esc(item.subject)}: {esc(item.text) or '—'}{suffix}{published_label(item, tz)}")
     return "\n".join(lines)
 

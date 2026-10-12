@@ -85,15 +85,22 @@
   </div>
 
   <div class="subbar" data-for="day">
-    <div class="date-bar">
-      <button class="date-arrow" id="dayPrev" aria-label="Предыдущий день" data-icon="left"></button>
+    <!-- Три колонки: заголовок по центру, сколько бы кнопок ни было справа. -->
+    <div class="date-bar date-split">
+      <div class="date-side">
+        <button class="date-arrow" id="dayPrev" aria-label="Предыдущий день" data-icon="left"></button>
+        <!-- Вернуться на сегодня: видна, только когда открыт другой день. -->
+        <button class="date-today" id="dayToday" hidden>Сегодня</button>
+      </div>
       <button class="date-title" id="dayTitle">
         <span class="date-label" id="dayLabel">Сегодня</span>
         <span class="date-sub" id="daySub"></span>
       </button>
-      <!-- Звонки и неделя шторкой: только в новом дизайне, где нет вкладки «Звонки». -->
-      <button class="date-arrow day-bells" id="dayBells" aria-label="Звонки и неделя" data-icon="clock"></button>
-      <button class="date-arrow" id="dayNext" aria-label="Следующий день" data-icon="right"></button>
+      <div class="date-side end">
+        <!-- Звонки и неделя шторкой: только в новом дизайне, где нет вкладки «Звонки». -->
+        <button class="date-arrow day-bells" id="dayBells" aria-label="Звонки и неделя" data-icon="clock"></button>
+        <button class="date-arrow" id="dayNext" aria-label="Следующий день" data-icon="right"></button>
+      </div>
     </div>
     <!-- Неделя полосой: только в новом дизайне (new.css). -->
     <div class="week-strip" id="weekStrip"></div>

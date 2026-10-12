@@ -61,7 +61,7 @@ function visibleItems() {
   } else {
     // Прошедшее здесь не показываем: домашка нужна на «сейчас и вперёд».
     items = items.filter((item) => item.date >= today);
-    if (filter === 'todo') items = items.filter((item) => !done.has(item.key));
+    if (filter === 'todo') items = items.filter((item) => !isDoneItem(item, done));
   }
   return items.filter((item) => !needle || `${item.subject} ${item.text}`.toLowerCase().includes(needle));
 }
@@ -85,7 +85,7 @@ function render() {
   for (const item of items) perDay.set(item.date, (perDay.get(item.date) || 0) + 1);
   container.innerHTML = items
     .map((item, index) => {
-      const isDone = done.has(item.key);
+      const isDone = isDoneItem(item, done);
       // Заголовок дня перед первым его заданием (виден только в новом дизайне).
       const heading = item.date !== items[index - 1]?.date
         ? `<div class="hw-day"><span>${esc(dayHeading(item.date))}</span><span class="hw-day-count">${perDay.get(item.date)}</span></div>`
@@ -93,7 +93,8 @@ function render() {
       return `${heading}<div class="card hw-card ${isDone ? 'done' : ''}" data-hw="${index}">
           <div class="hw-top">
             <div class="hw-subject">${esc(item.subject)}</div>
-            ${item.key ? `<button class="hw-check ${isDone ? 'on' : ''}" data-done="${index}" aria-pressed="${isDone}"
+            ${item.auto_done ? '<span class="hw-check on auto" title="Задание не предусмотрено — отмечено само">✓</span>'
+              : item.key ? `<button class="hw-check ${isDone ? 'on' : ''}" data-done="${index}" aria-pressed="${isDone}"
               aria-label="${isDone ? 'Снять отметку' : 'Отметить выполненным'}">${isDone ? '✓' : ''}</button>` : ''}
           </div>
           <div class="hw-text">${esc(item.text) || '—'}</div>
@@ -112,6 +113,11 @@ function render() {
       else openHomework(items[Number(card.dataset.hw)]);
     })
   );
+}
+
+/** Выполнено: отмечено человеком или учитель написал «Не предусмотрено». */
+function isDoneItem(item, done) {
+  return Boolean(item.auto_done) || done.has(item.key);
 }
 
 function dayHeading(iso) {

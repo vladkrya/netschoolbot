@@ -490,3 +490,19 @@ class TestHomeworkComment:
             lessons=[SimpleNamespace(subject="Алгебра", number=1, topic="", assignments=[task])],
         )
         assert homework_from_day(day, today=dt.date(2026, 10, 12))[0].comment is None
+
+
+class TestNothingToDo:
+    def test_not_assigned_counts_as_done(self):
+        from app.bot.keyboards import homework_done
+        from app.domain.formatting import homework_list
+        from app.domain.records import Attachment, HomeworkRecord
+
+        none = HomeworkRecord("Физкультура", dt.date(2026, 10, 12), "ДЗ", "Не предусмотрено.")
+        real = HomeworkRecord("Алгебра", dt.date(2026, 10, 12), "ДЗ", "№272")
+        with_file = HomeworkRecord("Химия", dt.date(2026, 10, 12), "ДЗ", "Не предусмотрено",
+                                   attachments=(Attachment(id=1, name="лист.pdf"),))
+        assert none.nothing_to_do and not real.nothing_to_do and not with_file.nothing_to_do
+        assert "✅ Физкультура" in homework_list([none, real], "Д/З")
+        buttons = homework_done([none, real], set()).inline_keyboard
+        assert [row[0].text for row in buttons] == ["⬜ Алгебра · 12.10"]

@@ -168,6 +168,27 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .date-title { transition: transform .15s; }
 .date-title:active { transform: scale(.96); }
 .date-title { flex: 1; display: flex; flex-direction: column; align-items: center; color: #fff; }
+/* Полоса дня: стороны поровну, заголовок строго посередине. */
+.date-split { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 4px; }
+.date-side { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.date-side.end { justify-content: flex-end; }
+.date-split .date-title { padding: 0 4px; }
+.date-today {
+  flex: none;
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 15px;
+  background: rgba(255, 255, 255, .16);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  transition: transform .15s;
+}
+.date-today:active { transform: scale(.92); }
+.date-today[hidden] { display: none; }
+@media (max-width: 359px) { .date-today { padding: 0 7px; font-size: 11px; } }
+.hw-check.auto { opacity: .6; cursor: default; }
 .date-label { font-size: 17px; font-weight: 600; }
 .date-sub { font-size: 12px; opacity: .8; }
 

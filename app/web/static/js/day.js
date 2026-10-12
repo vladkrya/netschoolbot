@@ -139,6 +139,8 @@ function renderHeader() {
   $('dayLabel').textContent = label;
   // Когда сверху день недели, снизу только дата — без повтора.
   $('daySub').textContent = WEEKDAYS_FULL.includes(label) ? dayMonth(state.date) : fullDate(state.date);
+  // В выходной без уроков «домой» — это ближайший учебный день, как при входе.
+  $('dayToday').hidden = state.date === isoToday() || state.date === pickDay();
   renderWeekStrip();
 }
 
@@ -435,6 +437,7 @@ export function initDay() {
   $('dayNext').addEventListener('click', () => shiftDay(1));
   $('dayTitle').addEventListener('click', () => openCalendar());
   $('dayBells').addEventListener('click', openWeekSheet);
+  $('dayToday').addEventListener('click', () => slideTo(pickDay()));
   $('weekStrip').addEventListener('click', (event) => {
     const button = event.target.closest('[data-week-day]');
     if (button && button.dataset.weekDay !== state.date) slideTo(button.dataset.weekDay);

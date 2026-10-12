@@ -111,6 +111,10 @@ class MarkRecord:
         return mark_to_int(self.mark)
 
 
+# Тексты задания, которые означают «ничего не задано».
+NOTHING_TO_DO = frozenset({"не предусмотрено", "не предусмотрена", "не задано", "не задана"})
+
+
 @dataclass(frozen=True, slots=True)
 class HomeworkRecord:
     """Одно домашнее задание."""
@@ -148,6 +152,13 @@ class HomeworkRecord:
             self.text,
             attachments,
         )
+
+    @property
+    def nothing_to_do(self) -> bool:
+        """Учитель отметил, что задания нет («Не предусмотрено»): считаем
+        выполненным сразу, отмечать вручную нечего."""
+        text = self.text.strip().rstrip(".!").strip().lower().replace("ё", "е")
+        return text in NOTHING_TO_DO and not self.attachments
 
     @property
     def key(self) -> str:

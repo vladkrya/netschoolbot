@@ -82,7 +82,8 @@ HOMEWORK_BUTTONS = 12
 def homework_done(items: list, done: set[str]) -> InlineKeyboardMarkup | None:
     """Кнопка на каждое задание: нажал — отметилось выполненным, и в приложении тоже."""
     rows = []
-    for item in items[:HOMEWORK_BUTTONS]:
+    # «Не предусмотрено» уже отмечено само — кнопка ему не нужна.
+    for item in [item for item in items if not item.nothing_to_do][:HOMEWORK_BUTTONS]:
         mark = "✅" if item.key in done else "⬜"
         label = f"{mark} {item.subject} · {item.due_date:%d.%m}"
         rows.append([InlineKeyboardButton(text=label[:60], callback_data=f"hwdone:{item.key}")])
