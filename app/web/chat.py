@@ -55,6 +55,12 @@ def repo(request: web.Request) -> ChatRepository:
     return ChatRepository(context(request).db)
 
 
+async def describe(request: web.Request, room_id: str) -> rules.Room | None:
+    """Чужая комната с названием школы — из профилей её учеников."""
+    school = rules.room_school(room_id)
+    return rules.describe(room_id, await repo(request).school_name(school) if school else "")
+
+
 def is_admin(request: web.Request) -> bool:
     admin_id = context(request).settings.telegram.admin_id
     return bool(admin_id) and current_user(request).telegram_id == admin_id
@@ -120,10 +126,10 @@ async def visible_rooms(request: web.Request, profile: dict[str, Any] | None) ->
     for first, last in rules.AGE_BANDS:
         room_id = f"global:{first}-{last}"
         if room_id not in seen:
-            extra.append(rules.describe(room_id))  # type: ignore[arg-type]
+            extra.append(await describe(request, room_id))  # type: ignore[arg-type]
             seen.add(room_id)
     for room_id in await repo(request).active_rooms():
-        if room_id not in seen and (room := rules.describe(room_id)):
+        if room_id not in seen and (room := await describe(request, room_id)):
             extra.append(room)
             seen.add(room_id)
     return own + extra
@@ -134,10 +140,10 @@ async def room_access(request: web.Request, room_id: str) -> tuple[rules.Room, d
     for room in profile_rooms(profile):
         if room.id == room_id:
             return room, profile
-    if is_admin(request) and (room := rules.describe(room_id)):
+    if is_admin(request) and (room := await describe(request, room_id)):
         return room, profile
     # Модератор школы заходит во все её комнаты — разбирать жалобы.
-    if (room := rules.describe(room_id)) and await repo(request).is_moderator(
+    if (room := await describe(request, room_id)) and await repo(request).is_moderator(
             current_user(request).telegram_id, rules.room_school(room_id)):
         return room, profile
     if not profile and not is_admin(request):
@@ -552,7 +558,7 @@ async def chat_reports(request: web.Request) -> web.Response:
     rows = await chats.reported(schools)
     items = await message_json(request, rows, moderator=True)
     for item, row in zip(items, rows):
-        room = rules.describe(row["room"])
+        room = await describe(request, row["room"])
         item["room"] = {"id": row["room"], "title": room.title if room else row["room"]}
         item["reports"] = row["reports"]
     return web.json_response({"ok": True, "data": {"items": items}})

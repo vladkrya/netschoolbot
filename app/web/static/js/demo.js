@@ -413,8 +413,8 @@ export async function demoApi(path, options = {}) {
 /* ───────── Чаты в демо: всё в памяти, сервер не участвует ───────── */
 
 const DEMO_ROOMS = [
-  { id: 'grade:demo:9', kind: 'grade', title: '9-е классы', subtitle: 'Демо-школа №1' },
-  { id: 'school:demo', kind: 'school', title: 'Вся школа', subtitle: 'Демо-школа №1' },
+  { id: 'grade:demo:9', kind: 'grade', title: '9-е классы · школа №1', subtitle: 'Демо-школа №1' },
+  { id: 'school:demo', kind: 'school', title: 'Школа №1', subtitle: 'Вся школа' },
   { id: 'global:6-11', kind: 'global', title: 'Общий чат', subtitle: 'Все школы · 6–11 классы' },
 ];
 const demoChatState = { joined: false, nextId: 1, messages: {} };

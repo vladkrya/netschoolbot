@@ -56,6 +56,13 @@ class TestRules:
         assert rules.grade_of("9б") == 9 and rules.grade_of("10-А") == 10 and rules.grade_of("Б") is None
         assert [rules.band_of(g) for g in (3, 5, 6, 9, 11)] == [None, None, "6-11", "6-11", "6-11"]
 
+    def test_short_school_names(self):
+        assert rules.short_school("МБУ «Школа № 93»") == "школа №93"
+        assert rules.short_school('МБОУ "Лицей №6" г. Рубцовска') == "лицей №6"
+        assert rules.short_school('МБОУ "СОШ 10 Кадетский корпус юных спасателей"') == "школа №10"
+        assert rules.short_school('МАОУ "Сотниковская СОШ"') == "Сотниковская СОШ"
+        assert rules.grade_title(5, "") == "5-е классы"
+
     def test_only_first_name(self):
         assert rules.first_name("Соловьёв Владислав Игоревич") == "Владислав"
 
@@ -87,7 +94,7 @@ class TestJoin:
         assert status == 200 and body["data"]["joined"]
         rooms = body["data"]["rooms"]
         assert [room["kind"] for room in rooms] == ["grade", "school", "global"]
-        assert rooms[0]["title"] == "9-е классы"
+        assert [room["title"] for room in rooms[:2]] == ["9-е классы · школа №1", "Школа №1"]
         assert rooms[2]["id"] == "global:6-11" and rooms[2]["title"] == "Общий чат"
         assert body["data"]["profile"]["first_name"] == "Пётр"
 

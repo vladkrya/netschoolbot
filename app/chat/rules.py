@@ -54,6 +54,36 @@ def first_name(full_name: str) -> str:
     return parts[0] if parts else "Ученик"
 
 
+def short_school(name: str) -> str:
+    """Короткое имя школы для названий чатов.
+
+    «МБУ «Школа № 93»» → «школа №93», «МБОУ "Лицей №6" г. Рубцовска» →
+    «лицей №6», «МАОУ "Сотниковская СОШ"» → «Сотниковская СОШ».
+    """
+    text = (name or "").strip()
+    number = re.search(r"№\s*(\d+)", text) or re.search(r"\b(?:СОШ|ООШ|школа)\s+(\d+)\b", text, re.IGNORECASE)
+    if number:
+        kind = ("лицей" if re.search(r"лице", text, re.IGNORECASE)
+                else "гимназия" if re.search(r"гимнази", text, re.IGNORECASE) else "школа")
+        return f"{kind} №{number.group(1)}"
+    quoted = re.search(r"[«\"“]([^»\"”]+)[»\"”]", text)
+    return (quoted.group(1) if quoted else text).strip()[:40]
+
+
+def _capital(text: str) -> str:
+    return text[:1].upper() + text[1:]
+
+
+def grade_title(grade: int | str, school_name: str) -> str:
+    short = short_school(school_name)
+    return f"{grade}-е классы · {short}" if short else f"{grade}-е классы"
+
+
+def school_title(school_name: str) -> str:
+    short = short_school(school_name)
+    return _capital(short) if short else "Вся школа"
+
+
 @dataclass(frozen=True, slots=True)
 class Room:
     id: str
@@ -69,8 +99,8 @@ class Room:
 def rooms_for(school: str, class_name: str, grade: int, school_name: str = "") -> list[Room]:
     """Комнаты ученика — в порядке списка на экране."""
     rooms = [
-        Room(f"grade:{school}:{grade}", "grade", f"{grade}-е классы", school_name),
-        Room(f"school:{school}", "school", "Вся школа", school_name),
+        Room(f"grade:{school}:{grade}", "grade", grade_title(grade, school_name), school_name),
+        Room(f"school:{school}", "school", school_title(school_name), "Вся школа"),
     ]
     if band := band_of(grade):
         rooms.append(_global_room(band))
@@ -82,15 +112,16 @@ def _global_room(band: str) -> Room:
     return Room(f"global:{band}", "global", GLOBAL_TITLE, f"Все школы · {first}–{last} классы")
 
 
-def describe(room_id: str) -> Room | None:
-    """Комната по id — для администратора, у которого своих комнат нет."""
+def describe(room_id: str, school_name: str = "") -> Room | None:
+    """Комната по id — для администратора и модераторов, у которых это не
+    свои комнаты. Имя школы берётся из профилей её учеников."""
     kind, _, rest = room_id.partition(":")
     if kind == "global" and rest in {f"{first}-{last}" for first, last in AGE_BANDS}:
         return _global_room(rest)
     if kind == "school" and rest:
-        return Room(room_id, "school", "Вся школа")
+        return Room(room_id, "school", school_title(school_name), "Вся школа")
     if kind == "grade" and ":" in rest:
-        return Room(room_id, "grade", f"{rest.rsplit(':', 1)[1]}-е классы")
+        return Room(room_id, "grade", grade_title(rest.rsplit(":", 1)[1], school_name), school_name)
     return None
 
 

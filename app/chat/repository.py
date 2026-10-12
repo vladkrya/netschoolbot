@@ -166,6 +166,11 @@ class ChatRepository:
             "SELECT room, MAX(id) AS last FROM chat_messages GROUP BY room ORDER BY last DESC")
         return [row["room"] for row in rows]
 
+    async def school_name(self, school: str) -> str:
+        row = await self._db.fetch_one(
+            "SELECT school_name FROM chat_profiles WHERE school_key = ? AND school_name != '' LIMIT 1", (school,))
+        return row["school_name"] if row else ""
+
     async def is_moderator(self, telegram_id: int, school: str) -> bool:
         return bool(school) and bool(await self._db.fetch_one(
             "SELECT 1 FROM chat_moderators WHERE telegram_id = ? AND school_key = ?", (telegram_id, school)))
