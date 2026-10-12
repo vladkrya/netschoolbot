@@ -52,6 +52,13 @@ def _safe_message(record: logging.LogRecord) -> str:
     if not record.name.startswith("netschoolbot"):
         return "Событие внешней библиотеки"
     template = str(record.msg)
+    if getattr(record, "public", False) and record.args:
+        # Аргументы заведомо без личных данных (адрес сервера школы, версия):
+        # их и пишем в лог, ради них сообщение и нужно.
+        try:
+            return template % record.args
+        except (TypeError, ValueError):
+            pass
     # Все сообщения приложения используют статический шаблон и отдельные args.
     if record.args:
         template = _PLACEHOLDER.sub(lambda m: "%" if m.group() == "%%" else "[скрыто]", template)

@@ -107,6 +107,16 @@ def test_logs_exclude_secrets_in_exception_chain_and_arguments():
     assert secret not in SafeFormatter().format(external)
 
 
+
+def test_public_log_args_are_shown_others_hidden():
+    public = logging.LogRecord('netschoolbot.sgo', logging.INFO, __file__, 1,
+                               '«Сетевой город» %s: версия %s', ('sgo.example.ru', '5.58.7'), None)
+    public.public = True
+    assert 'sgo.example.ru: версия 5.58.7' in SafeFormatter().format(public)
+    hidden = logging.LogRecord('netschoolbot.sgo', logging.INFO, __file__, 1,
+                               '«Сетевой город» %s: версия %s', ('sgo.example.ru', '5.58.7'), None)
+    assert '5.58.7' not in SafeFormatter().format(hidden)
+
 async def test_delete_cancels_work_and_removes_all_linked_rows(app, users, login_state):
     user = await users.save(make_user())
     await app.sessions.save(1, '{}')
