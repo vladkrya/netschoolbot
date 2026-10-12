@@ -2,19 +2,19 @@
 'use strict';
 
 import {
-  $, banner, base, demo, loadAttachmentTicket, school, state, student, studentFirstName, syncFinished, syncStarted, tg, token,
+  $, assistantEnabled, banner, base, demo, loadAttachmentTicket, school, state, student, studentFirstName, syncFinished, syncStarted, tg, token,
 } from './core.js';
 import { initDay, loadDay } from './day.js';
 import { initSchedule, loadSchedule } from './schedule.js';
 import { initHomework, loadHomework } from './homework.js';
 import { loadTotals } from './totals.js';
-import { loadMail, openAnnouncements, openCompose } from './mail.js';
+import { initMail, loadMail, openAnnouncements, openCompose } from './mail.js';
 import { applyAccent, applyDesign, applyScheduleTab, initFullscreen, isNewDesign } from './appearance.js';
 import { ICONS } from './icons.js';
 import {
   applyStoredTheme, closeDrawer, initStudentSwitch, isDrawerOpen, loadProfile, loadSettings, openDrawer, syncTimezone,
 } from './profile.js';
-import { loadAssistantTab } from './assistant.js';
+import { loadAssistantTab, openAssistant } from './assistant.js';
 import { navTabs, renderNav } from './tabs.js';
 import { closeSheet, initSheet } from './sheet.js';
 import { clearScreens, handleBack, hasScreens, setFallbackBack } from './screens.js';
@@ -403,6 +403,10 @@ function initChrome() {
   });
   $('bellBtn').addEventListener('click', openAnnouncements);
   $('composeBtn').addEventListener('click', () => openCompose());
+  initMail();
+  // Помощник — кнопкой на «Дне»: вкладкой он не помещался в панель.
+  $('aiFab').hidden = !assistantEnabled || demo;
+  $('aiFab').addEventListener('click', () => openAssistant());
   window.addEventListener('resize', syncHeaderHeight);
   new ResizeObserver(syncHeaderHeight).observe($('appHeader'));
   // «Перейти ко дню» из расписания.

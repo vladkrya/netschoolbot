@@ -110,7 +110,7 @@ function tabsSection() {
   return `<section class="drawer-section">
       <div class="drawer-heading">Нижняя панель</div>
       <div class="tab-list" id="tabList">${tabRows()}</div>
-      <div class="muted small">До ${MAX_TABS} вкладок. Первая открывается при входе. <button class="link" id="tabsReset">Как было</button></div>
+      <div class="muted small">Первая открывается при входе. <button class="link" id="tabsReset">Как было</button></div>
     </section>`;
 }
 
@@ -429,8 +429,8 @@ function render() {
         <input type="checkbox" switch class="switch" id="designNew" ${isNewDesign() ? 'checked' : ''}></label>
       <label class="switch-row"><span>Показывать выходные без уроков</span>
         <input type="checkbox" switch class="switch" id="weekendsShow" ${showWeekends() ? 'checked' : ''}></label>
-      <label class="switch-row"><span>Звонки вместо расписания недели</span>
-        <input type="checkbox" switch class="switch" id="bellsTab" ${showBells() ? 'checked' : ''}></label>
+      ${isNewDesign() ? '' : `<label class="switch-row"><span>Звонки вместо расписания недели</span>
+        <input type="checkbox" switch class="switch" id="bellsTab" ${showBells() ? 'checked' : ''}></label>`}
       ${isNewDesign() ? themeSegment : `${radio('light', 'Светлая тема')}
       ${radio('auto', 'Как в системе')}
       ${radio('dark', 'Тёмная тема')}`}
@@ -489,7 +489,7 @@ function bindDrawer() {
     select();
     saveWeekends(event.target.checked);
   });
-  $('bellsTab').addEventListener('change', (event) => {
+  $('bellsTab')?.addEventListener('change', (event) => {
     select();
     saveBells(event.target.checked);
   });

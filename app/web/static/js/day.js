@@ -10,7 +10,8 @@ import {
   parseIso, plural, showFailure, showLoading, skeleton, state, WEEKDAYS, WEEKDAYS_FULL, weekdayIndex, weekOffsetOf,
 } from './core.js';
 import { ICONS } from './icons.js';
-import { isNewDesign, showWeekends } from './appearance.js';
+import { isNewDesign, saveBells, showBells, showWeekends } from './appearance.js';
+import { bellsHtml, weekCardsHtml } from './schedule.js';
 import { canGoBack } from './screens.js';
 import { EDGE_PX } from './swipeback.js';
 import { lessonStatus, markBox, openHomework, openLesson, realMarks } from './details.js';
@@ -264,6 +265,38 @@ function lessonCard(lesson, index, progress) {
     </div>`;
 }
 
+/** Шторка «Звонки и неделя» (новый дизайн): звонки или неделя карточками —
+ *  переключателем; выбор помнится в той же настройке, что и прежняя вкладка. */
+function openWeekSheet() {
+  tap();
+  const monday = mondayOf(state.date);
+  const body = openSheet('Звонки и неделя', '');
+  const draw = () => {
+    const bells = showBells();
+    body.innerHTML = `
+      <div class="seg-glass week-seg" role="tablist" style="--n:2;--i:${bells ? 0 : 1}">
+        <span class="seg-lens" aria-hidden="true"></span>
+        <button class="${bells ? 'on' : ''}" data-mode="bells" role="tab" aria-selected="${bells}">Звонки</button>
+        <button class="${bells ? '' : 'on'}" data-mode="week" role="tab" aria-selected="${!bells}">Неделя</button>
+      </div>
+      ${bells ? `<div class="bells-note">Звонки пока в разработке: время собрано из расписания уроков и может быть неточным.</div>
+        <div class="week-sheet">${bellsHtml(monday)}</div>`
+        : `<div class="week-sheet">${weekCardsHtml(monday)}</div>`}`;
+    body.querySelectorAll('[data-mode]').forEach((button) => button.addEventListener('click', () => {
+      if ((button.dataset.mode === 'bells') === showBells()) return;
+      select();
+      saveBells(button.dataset.mode === 'bells');
+      draw();
+    }));
+    body.querySelectorAll('[data-goto]').forEach((button) => button.addEventListener('click', () => {
+      tap();
+      closeSheet();
+      slideTo(button.dataset.goto, true);
+    }));
+  };
+  draw();
+}
+
 export async function goToDay(iso) {
   // Человек выбрал день сам — дальше приложение его не переставляет.
   autoDay = false;
@@ -399,6 +432,7 @@ export function initDay() {
   $('dayPrev').addEventListener('click', () => shiftDay(-1));
   $('dayNext').addEventListener('click', () => shiftDay(1));
   $('dayTitle').addEventListener('click', () => openCalendar());
+  $('dayBells').addEventListener('click', openWeekSheet);
   $('weekStrip').addEventListener('click', (event) => {
     const button = event.target.closest('[data-week-day]');
     if (button && button.dataset.weekDay !== state.date) slideTo(button.dataset.weekDay);

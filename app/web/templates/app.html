@@ -92,6 +92,8 @@
         <span class="date-sub" id="daySub"></span>
       </button>
       <button class="date-arrow" id="dayNext" aria-label="Следующий день" data-icon="right"></button>
+      <!-- Звонки и неделя шторкой: только в новом дизайне, где нет вкладки «Звонки». -->
+      <button class="date-arrow day-bells" id="dayBells" aria-label="Звонки и неделя" data-icon="clock"></button>
     </div>
     <!-- Неделя полосой: только в новом дизайне (new.css). -->
     <div class="week-strip" id="weekStrip"></div>
@@ -124,7 +126,14 @@
   </div>
 
   <div class="subbar" data-for="mail" hidden>
-    <div class="filter-bar"><div class="segment-title">Входящие</div></div>
+    <div class="filter-bar"><div class="segment-title">Входящие</div>
+      <!-- Новый дизайн: объявления здесь же, а не под колокольчиком в шапке. -->
+      <div class="seg-glass mail-seg" id="mailSeg" style="--n:2;--i:0">
+        <span class="seg-lens" aria-hidden="true"></span>
+        <button class="on" data-mail-mode="mail">Письма</button>
+        <button data-mail-mode="ann">Объявления</button>
+      </div>
+    </div>
   </div>
 </header>
 
@@ -132,7 +141,11 @@
 <div class="banner" id="banner" hidden></div>
 
 <main>
-  <section class="panel active" id="panel-day"><div class="list" id="dayContent"></div></section>
+  <section class="panel active" id="panel-day">
+    <div class="list" id="dayContent"></div>
+    <!-- ИИ-помощник кнопкой (новый дизайн, если помощник включён на сервере). -->
+    <button class="fab ai-fab" id="aiFab" aria-label="ИИ-помощник" data-icon="sparkles" hidden></button>
+  </section>
   <section class="panel" id="panel-schedule"><div class="list" id="scheduleContent"></div></section>
   <section class="panel" id="panel-homework"><div class="list" id="homeworkContent"></div></section>
   <section class="panel" id="panel-totals"><div id="totalsContent"></div></section>

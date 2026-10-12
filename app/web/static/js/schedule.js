@@ -138,6 +138,23 @@ function render(monday) {
   );
 }
 
+/** Неделя карточками дней (новый дизайн) — для шторки «Звонки и неделя» на
+ *  «Дне». Нажатие на день (data-goto) открывает его. */
+export function weekCardsHtml(monday) {
+  const today = isoToday();
+  const cards = [];
+  for (let index = 0; index < 7; index += 1) {
+    const iso = addDays(monday, index);
+    if (isHiddenWeekend(iso)) continue;
+    const lessons = dayData(iso)?.lessons || [];
+    const first = lessons[0];
+    const last = lessons[lessons.length - 1];
+    const range = first && last && first.start && last.end ? `${first.start} — ${last.end}` : '';
+    cards.push(weekCard(iso, index, lessons, range, iso === today));
+  }
+  return cards.join('');
+}
+
 /** Новый дизайн: день недели целиком, без раскрытия — уроки со временем.
  *  Нажатие на день открывает его во вкладке «День». */
 function weekCard(iso, index, lessons, range, isToday) {

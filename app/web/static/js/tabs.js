@@ -4,11 +4,10 @@
 //
 // Набор хранится в общих настройках (prefs `tabs`), поэтому одинаков в
 // Telegram и на сайте. «Настройки» убрать нельзя: иначе панель уже не
-// вернуть. Без ИИ-помощника (нет ключа на сервере или демо) его вкладка
-// просто не показывается.
+// вернуть.
 'use strict';
 
-import { $, assistantEnabled } from './core.js';
+import { $ } from './core.js';
 import { ICONS } from './icons.js';
 import { getPref, setPref } from './prefs.js';
 import { isNewDesign } from './appearance.js';
@@ -30,20 +29,22 @@ export const TAB_NAMES = {
   totals: 'Оценки', mail: 'Почта', settings: 'Настройки',
 };
 
-// Все семь: от шести вкладок подписи остаются только у активной (new.css),
-// у остальных — иконки, иначе подписи не помещались на узком телефоне.
-export const MAX_TABS = 7;
+// Вкладок в новом дизайне пять (звонки и помощник переехали на «День»), и
+// все помещаются с подписями.
+export const MAX_TABS = 5;
+
+// В новом дизайне звонки и неделя — шторкой из «Дня» (кнопка с часами),
+// помощник — кнопкой ✨ на «Дне»: отдельные вкладки не помещались в панель.
+const MERGED_IN_NEW = new Set(['schedule', 'assistant']);
 
 export function availableTabs() {
-  return Object.keys(TAB_DEFS).filter((tab) => tab !== 'assistant' || assistantEnabled);
+  return Object.keys(TAB_DEFS).filter((tab) => !MERGED_IN_NEW.has(tab));
 }
 
 const CLASSIC_TABS = ['day', 'schedule', 'homework', 'totals', 'mail'];
 
 export function defaultTabs() {
-  return assistantEnabled
-    ? ['day', 'assistant', 'homework', 'totals', 'mail', 'settings']
-    : ['day', 'schedule', 'homework', 'totals', 'mail', 'settings'];
+  return ['day', 'homework', 'totals', 'mail', 'settings'];
 }
 
 /** Вкладки панели: сохранённый выбор без неизвестных и недоступных. */

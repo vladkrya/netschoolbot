@@ -357,7 +357,8 @@ function renderCards(data, quarters) {
   });
 
   // Период меняется на месте: линза переезжает, карточки перерисовываются.
-  const control = container.querySelector('.seg-glass');
+  // Именно переключатель периода: в сводке над ним есть свой (.th-mode).
+  const control = container.querySelector('.period-row .seg-glass');
   control.addEventListener('click', (event) => {
     const button = event.target.closest('[data-period]');
     if (!button || button.dataset.period === period) return;

@@ -8,6 +8,7 @@ import { notify, select } from './haptics.js';
 import { ICONS } from './icons.js';
 import { popScreen, pushScreen } from './screens.js';
 import { closeSheet, openSheet } from './sheet.js';
+import { isNewDesign } from './appearance.js';
 
 const AVATAR_COLORS = ['#a7b83a', '#4a9fd8', '#d8844a', '#9a6ad8', '#d84a6a', '#3ab89a'];
 
@@ -17,8 +18,16 @@ function avatarColor(name) {
   return AVATAR_COLORS[hash % AVATAR_COLORS.length];
 }
 
+// Новый дизайн: во вкладке два раздела — письма и объявления школы.
+let mode = 'mail';
+
 export async function loadMail(force = false) {
   const container = $('mailContent');
+  $('composeBtn').hidden = isNewDesign() && mode === 'ann';
+  if (isNewDesign() && mode === 'ann') {
+    await renderAnnouncements(container, force);
+    return;
+  }
   if (!state.mail || force) {
     showLoading(container, skeleton());
     try {
@@ -87,10 +96,14 @@ async function openMessage(id) {
 }
 
 export async function openAnnouncements() {
-  const body = pushScreen('Объявления');
+  await renderAnnouncements(pushScreen('Объявления'));
+}
+
+async function renderAnnouncements(body, force = false) {
   body.innerHTML = skeleton(4);
   try {
-    const { data } = await api('/api/announcements');
+    const { data } = await api(`/api/announcements${force ? '?refresh=1' : ''}`);
+    if (isNewDesign() && body.id === 'mailContent' && mode !== 'ann') return;
     const items = data.items || [];
     if (!items.length) {
       body.innerHTML = '<div class="empty big">Объявлений нет</div>';
@@ -116,6 +129,21 @@ export async function openAnnouncements() {
   } catch (error) {
     body.innerHTML = errorCard(error);
   }
+}
+
+export function initMail() {
+  const seg = $('mailSeg');
+  seg.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-mail-mode]');
+    if (!button || button.dataset.mailMode === mode) return;
+    select();
+    mode = button.dataset.mailMode;
+    seg.querySelectorAll('[data-mail-mode]').forEach((item) => item.classList.toggle('on', item === button));
+    seg.style.setProperty('--i', mode === 'ann' ? 1 : 0);
+    // Новое письмо — только в разделе писем.
+    $('composeBtn').hidden = mode === 'ann';
+    loadMail();
+  });
 }
 
 /* ─────────────────────────── Новое письмо ─────────────────────────── */

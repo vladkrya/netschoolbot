@@ -736,13 +736,6 @@
   from { background: color-mix(in srgb, var(--primary) 18%, transparent); transform: scale(1.02); }
 }
 @media (prefers-reduced-motion: reduce) { .tab-row.moved { animation: none; } }
-/* Шесть вкладок на узком телефоне: подписи плотнее, иначе «Настройки»
-   обрезаются. */
-:root[data-design="new"] .bottom-nav:is([data-count="6"], [data-count="7"]) .nav-item .lbl-new { font-size: clamp(8.5px, 2.5vw, 10px); letter-spacing: -.35px; max-width: 100%; overflow: visible; }
-/* 6–7 вкладок: подписи у всех не помещались. Неактивные — только значок
-   покрупнее, подпись — у открытой вкладки и под пальцем при перетаскивании. */
-:root[data-design="new"] .bottom-nav:is([data-count="6"], [data-count="7"]) .nav-item:not(.active, .hover) .lbl-new { display: none; }
-:root[data-design="new"] .bottom-nav:is([data-count="6"], [data-count="7"]) .nav-item:not(.active, .hover) .ico .icon { width: 26px; height: 26px; }
 
 /* Тема в настройках — капсула с линзой (стили .seg-glass выше). */
 :root[data-design="new"] .theme-seg { background: var(--card-2); margin-bottom: 4px; }
@@ -799,3 +792,18 @@
 :root[data-design="new"] .totals-hero.is-loading { opacity: .55; }
 :root[data-design="new"] .sc-skeleton { display: grid; gap: 10px; }
 :root[data-design="new"] .sc-skeleton .skeleton { margin: 0; }
+
+/* «День»: кнопка «Звонки и неделя» в полосе даты, за разделителем. */
+:root[data-design="new"] .day-bells { display: flex; margin-left: 4px; background: var(--card-2); color: var(--text); }
+:root[data-design="new"] .day-bells .icon { width: 21px; height: 21px; }
+:root[data-design="new"] .week-seg { margin-bottom: 12px; background: var(--card-2); }
+:root[data-design="new"] .sheet-body .bells-note { margin: 0 0 12px; }
+:root[data-design="new"] .week-sheet .card { margin: 0 0 8px; padding: 6px 2px 10px; box-shadow: none; background: none; }
+:root[data-design="new"] .week-sheet .week-card { padding: 8px 2px 12px; border-bottom: 1px solid var(--border); border-radius: 0; }
+/* ИИ-помощник — кнопкой ✨ над панелью вкладок. */
+:root[data-design="new"] .ai-fab:not([hidden]) { display: flex; }
+/* «Почта»: письма и объявления — разделами; колокольчика в шапке больше нет
+   (место остаётся пустым, чтобы имя стояло по центру). */
+:root[data-design="new"] .mail-seg { display: flex; background: var(--card); box-shadow: var(--lift); }
+:root[data-design="new"] .subbar[data-for="mail"] .segment-title { display: none; }
+:root[data-design="new"] #bellBtn { visibility: hidden; pointer-events: none; }
