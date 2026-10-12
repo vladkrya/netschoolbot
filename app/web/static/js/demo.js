@@ -461,7 +461,7 @@ function demoChat(route, url, options, body) {
   if (route === '/api/chat/join') { demoChatState.joined = true; demoChatState.nick = body.nick; return overview(); }
   if (/\/reads$/.test(route)) return ok({ items: [{ nick: 'Маша', grade: 9 }], count: 1 });
   if (route === '/api/chat/leave') { demoChatState.joined = false; return overview(); }
-  const action = route.match(/^\/api\/chat\/messages\/(\d+)\/(react|report|moderate|vote)$/);
+  const action = route.match(/^\/api\/chat\/messages\/(\d+)\/(react|report|moderate|vote|edit)$/);
   if (action) {
     const message = Object.values(demoChatState.messages).flat().find((m) => m.id === Number(action[1]));
     if (action[2] === 'react') {
@@ -470,6 +470,7 @@ function demoChat(route, url, options, body) {
       const count = (message.reactions[body.emoji] || 0) + (mine ? -1 : 1);
       if (count) message.reactions[body.emoji] = count; else delete message.reactions[body.emoji];
     }
+    if (action[2] === 'edit') Object.assign(message, { text: body.text, edited: true });
     if (action[2] === 'moderate' && body.action === 'delete') Object.assign(message, { deleted: true, deleted_by: 'author', text: null });
     if (action[2] === 'vote' && message.poll) {
       const poll = message.poll;

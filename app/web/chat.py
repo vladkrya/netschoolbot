@@ -47,6 +47,10 @@ POLL_OPTION_LEN = 80
 # секунд: в живой переписке иначе телефон звенит без остановки.
 NOTIFY_EVERY_S = 120
 WS_TICKET_TTL = 60
+# Своё сообщение можно исправить в течение двух суток.
+EDIT_WINDOW_S = 48 * 3600
+# «Печатает…» — не чаще раза в столько секунд от одного соединения.
+TYPING_INTERVAL_S = 2.5
 
 RULES_TEXT = [
     "В чатах только ученики: вход проверяется через «Сетевой город».",
@@ -280,6 +284,7 @@ async def message_json(
             "deleted_by": _deleted_by(row, admin),
             "hidden": bool(row["hidden"]),
             "pinned": bool(row["pinned"]),
+            "edited": bool(row.get("edited_at")) and row["deleted_at"] is None,
             "at": row["created_at"],
             "read": row["author_id"] == uid and bool(row["is_admin"]) == acting_admin and others_read >= row["id"],
             "reply": {
@@ -799,6 +804,37 @@ async def chat_react(request: web.Request) -> web.Response:
     return await _changed(request, message)
 
 
+@routes.post("/api/chat/messages/{message_id}/edit")
+async def chat_edit(request: web.Request) -> web.Response:
+    """Исправить своё сообщение (от той же подписи), пока не прошло двух суток."""
+    try:
+        message, room = await _message_for(request)
+    except ChatDenied as exc:
+        return _denied(exc)
+    uid = current_user(request).telegram_id
+    as_admin = await admin_mode(request)
+    if message["author_id"] != uid or bool(message["is_admin"]) != as_admin:
+        return json_error("Исправить можно только своё сообщение", status=403, reason="chat")
+    if message["kind"] != "text" or message["deleted_at"] is not None:
+        return json_error("Это сообщение исправить нельзя")
+    if time.time() - message["created_at"] > EDIT_WINDOW_S:
+        return json_error("Исправлять можно в течение двух суток")
+    text = str((await _body(request)).get("text") or "").strip()
+    chats = repo(request)
+    profile = await current_profile(request)
+    if not as_admin:
+        if profile and (profile["banned"] or profile["muted_until"] > time.time()):
+            return json_error("Сейчас вы не можете писать в чатах", status=403, reason="chat")
+        known = {member["nick_key"] for member in await _known_mentions(chats, text)} | {rules.ADMIN_NAME}
+        if problem := rules.check_text(text, global_room=room.is_global, known=known):
+            return json_error(problem, reason="chat")
+    elif not text:
+        return json_error("Пустое сообщение")
+    if text != message["text"]:
+        await chats.edit_message(message["id"], text[:rules.MAX_TEXT])
+    return await _changed(request, message)
+
+
 @routes.get("/api/chat/messages/{message_id}/reads")
 async def chat_reads(request: web.Request) -> web.Response:
     """Кто прочитал: автору — своё сообщение, администратору — любое."""
@@ -1088,6 +1124,10 @@ async def chat_ws(request: web.Request) -> web.StreamResponse:
     socket = web.WebSocketResponse(heartbeat=25)
     await socket.prepare(request)
     listener = Listener(uid, {room.id for room in profile_rooms(profile)}, acting_admin, schools, socket=socket)
+    if acting_admin:
+        listener.name = rules.ADMIN_NAME
+    elif profile and profile["nick"] and not profile["banned"]:
+        listener.name = profile["nick"]
     chat_hub = hub(request)
     chat_hub.add(listener)
     try:
@@ -1107,6 +1147,12 @@ async def chat_ws(request: web.Request) -> web.StreamResponse:
                 listener.open_room = None
             elif kind == "ping":
                 await socket.send_json({"t": "pong"})
+            elif kind == "typing":
+                room = str(data.get("room") or "")[:120]
+                now = time.monotonic()
+                if listener.name and listener.hears(room) and now - listener.typed_at >= TYPING_INTERVAL_S:
+                    listener.typed_at = now
+                    await chat_hub.publish(room, {"t": "typing", "room": room, "nick": listener.name}, skip=uid)
     finally:
         chat_hub.remove(listener)
     return socket

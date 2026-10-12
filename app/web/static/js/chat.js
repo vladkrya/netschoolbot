@@ -11,7 +11,7 @@ import { ICONS } from './icons.js';
 import { pushScreen, topScreen } from './screens.js';
 import { closeSheet, openSheet } from './sheet.js';
 
-import { chatConnected, chatEvents, refreshChatUnread, watchRoom } from './chat-live.js';
+import { chatConnected, chatEvents, refreshChatUnread, sendTyping, watchRoom } from './chat-live.js';
 const POLL_MS = 4000;
 const NOTIFY_LABELS = { all: 'Все сообщения', mentions: 'Только упоминания и ответы', off: 'Выключены' };
 let roomsContainer = null;
@@ -269,7 +269,7 @@ function messageHtml(message) {
         ${message.reply ? `<div class="chat-quote" data-jump="${message.reply.id}"><b>${esc(message.reply.author)}${verifiedBadge(message.reply.role)}</b>
           <span>${message.reply.text == null ? 'сообщение скрыто' : esc(message.reply.text)}</span></div>` : ''}
         <div class="chat-text">${bodyText(message)}</div>
-        <div class="chat-meta">${message.pinned ? '📌 ' : ''}${message.hidden ? 'скрыто · ' : ''}${esc(timeLabel(message.at))}${message.mine ? ` <span class="chat-read" aria-label="${message.read ? 'Прочитано' : 'Отправлено'}">${message.read ? '✓✓' : '✓'}</span>` : ''}</div>
+        <div class="chat-meta">${message.pinned ? '📌 ' : ''}${message.hidden ? 'скрыто · ' : ''}${message.edited ? 'изменено · ' : ''}${esc(timeLabel(message.at))}${message.mine ? ` <span class="chat-read" aria-label="${message.read ? 'Прочитано' : 'Отправлено'}">${message.read ? '✓✓' : '✓'}</span>` : ''}</div>
         ${reactions ? `<div class="chat-reactions">${reactions}</div>` : ''}
       </div>
     </div>`;
@@ -312,6 +312,7 @@ export function openRoom(room, onClose, targetId = null) {
   body.innerHTML = `
     <button class="chat-pinned" hidden></button>
     <div class="chat-log"><div class="chat-older" hidden>Загрузка…</div><div class="chat-list"></div></div>
+    <div class="chat-typing" hidden></div>
     <div class="chat-replying" hidden><span></span><button type="button" aria-label="Не отвечать">✕</button></div>
     <div class="chat-members" hidden></div>
     <form class="chat-composer">
@@ -467,12 +468,29 @@ export function openRoom(room, onClose, targetId = null) {
     }
   };
 
+  let editing = null;
   const setReply = (message) => {
     replyTo = message;
+    if (message) editing = null;
     replying.hidden = !message;
     if (message) {
       replying.querySelector('span').textContent = `Ответ ${message.admin ? 'admin' : message.author}: ${(message.text || '').slice(0, 80)}`;
       input.focus();
+    }
+  };
+  const setEdit = (message) => {
+    const wasEditing = editing;
+    editing = message;
+    replyTo = null;
+    replying.hidden = !message;
+    if (message) {
+      replying.querySelector('span').textContent = `Изменение: ${(message.text || '').slice(0, 80)}`;
+      input.value = message.text || '';
+      input.dispatchEvent(new Event('input'));
+      input.focus();
+    } else if (wasEditing) {
+      input.value = '';
+      input.style.height = '';
     }
   };
 
@@ -481,6 +499,22 @@ export function openRoom(room, onClose, targetId = null) {
     if (!text) return;
     const button = body.querySelector('.chat-send');
     button.disabled = true;
+    if (editing) {
+      try {
+        const { data } = await api(`/api/chat/messages/${editing.id}/edit`, {
+          method: 'POST', body: JSON.stringify({ text }),
+        });
+        update(data);
+        setEdit(null);
+        tap('soft');
+      } catch (error) {
+        notify('error');
+        banner(error.message, true);
+      } finally {
+        button.disabled = false;
+      }
+      return;
+    }
     try {
       const { data } = await api(`/api/chat/rooms/${encodeURIComponent(room.id)}/messages`, {
         method: 'POST', body: JSON.stringify({ text, reply_to: replyTo?.id ?? null }),
@@ -543,7 +577,24 @@ export function openRoom(room, onClose, targetId = null) {
     input.style.height = '';
     input.style.height = `${Math.min(input.scrollHeight, 140)}px`;
   });
-  replying.querySelector('button').addEventListener('click', () => setReply(null));
+  replying.querySelector('button').addEventListener('click', () => (editing ? setEdit(null) : setReply(null)));
+  // «Печатает…»: своё — другим по сокету, чужое — строкой над полем ввода.
+  input.addEventListener('input', () => { if (input.value.trim() && !editing) sendTyping(room.id); });
+  const typingLine = body.querySelector('.chat-typing');
+  const typists = new Map();
+  const paintTyping = () => {
+    const now = Date.now();
+    for (const [nick, until] of typists) if (until < now) typists.delete(nick);
+    const names = [...typists.keys()];
+    typingLine.hidden = !names.length;
+    typingLine.textContent = !names.length ? ''
+      : names.length === 1 ? `${names[0]} печатает…`
+        : names.length <= 3 ? `${names.join(', ')} печатают…` : `${names.length} человека печатают…`;
+  };
+  const typingTimer = setInterval(() => {
+    if (!body.isConnected) { clearInterval(typingTimer); return; }
+    paintTyping();
+  }, 1000);
   log.addEventListener('scroll', () => {
     if (log.scrollTop < 60) loadOlder();
     if (nearBottom()) markRead();
@@ -588,10 +639,22 @@ export function openRoom(room, onClose, targetId = null) {
     const element = event.target.closest('[data-id]');
     if (!element) return;
     const message = messages.get(Number(element.dataset.id));
-    if (message && message.kind !== 'system') openActions(message, { setReply, update, moderator, admin, room, mention });
+    if (message && message.kind !== 'system') openActions(message, { setReply, setEdit, update, moderator, admin, room, mention });
   });
 
   const live = ({ detail }) => {
+    if (detail.t === 'typing') {
+      if (detail.room === room.id && detail.nick) {
+        typists.set(detail.nick, Date.now() + 4500);
+        paintTyping();
+      }
+      return;
+    }
+    if (detail.t === 'msg' && detail.room === room.id) {
+      // Сообщение ушло — «печатает» у его автора уже неправда.
+      typists.clear();
+      paintTyping();
+    }
     if (detail.room === room.id || detail.t === 'connected') poll();
   };
   chatEvents.addEventListener('change', live);
@@ -632,9 +695,12 @@ async function act(path, body, done) {
   }
 }
 
-function openActions(message, { setReply, update, moderator, admin, room, mention }) {
+function openActions(message, { setReply, setEdit, update, moderator, admin, room, mention }) {
   tap();
   const alive = message.text != null;
+  // Сервер проверит то же: своё, от той же подписи, обычный текст, двое суток.
+  const editable = message.mine && alive && message.kind === 'text' && !message.poll
+    && Date.now() / 1000 - message.at < 48 * 3600;
   const canReact = !message.deleted;
   const author = !message.mine && !message.admin;
   const button = (act, label, extra = '') => `<button class="btn outline ${extra}" data-act="${act}">${label}</button>`;
@@ -644,6 +710,7 @@ function openActions(message, { setReply, update, moderator, admin, room, mentio
         data-pick="${emoji}">${emoji}</button>`).join('')}</div>` : ''}
     <div class="chat-actions">
       ${alive ? button('reply', 'Ответить') : ''}
+      ${editable ? button('edit', 'Изменить') : ''}
       ${!message.mine ? button('mention', `Упомянуть ${esc(message.admin ? 'admin' : message.author)}`) : ''}
       ${alive ? button('copy', 'Скопировать') : ''}
       ${message.mine || admin ? button('reads', 'Кто прочитал') : ''}
@@ -666,6 +733,7 @@ function openActions(message, { setReply, update, moderator, admin, room, mentio
   });
   const path = `/api/chat/messages/${message.id}`;
   on('reply', () => setReply(message));
+  on('edit', () => setEdit(message));
   on('reads', async () => {
     const view = openSheet('Кто прочитал', skeleton(2));
     try {

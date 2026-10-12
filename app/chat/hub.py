@@ -25,6 +25,8 @@ class Listener:
     schools: set[str] = field(default_factory=set)  # модератор школы
     open_room: str | None = None
     socket: Any = None
+    name: str = ""  # подпись для «печатает…»; пусто — писать не может
+    typed_at: float = 0.0
 
     def hears(self, room: str) -> bool:
         return self.every_room or room in self.rooms or room_school(room) in self.schools

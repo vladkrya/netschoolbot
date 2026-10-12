@@ -20,6 +20,15 @@ export function watchRoom(room) {
 
 export function chatConnected() { return socket?.readyState === WebSocket.OPEN; }
 
+let typedAt = 0;
+/** «Печатает…» для остальных в комнате; чаще раза в 2,5 с не шлём. */
+export function sendTyping(room) {
+  const now = Date.now();
+  if (!chatConnected() || now - typedAt < 2500) return;
+  typedAt = now;
+  socket.send(JSON.stringify({ t: 'typing', room }));
+}
+
 async function connect() {
   if (demo || !eligible || document.hidden || connecting || socket) return;
   connecting = true;

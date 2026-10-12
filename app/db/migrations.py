@@ -442,6 +442,17 @@ MIGRATIONS: list[str] = [
         seen_at REAL NOT NULL
     );
     """,
+    # 25 — правка своих сообщений в чатах. Прежний текст хранится для разбора
+    # жалоб: иначе оскорбление можно было бы «исправить» после жалобы.
+    """
+    ALTER TABLE chat_messages ADD COLUMN edited_at REAL;
+    CREATE TABLE chat_edits (
+        message_id INTEGER NOT NULL,
+        text TEXT NOT NULL,
+        edited_at REAL NOT NULL
+    );
+    CREATE INDEX chat_edits_message ON chat_edits(message_id);
+    """,
 ]
 
 

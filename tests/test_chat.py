@@ -744,3 +744,54 @@ def test_nick_one_alphabet_allowed(nick):
 @pytest.mark.parametrize('nick', ['Moon_Луна', 'Луна_9x', 'Cоsmos', 'Ёжик_A'])
 def test_nick_mixed_alphabets_blocked(nick):
     assert rules.check_nick(nick) == 'Все буквы ника должны быть либо русскими, либо английскими'
+
+
+class TestEditAndTyping:
+    async def test_edit_own_message_keeps_history(self, client, app_context, users, student_token):
+        _, joined = await join(client, student_token, 'Cosmos_9')
+        room = joined['data']['rooms'][0]['id']
+        other = await make_student(app_context, users, 70, 'Петров Иван')
+        await join(client, other, 'Moon_9')
+        _, sent = await send(client, student_token, room, 'опечтка')
+        mid = sent['data']['id']
+        status, _ = await post(client, f'/api/chat/messages/{mid}/edit', other, {'text': 'чужое'})
+        assert status == 403
+        status, data = await post(client, f'/api/chat/messages/{mid}/edit', student_token, {'text': 'опечатка'})
+        assert status == 200 and data['data']['text'] == 'опечатка' and data['data']['edited']
+        status, data = await post(client, f'/api/chat/messages/{mid}/edit', student_token, {'text': 'где закладку взять'})
+        assert status == 400  # фильтр тот же, что при отправке
+        from app.chat.repository import ChatRepository
+        assert [e['text'] for e in await ChatRepository(app_context.db).edits(mid)] == ['опечтка']
+
+    async def test_edit_window_and_admin_identity(self, client, app_context, student_token, admin_token, monkeypatch):
+        _, joined = await join(client, student_token, 'Cosmos_9')
+        room = joined['data']['rooms'][0]['id']
+        _, sent = await send(client, admin_token, room, 'от admin')
+        mid = sent['data']['id']
+        assert (await post(client, f'/api/chat/messages/{mid}/edit', admin_token, {'text': 'исправил'}))[0] == 200
+        monkeypatch.setattr('app.web.chat.EDIT_WINDOW_S', -1)
+        status, data = await post(client, f'/api/chat/messages/{mid}/edit', admin_token, {'text': 'поздно'})
+        assert status == 400 and 'двух суток' in data['error']
+
+    async def test_typing_reaches_others_in_room(self, client, app_context, users, student_token):
+        _, joined = await join(client, student_token, 'Cosmos_9')
+        room = joined['data']['rooms'][0]['id']
+        other = await make_student(app_context, users, 71, 'Петров Иван')
+        await join(client, other, 'Moon_9')
+        sockets = []
+        for token in (student_token, other):
+            _, data = await post(client, '/api/chat/ws-ticket', token, {})
+            ws = await client.ws_connect(f"{BASE}/api/chat/ws?ticket={data['data']['ticket']}")
+            assert await ws.receive_json(timeout=2) == {'t': 'hello'}
+            sockets.append(ws)
+        mine, theirs = sockets
+        await mine.send_json({'t': 'typing', 'room': room})
+        assert await theirs.receive_json(timeout=2) == {'t': 'typing', 'room': room, 'nick': 'Cosmos_9'}
+        await mine.send_json({'t': 'typing', 'room': room})  # слишком часто — не дойдёт
+        await mine.send_json({'t': 'typing', 'room': 'grade:deadbeef0000:9'})  # чужая комната
+        await theirs.send_json({'t': 'ping'})
+        assert await theirs.receive_json(timeout=2) == {'t': 'pong'}
+        await mine.send_json({'t': 'ping'})
+        assert await mine.receive_json(timeout=2) == {'t': 'pong'}  # своё «печатает» себе не приходит
+        for ws in sockets:
+            await ws.close()

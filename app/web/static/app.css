@@ -1653,6 +1653,8 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
 }
 .chat-replying span { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text2); }
 .chat-replying[hidden] { display: none; }
+.chat-typing { padding: 2px 14px 4px; font-size: 12px; color: var(--text2); font-style: italic; }
+.chat-typing[hidden] { display: none; }
 .chat-composer { display: flex; align-items: flex-end; gap: 8px; padding: 8px 12px; border-top: 1px solid var(--border); background: var(--bg); }
 .chat-composer textarea {
   flex: 1; resize: none; max-height: 140px; padding: 9px 12px; border-radius: 18px;

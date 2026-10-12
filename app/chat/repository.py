@@ -171,6 +171,22 @@ class ChatRepository:
             (room, since, up_to))
         return [dict(row) for row in rows]
 
+    async def edit_message(self, message_id: int, text: str) -> None:
+        """Новый текст; прежний — в историю правок."""
+        now = time.time()
+        async with self._db.transaction() as conn:
+            await conn.execute(
+                "INSERT INTO chat_edits (message_id, text, edited_at) SELECT id, text, ? FROM chat_messages WHERE id = ?",
+                (now, message_id))
+            await conn.execute(
+                "UPDATE chat_messages SET text = ?, edited_at = ?, updated_at = ? WHERE id = ?",
+                (text, now, now, message_id))
+
+    async def edits(self, message_id: int) -> list[dict[str, Any]]:
+        rows = await self._db.fetch_all(
+            "SELECT text, edited_at FROM chat_edits WHERE message_id = ? ORDER BY edited_at", (message_id,))
+        return [dict(row) for row in rows]
+
     async def touch(self, message_id: int) -> None:
         await self._db.execute("UPDATE chat_messages SET updated_at = ? WHERE id = ?", (time.time(), message_id))
 
