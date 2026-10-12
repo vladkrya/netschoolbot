@@ -1742,3 +1742,6 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
 .account-logout { width: 100%; margin-top: 8px; color: var(--g2, #d33); border-color: var(--g2, #d33); }
 .account-link-code code { user-select: all; }
 .account-link-code .btn { margin: 8px 0; }
+.lock-reset { display: flex; gap: 6px; margin-top: 8px; }
+.lock-reset input { flex: 1; min-width: 0; padding: 9px 10px; border-radius: 10px; border: 1px solid var(--border, #ccd); background: var(--card, #fff); color: inherit; font: inherit; }
+.lock-reset button { padding: 9px 12px; border-radius: 10px; background: var(--accent, #4a6fae); color: #fff; font: inherit; }

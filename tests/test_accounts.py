@@ -191,3 +191,16 @@ class TestSgoLoginFromSite:
         assert (await post(client, "/api/sgo/login", {"url": "http://insecure", "school": "x", "method": "password"}, token))[0] == 400
         assert (await post(client, "/api/sgo/login", {"url": "https://a.ru", "school": "x", "method": "password"}, token))[0] == 400
         assert (await post(client, "/api/sgo/login/otp", {"code": "1234"}, token))[0] == 400
+
+
+async def test_forgotten_pin_is_reset_with_account_password(client, app_context):
+    _, body, _ = await register(client)
+    token = body["data"]["token"]
+    status, _, _ = await post(client, "/api/lock/pin", {"pin": "4826"}, token)
+    assert status == 200
+    response = await client.get(f"{BASE}/api/account", params={"token": token})
+    assert response.status == 423  # заблокировано PIN
+    assert (await post(client, "/api/lock/password-reset", {"password": "не тот"}, token))[0] == 403
+    assert (await post(client, "/api/lock/password-reset", {"password": "длинный-пароль"}, token))[0] == 200
+    response = await client.get(f"{BASE}/api/account", params={"token": token})
+    assert response.status == 200

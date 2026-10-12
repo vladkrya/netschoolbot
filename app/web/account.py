@@ -306,6 +306,26 @@ async def telegram_link(request: web.Request) -> web.Response:
         "code": code, "url": f"https://t.me/{username}?start=link_{code}" if username else ""}})
 
 
+@routes.post("/api/lock/password-reset")
+async def lock_password_reset(request: web.Request) -> web.Response:
+    """Забыли PIN, а Telegram нет: сбросить защиту входа паролем от аккаунта
+    (как /resetapplock в боте подтверждает владельца через Telegram)."""
+    app, user = context(request), current_user(request)
+    key = f"lock:{user.telegram_id}"
+    if LOGIN_FAILURES.blocked(key):
+        return json_error("Слишком много попыток — подождите 15 минут", status=429)
+    account = await app.accounts.by_user(user.telegram_id)
+    password = str((await _body(request)).get("password") or "")
+    if not account or not verify_password(password, account["password_hash"]):
+        LOGIN_FAILURES.hit(key)
+        return json_error("Неверный пароль", status=403, reason="account")
+    async with app.db.transaction() as db:
+        for table in ("app_locks", "app_unlocks", "app_passkeys", "app_biometrics", "app_lock_challenges"):
+            await db.execute(f"DELETE FROM {table} WHERE telegram_id = ?", (user.telegram_id,))
+    LOGIN_FAILURES.reset(key)
+    return web.json_response({"ok": True})
+
+
 @routes.post("/api/account/logout")
 async def logout(request: web.Request) -> web.Response:
     response = web.json_response({"ok": True})

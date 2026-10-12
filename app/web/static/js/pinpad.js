@@ -112,13 +112,19 @@ export function mountPinpad(root, complete, { hint = 'Введите 4 цифр�
   }
   if (biometric) setBiometric(biometric);
   field.querySelector('[data-forgot]')?.addEventListener('click', () => {
-    root.querySelector('.lock-error').textContent = forgot;
+    // Строка — подсказка; функция — свой способ сброса (пароль от аккаунта).
+    if (typeof forgot === 'function') forgot(root);
+    else root.querySelector('.lock-error').textContent = forgot;
   });
+  // Поле ввода внутри экрана (пароль для сброса PIN) печатает само.
+  const typing = event => event.target instanceof HTMLInputElement;
   const keydown = event => {
+    if (typing(event)) return;
     if (/^[0-9]$/.test(event.key)) { event.preventDefault(); enter(event.key); }
     if (event.key === 'Backspace' || event.key === 'Delete') { event.preventDefault(); remove(); }
   };
   const paste = event => {
+    if (typing(event)) return;
     const text = event.clipboardData?.getData('text') || '';
     if (!/^[0-9]{4}$/.test(text) || value || busy) return;
     event.preventDefault(); for (const digit of text) enter(digit);

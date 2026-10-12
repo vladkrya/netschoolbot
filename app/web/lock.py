@@ -22,7 +22,7 @@ from webauthn.helpers.exceptions import WebAuthnException
 from .api import context, current_user, json_error
 
 routes = web.RouteTableDef()
-PUBLIC = {'status', 'unlock', 'authenticate/options', 'authenticate/verify', 'biometric/unlock'}
+PUBLIC = {'status', 'unlock', 'authenticate/options', 'authenticate/verify', 'biometric/unlock', 'password-reset'}
 
 
 def digest(token):
