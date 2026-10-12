@@ -1,4 +1,10 @@
 # Всё — на ns.ikrya.ru (yavds) как есть. Между облаком и ВМ белых списков нет.
+# «upgrade» — только запросам WebSocket (чаты); в контейнере этот сайт один, поэтому map здесь.
+map $http_upgrade $netschool_connection {
+    default upgrade;
+    ''      '';
+}
+
 server {
     listen ${PORT};
     # Фото и видео к отчёту об ошибке — до 15 МБ, как на ns.ikrya.ru.
@@ -11,7 +17,7 @@ server {
         proxy_ssl_name ns.ikrya.ru;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
+        proxy_set_header Connection $netschool_connection;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto https;
         # Обновление дневника жестом ждёт школьный сервер до минуты.

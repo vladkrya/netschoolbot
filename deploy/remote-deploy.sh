@@ -77,6 +77,9 @@ install_units() {
 
 install_nginx() {
   local domain enabled config backup
+  # Переменная $netschool_connection (Upgrade только для WebSocket) — общая
+  # для всех сайтов. При откате файл остаётся: старым конфигам он не мешает.
+  install -m 644 deploy/nginx/netschool-upgrade.conf /etc/nginx/conf.d/netschool-upgrade.conf
   # Обновляем все установленные адреса: Upgrade нужен каждому прокси чата.
   for domain in netschool.ikrya.ru ns.ikrya.ru ns2.ikrya.ru yavds.ikrya.ru; do
     enabled="/etc/nginx/sites-enabled/$domain"
