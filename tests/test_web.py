@@ -28,7 +28,11 @@ BASE = "/mini"
 
 
 @pytest.fixture
-async def client(app_context) -> TestClient:
+async def client(app_context, tmp_path) -> TestClient:
+    # Кэш вложений лежит в data_dir: у каждого теста свой, иначе файл
+    # из одного теста отдавался бы в другом.
+    from dataclasses import replace
+    app_context.settings = replace(app_context.settings, data_dir=tmp_path)
     server = TestServer(create_app(app_context))
     client = TestClient(server)
     await client.start_server()
@@ -978,6 +982,111 @@ class TestTelegramMiniApp:
         old = issue_attachment_ticket(app_context, 1, now=0)
         assert (await client.get(f"{BASE}/api/attachment/1", params={"ticket": old})).status == 401
         assert (await client.get(f"{BASE}/api/profile", params={"ticket": ticket})).status == 401
+
+
+class TestAttachmentWaitPage:
+    """Вложение открывается страницей ожидания: сервер школы бывает
+    перегружен, и прямая ссылка минутами держала пустую вкладку."""
+
+    async def test_page_renders_without_identity(self, client):
+        # Данных в странице нет — файл качает её скрипт с билетом из адреса.
+        response = await client.get(f"{BASE}/attachment/42", params={"ticket": "x", "name": "Мозг <b>.pptx"})
+        assert response.status == 200
+        assert response.headers["Cache-Control"] == "no-store"
+        text = await response.text()
+        assert "Мозг &lt;b&gt;.pptx" in text and "<b>.pptx" not in text
+        assert "/api/attachment/$1" in text
+
+    async def test_page_accepts_only_numeric_id(self, client):
+        assert (await client.get(f"{BASE}/attachment/abc")).status == 404
+
+    async def test_link_leads_to_wait_page(self):
+        from pathlib import Path
+        core = Path("app/web/static/js/core.js").read_text(encoding="utf-8")
+        assert "${base}/attachment/${id}?" in core
+
+    async def test_slow_school_server_gives_504(self, client, users, app_context, monkeypatch):
+        import app.web.api as api_module
+        await users.save(make_user())
+        monkeypatch.setattr(api_module, "ATTACHMENT_TIMEOUT_S", 0.05)
+
+        async def hang(user, attachment_id):
+            await asyncio.sleep(10)
+
+        monkeypatch.setattr(app_context.diary, "download_attachment", hang)
+        response = await client.get(
+            f"{BASE}/api/attachment/7", params={"tgWebAppData": TestTelegramMiniApp.init_data(1)}
+        )
+        assert response.status == 504
+        body = await response.json()
+        assert body["ok"] is False and "перегружен" in body["error"]
+        # Неудача в кэш не попадает.
+        assert not list(app_context.settings.attachments_dir.glob("attachment-*"))
+
+    async def test_repeat_is_served_from_cache(self, client, users, app_context, monkeypatch):
+        await users.save(make_user())
+        await users.save(make_user(2))
+        calls = []
+
+        async def download(user, attachment_id):
+            calls.append((user.telegram_id, attachment_id))
+            return b"slides"
+
+        monkeypatch.setattr(app_context.diary, "download_attachment", download)
+        params = {"tgWebAppData": TestTelegramMiniApp.init_data(1), "name": "Мозг.pptx"}
+        for _ in range(2):
+            response = await client.get(f"{BASE}/api/attachment/7", params=params)
+            assert response.status == 200
+            assert await response.read() == b"slides"
+            assert response.headers["Content-Length"] == "6"
+        assert calls == [(1, 7)]
+        # Кэш у каждого пользователя свой: чужой файл из него не отдаётся.
+        response = await client.get(
+            f"{BASE}/api/attachment/7", params={"tgWebAppData": TestTelegramMiniApp.init_data(2)}
+        )
+        assert response.status == 200 and calls == [(1, 7), (2, 7)]
+
+    async def test_prepare_waits_for_file_then_link_is_instant(self, client, users, app_context, monkeypatch):
+        # Страница сперва ждёт файл (prepare → JSON), потом открывает прямую
+        # ссылку — та отдаётся из кэша, без второго похода в «Сетевой город».
+        await users.save(make_user())
+        calls = []
+
+        async def download(user, attachment_id):
+            calls.append(attachment_id)
+            return b"%PDF-1.4"
+
+        monkeypatch.setattr(app_context.diary, "download_attachment", download)
+        params = {"tgWebAppData": TestTelegramMiniApp.init_data(1), "name": "лист.pdf"}
+        response = await client.get(f"{BASE}/api/attachment/7", params={**params, "prepare": "1"})
+        assert response.status == 200
+        assert await response.json() == {"ok": True, "data": {"size": 8}}
+        response = await client.get(f"{BASE}/api/attachment/7", params=params)
+        assert await response.read() == b"%PDF-1.4"
+        assert response.headers["Content-Disposition"].startswith("inline;")
+        assert calls == [7]
+
+    async def test_stale_cache_is_downloaded_again_and_cleaned(self, client, users, app_context, monkeypatch):
+        import os
+        import time
+        import app.web.api as api_module
+        await users.save(make_user())
+        cache = app_context.settings.attachments_dir
+        cache.mkdir(parents=True, exist_ok=True)
+        old = time.time() - api_module.ATTACHMENT_CACHE_S - 10
+        for name, data in (("attachment-1-7", b"old"), ("attachment-5-9", b"other")):
+            (cache / name).write_bytes(data)
+            os.utime(cache / name, (old, old))
+
+        async def download(user, attachment_id):
+            return b"new"
+
+        monkeypatch.setattr(app_context.diary, "download_attachment", download)
+        response = await client.get(
+            f"{BASE}/api/attachment/7", params={"tgWebAppData": TestTelegramMiniApp.init_data(1)}
+        )
+        assert await response.read() == b"new"
+        assert sorted(p.name for p in cache.iterdir()) == ["attachment-1-7"]
 
 
 class TestDiaryScreen:

@@ -1093,9 +1093,14 @@ async def attachment(request: web.Request) -> web.Response:
                 app.diary.download_attachment(user, attachment_id), ATTACHMENT_TIMEOUT_S)
         except asyncio.TimeoutError:
             return json_error(
-                "«Сетевой город» не отдал файл за 2 минуты — сервер школы перегружен. "
+                "«Сетевой город» не отдал файл за полторы минуты — сервер школы перегружен. "
                 "Попробуйте ещё раз позже.", status=504, reason="server")
         _store_attachment(cached, payload)
+    if request.query.get("prepare"):
+        # Страница ожидания сперва ждёт файл здесь, а потом открывает прямую
+        # ссылку — она отдаётся из кэша сразу, и браузер сам решает, показать
+        # файл (pdf, картинка) или сохранить под верным именем.
+        return web.json_response({"ok": True, "data": {"size": len(payload)}})
     # Без имени и типа файл сохранялся как «attachment-123» без расширения,
     # и телефон не понимал, что это docx или pdf.
     name = _attachment_name(request.query.get("name", ""), attachment_id)
@@ -1111,8 +1116,10 @@ async def attachment(request: web.Request) -> web.Response:
 
 # Файл из «Сетевого города» ждём не дольше этого: перегруженный сервер школы
 # иначе держал вкладку пустой без конца. Скачанное час лежит на диске —
-# повторное открытие (или «Повторить» после обрыва) мгновенное.
-ATTACHMENT_TIMEOUT_S = 120
+# повторное открытие (или «Повторить» после обрыва) мгновенное. Таймаут
+# меньше proxy_read_timeout у nginx (120 с): иначе вместо понятной ошибки
+# браузер получил бы HTML-страницу 504 от nginx.
+ATTACHMENT_TIMEOUT_S = 100
 ATTACHMENT_CACHE_S = 3600
 
 
