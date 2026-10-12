@@ -1326,6 +1326,13 @@ async def get_prefs(request: web.Request) -> web.Response:
     return web.json_response({"ok": True, "data": await app.miniapp.prefs(user.telegram_id)})
 
 
+@routes.post("/api/notices/chats")
+async def chat_launch_notice(request: web.Request) -> web.Response:
+    app, user = context(request), current_user(request)
+    show = await app.miniapp.claim_chat_launch_notice(user.telegram_id)
+    return web.json_response({"ok": True, "data": {"show": show}}, headers={"Cache-Control": "no-store"})
+
+
 @routes.post("/api/prefs")
 async def save_prefs(request: web.Request) -> web.Response:
     app, user = context(request), current_user(request)

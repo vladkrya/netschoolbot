@@ -856,6 +856,14 @@ class MiniappRepository:
             (endpoint, telegram_id, p256dh, auth),
         )
 
+    async def claim_chat_launch_notice(self, telegram_id: int) -> bool:
+        """Выдать объявление один раз на аккаунт, в том числе между устройствами."""
+        async with self._db.transaction() as db:
+            cursor = await db.execute(
+                "DELETE FROM chat_launch_notices WHERE telegram_id = ?", (telegram_id,)
+            )
+            return cursor.rowcount > 0
+
     async def prefs(self, telegram_id: int) -> dict[str, Any]:
         """Настройки мини-приложения: одни и те же в Telegram и на сайте."""
         row = await self._db.fetch_one(

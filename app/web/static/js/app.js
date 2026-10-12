@@ -2,13 +2,13 @@
 'use strict';
 
 import {
-  $, assistantEnabled, banner, base, demo, loadAttachmentTicket, school, state, student, studentFirstName, syncFinished, syncStarted, tg, token,
+  $, api, assistantEnabled, banner, base, demo, loadAttachmentTicket, school, state, student, studentFirstName, syncFinished, syncStarted, tg, token,
 } from './core.js';
 import { initDay, loadDay } from './day.js';
 import { initSchedule, loadSchedule } from './schedule.js';
 import { initHomework, loadHomework } from './homework.js';
 import { loadTotals } from './totals.js';
-import { initMail, loadMail, openAnnouncements, openCompose } from './mail.js';
+import { initMail, loadMail, openAnnouncements, openCompose, selectChats } from './mail.js';
 import { applyAccent, applyDesign, applyScheduleTab, initFullscreen, isNewDesign, saveDesign } from './appearance.js';
 import { ICONS } from './icons.js';
 import {
@@ -457,6 +457,34 @@ function showDesignNotice() {
   });
 }
 
+async function showChatLaunchNotice() {
+  if (demo) return;
+  // Не заменяем уже открытую панель (например, объявление о дизайне).
+  while (!$('sheet').hidden) {
+    await new Promise(resolve => window.addEventListener('netschool:sheetclosed', resolve, { once: true }));
+  }
+  try {
+    const { data } = await api('/api/notices/chats', { method: 'POST' });
+    if (!data.show) return;
+    while (!$('sheet').hidden) {
+      await new Promise(resolve => window.addEventListener('netschool:sheetclosed', resolve, { once: true }));
+    }
+    const body = openSheet('Появились чаты', `
+      <p>Теперь в приложении можно общаться с другими участниками и написать админу.</p>
+      <p>Откройте <b>Почта → Чаты</b>. В старом дизайне: <b>Сообщения → Чаты</b>.</p>
+      <div class="chat-actions">
+        <button class="btn" id="chatLaunchOpen">Перейти в чаты</button>
+        <button class="btn outline" id="chatLaunchClose">Понятно</button>
+      </div>`);
+    body.querySelector('#chatLaunchClose').addEventListener('click', closeSheet);
+    body.querySelector('#chatLaunchOpen').addEventListener('click', () => {
+      closeSheet();
+      selectChats();
+      switchTab('mail');
+    });
+  } catch { /* Без связи окно дождётся следующего открытия приложения. */ }
+}
+
 async function start() {
   // Билет на вложения — заранее: внешний браузер открывается только прямо
   // из нажатия, ждать сети в этот момент нельзя.
@@ -477,6 +505,7 @@ async function start() {
     }
     // Флаг «видел» уже пришёл с сервера — окошко не повторится на другом устройстве.
     showDesignNotice();
+    showChatLaunchNotice();
   });
   renderNav();
   renderIcons();

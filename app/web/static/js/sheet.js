@@ -23,6 +23,7 @@ export function closeSheet() {
     onClose = null;
     handler();
   }
+  window.dispatchEvent(new Event('netschool:sheetclosed'));
 }
 
 export function initSheet() {

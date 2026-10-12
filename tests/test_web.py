@@ -42,6 +42,31 @@ async def token(app_context, users):
     return await app_context.miniapp.issue_token(1)
 
 
+class TestChatLaunchNotice:
+    async def test_existing_user_sees_notice_once_even_with_concurrent_requests(self, client, token, db):
+        await db.execute("INSERT INTO chat_launch_notices VALUES (?)", (1,))
+        responses = await asyncio.gather(*(
+            client.post(f"{BASE}/api/notices/chats", headers={"X-Netschool-Token": token})
+            for _ in range(2)
+        ))
+        payloads = [await response.json() for response in responses]
+        assert sorted(payload["data"]["show"] for payload in payloads) == [False, True]
+        assert all(response.headers["Cache-Control"] == "no-store" for response in responses)
+        response = await client.post(f"{BASE}/api/notices/chats", headers={"X-Netschool-Token": token})
+        assert (await response.json())["data"]["show"] is False
+
+    async def test_new_user_does_not_see_notice_or_consume_another_users_notice(self, client, token, db, users):
+        await users.save(make_user(2))
+        await db.execute("INSERT INTO chat_launch_notices VALUES (?)", (2,))
+        response = await client.post(f"{BASE}/api/notices/chats", headers={"X-Netschool-Token": token})
+        assert (await response.json())["data"]["show"] is False
+        assert await db.fetch_one("SELECT 1 FROM chat_launch_notices WHERE telegram_id=2")
+
+    async def test_notice_requires_authentication(self, client):
+        response = await client.post(f"{BASE}/api/notices/chats")
+        assert response.status == 401
+
+
 class TestAuth:
     async def test_api_without_token_is_rejected(self, client):
         response = await client.get(f"{BASE}/api/profile")

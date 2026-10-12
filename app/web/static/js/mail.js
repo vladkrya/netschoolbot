@@ -165,6 +165,14 @@ async function renderAnnouncements(body, force = false) {
   }
 }
 
+export function selectChats() {
+  mode = 'chat';
+  const seg = $('mailSeg');
+  seg.querySelectorAll('[data-mail-mode]').forEach((item) =>
+    item.classList.toggle('on', item.dataset.mailMode === 'chat'));
+  seg.style.setProperty('--i', 1);
+}
+
 export function initMail() {
   const seg = $('mailSeg');
   import('./chat-live.js').then(({ initChatLive }) => initChatLive());

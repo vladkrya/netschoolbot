@@ -424,6 +424,13 @@ MIGRATIONS: list[str] = [
     WHERE last_error LIKE '%/login%' AND
         (last_ok_at IS NULL OR last_error_at > last_ok_at);
     """,
+    # 23 — одноразовое объявление о чатах только уже существующим аккаунтам.
+    """
+    CREATE TABLE chat_launch_notices (
+        telegram_id INTEGER PRIMARY KEY REFERENCES users(telegram_id) ON DELETE CASCADE
+    );
+    INSERT INTO chat_launch_notices SELECT telegram_id FROM users;
+    """,
 ]
 
 
