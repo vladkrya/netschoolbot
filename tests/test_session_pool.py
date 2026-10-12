@@ -479,3 +479,17 @@ async def test_corrupted_saved_session_is_dropped(pool, users, sessions):
     async with pool.acquire(user) as client:
         assert client.logins == 1
     assert await sessions.load(1) == '{"cookies": "abc"}'
+
+
+async def test_server_error_with_auth_words_keeps_gosuslugi_token(pool, users, sessions):
+    """5xx с «не авторизован» в тексте — недоступность сервера, а не мёртвый токен."""
+    from netschoolpy.exceptions import ServerUnavailable
+    user = make_user(credentials=Credentials(login_type=LoginType.ESIA, login="", password=""))
+    await users.save(user)
+    await sessions.save(1, '{"cookies": "esia"}')
+    pool._client_factory = _failing_import(ServerUnavailable("/users: сервер ответил 500: Пользователь не авторизован"))
+    with pytest.raises(NetSchoolError) as info:
+        async with pool.acquire(user):
+            pass
+    assert info.value.reason is Reason.SERVER_UNAVAILABLE
+    assert await sessions.load(1) == '{"cookies": "esia"}'

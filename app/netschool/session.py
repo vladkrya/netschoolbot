@@ -258,6 +258,15 @@ class SessionPool:
             await self._sessions.drop(telegram_id)
             return False
         except Exception as exc:
+            from netschoolpy import exceptions as ns_errors
+
+            # «Сервер недоступен» (5xx, обрыв) библиотека говорит типом — текст
+            # тут не важен. 12.10 на техработах Мордовии сервер отвечал 500 с
+            # «не авторизован» в тексте, и по тексту 14 живых сессий выбросили:
+            # троим (Госуслуги) пришлось входить заново.
+            if isinstance(exc, ns_errors.ServerUnavailable):
+                raise NetSchoolError(Reason.SERVER_UNAVAILABLE,
+                                     f"восстановление {telegram_id}: сервер недоступен") from exc
             # Токен умирает только по ответу «не принят» (401, SessionExpired
             # без сетевой причины). Техработы, 5xx, таймауты и HTML вместо
             # JSON о токене ничего не говорят — его сохраняем.
