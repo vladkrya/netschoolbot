@@ -177,10 +177,17 @@ def describe(room_id: str, school_name: str = "") -> Room | None:
     return None
 
 
+def support_owner(room_id: str) -> int | None:
+    kind, _, value = room_id.partition(":")
+    if kind == "support" and value.isdigit() and int(value) > 0 and value == str(int(value)):
+        return int(value)
+    return None
+
+
 def room_school(room_id: str) -> str:
     """Школа комнаты ("" у общего чата) — для модераторов школы."""
     kind, _, rest = room_id.partition(":")
-    return "" if kind == "global" else rest.split(":", 1)[0]
+    return "" if kind in {"global", "support"} else rest.split(":", 1)[0]
 
 
 # ─────────────────────────────── Фильтры ───────────────────────────────

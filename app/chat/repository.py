@@ -63,6 +63,10 @@ class ChatRepository:
             async with self._db.transaction() as conn:
                 now = time.time()
                 await conn.execute(
+                    """INSERT INTO chat_nicks (telegram_id, nick, nick_key) VALUES (?, ?, ?)
+                       ON CONFLICT(telegram_id) DO UPDATE SET nick = excluded.nick, nick_key = excluded.nick_key""",
+                    (telegram_id, nick, key))
+                await conn.execute(
                     "UPDATE chat_profiles SET nick = ?, nick_key = ?, nick_changed_at = ? WHERE telegram_id = ?",
                     (nick, key, now, telegram_id))
                 await conn.execute(
@@ -73,8 +77,12 @@ class ChatRepository:
             return False
         return True
 
+    async def saved_nick(self, telegram_id: int) -> str | None:
+        row = await self._db.fetch_one("SELECT nick FROM chat_nicks WHERE telegram_id = ?", (telegram_id,))
+        return row["nick"] if row else None
+
     async def nick_owner(self, key: str) -> int | None:
-        row = await self._db.fetch_one("SELECT telegram_id FROM chat_profiles WHERE nick_key = ?", (key,))
+        row = await self._db.fetch_one("SELECT telegram_id FROM chat_nicks WHERE nick_key = ?", (key,))
         return row["telegram_id"] if row else None
 
     async def profiles(self, ids: list[int]) -> dict[int, dict[str, Any]]:
@@ -89,6 +97,10 @@ class ChatRepository:
             return []
         marks = ",".join("?" * len(keys))
         rows = await self._db.fetch_all(f"SELECT * FROM chat_profiles WHERE nick_key IN ({marks})", tuple(keys))
+        return [dict(row) for row in rows]
+
+    async def all_profiles(self) -> list[dict[str, Any]]:
+        rows = await self._db.fetch_all("SELECT * FROM chat_profiles ORDER BY nick, telegram_id")
         return [dict(row) for row in rows]
 
     async def known_rooms(self) -> list[tuple[str, int]]:
@@ -343,7 +355,9 @@ class ChatRepository:
     async def members(self, room: str) -> list[dict[str, Any]]:
         """Участники комнаты (по профилям), кроме заблокированных."""
         kind, _, rest = room.partition(":")
-        if kind == "global":
+        if kind == "support":
+            rows = await self._db.fetch_all("SELECT * FROM chat_profiles WHERE telegram_id = ?", (int(rest),))
+        elif kind == "global":
             first, last = (int(x) for x in rest.split("-"))
             rows = await self._db.fetch_all(
                 "SELECT * FROM chat_profiles WHERE banned = 0 AND grade BETWEEN ? AND ?", (first, last))

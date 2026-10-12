@@ -103,15 +103,15 @@ function renderNick(container) {
   });
 }
 
-function editNick(container) {
-  const sheet = openSheet('Сменить ник', `<input class="field" maxlength="20" value="${esc(overview.profile.nick)}">
-    <p class="muted small">${esc(overview.nick_hint)}. Менять можно раз в сутки.</p><button class="btn">Сохранить</button>`);
+function adminRename(userId, nick, done) {
+  const sheet = openSheet('Сменить ник участника', `<input class="field" maxlength="20" value="${esc(nick || '')}">
+    <p class="muted small">${esc(overview.nick_hint)}</p><button class="btn">Сохранить</button>`);
   const button = sheet.querySelector('button');
   button.addEventListener('click', async () => {
     button.disabled = true;
-    const data = await act('/api/chat/nick', { nick: sheet.querySelector('input').value.trim() });
+    const data = await act(`/api/chat/profiles/${userId}/nick`, { nick: sheet.querySelector('input').value.trim() });
     button.disabled = false;
-    if (data) { overview = data; closeSheet(); renderRooms(container); }
+    if (data) { closeSheet(); done?.(data); }
   });
 }
 
@@ -128,9 +128,9 @@ function renderRooms(container) {
   roomsContainer = container;
   const identity = overview.admin && overview.joined ? `
     <div class="card chat-identity">
-      <span>Писать как</span>
+      <span>Аккаунт</span>
       <div class="chips">
-        <button class="chip ${overview.as_admin ? 'active' : ''}" data-as-admin="1">admin</button>
+        <button class="chip ${overview.as_admin ? 'active' : ''}" data-as-admin="1">Админ</button>
         <button class="chip ${overview.as_admin ? '' : 'active'}" data-as-admin="0">${esc(overview.profile.nick)}</button>
       </div>
     </div>` : '';
@@ -156,9 +156,12 @@ function renderRooms(container) {
         ${room.unread ? `<span class="nav-badge chat-unread">${room.unread > 99 ? '99+' : room.unread}</span>` : ''}
       </span>
     </button>`).join('') + (overview.joined
-    ? `<button class="link chat-leave" id="chatEditNick">Ник: ${esc(overview.profile.nick)} · изменить</button>
+    ? `<button class="link chat-leave" id="chatEditNick">Ник: ${esc(overview.profile.nick)} · смена через админа</button>
        <button class="link chat-leave" id="chatLeave">Выйти из чатов</button>` : '');
-  container.querySelector('#chatEditNick')?.addEventListener('click', () => editNick(container));
+  container.querySelector('#chatEditNick')?.addEventListener('click', () => {
+    const room = overview.rooms.find(item => item.kind === 'support' && item.own);
+    if (room) openRoom(room, () => renderChats(container, true));
+  });
 
   container.querySelectorAll('[data-room]').forEach((button) => button.addEventListener('click', () => {
     const room = overview.rooms[Number(button.dataset.room)];
@@ -252,6 +255,16 @@ export function openRoom(room, onClose, targetId = null) {
   bell.className = 'screen-back chat-bell';
   bell.setAttribute('aria-label', 'Уведомления о чате');
   screen.querySelector('.screen-head').appendChild(bell);
+  if (overview.admin_mode && room.kind === 'support' && room.owner_id) {
+    const rename = document.createElement('button');
+    rename.className = 'chip';
+    rename.textContent = 'Сменить ник';
+    rename.addEventListener('click', () => adminRename(room.owner_id, room.owner_nick, (data) => {
+      room.owner_nick = data.nick;
+      renderChats(roomsContainer, true);
+    }));
+    screen.querySelector('.screen-head').appendChild(rename);
+  }
   const paintBell = (mode) => {
     room.notify = mode || 'mentions';
     bell.textContent = room.notify === 'off' ? '🔕' : '🔔';
@@ -609,8 +622,9 @@ function openActions(message, { setReply, update, moderator, admin, room, mentio
       ${moderator && !message.deleted ? (message.hidden ? button('unhide', 'Показать снова') : button('hide', 'Скрыть')) : ''}
       ${moderator && alive ? (message.pinned ? button('unpin', 'Открепить') : button('pin', 'Закрепить')) : ''}
       ${moderator && author ? button('mute60', 'Запретить писать на 1 час') + button('mute1440', 'Запретить писать на сутки') : ''}
+      ${admin && !message.admin && message.author_id ? button('rename', 'Сменить ник') : ''}
       ${admin && author ? button('ban', 'Заблокировать в чатах', 'danger') + button('unban', 'Разблокировать') : ''}
-      ${admin && author && room.kind !== 'global' ? button('moderator', 'Сделать модератором школы') + button('unmoderator', 'Снять модератора') : ''}
+      ${admin && author && !['global', 'support'].includes(room.kind) ? button('moderator', 'Сделать модератором школы') + button('unmoderator', 'Снять модератора') : ''}
     </div>`);
   sheet.querySelectorAll('[data-pick]').forEach((pick) => pick.addEventListener('click', () => {
     closeSheet();
@@ -629,6 +643,7 @@ function openActions(message, { setReply, update, moderator, admin, room, mentio
       view.innerHTML = data.items.map(item => `<div class="chat-reader">${esc(item.nick)}${item.grade ? ` · ${item.grade}` : ''}</div>`).join('') || '<p class="muted">Пока никто не прочитал</p>';
     } catch (error) { view.innerHTML = errorCard(error); }
   });
+  on('rename', () => adminRename(message.author_id, message.author, () => { refreshChatUnread(); }));
   on('mention', () => mention(message));
   on('copy', async () => {
     try {

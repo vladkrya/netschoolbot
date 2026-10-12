@@ -403,6 +403,15 @@ MIGRATIONS: list[str] = [
     UPDATE chat_messages SET author_name = '' WHERE is_admin = 0;
     CREATE INDEX chat_reads_room ON chat_reads(room, last_read);
     """,
+    # 21 — выбранный ник сохраняется после выхода; менять его может администратор.
+    """
+    CREATE TABLE chat_nicks (
+        telegram_id INTEGER PRIMARY KEY,
+        nick TEXT NOT NULL,
+        nick_key TEXT NOT NULL UNIQUE
+    );
+    INSERT INTO chat_nicks SELECT telegram_id, nick, nick_key FROM chat_profiles WHERE nick IS NOT NULL;
+    """,
 ]
 
 
