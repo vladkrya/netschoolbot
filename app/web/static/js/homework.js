@@ -15,7 +15,7 @@ let query = '';
 // all — с сегодняшнего дня, todo — только невыполненные, past — прошедшие.
 let filter = 'all';
 
-async function loadDone() {
+export async function loadDone() {
   try {
     const { data } = await api('/api/homework/done');
     state.hwDone = new Set(data.keys);
@@ -116,7 +116,7 @@ function render() {
 }
 
 /** Выполнено: отмечено человеком или учитель написал «Не предусмотрено». */
-function isDoneItem(item, done) {
+export function isDoneItem(item, done) {
   return Boolean(item.auto_done) || done.has(item.key);
 }
 

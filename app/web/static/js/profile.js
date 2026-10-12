@@ -5,7 +5,8 @@
 
 import { $, api, banner, demo, errorCard, esc, initData, pushEnabled, state, tg } from './core.js';
 import {
-  ACCENTS, currentAccent, isNewDesign, saveAccent, saveBells, saveDesign, saveWeekends, showBells, showWeekends, syncChromeColor,
+  ACCENTS, currentAccent, isNewDesign, saveAccent, saveBells, saveDesign, saveHomeworkStatus, saveWeekends, showBells,
+  showHomeworkStatus, showWeekends, syncChromeColor,
 } from './appearance.js';
 import { ICONS } from './icons.js';
 import { markBox } from './details.js';
@@ -492,6 +493,8 @@ function render() {
       <div class="drawer-heading">Оформление</div>
       <label class="switch-row design-row"><span>Новый дизайн<span class="design-tag">beta</span></span>
         <input type="checkbox" switch class="switch" id="designNew" ${isNewDesign() ? 'checked' : ''}></label>
+      <label class="switch-row"><span>Подсвечивать Д/З на главной<span class="muted small switch-note">красным — не сделано, зелёным — сделано</span></span>
+        <input type="checkbox" switch class="switch" id="hwStatusShow" ${showHomeworkStatus() ? 'checked' : ''}></label>
       <label class="switch-row"><span>Показывать выходные без уроков</span>
         <input type="checkbox" switch class="switch" id="weekendsShow" ${showWeekends() ? 'checked' : ''}></label>
       ${isNewDesign() ? '' : `<label class="switch-row"><span>Звонки вместо расписания недели</span>
@@ -549,6 +552,10 @@ function bindDrawer() {
     themeSeg.style.setProperty('--i', buttons.indexOf(button));
     setPref('theme', button.dataset.themeSet);
     applyStoredTheme();
+  });
+  $('hwStatusShow').addEventListener('change', (event) => {
+    select();
+    saveHomeworkStatus(event.target.checked);
   });
   $('weekendsShow').addEventListener('change', (event) => {
     select();

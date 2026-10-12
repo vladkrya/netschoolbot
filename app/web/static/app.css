@@ -189,6 +189,10 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .date-today[hidden] { display: none; }
 @media (max-width: 359px) { .date-today { padding: 0 7px; font-size: 11px; } }
 .hw-check.auto { opacity: .6; cursor: default; }
+.switch-note { display: block; margin-top: 2px; }
+/* Д/З на главной: не сделано — красным, сделано — зелёным. */
+.hw-badge.hw-todo { color: var(--g2); border-color: var(--g2); }
+.hw-badge.hw-done { color: var(--g5); border-color: var(--g5); }
 .date-label { font-size: 17px; font-weight: 600; }
 .date-sub { font-size: 12px; opacity: .8; }
 

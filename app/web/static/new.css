@@ -817,3 +817,9 @@
 :root[data-design="new"] .history-item { box-shadow: var(--lift), inset 4px 0 0 var(--k); }
 :root[data-design="new"] .hw-inline .hw-comment .detail-label { margin-top: 10px; }
 :root[data-design="new"] .hw-inline .hw-comment .detail-text { margin-top: 2px; }
+
+/* Д/З на главной: строка задания красным — не сделано, зелёным — сделано. */
+:root[data-design="new"] .lc-hw.hw-todo,
+:root[data-design="new"] .lc-hw.hw-todo .icon { color: var(--g2); }
+:root[data-design="new"] .lc-hw.hw-done,
+:root[data-design="new"] .lc-hw.hw-done .icon { color: var(--g5); }

@@ -146,7 +146,7 @@ function buildDay(date, cfg) {
           attachments: rand() < 0.2 ? [{ id: 1, name: 'Задание.docx' }] : [],
           id: Math.floor(rand() * 1e6),
           comment: rand() < 0.3 ? 'Решать в тетради для домашних работ, с подробным решением.' : '',
-        }]
+        }].map((h) => ({ ...h, key: demoKey(`${h.date}|${h.subject}|${h.text}`) }))
       : [];
     lessons.push({
       number: n + 1,

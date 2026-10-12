@@ -98,6 +98,16 @@ export function showWeekends() {
   return getPref('weekends') === 'show';
 }
 
+/** Подсветка Д/З на главной: красным — не сделано, зелёным — сделано. По умолчанию включена. */
+export function showHomeworkStatus() {
+  return getPref('hwStatus') !== 'hide';
+}
+
+export function saveHomeworkStatus(on) {
+  setPref('hwStatus', on ? 'show' : 'hide');
+  window.dispatchEvent(new CustomEvent('netschool:design'));
+}
+
 export function saveWeekends(on) {
   setPref('weekends', on ? 'show' : 'hide');
   // Полоса недели и расписание перерисуются (слушатель в app.js).

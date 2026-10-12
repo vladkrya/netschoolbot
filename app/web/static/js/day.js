@@ -10,7 +10,8 @@ import {
   parseIso, plural, showFailure, showLoading, skeleton, state, WEEKDAYS, WEEKDAYS_FULL, weekdayIndex, weekOffsetOf,
 } from './core.js';
 import { ICONS } from './icons.js';
-import { isNewDesign, saveBells, showBells, showWeekends } from './appearance.js';
+import { isNewDesign, saveBells, showBells, showHomeworkStatus, showWeekends } from './appearance.js';
+import { isDoneItem, loadDone } from './homework.js';
 import { bellsHtml, weekCardsHtml } from './schedule.js';
 import { canGoBack } from './screens.js';
 import { EDGE_PX } from './swipeback.js';
@@ -124,6 +125,8 @@ export async function loadDay(force = false) {
   }
   renderDay();
   prefetchAround();
+  // Отметки «выполнено» — для подсветки Д/З; день рисуется, не дожидаясь их.
+  if (showHomeworkStatus() && !state.hwDone) loadDone().then(() => { if (state.tab === 'day') renderDay(true); });
 }
 
 function relativeLabel(iso) {
@@ -202,7 +205,7 @@ function renderDay(quiet = false) {
   }
 
   const progress = activeProgress(lessons);
-  const key = `${state.date}|${progress?.index}|${progress?.label}`;
+  const key = `${state.date}|${progress?.index}|${progress?.label}|${state.hwDone?.size ?? '-'}`;
   if (quiet && key === renderedKey && container.children.length) return;
   renderedKey = key;
   container.classList.toggle('quiet', quiet);
@@ -241,11 +244,21 @@ function activeProgress(lessons, now = new Date()) {
   return null;
 }
 
+/** Цвет Д/З на главной: hw-todo — не сделано, hw-done — всё сделано.
+ *  Пусто, если подсветку выключили или отметки ещё не загрузились. */
+function homeworkStatus(homework) {
+  if (!homework.length || !showHomeworkStatus() || !state.hwDone) return '';
+  const items = homework.filter((item) => item.key || item.auto_done);
+  if (!items.length) return '';
+  return items.every((item) => isDoneItem(item, state.hwDone)) ? 'hw-done' : 'hw-todo';
+}
+
 function lessonCard(lesson, index, progress) {
   // Новый дизайн: коэффициент маленькой цифрой у оценки, как в «Оценках».
   const marks = realMarks(lesson.marks).map((m) => markBox(m.mark, '', isNewDesign() ? m.weight || 1 : null)).join('');
   const hasFiles = lesson.homework.some((h) => (h.attachments || []).length);
   const hasComment = lesson.homework.some((h) => h.comment);
+  const status = homeworkStatus(lesson.homework);
   const time = lesson.time || [lesson.start, lesson.end].filter(Boolean).join(' – ');
   // Новый дизайн: вместо бейджа «Д/З» — начало самого задания.
   const preview = isNewDesign()
@@ -259,11 +272,11 @@ function lessonCard(lesson, index, progress) {
       </div>
       ${lesson.is_elective ? '<div class="lc-badges"><span class="elective-badge">Факультатив</span></div>' : ''}
       ${lesson.homework.length && !preview ? `<div class="lc-badges">
-        <span class="hw-badge" data-hw-badge>Д/З</span>
+        <span class="hw-badge ${status}" data-hw-badge>Д/З</span>
         ${hasFiles ? `<span class="hw-badge clip">${ICONS.clip}</span>` : ''}
         ${hasComment ? `<span class="hw-badge clip" title="Есть комментарий к заданию">${ICONS.chat}</span>` : ''}
       </div>` : ''}
-      ${preview ? `<div class="lc-hw">${hasFiles ? ICONS.clip : ''}${hasComment ? ICONS.chat : ''}<span>${esc(preview)}</span></div>` : ''}
+      ${preview ? `<div class="lc-hw ${status}">${hasFiles ? ICONS.clip : ''}${hasComment ? ICONS.chat : ''}<span>${esc(preview)}</span></div>` : ''}
       ${progress ? `<div class="lesson-progress-label">${esc(progress.label)}</div><div class="lesson-progress"><span style="width:${Math.max(0, Math.min(100, progress.percent))}%"></span></div>` : ''}
       <div class="lc-bottom"><span>${esc(time)}</span><span>${esc(lessonStatus(lesson, state.date))}</span></div>
     </div>`;
