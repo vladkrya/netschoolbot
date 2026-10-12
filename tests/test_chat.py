@@ -718,6 +718,20 @@ class TestChatIdentityAndInbox:
         assert not [r for r in await admin_rooms() if r['kind'] == 'support']
         assert (await client.get(f'{BASE}/api/chat/participants', params={'token': admin_token})).status == 403
 
+    async def test_admin_badge_counts_own_rooms_and_private_only(self, client, student_token, admin_token, app_context, users):
+        """Админ видит все чаты, но на значке — только свои и личные ему."""
+        other = await make_student(app_context, users, 61, 'Иван', class_name='7а')
+        _, body = await join(client, other, 'Star_7')
+        school = next(room['id'] for room in body['data']['rooms'] if room['kind'] == 'school')
+        assert (await send(client, other, school, 'всем'))[0] == 200
+
+        async def total():
+            data = await (await client.get(f'{BASE}/api/chat/unread', params={'token': admin_token})).json()
+            return data['data']['total']
+        assert await total() == 0
+        await send(client, other, 'support:61', 'помогите')
+        assert await total() == 1
+
     @pytest.mark.parametrize('nick', ['admin', 'Admin123', 'a_d_m_i_n', 'Aдmиn', 'администратор', 'модер', 'm0der', 'мoдератор', 'moderator', 'mod_99', 'support_9'])
     async def test_role_nicks_rejected(self, client, student_token, nick):
         assert (await join(client, student_token, nick))[0] == 400

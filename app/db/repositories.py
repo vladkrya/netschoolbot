@@ -950,6 +950,24 @@ class CacheRepository:
             (telegram_id, section, json.dumps(payload, ensure_ascii=False)),
         )
 
+    async def mark_mail_read(self, telegram_id: int, message_id: int) -> None:
+        """Отметить письмо прочитанным в сохранённом списке, не продлевая ему
+        свежесть: иначе значок «Почты» до часа показывал прочитанное как новое."""
+        cached = await self.get(telegram_id, "mail")
+        if cached is None:
+            return
+        payload, _ = cached
+        changed = False
+        for message in payload.get("messages") or []:
+            if str(message.get("id")) == str(message_id) and message.get("read") is False:
+                message["read"] = True
+                changed = True
+        if changed:
+            await self._db.execute(
+                "UPDATE cache_entries SET payload = ? WHERE telegram_id = ? AND section = 'mail'",
+                (json.dumps(payload, ensure_ascii=False), telegram_id),
+            )
+
     async def clear(self, telegram_id: int) -> None:
         await self._db.execute("DELETE FROM cache_entries WHERE telegram_id = ?", (telegram_id,))
 

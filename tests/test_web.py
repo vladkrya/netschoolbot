@@ -581,6 +581,18 @@ class TestNewFeatures:
         )
         assert response.status == 400
 
+    async def test_opened_mail_is_read_in_cached_list(self, client, app_context, token):
+        """Иначе значок «Почты» до часа возвращал прочитанное письмо в счётчик."""
+        uid = await app_context.miniapp.resolve_token(token)
+        await app_context.cache.put(uid, "mail", {"messages": [
+            {"id": 7, "read": False}, {"id": 8, "read": False}]})
+        _, before = await app_context.cache.get(uid, "mail")
+        response = await client.get(f"{BASE}/api/mail/7", params={"token": token})
+        assert response.status == 200
+        payload, updated = await app_context.cache.get(uid, "mail")
+        assert [m["read"] for m in payload["messages"]] == [True, False]
+        assert updated == before
+
     async def test_mail_send_requires_recipient_and_subject(self, client, token):
         response = await client.post(
             f"{BASE}/api/mail/send", params={"token": token}, json={"to": [], "subject": "Тема"}

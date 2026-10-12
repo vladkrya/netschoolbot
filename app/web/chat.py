@@ -338,9 +338,11 @@ def _notify_mode(reads: dict[str, dict[str, Any]], room: rules.Room) -> str:
 
 async def unread_total(request: web.Request) -> int:
     """Непрочитанное в своих комнатах — для числа на значке «Почты».
-    Комнаты с выключенными уведомлениями не считаем."""
+    Комнаты с выключенными уведомлениями не считаем. Администратору — только
+    свои чаты и личные сообщения ему, а не все чаты всех школ."""
     profile = await current_profile(request)
-    rooms = await visible_rooms(request, profile)
+    own = {room.id for room in profile_rooms(profile)}
+    rooms = [room for room in await visible_rooms(request, profile) if room.id in own or room.kind == "support"]
     if not rooms:
         return 0
     chats, uid = repo(request), current_user(request).telegram_id

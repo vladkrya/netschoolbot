@@ -1058,6 +1058,8 @@ async def mail_message(request: web.Request) -> web.Response:
 
     app, user = context(request), current_user(request)
     message = await app.diary.fetch_mail_message(user, message_id)
+    # Открытое письмо сервер школы считает прочитанным — так и в кэше списка.
+    await app.cache.mark_mail_read(user.telegram_id, message_id)
     return web.json_response({"ok": True, "data": message})
 
 
