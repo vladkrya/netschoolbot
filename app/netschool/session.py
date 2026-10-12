@@ -214,7 +214,20 @@ class SessionPool:
         client = self._new_client(user, user.effective_api_mode)
 
         try:
-            if await self._restore(user.telegram_id, client):
+            try:
+                restored = await self._restore(user.telegram_id, client)
+            except NetSchoolError as error:
+                relogin = user.credentials.can_relogin and not user.credentials.login_type.is_gosuslugi
+                if error.reason is not Reason.UNKNOWN or not relogin:
+                    raise
+                # Непонятный ответ ещё не значит, что токен мёртв, но и вечно
+                # сидеть с ошибкой нельзя: пробуем войти по паролю новым клиентом.
+                # Сохранённая сессия заменится только после удачного входа.
+                logger.info("Сессия %s не проверилась (%s), входим по паролю", user.telegram_id, error)
+                await _close_client(client)
+                client = self._new_client(user, user.effective_api_mode)
+                restored = False
+            if restored:
                 if await self._is_alive(client):
                     _apply_student(client, user)
                     entry.client = client
@@ -238,7 +251,16 @@ class SessionPool:
         try:
             await client.import_session(payload)
             return True
+        except (ValueError, KeyError, TypeError) as exc:
+            # Сохранённая запись испорчена (не JSON, нет токена) — сервер тут
+            # ни при чём, и пользы от неё уже не будет.
+            logger.warning("Сохранённая сессия %s испорчена: %r", telegram_id, exc)
+            await self._sessions.drop(telegram_id)
+            return False
         except Exception as exc:
+            # Токен умирает только по ответу «не принят» (401, SessionExpired
+            # без сетевой причины). Техработы, 5xx, таймауты и HTML вместо
+            # JSON о токене ничего не говорят — его сохраняем.
             # netschoolpy заворачивает в SessionExpired любую ошибку проверки,
             # включая таймаут. Судим по тексту: из-за сетевого сбоя сессию не
             # выбрасываем — для Госуслуг это означало бы новый вход с кодом.

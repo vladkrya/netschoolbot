@@ -392,7 +392,7 @@ class TestGosuslugiSession:
 @pytest.mark.parametrize('cause, expected', [
     ('Expecting value: line 1 column 1 (char 0)', Reason.SERVER_UNAVAILABLE),
     ('Технические работы', Reason.SERVER_UNAVAILABLE),
-    ('Неожиданный ответ HTML', Reason.UNKNOWN),
+    ('сервер ответил 503', Reason.SERVER_UNAVAILABLE),
 ])
 async def test_uncertain_session_validation_does_not_drop_session(pool, users, sessions, cause, expected):
     from netschoolpy.exceptions import SessionExpired
@@ -412,3 +412,70 @@ async def test_uncertain_session_validation_does_not_drop_session(pool, users, s
     assert info.value.reason is expected
     assert await sessions.load(1) == '{"cookies": "saved"}'
     assert FakeClient.instances[-1].closed
+
+
+def _failing_import(error):
+    def factory(url, proxy):
+        client = FakeClient(url, proxy)
+
+        async def fail(payload):
+            raise error
+        client.import_session = fail
+        return client
+    return factory
+
+
+async def test_unknown_validation_error_relogs_with_password(pool, users, sessions):
+    """Непонятный ответ при проверке: вход по паролю, новая сессия сохраняется."""
+    from netschoolpy.exceptions import NetSchoolError as LibError
+    user = make_user()
+    await users.save(user)
+    await sessions.save(1, '{"cookies": "saved"}')
+    pool._client_factory = _failing_import(LibError("/users: HTTP 418 странное"))
+    async with pool.acquire(user) as client:
+        assert client.logins == 1
+    assert await sessions.load(1) == '{"cookies": "abc"}'
+    assert FakeClient.instances[0].closed
+
+
+async def test_unknown_error_keeps_token_when_relogin_fails(pool, users, sessions):
+    from netschoolpy.exceptions import NetSchoolError as LibError
+    user = make_user()
+    await users.save(user)
+    await sessions.save(1, '{"cookies": "saved"}')
+    factory = _failing_import(LibError("/users: HTTP 418 странное"))
+
+    def failing_login(url, proxy):
+        client = factory(url, proxy)
+        client.login_error = LibError("сервер ответил 503")
+        return client
+    pool._client_factory = failing_login
+    with pytest.raises(NetSchoolError):
+        async with pool.acquire(user):
+            pass
+    assert await sessions.load(1) == '{"cookies": "saved"}'
+    assert all(client.closed for client in FakeClient.instances)
+
+
+async def test_unknown_error_without_password_keeps_token(pool, users, sessions):
+    """Госуслуги: войти заново без человека нельзя — токен бережём."""
+    from netschoolpy.exceptions import NetSchoolError as LibError
+    user = make_user(credentials=Credentials(login_type=LoginType.ESIA, login="", password=""))
+    await users.save(user)
+    await sessions.save(1, '{"cookies": "esia"}')
+    pool._client_factory = _failing_import(LibError("/users: HTTP 418 странное"))
+    with pytest.raises(NetSchoolError) as info:
+        async with pool.acquire(user):
+            pass
+    assert info.value.reason is Reason.UNKNOWN
+    assert await sessions.load(1) == '{"cookies": "esia"}'
+
+
+async def test_corrupted_saved_session_is_dropped(pool, users, sessions):
+    user = make_user()
+    await users.save(user)
+    await sessions.save(1, 'не json')
+    pool._client_factory = _failing_import(ValueError("Expecting value: line 1 column 1 (char 0)"))
+    async with pool.acquire(user) as client:
+        assert client.logins == 1
+    assert await sessions.load(1) == '{"cookies": "abc"}'
