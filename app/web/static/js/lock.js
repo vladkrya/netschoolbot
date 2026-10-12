@@ -305,7 +305,8 @@ export async function unlockApp() {
       if (offline && known === false) { root.close(); return; }
       try {
         if (offline) throw serverDown();
-        status = (await within(api(statusPath(null)), canOffline ? 4000 : 0)).data;
+        // Без защиты долго ждать тоже незачем: сохранённое откроется и так.
+        status = (await within(api(statusPath(null)), canOffline || known === false ? 4000 : 0)).data;
       } catch (failure) {
         if (failure.reason === 'server' && known === false) { root.close(); return; }
         if (failure.reason === 'server' && canOffline && offlineReady()) {
@@ -399,6 +400,7 @@ export async function unlockApp() {
 }
 
 async function clearOffline() {
+  try { localStorage.removeItem('studentName'); } catch { /* приватный режим */ }
   if (!('caches' in window)) return;
   for (const name of await caches.keys()) {
     if (!name.startsWith('ns-offline')) continue;

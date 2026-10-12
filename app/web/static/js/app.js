@@ -433,6 +433,12 @@ function onDesign() {
   }
 }
 
+const NAME_KEY = 'studentName';
+
+function storedName() {
+  try { return studentFirstName(localStorage.getItem(NAME_KEY) || ''); } catch { return ''; }
+}
+
 async function start() {
   // Билет на вложения — заранее: внешний браузер открывается только прямо
   // из нажатия, ждать сети в этот момент нельзя.
@@ -464,7 +470,9 @@ async function start() {
   initSwipeBack();
   setFallbackBack(fallbackBack);
 
-  $('topName').textContent = studentFirstName(student) || school || 'Дневник';
+  // С PIN сервер не кладёт имя в страницу, а профиль без сети приходит
+  // последним — до него в шапке стояло «Дневник». Берём имя прошлого входа.
+  $('topName').textContent = studentFirstName(student) || storedName() || school || 'Дневник';
   // Первая вкладка панели — та, с которой открывается приложение.
   await switchTab(navTabs()[0]);
   // Остальные запросы идут только после первого экрана, не конкурируют с ним.
@@ -474,7 +482,10 @@ async function start() {
   // если страница открыта без токена (по initData Telegram).
   try {
     const profile = await loadProfile();
-    if (profile?.name) $('topName').textContent = studentFirstName(profile.name);
+    if (profile?.name) {
+      $('topName').textContent = studentFirstName(profile.name);
+      try { localStorage.setItem(NAME_KEY, profile.name); } catch { /* приватный режим */ }
+    }
     initStudentSwitch(profile);
     syncTimezone(profile);
   } catch {
