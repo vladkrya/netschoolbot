@@ -280,6 +280,7 @@ async def index(request: web.Request) -> web.Response:
             "school": user.school.name if user and not protected else "",
             "push_enabled": context.settings.push.configured,
             "assistant": context.settings.assistant.enabled,
+            "attachment_hosts": context.settings.web.attachment_hosts,
         },
     )
     if token:

@@ -100,6 +100,12 @@ class WebSettings:
     # Резервный адрес того же приложения: сервер, до которого доходят и
     # тогда, когда мобильный интернет урезан до белых списков.
     mirror_url: str = ""
+    # Домен для вложений в установленном на iPhone приложении (PWA). Ссылку
+    # на свой же домен iOS открывает внутри PWA, а там pptx и docx не
+    # показать — только «Открыть в…». Ссылку на другой домен iOS открывает
+    # во встроенном Safari: там «Просмотреть или загрузить» и компас
+    # «Открыть в Safari». Пусто — берутся public_url и mirror_url.
+    files_url: str = ""
     # KryaCaptcha перед отправкой отчёта об ошибке: адрес сервиса и сколько
     # раундов нужно пройти. Пустой адрес выключает кнопку.
     captcha_url: str = ""
@@ -108,6 +114,12 @@ class WebSettings:
     @property
     def miniapp_url(self) -> str:
         return f"{self.public_url}{self.miniapp_path}"
+
+    @property
+    def attachment_hosts(self) -> list[str]:
+        """Домены для вложений по порядку: PWA берёт первый не свой."""
+        hosts = (self.files_url, self.public_url, self.mirror_url)
+        return list(dict.fromkeys(host for host in hosts if host))
 
     @property
     def mirror_miniapp_url(self) -> str:
@@ -288,6 +300,7 @@ def load_settings(*, require_bot_token: bool = True) -> Settings:
             port=_env_int("NETSCHOOL_WEB_PORT", 8283),
             public_url=public_url,
             mirror_url=_env("NETSCHOOL_MIRROR_URL").rstrip("/"),
+            files_url=_env("NETSCHOOL_FILES_URL").rstrip("/"),
             captcha_url=_env("NETSCHOOL_CAPTCHA_URL", "https://captcha.ikrya.ru").rstrip("/"),
             captcha_rounds=max(1, _env_int("NETSCHOOL_CAPTCHA_ROUNDS", 2)),
             miniapp_path=miniapp_path,

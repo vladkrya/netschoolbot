@@ -127,6 +127,18 @@ class TestPages:
         # Имя приезжает в скрипт-блоке, а не в разметке, и Jinja экранирует
         # кириллицу в \uXXXX — сравниваем в том же виде.
         assert json.dumps("Иванов И.") in text
+        # Домены для вложений в PWA: на свой iOS открыл бы файл внутри приложения.
+        assert "attachmentHosts: [" in text
+
+    def test_attachment_hosts_prefer_files_url_without_duplicates(self, app_context):
+        from dataclasses import replace
+
+        web_settings = replace(
+            app_context.settings.web, public_url="https://ns.ikrya.ru",
+            mirror_url="https://ns.ikrya.ru", files_url="https://ns2.ikrya.ru",
+        )
+        assert web_settings.attachment_hosts == ["https://ns2.ikrya.ru", "https://ns.ikrya.ru"]
+        assert replace(web_settings, files_url="", mirror_url="").attachment_hosts == ["https://ns.ikrya.ru"]
 
     async def test_root_redirects_into_app_keeping_query(self, client, token):
         # Ссылку открывают без завершающего слэша; потерять при переадресации
