@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import asyncio
 import datetime as dt
+import html
 import logging
+import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, replace
 from enum import Enum
@@ -18,7 +20,7 @@ from typing import Any, TypeVar
 
 from ..db.repositories import UserRepository
 from ..domain.models import ApiMode, Student, User
-from ..domain.records import DiaryDay, HomeworkRecord, MarkRecord, RecentEvents
+from ..domain.records import DiaryDay, HomeworkRecord, MarkRecord, RecentEvents, clean_content
 from .errors import NetSchoolError, Reason, wrap
 from .mapping import (
     diary_days,
@@ -366,6 +368,22 @@ class DiaryService:
                 if name:
                     result[subject] = name
             return result
+
+        return await self._with_session(user, call)
+
+    async def fetch_assignment_comment(self, user: User, assignment_id: int) -> str:
+        """Комментарий учителя к заданию — поле «описание» из карточки.
+
+        В самом дневнике его нет, поэтому экран задания спрашивает отдельно.
+        """
+
+        async def call(client: Any) -> str:
+            details = await client.assignment_details(assignment_id)
+            text = str(getattr(details, "description", "") or "")
+            # В веб-версии описание бывает HTML из редактора учителя.
+            text = re.sub(r"<br\s*/?>|</p>|</div>", "\n", text, flags=re.I)
+            text = html.unescape(re.sub(r"<[^>]+>", "", text))
+            return clean_content(re.sub(r"\n{3,}", "\n\n", text))
 
         return await self._with_session(user, call)
 

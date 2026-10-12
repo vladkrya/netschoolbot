@@ -150,6 +150,7 @@ def homework_from_day(
                     published_at=_as_datetime(_attr(assignment, "published_at")),
                     weight=_safe_int(_attr(assignment, "weight")) or 1,
                     topic=topic,
+                    assignment_id=_safe_int(_attr(assignment, "id")),
                 )
             )
     return records

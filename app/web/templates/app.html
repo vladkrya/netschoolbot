@@ -133,6 +133,19 @@
         <button class="on" data-mail-mode="mail">Письма</button>
         <button data-mail-mode="ann">Объявления</button>
       </div>
+      <!-- Поиск и фильтры писем; в разделе объявлений скрыты. -->
+      <div class="mail-tools" id="mailTools">
+        <div class="mail-search-row">
+          <label class="search"><span data-icon="search"></span>
+            <input id="mailSearch" type="search" placeholder="Тема или отправитель" autocomplete="off"></label>
+          <button class="chip mail-sort" id="mailSort" aria-label="Порядок писем">↓ Новые</button>
+        </div>
+        <div class="chips mail-filters" id="mailFilters">
+          <button class="chip active" data-filter="all">Все</button>
+          <button class="chip" data-filter="unread">Непрочитанные</button>
+          <button class="chip" data-filter="read">Прочитанные</button>
+        </div>
+      </div>
     </div>
   </div>
 </header>

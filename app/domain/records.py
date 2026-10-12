@@ -127,6 +127,9 @@ class HomeworkRecord:
     # Вес задания и тема урока — для экрана задания; в ключ не входят.
     weight: int = 1
     topic: str = ""
+    # id задания в школьной системе: по нему экран задания подгружает
+    # комментарий учителя из карточки. В ключ не входит.
+    assignment_id: int | None = None
 
     @property
     def identity(self) -> str:

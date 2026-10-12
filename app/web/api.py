@@ -286,6 +286,7 @@ def _homework_to_json(item, observed: dict[str, str] | None = None) -> dict:
         "weight": item.weight,
         "topic": item.topic,
         "key": item.key,
+        "id": item.assignment_id,
     }
 
 
@@ -897,6 +898,19 @@ async def set_homework_done(request: web.Request) -> web.Response:
         return json_error("Некорректное задание")
     await app.state.set_homework_done(user.telegram_id, key, bool(body.get("done")))
     return web.json_response({"ok": True, "data": {"key": key, "done": bool(body.get("done"))}})
+
+
+@routes.get("/api/homework/{assignment_id}/comment")
+async def homework_comment(request: web.Request) -> web.Response:
+    """Комментарий учителя к заданию. Не кэшируется: учитель может его
+    дописать, а открывают задание по одному."""
+    try:
+        assignment_id = int(request.match_info["assignment_id"])
+    except ValueError:
+        return json_error("Некорректное задание")
+    app, user = context(request), current_user(request)
+    comment = await app.diary.fetch_assignment_comment(user, assignment_id)
+    return web.json_response({"ok": True, "data": {"comment": comment}})
 
 
 @routes.get("/api/homework")

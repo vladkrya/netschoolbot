@@ -3,7 +3,7 @@
 'use strict';
 
 import {
-  absenceText, attachmentsHtml, esc, escRich, forDate, fullDate, isAbsence,
+  absenceText, api, attachmentsHtml, esc, escRich, forDate, fullDate, isAbsence,
   markClass,
 } from './core.js';
 import { pushScreen } from './screens.js';
@@ -115,6 +115,7 @@ export function openLesson(lesson, iso) {
     ${blocks.join('') || '<div class="empty">Заданий на этот урок нет</div>'}`;
 
   bindSubject(body, lesson.subject, iso);
+  if (isNewDesign()) loadComments(body, lesson.homework || []);
 
   const marks = realMarks(lesson.marks);
   body.querySelectorAll('[data-mark]').forEach((el) =>
@@ -152,9 +153,46 @@ function homeworkBlock(item) {
         ${Number(item.weight) > 1 ? `<span class="hw-weight">вес ${esc(item.weight)}</span>` : ''}
       </div>
       <div class="detail-text">${escRich(item.text) || '<span class="muted">—Не указано—</span>'}</div>
+      ${commentSlot(item)}
       ${attachmentsHtml(item.attachments)}
       ${timestamps.length ? `<div class="hw-times">${timestamps.map(esc).join(' · ')}</div>` : ''}
     </div>`;
+}
+
+// Комментарий учителя к заданию лежит только в карточке задания —
+// подгружаем при открытии и запоминаем до перезапуска приложения.
+const comments = new Map();
+
+function commentSlot(item) {
+  return item.id ? `<div class="hw-comment" data-comment-for="${esc(item.id)}" hidden></div>` : '';
+}
+
+function commentHtml(text) {
+  return `<div class="detail-label">Комментарий к заданию</div><div class="detail-text">${escRich(text)}</div>`;
+}
+
+/** Заполнить места под комментарии на только что открытом экране. */
+function loadComments(body, items) {
+  for (const item of items) {
+    const slot = item.id && body.querySelector(`[data-comment-for="${item.id}"]`);
+    if (!slot) continue;
+    const show = (text) => {
+      // Иногда школа дублирует в описание сам текст задания — его не повторяем.
+      if (!text || text.trim() === String(item.text || '').trim()) return;
+      slot.innerHTML = commentHtml(text);
+      slot.hidden = false;
+    };
+    if (comments.has(item.id)) {
+      show(comments.get(item.id));
+      continue;
+    }
+    api(`/api/homework/${encodeURIComponent(item.id)}/comment`)
+      .then(({ data }) => {
+        comments.set(item.id, data.comment || '');
+        show(data.comment);
+      })
+      .catch(() => { /* без комментария экран всё равно полезен */ });
+  }
 }
 
 /** Когда задание опубликовали и когда его заметила наша система. Второе —
@@ -183,9 +221,11 @@ export function openHomework(item, topic = '') {
       <div class="assignment-heading"><span class="detail-label">Задание</span>
         ${timestamps.length ? `<span class="assignment-times">${timestamps.map(esc).join('<br>')}</span>` : ''}</div>
       <div class="detail-text">${escRich(item.text) || '<span class="muted">—Не указано—</span>'}</div>
+      ${commentSlot(item)}
       ${attachmentsHtml(item.attachments)}
     </div>`;
   bindSubject(body, item.subject, item.date);
+  loadComments(body, [item]);
 }
 
 /** Текст, который на самом деле тема, а не повтор оценки или типа работы. */

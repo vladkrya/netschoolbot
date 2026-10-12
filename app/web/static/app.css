@@ -1229,6 +1229,12 @@ main.leaving { transition: transform .22s var(--ease); box-shadow: -8px 0 24px r
 
 /* «Д/З»: фильтры и отметка «выполнено». */
 .hw-filters { margin-top: 8px; }
+.mail-tools { margin-top: 8px; }
+.mail-tools[hidden] { display: none; }
+.mail-filters { margin-top: 8px; }
+.mail-search-row { display: flex; gap: 8px; align-items: stretch; }
+.mail-search-row .search { flex: 1; min-width: 0; }
+.mail-sort { flex: none; white-space: nowrap; }
 .hw-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
 .hw-check {
   flex: none; width: 28px; height: 28px; border-radius: 50%;

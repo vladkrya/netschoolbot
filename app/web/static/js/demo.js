@@ -144,6 +144,7 @@ function buildDay(date, cfg) {
           type: 'Домашнее задание',
           text: pick(rand, ['Упр. 23 стр. 27', '§7, стр. 26-28', '№795, №798, №799', 'Выучить записи в тетради', 'Подготовить сообщение']),
           attachments: rand() < 0.2 ? [{ id: 1, name: 'Задание.docx' }] : [],
+          id: Math.floor(rand() * 1e6),
         }]
       : [];
     lessons.push({
@@ -310,6 +311,12 @@ export async function demoApi(path, options = {}) {
       .flatMap((d) => d.homework)
       .map((h) => ({ ...h, label: '', key: h.key || demoKey(`${h.date}|${h.subject}|${h.text}`) }));
     return ok({ items });
+  }
+
+  if (/^\/api\/homework\/\d+\/comment$/.test(route)) {
+    // Комментарий есть не у каждого задания — как в жизни.
+    const id = Number(route.split('/')[3]);
+    return ok({ comment: id % 2 ? 'Решать в тетради для домашних работ, с подробным решением.' : '' });
   }
 
   if (route === '/api/mail') {

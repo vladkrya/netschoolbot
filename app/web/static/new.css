@@ -813,3 +813,5 @@
 :root[data-design="new"] .screen-head { padding-top: calc(var(--bar-top) + 8px); }
 :root[data-design="new"] .ai-fab .icon { width: 28px; height: 28px; fill: currentColor; }
 :root[data-design="new"] .history-item { box-shadow: var(--lift), inset 4px 0 0 var(--k); }
+:root[data-design="new"] .hw-inline .hw-comment .detail-label { margin-top: 10px; }
+:root[data-design="new"] .hw-inline .hw-comment .detail-text { margin-top: 2px; }

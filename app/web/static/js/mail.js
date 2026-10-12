@@ -21,10 +21,15 @@ function avatarColor(name) {
 
 // Новый дизайн: во вкладке два раздела — письма и объявления школы.
 let mode = 'mail';
+// Поиск и фильтры писем: всё на месте, по уже загруженному списку.
+let query = '';
+let filter = 'all'; // all | unread | read
+let newestFirst = true;
 
 export async function loadMail(force = false) {
   const container = $('mailContent');
   $('composeBtn').hidden = isNewDesign() && mode === 'ann';
+  $('mailTools').hidden = isNewDesign() && mode === 'ann';
   if (isNewDesign() && mode === 'ann') {
     await renderAnnouncements(container, force);
     return;
@@ -50,14 +55,34 @@ function render() {
   // Непрочитанные — числом у значка «Почты» в нижней панели.
   setNavBadge('mail', messages.filter((message) => message.read === false).length);
   const container = $('mailContent');
+  $('mailFilters').querySelectorAll('[data-filter]').forEach((chip) =>
+    chip.classList.toggle('active', chip.dataset.filter === filter));
+  $('mailSort').textContent = newestFirst ? '↓ Новые' : '↑ Старые';
   if (!messages.length) {
     container.innerHTML = '<div class="empty big">Писем нет</div>';
     return;
   }
-  container.innerHTML = messages.map(card).join('');
+  const visible = visibleMessages(messages);
+  if (!visible.length) {
+    const empty = query.trim() ? 'Ничего не найдено'
+      : filter === 'unread' ? 'Непрочитанных писем нет' : 'Прочитанных писем нет';
+    container.innerHTML = `<div class="empty big">${empty}</div>`;
+    return;
+  }
+  container.innerHTML = visible.map(card).join('');
   container.querySelectorAll('[data-mail]').forEach((element) =>
     element.addEventListener('click', () => openMessage(element.dataset.mail))
   );
+}
+
+function visibleMessages(messages) {
+  const needle = query.trim().toLowerCase();
+  const list = messages.filter((message) =>
+    (filter === 'all' || (filter === 'unread' ? message.read === false : message.read !== false))
+    && (!needle || `${message.subject || ''} ${message.author || ''}`.toLowerCase().includes(needle)));
+  // Сервер отдаёт новые сверху; сортируем сами, чтобы не зависеть от этого.
+  const time = (message) => Date.parse(message.sent || '') || 0;
+  return list.sort((a, b) => (newestFirst ? time(b) - time(a) : time(a) - time(b)));
 }
 
 function card(message) {
@@ -146,6 +171,23 @@ export function initMail() {
     // Новое письмо — только в разделе писем.
     $('composeBtn').hidden = mode === 'ann';
     loadMail();
+  });
+
+  $('mailSearch').addEventListener('input', (event) => {
+    query = event.target.value;
+    if (state.mail) render();
+  });
+  $('mailFilters').addEventListener('click', (event) => {
+    const chip = event.target.closest('[data-filter]');
+    if (!chip || chip.dataset.filter === filter) return;
+    select();
+    filter = chip.dataset.filter;
+    if (state.mail) render();
+  });
+  $('mailSort').addEventListener('click', () => {
+    select();
+    newestFirst = !newestFirst;
+    if (state.mail) render();
   });
 }
 
