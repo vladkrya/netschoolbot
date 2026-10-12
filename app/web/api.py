@@ -287,6 +287,7 @@ def _homework_to_json(item, observed: dict[str, str] | None = None) -> dict:
         "topic": item.topic,
         "key": item.key,
         "id": item.assignment_id,
+        "comment": item.comment,
     }
 
 

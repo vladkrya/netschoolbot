@@ -151,9 +151,19 @@ def homework_from_day(
                     weight=_safe_int(_attr(assignment, "weight")) or 1,
                     topic=topic,
                     assignment_id=_safe_int(_attr(assignment, "id")),
+                    comment=_comment(assignment),
                 )
             )
     return records
+
+
+def _comment(assignment: Any) -> str | None:
+    """Комментарий к заданию из дневника: "" — его нет, None — неизвестно.
+
+    Поле есть только у мобильного API (см. patches/assignments.py).
+    """
+    value = _attr(assignment, "description")
+    return None if value is None else clean_content(value)
 
 
 def _attachments(assignment: Any) -> tuple[Attachment, ...]:

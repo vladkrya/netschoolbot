@@ -182,6 +182,12 @@ function loadComments(body, items) {
       slot.innerHTML = commentHtml(text);
       slot.hidden = false;
     };
+    // Мобильное API отдаёт комментарий прямо в дневнике ("" — его нет);
+    // карточку спрашиваем, только когда это неизвестно (веб-API).
+    if (typeof item.comment === 'string') {
+      show(item.comment);
+      continue;
+    }
     if (comments.has(item.id)) {
       show(comments.get(item.id));
       continue;

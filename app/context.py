@@ -59,7 +59,7 @@ class AppContext:
         settings.ensure_dirs()
 
         # Правки чужой библиотеки применяются один раз и до первого запроса.
-        from .netschool.patches import esia, http
+        from .netschool.patches import assignments, esia, http
 
         http.apply(
             timeout=settings.netschool.http_timeout,
@@ -67,6 +67,7 @@ class AppContext:
             fallback_proxy=settings.netschool.fallback_proxy,
         )
         esia.apply()
+        assignments.apply()
 
         db = Database(settings.db_path)
         await db.connect()

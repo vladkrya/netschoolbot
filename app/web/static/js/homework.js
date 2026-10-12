@@ -99,7 +99,7 @@ function render() {
           <div class="hw-text">${esc(item.text) || '—'}</div>
           ${homeworkTimes(item, observedTime).map((line) => `<div class="hw-observed">${esc(line)}</div>`).join('')}
           <div class="hw-foot">
-            <span><span class="hw-badge">Д/З</span>${item.attachments.length ? `<span class="hw-badge clip">${ICONS.clip}</span>` : ''}</span>
+            <span><span class="hw-badge">Д/З</span>${item.attachments.length ? `<span class="hw-badge clip">${ICONS.clip}</span>` : ''}${item.comment ? `<span class="hw-badge clip" title="Есть комментарий к заданию">${ICONS.chat}</span>` : ''}</span>
             <span class="muted small">${esc(dayMonth(item.date))}</span>
           </div>
         </div>`;

@@ -456,3 +456,37 @@ class TestLessons:
     def test_diary_days_include_lessons(self):
         days = diary_days([day([lesson([assignment()])])], today=dt.date(2026, 3, 2))
         assert len(days[0].lessons) == 1
+
+
+class TestHomeworkComment:
+    def test_mobile_description_reaches_homework(self):
+        from netschoolpy import mobile
+
+        from app.netschool.mapping import homework_from_day
+        from app.netschool.patches import assignments
+
+        assignments.apply()
+        raw = {
+            "assignmentId": 34192144, "assignmentName": "№272", "assignmentTypeName": "Домашнее задание",
+            "weight": 1, "dueDate": "2026-10-12T11:05:00+03:00",
+            "description": "https://edu.ismart.org/join/x\nвыполнить диагностику",
+        }
+        with_comment = mobile._assignment_from_mobile(raw, [])
+        without = mobile._assignment_from_mobile({**raw, "assignmentId": 2, "description": None}, [])
+        lesson = SimpleNamespace(subject="Алгебра", number=1, topic="", assignments=[with_comment, without])
+        day = SimpleNamespace(day=dt.date(2026, 10, 12), lessons=[lesson])
+        items = homework_from_day(day, today=dt.date(2026, 10, 12))
+        assert [(h.assignment_id, h.comment) for h in items] == [
+            (34192144, "https://edu.ismart.org/join/x\nвыполнить диагностику"),
+            (2, ""),
+        ]
+
+    def test_web_assignment_comment_is_unknown(self):
+        from app.netschool.mapping import homework_from_day
+
+        task = SimpleNamespace(id=5, kind="ДЗ", content="Упр. 1", weight=1, deadline=None, attachments=[])
+        day = SimpleNamespace(
+            day=dt.date(2026, 10, 12),
+            lessons=[SimpleNamespace(subject="Алгебра", number=1, topic="", assignments=[task])],
+        )
+        assert homework_from_day(day, today=dt.date(2026, 10, 12))[0].comment is None
