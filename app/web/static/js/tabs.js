@@ -67,6 +67,23 @@ export function resetTabs() {
   saveTabs(defaultTabs());
 }
 
+/** Число у значка вкладки — например, непрочитанные письма у «Почты».
+ *  Хранится здесь: панель пересобирается при смене набора вкладок. */
+const badges = {};
+
+function badgeHtml(tab) {
+  const count = badges[tab] || 0;
+  return count ? `<span class="nav-badge" aria-label="${count} новых">${count > 99 ? '99+' : count}</span>` : '';
+}
+
+export function setNavBadge(tab, count) {
+  badges[tab] = count;
+  const icon = $('bottomNav').querySelector(`.nav-item[data-tab="${tab}"] .ico`);
+  if (!icon) return;
+  icon.querySelector('.nav-badge')?.remove();
+  icon.insertAdjacentHTML('beforeend', badgeHtml(tab));
+}
+
 /** Пункты панели заново; линзу на активную вкладку ставит app.js. */
 export function renderNav(activeTab = '') {
   const nav = $('bottomNav');
@@ -75,7 +92,7 @@ export function renderNav(activeTab = '') {
   nav.insertAdjacentHTML('beforeend', tabs.map((tab) => {
     const def = TAB_DEFS[tab];
     return `<button class="nav-item${tab === activeTab ? ' active' : ''}" data-tab="${tab}" aria-label="${def.fresh}">
-        <span class="ico" data-icon="${def.icon}">${ICONS[def.icon]}</span>
+        <span class="ico" data-icon="${def.icon}">${ICONS[def.icon]}${badgeHtml(tab)}</span>
         <span class="lbl-old">${def.old}</span><span class="lbl-new">${def.fresh}</span></button>`;
   }).join(''));
   nav.style.setProperty('--n', tabs.length);

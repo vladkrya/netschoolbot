@@ -1,16 +1,18 @@
 // Свайп «назад» от левого края экрана — везде, как жест «назад» в Android.
 //
-// Если открыт экран поверх вкладки, он едет за пальцем, как в iOS. Иначе
-// у края растёт кружок со стрелкой. Отпустил достаточно далеко — то же,
-// что кнопка «Назад»: закрыть экран, шторку, меню или вернуться на «День».
+// Если открыт экран поверх вкладки, он едет за пальцем, как в iOS. На
+// вкладке, откуда «назад» ведёт на первую, за пальцем едет сама вкладка. Над
+// шторкой и меню — кружок со стрелкой у края. Отпустил достаточно далеко — то
+// же, что кнопка «Назад»: закрыть экран, шторку, меню или вернуться на «День».
 'use strict';
 
+import { $ } from './core.js';
 import { ICONS } from './icons.js';
 import { canGoBack, handleBack, topScreen } from './screens.js';
 import { tap } from './haptics.js';
 
 /** Ширина полосы у левого края, с которой начинается жест. */
-export const EDGE_PX = 24;
+export const EDGE_PX = 28;
 // Насколько далеко увести палец, чтобы жест сработал.
 const COMMIT_PX = 90;
 const ARROW_MAX = 64;
@@ -39,7 +41,13 @@ export function initSwipeBack() {
       // Направление ещё не ясно: вертикальное движение — обычная прокрутка.
       decided: false, armed: false,
       screen: topScreen(),
+      // Вкладка (main) едет за пальцем, только если «назад» — это смена
+      // вкладки, а не закрытие шторки или меню.
+      page: null,
     };
+    if (!gesture.screen && $('sheet').hidden && !$('drawer').classList.contains('open')) {
+      gesture.page = document.querySelector('main');
+    }
   }, { passive: true });
 
   document.addEventListener('touchmove', (event) => {
@@ -54,7 +62,8 @@ export function initSwipeBack() {
         return;
       }
       gesture.decided = true;
-      if (gesture.screen) gesture.screen.classList.add('swiping');
+      const moving = gesture.screen || gesture.page;
+      if (moving) moving.classList.add('swiping');
       else ensureArrow().classList.add('show');
     }
     if (event.cancelable) event.preventDefault();
@@ -63,8 +72,8 @@ export function initSwipeBack() {
     // Щелчок в момент, когда жест «взвёлся», — палец чувствует порог.
     if (armed && !gesture.armed) tap('light');
     gesture.armed = armed;
-    if (gesture.screen) {
-      gesture.screen.style.transform = `translateX(${dx}px)`;
+    if (gesture.screen || gesture.page) {
+      (gesture.screen || gesture.page).style.transform = `translateX(${dx}px)`;
     } else {
       const shift = Math.min(dx, ARROW_MAX * 1.6) * 0.6;
       arrow.style.transform = `translate(${shift}px, -50%) scale(${armed ? 1 : 0.8})`;
@@ -75,7 +84,7 @@ export function initSwipeBack() {
 
   const finish = (commit) => {
     if (!gesture) return;
-    const { screen, decided, armed } = gesture;
+    const { screen, page, decided, armed } = gesture;
     gesture = null;
     if (!decided) return;
     const go = commit && armed;
@@ -95,6 +104,26 @@ export function initSwipeBack() {
         setTimeout(close, 300);
       } else {
         screen.style.transform = '';
+      }
+    } else if (page) {
+      page.classList.remove('swiping');
+      if (go) {
+        // Вкладка уезжает вправо, а первая въезжает слева — как «назад» в iOS.
+        page.classList.add('leaving');
+        page.style.transform = 'translateX(100%)';
+        setTimeout(() => {
+          page.classList.remove('leaving');
+          handleBack();
+          page.style.transform = 'translateX(-30%)';
+          page.getBoundingClientRect();
+          page.classList.add('leaving');
+          page.style.transform = '';
+          setTimeout(() => page.classList.remove('leaving'), 260);
+        }, 200);
+      } else {
+        page.classList.add('leaving');
+        page.style.transform = '';
+        setTimeout(() => page.classList.remove('leaving'), 260);
       }
     } else {
       arrow.classList.remove('show', 'armed');

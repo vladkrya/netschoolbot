@@ -9,6 +9,7 @@ import { ICONS } from './icons.js';
 import { popScreen, pushScreen } from './screens.js';
 import { closeSheet, openSheet } from './sheet.js';
 import { isNewDesign } from './appearance.js';
+import { setNavBadge } from './tabs.js';
 
 const AVATAR_COLORS = ['#a7b83a', '#4a9fd8', '#d8844a', '#9a6ad8', '#d84a6a', '#3ab89a'];
 
@@ -46,6 +47,8 @@ export async function loadMail(force = false) {
 
 function render() {
   const messages = state.mail.messages || [];
+  // Непрочитанные — числом у значка «Почты» в нижней панели.
+  setNavBadge('mail', messages.filter((message) => message.read === false).length);
   const container = $('mailContent');
   if (!messages.length) {
     container.innerHTML = '<div class="empty big">Писем нет</div>';

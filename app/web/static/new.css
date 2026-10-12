@@ -794,7 +794,7 @@
 :root[data-design="new"] .sc-skeleton .skeleton { margin: 0; }
 
 /* «День»: кнопка «Звонки и неделя» в полосе даты, за разделителем. */
-:root[data-design="new"] .day-bells { display: flex; margin-left: 4px; background: var(--card-2); color: var(--text); }
+:root[data-design="new"] .day-bells { display: flex; margin-right: 4px; background: var(--card-2); color: var(--text); }
 :root[data-design="new"] .day-bells .icon { width: 21px; height: 21px; }
 :root[data-design="new"] .week-seg { margin-bottom: 12px; background: var(--card-2); }
 :root[data-design="new"] .sheet-body .bells-note { margin: 0 0 12px; }
@@ -807,3 +807,9 @@
 :root[data-design="new"] .mail-seg { display: flex; background: var(--card); box-shadow: var(--lift); }
 :root[data-design="new"] .subbar[data-for="mail"] .segment-title { display: none; }
 :root[data-design="new"] #bellBtn { visibility: hidden; pointer-events: none; }
+
+/* Экраны поверх: заголовок ниже статус-бара — iOS 26 размывает верхний край,
+   и «Помощник» с подписью попадали под это размытие. */
+:root[data-design="new"] .screen-head { padding-top: calc(var(--bar-top) + 8px); }
+:root[data-design="new"] .ai-fab .icon { width: 28px; height: 28px; fill: currentColor; }
+:root[data-design="new"] .history-item { box-shadow: var(--lift), inset 4px 0 0 var(--k); }

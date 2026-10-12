@@ -383,8 +383,10 @@ export async function demoApi(path, options = {}) {
       .slice(-15)
       .reverse()
       .map((m, id) => ({
-        id, kind: 'new', subject: m.subject, date: m.date, title: m.title || m.type || '',
-        mark: m.mark ?? m.value ?? '', old: '', new: '', seen: `${m.date}T15:00:00Z`,
+        // Для показа — и исправленные, и удалённые, не только новые.
+        id, kind: id % 5 === 2 ? 'changed' : id % 7 === 4 ? 'deleted' : 'new',
+        subject: m.subject, date: m.date, title: m.title || m.type || '',
+        mark: m.mark ?? m.value ?? '', old: '3', new: m.mark ?? m.value ?? '', seen: `${m.date}T15:00:00Z`,
       }));
     return ok({ items });
   }

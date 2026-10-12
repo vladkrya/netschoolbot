@@ -747,6 +747,25 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
   transition: color .25s, opacity .25s;
 }
 .nav-item .ico { display: flex; transition: transform .3s cubic-bezier(.34, 1.45, .5, 1); }
+/* Число непрочитанных у значка вкладки. */
+.nav-item .ico { position: relative; }
+.nav-badge {
+  position: absolute;
+  top: -5px;
+  left: calc(100% - 9px);
+  min-width: 17px;
+  height: 17px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: #ff3b30;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 17px;
+  text-align: center;
+  box-shadow: 0 0 0 2px var(--bg);
+  animation: pop .35s var(--ease) both;
+}
 .nav-item .lbl-old, .nav-item .lbl-new {
   max-width: calc(100% - 4px);
   overflow: hidden;
@@ -1142,6 +1161,9 @@ body::after {
 /* Свайп «назад» от левого края (swipeback.js). */
 .screen.swiping { animation: none; transition: none; }
 .screen.leaving { animation: none; transition: transform .22s var(--ease); }
+/* Вкладка за пальцем: тень слева, как у экрана поверх. */
+main.swiping { transition: none; box-shadow: -8px 0 24px rgba(0, 0, 0, .25); background: var(--bg); }
+main.leaving { transition: transform .22s var(--ease); box-shadow: -8px 0 24px rgba(0, 0, 0, .25); background: var(--bg); }
 .back-arrow {
   position: fixed;
   left: -44px;
@@ -1167,10 +1189,43 @@ body::after {
 /* Статус проверки и история оценок (меню ☰). */
 .sync-status { margin-top: 6px; line-height: 1.5; }
 .sync-status.failing { color: var(--red); }
+/* История оценок: фильтры, дни, карточки с плашками оценок. */
+.history-filters { margin-bottom: 6px; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+.history-filters::-webkit-scrollbar { display: none; }
+.history-filters .chip { flex: none; display: inline-flex; align-items: center; gap: 6px; }
+.hi-count { min-width: 18px; padding: 0 5px; border-radius: 9px; background: color-mix(in srgb, currentColor 15%, transparent); font-size: 11px; font-weight: 700; text-align: center; }
 .history-list { display: flex; flex-direction: column; gap: 8px; }
-.history-item { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 10px 12px; }
-.history-head { display: flex; justify-content: space-between; gap: 12px; font-weight: 600; }
-.history-mark { white-space: nowrap; }
+.hi-day { margin: 12px 4px 0; font-size: 13px; font-weight: 700; color: var(--text2); text-transform: uppercase; letter-spacing: .03em; }
+.hi-day:first-child { margin-top: 4px; }
+.history-item {
+  --k: var(--g5, #22a04b);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--card);
+  box-shadow: inset 4px 0 0 var(--k);
+  animation: rise-in .38s var(--ease) both;
+  animation-delay: var(--d, 0ms);
+}
+.history-item.hi-changed { --k: var(--g3, #e8770c); }
+.history-item.hi-deleted { --k: var(--g2, #e0383e); }
+.hi-main { flex: 1; min-width: 0; }
+.hi-subject { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hi-title { margin-top: 1px; font-size: 13px; color: var(--text2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hi-meta { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 12px; color: var(--text2); font-variant-numeric: tabular-nums; }
+.hi-kind { padding: 1px 7px; border-radius: 7px; background: color-mix(in srgb, var(--k) 15%, transparent); color: var(--k); font-weight: 600; }
+.hi-marks { flex: none; display: flex; align-items: center; gap: 4px; }
+.hi-marks .mark-box.old { opacity: .45; text-decoration: line-through; }
+.hi-marks .mark-box.fresh { animation: pop .45s var(--ease) both; animation-delay: calc(var(--d, 0ms) + 120ms); }
+.hi-arrow { display: flex; color: var(--text2); }
+.hi-arrow .icon { width: 16px; height: 16px; }
+.hi-more { margin-top: 14px; }
+.history-empty { display: grid; justify-items: center; gap: 10px; padding-top: 40px; color: var(--text2); text-align: center; }
+.history-empty .icon { width: 40px; height: 40px; opacity: .5; }
+@media (prefers-reduced-motion: reduce) { .history-item, .hi-marks .mark-box.fresh { animation: none; } }
 
 /* «Д/З»: фильтры и отметка «выполнено». */
 .hw-filters { margin-top: 8px; }

@@ -2,7 +2,7 @@
 //
 // Считается из уже загруженных оценок: количества пятёрок, четвёрок и так
 // далее подставляются с учётом веса, дальше их можно править руками и
-// смотреть, что получится.
+// смотреть, что получится. Предмет «Нет» — счёт с нуля, без оценок журнала.
 'use strict';
 
 import { $, api, avgClass, errorCard, esc, plural, skeleton, state } from './core.js';
@@ -26,7 +26,9 @@ export async function loadCalc(force = false) {
   }
   if (!state.calc) {
     state.calc = {
-      subject: state.grades.subjects[0]?.subject || '',
+      // По умолчанию — с нуля: калькулятор для «а что если», а оценки
+      // предметов и так видны в «Оценках».
+      subject: '',
       quarter: state.grades.current_quarter || state.grades.quarters?.[0]?.key || 'q1',
       counts: null,
     };
@@ -67,7 +69,7 @@ function render() {
   const { counts } = state.calc;
   const stats = average(counts);
 
-  const subjects = state.grades.subjects
+  const subjects = `<option value=""${state.calc.subject ? '' : ' selected'}>Нет — считать с нуля</option>` + state.grades.subjects
     .map(
       (item) =>
         `<option value="${esc(item.subject)}"${item.subject === state.calc.subject ? ' selected' : ''}>${esc(item.subject)}</option>`
@@ -112,13 +114,13 @@ function render() {
     <div class="card">
       <div class="card-title">Предмет</div>
       <select class="calc-input" id="calcSubject" style="width:100%;text-align:left">${subjects}</select>
-      <div class="chips" style="margin-top:10px">${quarters}</div>
+      ${state.calc.subject ? `<div class="chips" style="margin-top:10px">${quarters}</div>` : ''}
     </div>
     <div class="card">
       <div class="card-title">Оценки с учётом веса</div>
       ${rows}
       <div class="calc-result">
-        Средний балл: <strong class="avg ${avgClass(stats.value, thresholds)}">${stats.value ? stats.value.toFixed(2) : '—'}</strong>
+        Средний балл: <strong class="avg ${stats.value == null ? '' : avgClass(stats.value, thresholds)}">${stats.value ? stats.value.toFixed(2) : '—'}</strong>
         <span class="muted small"> · суммарный вес ${stats.count}</span>
       </div>
     </div>
@@ -127,7 +129,7 @@ function render() {
       ${goals}
       <p class="muted small" style="margin-top:8px">
         Пороги как в «Итогах»: ${esc(thresholdsText(state.calc.subject))}.
-        Веса берутся из журнала, значения можно править вручную.
+        ${state.calc.subject ? 'Веса берутся из журнала, значения можно править вручную.' : 'Добавляйте оценки кнопками «+», вес считается количеством.'}
       </p>
     </div>`;
 
