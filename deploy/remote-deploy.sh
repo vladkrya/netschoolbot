@@ -16,8 +16,8 @@ PREV="$(git rev-parse HEAD)"
 STEP="подготовка"
 SWITCHED=0
 BACKUP=""
-NGINX_CONFIG=""
-NGINX_BACKUP=""
+NGINX_CONFIGS=()
+NGINX_BACKUPS=()
 
 DB="$APP/data/netschoolbot.sqlite3"
 
@@ -76,12 +76,18 @@ install_units() {
 }
 
 install_nginx() {
-  local enabled=/etc/nginx/sites-enabled/netschool.ikrya.ru
-  [ -e "$enabled" ] || return 0
-  NGINX_CONFIG="$(readlink -f "$enabled")"
-  NGINX_BACKUP="${NGINX_CONFIG}.bak-$(date +%Y%m%d-%H%M%S)"
-  cp -p "$NGINX_CONFIG" "$NGINX_BACKUP"
-  install -m 644 deploy/nginx/netschool.ikrya.ru.conf "$NGINX_CONFIG"
+  local domain enabled config backup
+  # Обновляем все установленные адреса: Upgrade нужен каждому прокси чата.
+  for domain in netschool.ikrya.ru ns.ikrya.ru ns2.ikrya.ru yavds.ikrya.ru; do
+    enabled="/etc/nginx/sites-enabled/$domain"
+    [ -e "$enabled" ] || continue
+    config="$(readlink -f "$enabled")"
+    backup="${config}.bak-$(date +%Y%m%d-%H%M%S)"
+    cp -p "$config" "$backup"
+    NGINX_CONFIGS+=("$config")
+    NGINX_BACKUPS+=("$backup")
+    install -m 644 "deploy/nginx/$domain.conf" "$config"
+  done
   nginx -t
   systemctl reload nginx
 }
@@ -100,8 +106,11 @@ rollback() {
   local log
   log="$(journalctl -u netschoolbot -n 25 --no-pager 2>/dev/null | tail -25 || true)"
   echo "✖ Шаг «$STEP» не удался (код $code)"
-  if [ -n "$NGINX_BACKUP" ] && [ -f "$NGINX_BACKUP" ]; then
-    cp -p "$NGINX_BACKUP" "$NGINX_CONFIG"
+  local index
+  for index in "${!NGINX_BACKUPS[@]}"; do
+    cp -p "${NGINX_BACKUPS[$index]}" "${NGINX_CONFIGS[$index]}"
+  done
+  if [ "${#NGINX_BACKUPS[@]}" -gt 0 ]; then
     nginx -t && systemctl reload nginx || true
   fi
   if [ "$SWITCHED" = 1 ]; then
@@ -152,7 +161,7 @@ install_units
 # Копия до установки таймера снималась вручную — теперь по расписанию.
 systemctl enable --now netschoolbot-backup.timer >/dev/null 2>&1 || true
 
-step "Конфигурация nginx старого домена"
+step "Конфигурация nginx"
 install_nginx
 
 step "Перезапуск"

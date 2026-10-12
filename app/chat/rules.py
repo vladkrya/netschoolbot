@@ -46,6 +46,58 @@ def band_of(grade: int) -> str | None:
     return None
 
 
+# ─────────────────────────────── Ники ───────────────────────────────
+# Настоящих имён в чатах нет — только ники. Ник уникален без учёта регистра,
+# «ё/е» и похожих латинских и русских букв: «Аdmin» с русской «А» не пройдёт
+# как отдельный ник и не выдаст себя за администратора.
+
+NICK_RE = re.compile(r"^[A-Za-zА-Яа-яЁё][A-Za-zА-Яа-яЁё0-9_]{2,19}$")
+NICK_HINT = "3–20 символов: буквы, цифры и _, начинается с буквы"
+MENTION = re.compile(r"(?<![\w@])@([A-Za-zА-Яа-яЁё][A-Za-zА-Яа-яЁё0-9_]{1,19})")
+_LOOKALIKE = str.maketrans("аеорсухкмтвнё01l", "aeopcyxkmtbheoii")
+
+
+def nick_key(nick: str) -> str:
+    """Ключ уникальности ника."""
+    return nick.strip().lower().translate(_LOOKALIKE)
+
+
+_RESERVED = tuple(nick_key(word) for word in (
+    "admin", "админ", "moder", "модер", "support", "поддержк", "telegram", "сетевой"))
+
+
+def check_nick(nick: str) -> str:
+    """Почему ник не подходит ("" — подходит)."""
+    if not NICK_RE.match(nick):
+        return f"Ник: {NICK_HINT}"
+    key = nick_key(nick)
+    if any(word in key for word in _RESERVED):
+        return "Такой ник занят"
+    if _DRUGS.search(nick) or _SUICIDE.search(nick):
+        return "Такой ник нельзя"
+    return ""
+
+
+def mentions(text: str) -> set[str]:
+    """Ключи упомянутых ников: «@Петя_9 привет» → {"пeтя_9"}."""
+    return {nick_key(name) for name in MENTION.findall(text)}
+
+
+def strip_mentions(text: str, known: set[str]) -> str:
+    """Текст без упоминаний известных ников — чтобы фильтр контактов в общем
+    чате не принял @ник участника за ник в Telegram."""
+    return MENTION.sub(lambda m: "" if nick_key(m.group(1)) in known else m.group(0), text)
+
+
+# Уведомления комнаты по умолчанию: в своей параллели и школе — обо всём,
+# в общем чате всех школ — только упоминания, иначе это поток без конца.
+NOTIFY_MODES = ("all", "mentions", "off")
+
+
+def default_notify(kind: str) -> str:
+    return "mentions" if kind == "global" else "all"
+
+
 def first_name(full_name: str) -> str:
     """Только имя: «Соловьёв Владислав» → «Владислав». Фамилию не показываем."""
     parts = [part for part in re.split(r"\s+", full_name.strip()) if part]
@@ -133,7 +185,7 @@ def room_school(room_id: str) -> str:
 
 # ─────────────────────────────── Фильтры ───────────────────────────────
 # Мат разрешён. Не пропускаем наркотики и суицид, а в общем чате — ещё и
-# контакты: ссылки, телефоны и @ники. Через них ребёнка уводят в личку,
+# контакты: ссылки, телефоны и @ники из соцсетей. Через них ребёнка уводят в личку,
 # где никакой модерации нет.
 
 _DRUGS = re.compile(
@@ -156,8 +208,9 @@ _HANDLE = re.compile(r"(^|\s)@[A-Za-z][A-Za-z0-9_]{3,}")
 _PHONE = re.compile(r"(\+?\d[\s\-()]*){10,}")
 
 
-def check_text(text: str, *, global_room: bool) -> str:
-    """Почему сообщение не уйдёт ("" — всё в порядке)."""
+def check_text(text: str, *, global_room: bool, known: set[str] | frozenset[str] = frozenset()) -> str:
+    """Почему сообщение не уйдёт ("" — всё в порядке). known — ключи ников
+    участников: упоминать их в общем чате можно."""
     if not text.strip():
         return "Пустое сообщение"
     if len(text) > MAX_TEXT:
@@ -167,6 +220,7 @@ def check_text(text: str, *, global_room: bool) -> str:
     if _SUICIDE.search(text):
         return ("Такие сообщения запрещены правилами чата. Если тебе плохо — позвони на "
                 "детский телефон доверия 8-800-2000-122, это бесплатно и анонимно")
-    if global_room and (_LINK.search(text) or _PHONE.search(text) or _HANDLE.search(text)):
+    bare = strip_mentions(text, set(known))
+    if global_room and (_LINK.search(bare) or _PHONE.search(bare) or _HANDLE.search(bare)):
         return "В общем чате нельзя оставлять ссылки, телефоны и ники — это защита от мошенников"
     return ""

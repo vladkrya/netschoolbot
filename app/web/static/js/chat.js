@@ -1,24 +1,37 @@
 // Школьные чаты: раздел «Чаты» во вкладке сообщений.
 //
-// Сервер — app/web/chat.py. Открытый чат раз в несколько секунд спрашивает
+// Сервер — app/web/chat.py. По сигналу WebSocket открытый чат запрашивает
 // новые сообщения (after) и изменения уже показанных (since): скрытие,
-// удаление, реакции. Долгих соединений нет — через прокси и плохую связь
-// это надёжнее.
+// удаление, реакции. При недоступном WebSocket — опрос раз в 4 секунды.
 'use strict';
 
 import { api, banner, errorCard, esc, escRich, skeleton } from './core.js';
 import { notify, select, tap } from './haptics.js';
 import { ICONS } from './icons.js';
-import { pushScreen } from './screens.js';
+import { pushScreen, topScreen } from './screens.js';
 import { closeSheet, openSheet } from './sheet.js';
 
+import { chatConnected, chatEvents, refreshChatUnread, watchRoom } from './chat-live.js';
 const POLL_MS = 4000;
+const NOTIFY_LABELS = { all: 'Все сообщения', mentions: 'Только упоминания и ответы', off: 'Выключены' };
+let roomsContainer = null;
+let refreshingRooms = false;
+chatEvents.addEventListener('change', async ({ detail }) => {
+  if (!roomsContainer?.isConnected || roomsContainer.dataset.chatView !== '1' || !['msg', 'upd', 'unread', 'connected', 'snapshot'].includes(detail.t) || refreshingRooms) return;
+  refreshingRooms = true;
+  try {
+    overview = (await api('/api/chat')).data;
+    if (roomsContainer.isConnected && roomsContainer.dataset.chatView === '1' && !roomsContainer.querySelector('.chat-consent') && !roomsContainer.querySelector('.chat-nick-form')) renderRooms(roomsContainer);
+  } catch { /* повторим при следующем событии */ }
+  finally { refreshingRooms = false; }
+});
 
 let overview = null;
 
 /* ─────────────────────────── Список чатов ─────────────────────────── */
 
 export async function renderChats(container, force = false) {
+  container.dataset.chatView = '1';
   if (!overview || force) {
     container.innerHTML = skeleton(3);
     try {
@@ -33,6 +46,10 @@ export async function renderChats(container, force = false) {
     renderConsent(container);
     return;
   }
+  if (overview.joined && !overview.profile?.nick) {
+    renderNick(container);
+    return;
+  }
   renderRooms(container);
 }
 
@@ -42,8 +59,11 @@ function renderConsent(container, error = '') {
       <div class="card-title">Школьные чаты</div>
       <p class="muted">Чат своей параллели (все 9-е твоей школы), всей школы и — с 6 класса — общий чат учеников всех школ.</p>
       <ul class="chat-rules">${overview.rules.map((line) => `<li>${esc(line)}</li>`).join('')}</ul>
+      <label class="detail-label" for="chatNick">Твой ник</label>
+      <input class="field" id="chatNick" maxlength="20" autocomplete="off" placeholder="Например, Cosmos_9">
+      <p class="muted small">${esc(overview.nick_hint || '3–20 символов: буквы, цифры и _, начинается с буквы')}</p>
       <label class="chat-agree"><input type="checkbox" id="chatAgree">
-        <span>Согласен с правилами и показом моего имени и номера класса</span></label>
+        <span>Согласен с правилами и показом моего ника и номера класса</span></label>
       ${error ? `<p class="chat-error">${esc(error)}</p>` : ''}
       <button class="btn" id="chatJoin" disabled>Вступить</button>
     </div>`;
@@ -54,13 +74,44 @@ function renderConsent(container, error = '') {
     join.disabled = true;
     join.classList.add('loading');
     try {
-      overview = (await api('/api/chat/join', { method: 'POST', body: JSON.stringify({ consent: true }) })).data;
+      overview = (await api('/api/chat/join', { method: 'POST', body: JSON.stringify({ consent: true, nick: container.querySelector('#chatNick').value.trim() }) })).data;
       notify('success');
+      refreshChatUnread();
       renderRooms(container);
     } catch (error) {
       notify('error');
-      renderConsent(container, error.message);
+      container.querySelector('.chat-error')?.remove();
+      join.insertAdjacentHTML('beforebegin', `<p class="chat-error">${esc(error.message)}</p>`);
+      join.disabled = !agree.checked;
+      join.classList.remove('loading');
     }
+  });
+}
+
+function renderNick(container) {
+  container.innerHTML = `<div class="card chat-nick-form"><div class="card-title">Выбери ник для чатов</div>
+    <p class="muted">Настоящее имя больше не показывается. Другие участники увидят только ник и номер класса.</p>
+    <input class="field" maxlength="20" autocomplete="off" placeholder="Твой ник">
+    <p class="muted small">${esc(overview.nick_hint)}</p><button class="btn">Сохранить</button></div>`;
+  const input = container.querySelector('input');
+  const button = container.querySelector('button');
+  button.addEventListener('click', async () => {
+    button.disabled = true;
+    const data = await act('/api/chat/nick', { nick: input.value.trim() });
+    button.disabled = false;
+    if (data) { overview = data; renderRooms(container); refreshChatUnread(); }
+  });
+}
+
+function editNick(container) {
+  const sheet = openSheet('Сменить ник', `<input class="field" maxlength="20" value="${esc(overview.profile.nick)}">
+    <p class="muted small">${esc(overview.nick_hint)}. Менять можно раз в сутки.</p><button class="btn">Сохранить</button>`);
+  const button = sheet.querySelector('button');
+  button.addEventListener('click', async () => {
+    button.disabled = true;
+    const data = await act('/api/chat/nick', { nick: sheet.querySelector('input').value.trim() });
+    button.disabled = false;
+    if (data) { overview = data; closeSheet(); renderRooms(container); }
   });
 }
 
@@ -74,12 +125,13 @@ function timeLabel(at) {
 }
 
 function renderRooms(container) {
+  roomsContainer = container;
   const identity = overview.admin && overview.joined ? `
     <div class="card chat-identity">
       <span>Писать как</span>
       <div class="chips">
         <button class="chip ${overview.as_admin ? 'active' : ''}" data-as-admin="1">admin</button>
-        <button class="chip ${overview.as_admin ? '' : 'active'}" data-as-admin="0">${esc(overview.profile.first_name)}</button>
+        <button class="chip ${overview.as_admin ? '' : 'active'}" data-as-admin="0">${esc(overview.profile.nick)}</button>
       </div>
     </div>` : '';
   const reports = overview.moderator ? `
@@ -104,12 +156,14 @@ function renderRooms(container) {
         ${room.unread ? `<span class="nav-badge chat-unread">${room.unread > 99 ? '99+' : room.unread}</span>` : ''}
       </span>
     </button>`).join('') + (overview.joined
-    ? '<button class="link chat-leave" id="chatLeave">Выйти из чатов</button>' : '');
+    ? `<button class="link chat-leave" id="chatEditNick">Ник: ${esc(overview.profile.nick)} · изменить</button>
+       <button class="link chat-leave" id="chatLeave">Выйти из чатов</button>` : '');
+  container.querySelector('#chatEditNick')?.addEventListener('click', () => editNick(container));
 
   container.querySelectorAll('[data-room]').forEach((button) => button.addEventListener('click', () => {
     const room = overview.rooms[Number(button.dataset.room)];
     room.unread = 0;
-    openRoom(room, () => renderChats(container, true));
+    openRoom(room, () => { if (container.dataset.chatView === '1') renderChats(container, true); });
   }));
   container.querySelectorAll('[data-as-admin]').forEach((button) => button.addEventListener('click', async () => {
     select();
@@ -127,6 +181,7 @@ function renderRooms(container) {
   container.querySelector('#chatLeave')?.addEventListener('click', async () => {
     if (!window.confirm('Выйти из чатов? Твои сообщения останутся, а вступить можно снова.')) return;
     overview = (await api('/api/chat/leave', { method: 'POST', body: '{}' })).data;
+    refreshChatUnread();
     renderChats(container);
   });
 }
@@ -139,9 +194,9 @@ function authorLabel(message) {
 }
 
 function bodyText(message) {
-  if (message.deleted) return '<span class="chat-gone">Сообщение удалено</span>';
+  if (message.deleted) return `<span class="chat-gone">${message.deleted_by === 'author' ? 'Сообщение удалено автором' : 'Сообщение удалено администратором'}</span>`;
   if (message.text == null) return '<span class="chat-gone">Сообщение скрыто модератором</span>';
-  const text = escRich(message.text).replace(/(^|\s)@([A-Za-zА-Яа-яЁё]{2,30})/g, '$1<b class="chat-mention">@$2</b>');
+  const text = escRich(message.text).replace(/(^|\s)@([A-Za-zА-Яа-яЁё][A-Za-zА-Яа-яЁё0-9_]{1,19})/g, '$1<b class="chat-mention">@$2</b>');
   return message.poll ? `<b>📊 ${text}</b>${pollHtml(message.poll)}` : text;
 }
 
@@ -170,6 +225,7 @@ function dayTitle(at) {
 }
 
 function messageHtml(message) {
+  if (message.kind === 'system') return `<div class="chat-system" data-id="${message.id}">${bodyText(message)}</div>`;
   const reactions = Object.entries(message.reactions || {})
     .map(([emoji, count]) => `<button class="chat-reaction ${message.my_reactions?.includes(emoji) ? 'on' : ''}"
       data-react="${esc(emoji)}">${esc(emoji)} ${count}</button>`).join('');
@@ -180,43 +236,41 @@ function messageHtml(message) {
         ${message.reply ? `<div class="chat-quote" data-jump="${message.reply.id}"><b>${esc(message.reply.author)}</b>
           <span>${message.reply.text == null ? 'сообщение скрыто' : esc(message.reply.text)}</span></div>` : ''}
         <div class="chat-text">${bodyText(message)}</div>
-        <div class="chat-meta">${message.pinned ? '📌 ' : ''}${message.hidden ? 'скрыто · ' : ''}${esc(timeLabel(message.at))}</div>
+        <div class="chat-meta">${message.pinned ? '📌 ' : ''}${message.hidden ? 'скрыто · ' : ''}${esc(timeLabel(message.at))}${message.mine ? ` <span class="chat-read" aria-label="${message.read ? 'Прочитано' : 'Отправлено'}">${message.read ? '✓✓' : '✓'}</span>` : ''}</div>
+        ${reactions ? `<div class="chat-reactions">${reactions}</div>` : ''}
       </div>
-      ${reactions ? `<div class="chat-reactions">${reactions}</div>` : ''}
     </div>`;
 }
 
-export function openRoom(room, onClose) {
+export function openRoom(room, onClose, targetId = null) {
   const body = pushScreen(room.title, room.subtitle);
   const screen = body.closest('.screen');
   screen.classList.add('chat-screen');
+  screen.dataset.room = room.id;
+  watchRoom(room.id);
   const bell = document.createElement('button');
   bell.className = 'screen-back chat-bell';
   bell.setAttribute('aria-label', 'Уведомления о чате');
   screen.querySelector('.screen-head').appendChild(bell);
-  const paintBell = (muted) => {
-    bell.textContent = muted ? '🔕' : '🔔';
-    bell.dataset.muted = muted ? '1' : '';
+  const paintBell = (mode) => {
+    room.notify = mode || 'mentions';
+    bell.textContent = room.notify === 'off' ? '🔕' : '🔔';
+    bell.title = NOTIFY_LABELS[room.notify];
   };
-  paintBell(room.muted);
-  bell.addEventListener('click', async () => {
-    const muted = !bell.dataset.muted;
-    paintBell(muted);
-    select();
-    try {
-      await api(`/api/chat/rooms/${encodeURIComponent(room.id)}/mute`, { method: 'POST', body: JSON.stringify({ muted }) });
-      room.muted = muted;
-      banner(muted ? 'Уведомления об упоминаниях выключены' : 'Уведомления об упоминаниях включены');
-      setTimeout(() => banner(''), 2000);
-    } catch (error) {
-      paintBell(!muted);
-      banner(error.message, true);
-    }
+  paintBell(room.notify);
+  bell.addEventListener('click', () => {
+    const sheet = openSheet('Уведомления о чате', `<div class="chat-actions">${Object.entries(NOTIFY_LABELS)
+      .map(([mode, label]) => `<button class="btn outline" data-notify="${mode}">${room.notify === mode ? '✓ ' : ''}${label}</button>`).join('')}</div>`);
+    sheet.querySelectorAll('[data-notify]').forEach(button => button.addEventListener('click', async () => {
+      const data = await act(`/api/chat/rooms/${encodeURIComponent(room.id)}/notify`, { mode: button.dataset.notify });
+      if (data) { paintBell(data.notify); closeSheet(); refreshChatUnread(); }
+    }));
   });
   body.innerHTML = `
     <button class="chat-pinned" hidden></button>
     <div class="chat-log"><div class="chat-older" hidden>Загрузка…</div><div class="chat-list"></div></div>
     <div class="chat-replying" hidden><span></span><button type="button" aria-label="Не отвечать">✕</button></div>
+    <div class="chat-members" hidden></div>
     <form class="chat-composer">
       ${room.kind === 'global' ? '' : '<button type="button" class="chat-poll-btn" aria-label="Опрос">📊</button>'}
       <textarea rows="1" maxlength="2000" placeholder="Сообщение"></textarea>
@@ -236,6 +290,9 @@ export function openRoom(room, onClose) {
   let readSent = 0;
   let moderator = false;
   let admin = false;
+  let polling = false;
+  let pendingPoll = false;
+  let ready = false;
   const pinnedBar = body.querySelector('.chat-pinned');
 
   const showPinned = (pinned) => {
@@ -268,12 +325,30 @@ export function openRoom(room, onClose) {
     }
   };
 
-  const markRead = () => {
-    if (lastId <= readSent) return;
-    readSent = lastId;
-    api(`/api/chat/rooms/${encodeURIComponent(room.id)}/read`, {
-      method: 'POST', body: JSON.stringify({ last_id: lastId }),
-    }).catch(() => {});
+  const markRead = async () => {
+    if (lastId <= readSent || document.hidden || topScreen() !== screen || !nearBottom()) return;
+    const upto = lastId;
+    readSent = upto;
+    try {
+      await api(`/api/chat/rooms/${encodeURIComponent(room.id)}/read`, { method: 'POST', body: JSON.stringify({ last_id: upto }) });
+      refreshChatUnread();
+    } catch { readSent = 0; }
+  };
+
+  const jumpTo = async (id) => {
+    let element = list.querySelector(`[data-id="${Number(id)}"]`);
+    if (!element) {
+      try {
+        const { data } = await api(`/api/chat/rooms/${encodeURIComponent(room.id)}/messages?around=${Number(id)}`);
+        remember(data.messages);
+        redraw();
+        element = list.querySelector(`[data-id="${Number(id)}"]`);
+      } catch (error) { banner(error.message, true); return; }
+    }
+    if (!element) { banner('Сообщение не найдено', true); return; }
+    element.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    element.classList.add('chat-highlight');
+    setTimeout(() => element.classList.remove('chat-highlight'), 2200);
   };
 
   const load = async () => {
@@ -284,38 +359,48 @@ export function openRoom(room, onClose) {
       since = data.now;
       moderator = data.moderator;
       admin = data.admin;
-      paintBell(data.muted);
+      paintBell(data.notify);
       showPinned(data.pinned);
       exhausted = data.messages.length < 50;
       redraw();
-      toBottom();
-      markRead();
+      ready = true;
+      if (targetId) await jumpTo(targetId);
+      else { toBottom(); markRead(); }
+      poll(); // догнать сигнал, который пришёл во время загрузки
+      if (data.need_nick) {
+        input.disabled = true;
+        input.placeholder = 'Выбери ник в списке чатов';
+        body.querySelector('.chat-send').disabled = true;
+      }
     } catch (error) {
       list.innerHTML = errorCard(error);
     }
   };
 
   const poll = async () => {
-    if (!body.isConnected) {
-      clearInterval(timer);
-      onClose?.();
-      return;
-    }
-    if (document.hidden) return;
+    if (!body.isConnected || document.hidden || !ready) return;
+    if (polling) { pendingPoll = true; return; }
+    polling = true;
     try {
-      const { data } = await api(
-        `/api/chat/rooms/${encodeURIComponent(room.id)}/messages?after=${lastId}&since=${since}`);
-      since = data.now;
+      const { data } = await api(`/api/chat/rooms/${encodeURIComponent(room.id)}/messages?after=${lastId}&since=${since}`);
+      // Полная страница: не теряем изменения следующих страниц.
+      if (data.messages.length < 50) since = data.now;
+      else pendingPoll = true;
       showPinned(data.pinned);
-      if (!data.messages.length && !data.changed.length) return;
+      moderator = data.moderator;
+      admin = data.admin;
       const stick = nearBottom();
+      const scroll = log.scrollTop;
       remember(data.messages);
       for (const message of data.changed) messages.set(message.id, message);
+      for (const message of messages.values()) if (message.mine) message.read = data.others_read >= message.id;
       redraw();
-      if (stick) toBottom();
-      if (stick) markRead();
-    } catch {
-      /* связь пропала — спросим в следующий раз */
+      if (stick) { toBottom(); markRead(); }
+      else log.scrollTop = scroll;
+    } catch { /* связь пропала — следующий запрос догонит */ }
+    finally {
+      polling = false;
+      if (pendingPoll) { pendingPoll = false; poll(); }
     }
   };
 
@@ -330,7 +415,7 @@ export function openRoom(room, onClose) {
       exhausted = data.messages.length < 50;
       remember(data.messages);
       redraw();
-      log.scrollTop = log.scrollHeight - height;
+      log.scrollTop += log.scrollHeight - height;
     } catch {
       /* попробуем при следующей прокрутке */
     } finally {
@@ -384,6 +469,33 @@ export function openRoom(room, onClose) {
       send();
     }
   });
+  const suggestions = body.querySelector('.chat-members');
+  let suggestTimer = 0;
+  let suggestVersion = 0;
+  input.addEventListener('input', () => {
+    clearTimeout(suggestTimer);
+    const version = ++suggestVersion;
+    suggestions.hidden = true;
+    const before = input.value.slice(0, input.selectionStart);
+    const match = before.match(/(?:^|\s)@([A-Za-zА-Яа-яЁё0-9_]*)$/);
+    if (match) suggestTimer = setTimeout(async () => {
+      try {
+        const { data } = await api(`/api/chat/rooms/${encodeURIComponent(room.id)}/members?q=${encodeURIComponent(match[1])}`);
+        if (version !== suggestVersion || !body.isConnected) return;
+        suggestions.innerHTML = data.items.map((item, index) => `<button type="button" data-member="${index}">@${esc(item.nick)}${item.grade ? ` · ${item.grade}` : ''}</button>`).join('');
+        suggestions.hidden = !data.items.length;
+        suggestions.querySelectorAll('button').forEach(button => button.addEventListener('click', () => {
+          const at = before.length - match[1].length - 1;
+          const insert = `@${data.items[Number(button.dataset.member)].nick} `;
+          input.value = input.value.slice(0, at) + insert + input.value.slice(before.length);
+          input.focus();
+          input.setSelectionRange(at + insert.length, at + insert.length);
+          suggestions.hidden = true;
+          ++suggestVersion;
+        }));
+      } catch { /* без подсказки можно набрать ник вручную */ }
+    }, 180);
+  });
   input.addEventListener('input', () => {
     input.style.height = '';
     input.style.height = `${Math.min(input.scrollHeight, 140)}px`;
@@ -398,7 +510,7 @@ export function openRoom(room, onClose) {
     redraw();
   };
   pinnedBar.addEventListener('click', () => {
-    list.querySelector(`[data-id="${pinnedBar.dataset.jump}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    jumpTo(pinnedBar.dataset.jump);
   });
   body.querySelector('.chat-poll-btn')?.addEventListener('click', () => openPollEditor(room, (message) => {
     remember([message]);
@@ -426,17 +538,32 @@ export function openRoom(room, onClose) {
     }
     const jump = event.target.closest('[data-jump]');
     if (jump) {
-      list.querySelector(`[data-id="${jump.dataset.jump}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      jumpTo(jump.dataset.jump);
       return;
     }
     if (event.target.closest('a')) return;
     const element = event.target.closest('[data-id]');
     if (!element) return;
     const message = messages.get(Number(element.dataset.id));
-    if (message) openActions(message, { setReply, update, moderator, admin, room, mention });
+    if (message && message.kind !== 'system') openActions(message, { setReply, update, moderator, admin, room, mention });
   });
 
-  const timer = setInterval(poll, POLL_MS);
+  const live = ({ detail }) => {
+    if (detail.room === room.id || detail.t === 'connected') poll();
+  };
+  chatEvents.addEventListener('change', live);
+  const timer = setInterval(() => {
+    if (!body.isConnected) {
+      clearInterval(timer);
+      chatEvents.removeEventListener('change', live);
+      watchRoom(topScreen()?.dataset.room || null);
+      refreshChatUnread();
+      onClose?.();
+      return;
+    }
+    watchRoom(document.hidden || topScreen() !== screen ? null : room.id);
+    if (!chatConnected()) poll();
+  }, POLL_MS);
   load();
 }
 
@@ -476,6 +603,7 @@ function openActions(message, { setReply, update, moderator, admin, room, mentio
       ${alive ? button('reply', 'Ответить') : ''}
       ${!message.mine ? button('mention', `Упомянуть ${esc(message.admin ? 'admin' : message.author)}`) : ''}
       ${alive ? button('copy', 'Скопировать') : ''}
+      ${message.mine || admin ? button('reads', 'Кто прочитал') : ''}
       ${author && alive ? button('report', 'Пожаловаться', 'danger') : ''}
       ${(message.mine || moderator) && !message.deleted ? button('delete', 'Удалить', 'danger') : ''}
       ${moderator && !message.deleted ? (message.hidden ? button('unhide', 'Показать снова') : button('hide', 'Скрыть')) : ''}
@@ -494,6 +622,13 @@ function openActions(message, { setReply, update, moderator, admin, room, mentio
   });
   const path = `/api/chat/messages/${message.id}`;
   on('reply', () => setReply(message));
+  on('reads', async () => {
+    const view = openSheet('Кто прочитал', skeleton(2));
+    try {
+      const { data } = await api(`${path}/reads`);
+      view.innerHTML = data.items.map(item => `<div class="chat-reader">${esc(item.nick)}${item.grade ? ` · ${item.grade}` : ''}</div>`).join('') || '<p class="muted">Пока никто не прочитал</p>';
+    } catch (error) { view.innerHTML = errorCard(error); }
+  });
   on('mention', () => mention(message));
   on('copy', async () => {
     try {
@@ -553,12 +688,17 @@ async function openReports(onClose) {
         <div class="muted small">${esc(item.room.title)} · жалоб: ${item.reports}${item.hidden ? ' · скрыто' : ''}</div>
         <div class="chat-author">${authorLabel(item)}</div>
         <div class="chat-text">${esc(item.text ?? '')}</div>
+        <button class="btn outline" data-jump-report="${index}">Перейти к сообщению</button>
         <div class="chat-report-actions">
           <button class="btn outline" data-r="${index}" data-a="dismiss">Всё в порядке</button>
           <button class="btn outline" data-r="${index}" data-a="hide">Скрыть</button>
           <button class="btn outline danger" data-r="${index}" data-a="delete">Удалить</button>
         </div>
       </div>`).join('');
+    body.querySelectorAll('[data-jump-report]').forEach(button => button.addEventListener('click', () => {
+      const item = items[Number(button.dataset.jumpReport)];
+      openRoom(item.room, draw, item.id);
+    }));
     body.querySelectorAll('[data-r]').forEach((button) => button.addEventListener('click', async () => {
       const item = items[Number(button.dataset.r)];
       if (await act(`/api/chat/messages/${item.id}/moderate`, { action: button.dataset.a })) draw();

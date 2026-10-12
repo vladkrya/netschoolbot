@@ -390,6 +390,19 @@ MIGRATIONS: list[str] = [
     UPDATE web_prefs SET payload = json_set(payload, '$.design', 'new')
     WHERE json_valid(payload);
     """,
+    # 20 — ники вместо настоящих имён, режим уведомлений чата (все / упоминания
+    # / выкл). Имена из уже отправленных сообщений стираем: подпись теперь
+    # берётся из профиля по нику.
+    """
+    ALTER TABLE chat_profiles ADD COLUMN nick TEXT;
+    ALTER TABLE chat_profiles ADD COLUMN nick_key TEXT;
+    ALTER TABLE chat_profiles ADD COLUMN nick_changed_at REAL NOT NULL DEFAULT 0;
+    CREATE UNIQUE INDEX chat_profiles_nick ON chat_profiles(nick_key);
+    ALTER TABLE chat_reads ADD COLUMN notify TEXT;
+    UPDATE chat_reads SET notify = 'off' WHERE muted = 1;
+    UPDATE chat_messages SET author_name = '' WHERE is_admin = 0;
+    CREATE INDEX chat_reads_room ON chat_reads(room, last_read);
+    """,
 ]
 
 

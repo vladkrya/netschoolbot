@@ -70,6 +70,11 @@ export function resetTabs() {
 /** Число у значка вкладки — например, непрочитанные письма у «Почты».
  *  Хранится здесь: панель пересобирается при смене набора вкладок. */
 const badges = {};
+const mailCounts = { mail: 0, chat: 0 };
+export function setMailBadge(source, count) {
+  mailCounts[source] = Math.max(0, Number(count) || 0);
+  setNavBadge('mail', mailCounts.mail + mailCounts.chat);
+}
 
 function badgeHtml(tab) {
   const count = badges[tab] || 0;

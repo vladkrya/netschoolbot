@@ -443,19 +443,23 @@ function demoChat(route, url, options, body) {
     joined: demoChatState.joined, admin: false, as_admin: false, moderator: false, reports: 0,
     reactions: ['👍', '❤️', '😂', '😮', '😢', '🔥'],
     rules: ['В чатах только ученики: вход проверяется через «Сетевой город».',
-      'Другим видно только твоё имя и номер класса — без фамилии.',
+      'Другим видно только твой ник и номер класса — без фамилии.',
       'Администрация видит все чаты и может удалять сообщения и блокировать нарушителей.',
       'В общем чате нельзя оставлять ссылки, телефоны и ники.'],
-    profile: demoChatState.joined ? { first_name: 'Отличник', class_name: '9б', grade: 9, banned: false, muted_until: 0 } : null,
+    nick_hint: '3–20 символов: буквы, цифры и _, начинается с буквы', unread_total: 2,
+    profile: demoChatState.joined ? { nick: demoChatState.nick || 'Отличник', class_name: '9б', grade: 9, banned: false, muted_until: 0 } : null,
     rooms: demoChatState.joined ? DEMO_ROOMS.map((room) => {
       const list = demoChatState.messages[room.id] || [];
       const last = list[list.length - 1];
-      return { ...room, unread: room.kind === 'grade' ? 2 : 0, muted: false,
+      return { ...room, unread: room.kind === 'grade' ? 2 : 0, notify: demoChatState.notify?.[room.id] || (room.kind === 'global' ? 'mentions' : 'all'),
         last: last ? { author: last.author, text: last.text, at: last.at } : null };
     }) : [],
   });
   if (route === '/api/chat') return overview();
-  if (route === '/api/chat/join') { demoChatState.joined = true; return overview(); }
+  if (route === '/api/chat/unread') return ok({ total: demoChatState.joined ? 2 : 0, live: false });
+  if (route === '/api/chat/nick') { demoChatState.nick = body.nick; return overview(); }
+  if (route === '/api/chat/join') { demoChatState.joined = true; demoChatState.nick = body.nick; return overview(); }
+  if (/\/reads$/.test(route)) return ok({ items: [{ nick: 'Маша', grade: 9 }], count: 1 });
   if (route === '/api/chat/leave') { demoChatState.joined = false; return overview(); }
   const action = route.match(/^\/api\/chat\/messages\/(\d+)\/(react|report|moderate|vote)$/);
   if (action) {
@@ -466,7 +470,7 @@ function demoChat(route, url, options, body) {
       const count = (message.reactions[body.emoji] || 0) + (mine ? -1 : 1);
       if (count) message.reactions[body.emoji] = count; else delete message.reactions[body.emoji];
     }
-    if (action[2] === 'moderate' && body.action === 'delete') Object.assign(message, { deleted: true, text: null });
+    if (action[2] === 'moderate' && body.action === 'delete') Object.assign(message, { deleted: true, deleted_by: 'author', text: null });
     if (action[2] === 'vote' && message.poll) {
       const poll = message.poll;
       if (poll.my != null) poll.options[poll.my].votes -= 1;
@@ -477,16 +481,18 @@ function demoChat(route, url, options, body) {
     }
     return ok({ ...message, reactions: { ...message.reactions }, my_reactions: [...message.my_reactions] });
   }
-  const match = route.match(/^\/api\/chat\/rooms\/([^/]+)\/(messages|read|mute)$/);
+  const match = route.match(/^\/api\/chat\/rooms\/([^/]+)\/(messages|read|mute|notify|members)$/);
   if (!match) return overview();
   const room = decodeURIComponent(match[1]);
   const list = (demoChatState.messages[room] ||= []);
+  if (match[2] === 'members') return ok({ items: ['Маша', 'Артём', 'Даня', 'admin'].filter(nick => nick.toLowerCase().startsWith((url.searchParams.get('q') || '').toLowerCase())).map(nick => ({ nick, grade: nick === 'admin' ? null : 9 })) });
+  if (match[2] === 'notify') { (demoChatState.notify ||= {})[room] = body.mode; return ok({ notify: body.mode }); }
   if (match[2] === 'read') return { ok: true };
   if (match[2] === 'mute') return ok({ muted: Boolean(body.muted) });
   if (options.method === 'POST') {
     const reply = list.find((m) => m.id === body.reply_to);
     const message = {
-      id: demoChatState.nextId++, author: 'Отличник', grade: 9, admin: false, mine: true, text: body.text,
+      id: demoChatState.nextId++, author: demoChatState.nick || 'Отличник', grade: 9, kind: 'text', admin: false, mine: true, text: body.text,
       deleted: false, hidden: false, pinned: false, at: Date.now() / 1000,
       reply: reply ? { id: reply.id, author: reply.author, text: reply.text } : null, reactions: {}, my_reactions: [],
       poll: body.poll ? { options: body.poll.options.map((text) => ({ text, votes: 0 })), total: 0, my: null } : null,
@@ -496,7 +502,7 @@ function demoChat(route, url, options, body) {
   }
   const after = url.searchParams.get('after');
   return ok({
-    room: DEMO_ROOMS.find((r) => r.id === room), moderator: false, admin: false, pinned: null, muted: false, now: Date.now() / 1000,
+    room: DEMO_ROOMS.find((r) => r.id === room), moderator: false, admin: false, pinned: null, notify: demoChatState.notify?.[room] || 'all', others_read: 0, now: Date.now() / 1000,
     messages: after != null ? list.filter((m) => m.id > Number(after)) : list.slice(-50),
     changed: [],
   });

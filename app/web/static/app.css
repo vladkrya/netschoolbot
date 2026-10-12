@@ -1692,3 +1692,21 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
 .chat-screen .screen-titles { margin-right: 0; }
 #pollOptions { display: flex; flex-direction: column; gap: 8px; margin: 8px 0; }
 #pollAdd { display: block; margin-bottom: 12px; }
+
+/* Реакции принадлежат пузырю и остаются внутри его ширины. */
+.chat-bubble { min-width: 0; overflow-wrap: anywhere; }
+.chat-reactions { max-width: 100%; justify-content: flex-start; }
+.chat-msg.mine .chat-reactions { justify-content: flex-end; }
+.chat-reaction { flex: none; white-space: nowrap; color: var(--text); }
+.chat-msg.mine .chat-reaction { color: #fff; background: rgba(255,255,255,.15); }
+.chat-system { margin: 10px auto; max-width: 90%; text-align: center; font-size: 12px; color: var(--text2); }
+.chat-highlight { outline: 2px solid var(--primary); outline-offset: 3px; border-radius: 12px; }
+.chat-members { display: flex; flex-direction: column; max-height: 180px; overflow-y: auto; padding: 4px 12px; background: var(--card); border-top: 1px solid var(--border); }
+.chat-members[hidden] { display: none; }
+.chat-members button { text-align: left; padding: 10px; border-radius: 8px; color: var(--primary); }
+.chat-reader { padding: 10px 0; border-bottom: 1px solid var(--border); }
+.chat-nick-form .field, .chat-consent .field { width: 100%; }
+.chat-report > .btn { width: 100%; margin-bottom: 8px; }
+.chat-poll { min-width: min(220px, 100%); }
+.chat-screen .screen-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-screen .screen-titles { min-width: 0; }

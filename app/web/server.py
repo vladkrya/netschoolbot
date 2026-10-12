@@ -22,6 +22,7 @@ import aiohttp_jinja2
 import jinja2
 from aiohttp import web
 
+from ..chat.hub import ChatHub
 from ..context import AppContext
 from . import api, assistant, bugreport, caldav, captcha_proxy, chat, lock
 from .api import BOT, CONTEXT
@@ -105,10 +106,12 @@ def create_app(context: AppContext, bot=None) -> web.Application:
     inner = web.Application(middlewares=[security_headers, caldav.root_discovery, compress_static, api.error_middleware, api.auth_middleware])
     inner[CONTEXT] = context
     inner[BOT] = bot
+    inner[chat.HUB] = ChatHub()
     async def stop_refreshes(app):
+        await app[chat.HUB].close()
         await context.stop_cache_refreshes()
 
-    inner.on_cleanup.append(stop_refreshes)
+    inner.on_shutdown.append(stop_refreshes)
 
     aiohttp_jinja2.setup(
         inner,

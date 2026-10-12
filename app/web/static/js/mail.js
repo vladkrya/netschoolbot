@@ -8,7 +8,7 @@ import { notify, select } from './haptics.js';
 import { ICONS } from './icons.js';
 import { popScreen, pushScreen } from './screens.js';
 import { closeSheet, openSheet } from './sheet.js';
-import { setNavBadge } from './tabs.js';
+import { setMailBadge } from './tabs.js';
 
 const AVATAR_COLORS = ['#a7b83a', '#4a9fd8', '#d8844a', '#9a6ad8', '#d84a6a', '#3ab89a'];
 
@@ -27,6 +27,7 @@ let newestFirst = true;
 
 export async function loadMail(force = false) {
   const container = $('mailContent');
+  if (mode !== 'chat') delete container.dataset.chatView;
   // Новое письмо, поиск и фильтры — только в разделе писем.
   $('composeBtn').hidden = mode !== 'mail';
   $('mailTools').hidden = mode !== 'mail';
@@ -58,7 +59,7 @@ export async function loadMail(force = false) {
 function render() {
   const messages = state.mail.messages || [];
   // Непрочитанные — числом у значка «Почты» в нижней панели.
-  setNavBadge('mail', messages.filter((message) => message.read === false).length);
+  setMailBadge('mail', messages.filter((message) => message.read === false).length);
   const container = $('mailContent');
   $('mailFilters').querySelectorAll('[data-filter]').forEach((chip) =>
     chip.classList.toggle('active', chip.dataset.filter === filter));
@@ -166,6 +167,16 @@ async function renderAnnouncements(body, force = false) {
 
 export function initMail() {
   const seg = $('mailSeg');
+  import('./chat-live.js').then(({ initChatLive }) => initChatLive());
+  const refreshMailBadge = async () => {
+    if (document.hidden) return;
+    try {
+      const { data } = await api('/api/mail');
+      setMailBadge('mail', (data.messages || []).filter(message => message.read === false).length);
+    } catch { /* сеть вернётся — обновим */ }
+  };
+  refreshMailBadge();
+  setInterval(refreshMailBadge, 60000);
   seg.addEventListener('click', (event) => {
     const button = event.target.closest('[data-mail-mode]');
     if (!button || button.dataset.mailMode === mode) return;

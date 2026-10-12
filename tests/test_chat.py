@@ -1,5 +1,7 @@
 """Школьные чаты: кто попадает, что видно и что нельзя писать."""
 
+import hashlib
+
 import pytest
 from aiohttp.test_utils import TestClient, TestServer
 
@@ -40,8 +42,9 @@ async def student_token(app_context, users):
     return await app_context.miniapp.issue_token(2)
 
 
-async def join(client, token):
-    response = await client.post(f"{BASE}/api/chat/join", params={"token": token}, json={"consent": True})
+async def join(client, token, nick=None):
+    nick = nick or "Student_" + hashlib.sha1(token.encode()).hexdigest()[:8]
+    response = await client.post(f"{BASE}/api/chat/join", params={"token": token}, json={"consent": True, "nick": nick})
     return response.status, await response.json()
 
 
@@ -96,7 +99,8 @@ class TestJoin:
         assert [room["kind"] for room in rooms] == ["grade", "school", "global"]
         assert [room["title"] for room in rooms[:2]] == ["9-е классы · школа №1", "Школа №1"]
         assert rooms[2]["id"] == "global:6-11" and rooms[2]["title"] == "Общий чат"
-        assert body["data"]["profile"]["first_name"] == "Пётр"
+        assert body["data"]["profile"]["nick"].startswith("Student_")
+        assert "first_name" not in body["data"]["profile"]
 
 
 class TestMessages:
@@ -105,10 +109,10 @@ class TestMessages:
         room = body["data"]["rooms"][0]["id"]
         status, sent = await send(client, student_token, room, "привет, 9б")
         assert status == 200
-        assert (sent["data"]["author"], sent["data"]["grade"], sent["data"]["admin"]) == ("Пётр", 9, False)
+        assert (sent["data"]["author"], sent["data"]["grade"], sent["data"]["admin"]) == (body["data"]["profile"]["nick"], 9, False)
         listing = await (await client.get(f"{BASE}/api/chat/rooms/{room}/messages",
                                           params={"token": student_token})).json()
-        assert [m["text"] for m in listing["data"]["messages"]] == ["привет, 9б"]
+        assert [m["text"] for m in listing["data"]["messages"] if m["kind"] != "system"] == ["привет, 9б"]
 
     async def test_rate_limit(self, client, student_token, monkeypatch):
         monkeypatch.setattr("app.web.chat.SEND_INTERVAL_S", 60)
@@ -146,10 +150,10 @@ class TestMessages:
         status, sent = await send(client, admin_token, class_room, "ответ")
         assert status == 200 and sent["data"]["author"] == "admin" and sent["data"]["grade"] is None
         # От своего профиля — после вступления и переключения.
-        await join(client, admin_token)
+        await join(client, admin_token, "Vlad_9")
         await client.post(f"{BASE}/api/chat/identity", params={"token": admin_token}, json={"as_admin": False})
         _, sent = await send(client, admin_token, class_room, "а теперь я")
-        assert (sent["data"]["author"], sent["data"]["grade"]) == ("Владислав", 9)
+        assert (sent["data"]["author"], sent["data"]["grade"]) == ("Vlad_9", 9)
 
     async def test_unread_and_polling(self, client, admin_token, student_token):
         _, body = await join(client, student_token)
@@ -297,14 +301,15 @@ class TestPollsAndNotifications:
             sent_to.append((user.telegram_id, kind))
 
         app_context.watchers.notifier.send_text = capture
-        _, body = await join(client, student_token)  # Пётр, 9б
+        _, body = await join(client, student_token, "Petya_9")  # ник ученика
         room = body["data"]["rooms"][0]["id"]
         other = await make_student(app_context, users, 50, "Орлова Маша")
         await join(client, other)
+        await post(client, f"/api/chat/rooms/{room}/notify", student_token, {"mode": "mentions"})
         await send(client, other, room, "всем привет")  # без упоминания — тихо
         await asyncio.sleep(0.05)
         assert sent_to == []
-        await send(client, other, room, "@Пётр ты сделал алгебру?")
+        await send(client, other, room, "@Petya_9 ты сделал алгебру?")
         await asyncio.sleep(0.05)
         assert sent_to == [(2, "chat")]
         listing = await (await client.get(f"{BASE}/api/chat/rooms/{room}/messages",
@@ -315,7 +320,7 @@ class TestPollsAndNotifications:
         assert sent_to[-1] == (50, "chat")
         # Заглушил чат — уведомлений нет.
         await post(client, f"/api/chat/rooms/{room}/mute", student_token, {"muted": True})
-        await send(client, other, room, "@Петр ау")
+        await send(client, other, room, "@Petya_9 ау")
         await asyncio.sleep(0.05)
         assert sent_to[-1] == (50, "chat") and len(sent_to) == 2
 
@@ -339,4 +344,204 @@ async def test_migration_switches_everyone_to_new_design(tmp_path):
     await migrate(db)
     row = await (await db.execute("SELECT payload FROM web_prefs WHERE telegram_id = 1")).fetchone()
     assert json.loads(row[0]) == {"design": "new", "theme": "dark"}
+    await db.close()
+
+
+class TestChatContinuation:
+    async def test_nicks_unique_reserved_and_private(self, client, app_context, users, student_token, admin_token):
+        for nick in ('admin', 'Аdmin', 'adm1n', 'ab', 'bad name'):
+            status, _ = await join(client, student_token, nick)
+            assert status == 400
+        _, profile = await join(client, student_token, 'Cosmos_9')
+        room = profile['data']['rooms'][0]['id']
+        other = await make_student(app_context, users, 60, 'Петров Иван')
+        assert (await join(client, other, 'cоsmоs_9'))[0] == 400  # русские «о»
+        assert (await join(client, other, 'Moon_9'))[0] == 200
+        _, msg = await send(client, student_token, room, 'Привет')
+        assert msg['data']['author'] == 'Cosmos_9'
+        listing = await (await client.get(f'{BASE}/api/chat/rooms/{room}/messages', params={'token': other})).json()
+        assert 'Пётр' not in str(listing) and 'Иванов' not in str(listing)
+        assert 'first_name' not in profile['data']['profile']
+        status, _ = await post(client, '/api/chat/nick', student_token, {'nick': 'Other_9'})
+        assert status == 400  # раз в сутки
+        response = await client.get(f'{BASE}/api/chat/rooms/{room}/members', params={'token': other, 'q': 'Cos'})
+        assert (await response.json())['data']['items'] == [{'nick': 'Cosmos_9', 'grade': 9}]
+
+    async def test_existing_profile_requires_nick_and_migration_scrubs_names(self, client, db, student_token):
+        from app.chat.repository import ChatRepository
+        repo = ChatRepository(db)
+        profile = await repo.save_profile(2, netschool_user_id=202, school_key='oldschool', school_name='Школа',
+                                         class_name='9б', grade=9, first_name='Пётр', consent=True)
+        room = rules.rooms_for(profile['school_key'], '9б', 9)[0].id
+        status, data = await send(client, student_token, room, 'Привет')
+        assert status == 403 and data['reason'] == 'nick'
+        status, data = await post(client, '/api/chat/nick', student_token, {'nick': 'Cosmos_9'})
+        assert status == 200 and data['data']['profile']['nick'] == 'Cosmos_9'
+        assert (await send(client, student_token, room, 'Привет'))[0] == 200
+
+    async def test_admin_access_independent_of_signature(self, client, app_context, users, student_token, admin_token):
+        await join(client, student_token, 'Cosmos_9')
+        await join(client, admin_token, 'Vlad_9')
+        await post(client, '/api/chat/identity', admin_token, {'as_admin': False})
+        foreign = make_user(65, student_name='Иван Иванов')
+        from dataclasses import replace
+        await users.save(replace(foreign, school=replace(foreign.school, name='Школа №65')))
+        token = await app_context.miniapp.issue_token(65)
+        app_context.diary.chat_identities[65] = {'is_student': True, 'user_id': 265, 'name': 'Иван Иванов', 'class_name': '8а'}
+        _, joined = await join(client, token, 'Alien_8')
+        room = joined['data']['rooms'][0]['id']
+        overview = await (await client.get(f'{BASE}/api/chat', params={'token': admin_token})).json()
+        assert room in [r['id'] for r in overview['data']['rooms']]
+        assert not overview['data']['as_admin'] and overview['data']['moderator']
+        _, sent = await send(client, admin_token, room, 'Я от своего имени')
+        assert sent['data']['author'] == 'Vlad_9' and not sent['data']['admin']
+        assert (await post(client, f"/api/chat/messages/{sent['data']['id']}/moderate", admin_token, {'action': 'pin'}))[0] == 200
+        assert (await send(client, student_token, room, 'Нет доступа'))[0] == 404
+
+    async def test_read_receipts_and_read_bounds(self, client, app_context, users, student_token, admin_token):
+        _, joined = await join(client, student_token, 'Cosmos_9')
+        room = joined['data']['rooms'][0]['id']
+        other = await make_student(app_context, users, 70, 'Петров Иван')
+        await join(client, other, 'Moon_9')
+        _, msg = await send(client, student_token, room, 'Прочитай')
+        mid = msg['data']['id']
+        assert (await post(client, f'/api/chat/rooms/{room}/read', other, {'last_id': 99999999}))[0] == 404
+        assert (await post(client, f'/api/chat/rooms/{room}/read', other, {'last_id': mid}))[0] == 200
+        readers = await (await client.get(f'{BASE}/api/chat/messages/{mid}/reads', params={'token': student_token})).json()
+        assert readers['data'] == {'items': [{'nick': 'Moon_9', 'grade': 9}], 'count': 1}
+        assert (await client.get(f'{BASE}/api/chat/messages/{mid}/reads', params={'token': other})).status == 403
+        listing = await (await client.get(f'{BASE}/api/chat/rooms/{room}/messages', params={'token': student_token})).json()
+        assert listing['data']['messages'][-1]['read']
+        _, school_msg = await send(client, student_token, joined['data']['rooms'][1]['id'], 'Другая комната')
+        assert (await post(client, f'/api/chat/rooms/{room}/read', other, {'last_id': school_msg['data']['id']}))[0] == 404
+
+    async def test_report_jump_and_deletion_actor(self, client, app_context, users, student_token, admin_token):
+        _, joined = await join(client, student_token, 'Cosmos_9')
+        room = joined['data']['rooms'][0]['id']
+        other = await make_student(app_context, users, 75, 'Петров Иван')
+        await join(client, other, 'Moon_9')
+        _, msg = await send(client, student_token, room, 'Жалоба на старое сообщение')
+        mid = msg['data']['id']
+        await post(client, f'/api/chat/messages/{mid}/report', other, {})
+        from app.chat.repository import ChatRepository
+        repo = ChatRepository(app_context.db)
+        for _ in range(60):
+            await repo.add_message(room, author_id=1, author_name='admin', author_grade=None, is_admin=True, text='Позже')
+        latest = await (await client.get(f'{BASE}/api/chat/rooms/{room}/messages', params={'token': admin_token})).json()
+        assert mid not in [m['id'] for m in latest['data']['messages']]
+        around = await (await client.get(f'{BASE}/api/chat/rooms/{room}/messages', params={'token': admin_token, 'around': mid})).json()
+        assert mid in [m['id'] for m in around['data']['messages']]
+        _, deleted = await post(client, f'/api/chat/messages/{mid}/moderate', admin_token, {'action': 'delete'})
+        assert deleted['data']['deleted_by'] == 'admin' and deleted['data']['text'] is None
+
+    async def test_unread_modes_and_system_messages(self, client, student_token, admin_token):
+        _, joined = await join(client, student_token, 'Cosmos_9')
+        room = joined['data']['rooms'][0]['id']
+        await send(client, admin_token, room, 'Раз')
+        await send(client, admin_token, room, 'Два')
+        unread = await (await client.get(f'{BASE}/api/chat/unread', params={'token': student_token})).json()
+        assert unread['data']['total'] == 2 and unread['data']['live']
+        await post(client, f'/api/chat/rooms/{room}/notify', student_token, {'mode': 'off'})
+        unread = await (await client.get(f'{BASE}/api/chat/unread', params={'token': student_token})).json()
+        assert unread['data']['total'] == 0
+        assert (await post(client, f'/api/chat/rooms/{room}/notify', student_token, {'mode': 'unknown'}))[0] == 400
+        await post(client, f'/api/chat/rooms/{room}/notify', student_token, {'mode': 'all'})
+        unread = await (await client.get(f'{BASE}/api/chat/unread', params={'token': student_token})).json()
+        assert unread['data']['total'] == 2
+
+    async def test_notification_modes_admin_mention_and_leave(self, client, app_context, users, student_token, admin_token):
+        import asyncio
+        from app.web.chat import _last_notified
+        _last_notified.clear()
+        captured = []
+        async def capture(user, text, *, push=None, kind=''):
+            captured.append(user.telegram_id)
+        app_context.watchers.notifier.send_text = capture
+        _, joined = await join(client, student_token, 'Cosmos_9')
+        room = joined['data']['rooms'][0]['id']
+        other = await make_student(app_context, users, 80, 'Петров Иван')
+        await join(client, other, 'Moon_9')
+        await send(client, other, room, 'Всем привет')
+        await asyncio.sleep(.05)
+        assert captured == [2]  # школьные чаты: все сообщения по умолчанию
+        await post(client, f'/api/chat/rooms/{room}/notify', student_token, {'mode': 'mentions'})
+        await send(client, other, room, 'Просто сообщение')
+        await asyncio.sleep(.05)
+        assert captured == [2]
+        await send(client, other, 'global:6-11', '@Cosmos_9 и @admin привет')
+        await asyncio.sleep(.05)
+        assert set(captured[-2:]) == {1, 2}
+        await post(client, f'/api/chat/rooms/{room}/notify', student_token, {'mode': 'all'})
+        await post(client, '/api/chat/leave', student_token, {})
+        _last_notified.clear()
+        captured.clear()
+        await send(client, other, room, 'Ученик уже вышел')
+        await asyncio.sleep(.05)
+        assert captured == []
+
+    async def test_websocket_ticket_and_room_delivery(self, client, app_context, users, student_token, admin_token):
+        import asyncio
+        from aiohttp import WSServerHandshakeError
+        _, joined = await join(client, student_token, 'Cosmos_9')
+        room = joined['data']['rooms'][0]['id']
+        _, data = await post(client, '/api/chat/ws-ticket', student_token, {})
+        ticket = data['data']['ticket']
+        with pytest.raises(WSServerHandshakeError):
+            await client.ws_connect(f'{BASE}/api/chat/ws?ticket=bad')
+        ws = await client.ws_connect(f'{BASE}/api/chat/ws?ticket={ticket}')
+        assert await ws.receive_json(timeout=2) == {'t': 'hello'}
+        await ws.send_json({'t': 'open', 'room': room})
+        await ws.send_json({'t': 'ping'})
+        assert await ws.receive_json(timeout=2) == {'t': 'pong'}
+        notified = []
+        async def capture(user, text, *, push=None, kind=''):
+            notified.append(user.telegram_id)
+        app_context.watchers.notifier.send_text = capture
+        _, sent = await send(client, admin_token, room, 'Мгновенно')
+        await asyncio.sleep(.05)
+        assert notified == []  # открытый чат не дублирует событие уведомлением
+        event = await ws.receive_json(timeout=2)
+        assert event == {'t': 'msg', 'room': room, 'id': sent['data']['id']}
+        await post(client, f"/api/chat/messages/{sent['data']['id']}/react", student_token, {'emoji': '🔥'})
+        assert (await ws.receive_json(timeout=2))['t'] == 'upd'
+        await send(client, admin_token, 'grade:deadbeef0000:9', 'Чужая школа')
+        await ws.send_json({'t': 'ping'})
+        assert await ws.receive_json(timeout=2) == {'t': 'pong'}  # чужую комнату не слышит
+        await post(client, '/api/chat/leave', student_token, {})
+        for _ in range(4):
+            await ws.receive(timeout=2)
+            if ws.closed:
+                break
+        assert ws.closed
+        await ws.close()
+
+    async def test_ws_ticket_requires_pin_unlock_and_expires(self, client, app_context, student_token):
+        from app.web.chat import issue_ws_ticket, verify_ws_ticket
+        ticket = issue_ws_ticket(app_context, 2, now=100)
+        assert verify_ws_ticket(app_context, ticket, now=159) == 2
+        assert verify_ws_ticket(app_context, ticket, now=161) is None
+        assert verify_ws_ticket(app_context, ticket + 'bad', now=100) is None
+        await post(client, '/api/lock/pin', student_token, {'pin': '4826'})
+        response = await client.post(f'{BASE}/api/chat/ws-ticket', params={'token': student_token}, json={})
+        assert response.status == 423
+        _, unlocked = await post(client, '/api/lock/unlock', student_token, {'pin': '4826'})
+        response = await client.post(f'{BASE}/api/chat/ws-ticket', params={'token': student_token},
+                                     headers={'X-Netschool-Unlock': unlocked['data']['unlock']}, json={})
+        assert response.status == 200
+
+
+async def test_nick_migration_hides_previous_names(tmp_path):
+    import aiosqlite
+    from app.db.migrations import MIGRATIONS, migrate
+    db = await aiosqlite.connect(tmp_path / 'old.sqlite3')
+    for version, script in enumerate(MIGRATIONS[:19], 1):
+        await db.executescript(script)
+        await db.execute(f'PRAGMA user_version = {version}')
+    await db.execute('INSERT INTO users (telegram_id) VALUES (2)')
+    await db.execute("INSERT INTO chat_messages (room, author_id, author_name, text, created_at, updated_at) VALUES ('global:6-11', 2, 'Пётр', 'Привет', 1, 1)")
+    await db.execute("INSERT INTO chat_reads (telegram_id, room, muted) VALUES (2, 'global:6-11', 1)")
+    await db.commit()
+    await migrate(db)
+    assert (await (await db.execute('SELECT author_name FROM chat_messages')).fetchone())[0] == ''
+    assert (await (await db.execute('SELECT notify FROM chat_reads')).fetchone())[0] == 'off'
     await db.close()

@@ -214,6 +214,16 @@ async def auth_middleware(request: web.Request, handler):
         request[USER] = user
         return await handler(request)
 
+    # Короткий билет выдан запросом, прошедшим обычную авторизацию и PIN.
+    if request.path.rstrip('/').endswith('/api/chat/ws'):
+        from .chat import verify_ws_ticket
+        telegram_id = verify_ws_ticket(context(request), ticket)
+        user = await context(request).users.get(telegram_id) if telegram_id else None
+        if user is None:
+            return json_error("Билет чата устарел", status=401, reason="auth")
+        request[USER] = user
+        return await handler(request)
+
     telegram_id, method = await resolve_identity(request)
     if telegram_id is None:
         return json_error(
