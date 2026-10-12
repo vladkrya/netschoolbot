@@ -11,6 +11,12 @@ from tests.test_repositories import make_user
 BASE = "/mini"
 
 
+@pytest.fixture(autouse=True)
+def no_send_interval(monkeypatch):
+    # Лимит частоты проверяется отдельно; в остальных тестах он мешает.
+    monkeypatch.setattr("app.web.chat.SEND_INTERVAL_S", 0)
+
+
 @pytest.fixture
 async def client(app_context) -> TestClient:
     client = TestClient(TestServer(create_app(app_context)))
@@ -96,6 +102,13 @@ class TestMessages:
                                           params={"token": student_token})).json()
         assert [m["text"] for m in listing["data"]["messages"]] == ["привет, 9б"]
 
+    async def test_rate_limit(self, client, student_token, monkeypatch):
+        monkeypatch.setattr("app.web.chat.SEND_INTERVAL_S", 60)
+        _, body = await join(client, student_token)
+        room = body["data"]["rooms"][0]["id"]
+        assert (await send(client, student_token, room, "раз"))[0] == 200
+        assert (await send(client, student_token, room, "два"))[0] == 429
+
     async def test_global_room_blocks_contacts(self, client, student_token):
         await join(client, student_token)
         status, body = await send(client, student_token, "global:8-9", "пиши мне t.me/kek")
@@ -138,3 +151,106 @@ class TestMessages:
                           json={"last_id": last_id})
         overview = await (await client.get(f"{BASE}/api/chat", params={"token": student_token})).json()
         assert overview["data"]["rooms"][0]["unread"] == 0
+
+
+async def make_student(app_context, users, telegram_id, name, class_name="9б"):
+    await users.save(make_user(telegram_id, student_name=name))
+    identities = getattr(app_context.diary, "chat_identities", {})
+    identities[telegram_id] = {"is_student": True, "user_id": 200 + telegram_id, "name": name, "class_name": class_name}
+    app_context.diary.chat_identities = identities
+    return await app_context.miniapp.issue_token(telegram_id)
+
+
+async def post(client, path, token, body):
+    response = await client.post(f"{BASE}{path}", params={"token": token}, json=body)
+    return response.status, await response.json()
+
+
+class TestModeration:
+    async def test_reactions_toggle(self, client, student_token):
+        _, body = await join(client, student_token)
+        room = body["data"]["rooms"][0]["id"]
+        _, sent = await send(client, student_token, room, "ура")
+        mid = sent["data"]["id"]
+        _, reacted = await post(client, f"/api/chat/messages/{mid}/react", student_token, {"emoji": "🔥"})
+        assert reacted["data"]["reactions"] == {"🔥": 1} and reacted["data"]["my_reactions"] == ["🔥"]
+        _, reacted = await post(client, f"/api/chat/messages/{mid}/react", student_token, {"emoji": "🔥"})
+        assert reacted["data"]["reactions"] == {}
+        status, _ = await post(client, f"/api/chat/messages/{mid}/react", student_token, {"emoji": "💩"})
+        assert status == 400
+
+    async def test_three_reports_hide(self, client, app_context, users, student_token):
+        _, body = await join(client, student_token)
+        room = body["data"]["rooms"][0]["id"]
+        _, sent = await send(client, student_token, room, "обидное")
+        mid = sent["data"]["id"]
+        status, _ = await post(client, f"/api/chat/messages/{mid}/report", student_token, {})
+        assert status == 400  # на своё нельзя
+        tokens = [await make_student(app_context, users, 10 + i, f"Ученик{i} Имя{i}") for i in range(3)]
+        for token in tokens:
+            await join(client, token)
+        await post(client, f"/api/chat/messages/{mid}/report", tokens[0], {})
+        await post(client, f"/api/chat/messages/{mid}/report", tokens[0], {})  # повтор не считается
+        _, data = await post(client, f"/api/chat/messages/{mid}/report", tokens[1], {})
+        assert not data["data"]["hidden"]
+        _, data = await post(client, f"/api/chat/messages/{mid}/report", tokens[2], {})
+        assert data["data"]["hidden"] and data["data"]["text"] is None
+
+    async def test_delete_own_but_not_others(self, client, app_context, users, student_token):
+        _, body = await join(client, student_token)
+        room = body["data"]["rooms"][0]["id"]
+        other = await make_student(app_context, users, 20, "Петров Иван")
+        await join(client, other)
+        _, sent = await send(client, student_token, room, "опечатка")
+        mid = sent["data"]["id"]
+        status, _ = await post(client, f"/api/chat/messages/{mid}/moderate", other, {"action": "delete"})
+        assert status == 403
+        _, data = await post(client, f"/api/chat/messages/{mid}/moderate", student_token, {"action": "delete"})
+        assert data["data"]["deleted"] and data["data"]["text"] is None
+
+    async def test_school_moderator_and_mute(self, client, app_context, users, admin_token, student_token):
+        _, body = await join(client, student_token)
+        room = body["data"]["rooms"][0]["id"]
+        mod = await make_student(app_context, users, 30, "Сидорова Аня", class_name="11а")
+        _, mod_body = await join(client, mod)
+        # Модератора назначает администратор — по его сообщению.
+        _, sent = await send(client, mod, mod_body["data"]["rooms"][2]["id"], "я тут")
+        status, _ = await post(client, f"/api/chat/messages/{sent['data']['id']}/author", student_token,
+                               {"action": "moderator"})
+        assert status == 403
+        _, data = await post(client, f"/api/chat/messages/{sent['data']['id']}/author", admin_token,
+                             {"action": "moderator"})
+        assert data["data"]["moderator"]
+        # Модератор видит чужой класс своей школы и мьютит автора.
+        _, bad = await send(client, student_token, room, "спам")
+        status, _ = await post(client, f"/api/chat/messages/{bad['data']['id']}/moderate", mod, {"action": "hide"})
+        assert status == 200
+        await post(client, f"/api/chat/messages/{bad['data']['id']}/author", mod, {"action": "mute", "minutes": 60})
+        status, data = await send(client, student_token, room, "ещё спам")
+        assert status == 403 and "мин" in data["error"]
+        # В общем чате модератор школы — обычный участник.
+        _, glob = await send(client, mod, "global:10-11", "привет")
+        status, _ = await post(client, f"/api/chat/messages/{glob['data']['id']}/moderate", mod, {"action": "pin"})
+        assert status == 403
+
+    async def test_ban_and_reports_queue(self, client, app_context, users, admin_token, student_token):
+        _, body = await join(client, student_token)
+        room = body["data"]["rooms"][0]["id"]
+        other = await make_student(app_context, users, 40, "Кузнецов Олег")
+        await join(client, other)
+        _, sent = await send(client, student_token, room, "плохое")
+        await post(client, f"/api/chat/messages/{sent['data']['id']}/report", other, {})
+        queue = await (await client.get(f"{BASE}/api/chat/reports", params={"token": admin_token})).json()
+        assert [item["id"] for item in queue["data"]["items"]] == [sent["data"]["id"]]
+        assert queue["data"]["items"][0]["reports"] == 1
+        await post(client, f"/api/chat/messages/{sent['data']['id']}/author", admin_token, {"action": "ban"})
+        status, data = await send(client, student_token, room, "снова")
+        assert status == 403 and "заблокированы" in data["error"]
+        await post(client, f"/api/chat/messages/{sent['data']['id']}/moderate", admin_token, {"action": "dismiss"})
+        queue = await (await client.get(f"{BASE}/api/chat/reports", params={"token": admin_token})).json()
+        assert queue["data"]["items"] == []
+        status, _ = await post(client, f"/api/chat/messages/{sent['data']['id']}/moderate", admin_token,
+                               {"action": "pin"})
+        listing = await (await client.get(f"{BASE}/api/chat/rooms/{room}/messages",
+                                          params={"token": other})).json()
+        assert listing["data"]["pinned"]["id"] == sent["data"]["id"]

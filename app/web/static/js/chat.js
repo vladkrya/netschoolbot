@@ -82,9 +82,16 @@ function renderRooms(container) {
         <button class="chip ${overview.as_admin ? '' : 'active'}" data-as-admin="0">${esc(overview.profile.first_name)}</button>
       </div>
     </div>` : '';
+  const reports = overview.moderator ? `
+    <button class="card chat-room chat-reports" id="chatReports">
+      <span class="chat-room-icon">⚠️</span>
+      <span class="chat-room-main"><span class="chat-room-title">Жалобы</span>
+        <span class="chat-room-last">${overview.reports ? `Ждут решения: ${overview.reports}` : 'Новых нет'}</span></span>
+      ${overview.reports ? `<span class="nav-badge chat-unread">${overview.reports}</span>` : ''}
+    </button>` : '';
   const joinHint = overview.admin && !overview.joined
     ? '<button class="card chat-join-hint" id="chatJoinSelf">Вступить, чтобы писать и от своего имени ›</button>' : '';
-  container.innerHTML = identity + joinHint + overview.rooms.map((room, index) => `
+  container.innerHTML = identity + reports + joinHint + overview.rooms.map((room, index) => `
     <button class="card chat-room" data-room="${index}">
       <span class="chat-room-icon kind-${room.kind}">${ICONS.mail}</span>
       <span class="chat-room-main">
@@ -116,6 +123,7 @@ function renderRooms(container) {
     }
   }));
   container.querySelector('#chatJoinSelf')?.addEventListener('click', () => renderConsent(container));
+  container.querySelector('#chatReports')?.addEventListener('click', () => openReports(() => renderChats(container, true)));
   container.querySelector('#chatLeave')?.addEventListener('click', async () => {
     if (!window.confirm('Выйти из чатов? Твои сообщения останутся, а вступить можно снова.')) return;
     overview = (await api('/api/chat/leave', { method: 'POST', body: '{}' })).data;
@@ -172,6 +180,7 @@ export function openRoom(room, onClose) {
   const screen = body.closest('.screen');
   screen.classList.add('chat-screen');
   body.innerHTML = `
+    <button class="chat-pinned" hidden></button>
     <div class="chat-log"><div class="chat-older" hidden>Загрузка…</div><div class="chat-list"></div></div>
     <div class="chat-replying" hidden><span></span><button type="button" aria-label="Не отвечать">✕</button></div>
     <form class="chat-composer">
@@ -190,6 +199,17 @@ export function openRoom(room, onClose) {
   let exhausted = false;
   let loadingOlder = false;
   let readSent = 0;
+  let moderator = false;
+  let admin = false;
+  const pinnedBar = body.querySelector('.chat-pinned');
+
+  const showPinned = (pinned) => {
+    pinnedBar.hidden = !pinned;
+    if (pinned) {
+      pinnedBar.dataset.jump = pinned.id;
+      pinnedBar.innerHTML = `<b>📌 Закреплено</b><span>${esc(pinned.text || '')}</span>`;
+    }
+  };
 
   const nearBottom = () => log.scrollHeight - log.scrollTop - log.clientHeight < 80;
   const toBottom = () => { log.scrollTop = log.scrollHeight; };
@@ -227,6 +247,9 @@ export function openRoom(room, onClose) {
       const { data } = await api(`/api/chat/rooms/${encodeURIComponent(room.id)}/messages`);
       remember(data.messages);
       since = data.now;
+      moderator = data.moderator;
+      admin = data.admin;
+      showPinned(data.pinned);
       exhausted = data.messages.length < 50;
       redraw();
       toBottom();
@@ -247,6 +270,7 @@ export function openRoom(room, onClose) {
       const { data } = await api(
         `/api/chat/rooms/${encodeURIComponent(room.id)}/messages?after=${lastId}&since=${since}`);
       since = data.now;
+      showPinned(data.pinned);
       if (!data.messages.length && !data.changed.length) return;
       const stick = nearBottom();
       remember(data.messages);
@@ -333,7 +357,20 @@ export function openRoom(room, onClose) {
     if (log.scrollTop < 60) loadOlder();
     if (nearBottom()) markRead();
   });
+  const update = (message) => {
+    messages.set(message.id, message);
+    redraw();
+  };
+  pinnedBar.addEventListener('click', () => {
+    list.querySelector(`[data-id="${pinnedBar.dataset.jump}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  });
   list.addEventListener('click', (event) => {
+    const react = event.target.closest('[data-react]');
+    if (react) {
+      const element = react.closest('[data-id]');
+      toggleReaction(Number(element.dataset.id), react.dataset.react, update);
+      return;
+    }
     const jump = event.target.closest('[data-jump]');
     if (jump) {
       list.querySelector(`[data-id="${jump.dataset.jump}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
@@ -343,26 +380,67 @@ export function openRoom(room, onClose) {
     const element = event.target.closest('[data-id]');
     if (!element) return;
     const message = messages.get(Number(element.dataset.id));
-    if (message) openActions(message, { setReply });
+    if (message) openActions(message, { setReply, update, moderator, admin, room });
   });
 
   const timer = setInterval(poll, POLL_MS);
   load();
 }
 
-function openActions(message, { setReply }) {
+async function toggleReaction(id, emoji, update) {
+  select();
+  try {
+    const { data } = await api(`/api/chat/messages/${id}/react`, { method: 'POST', body: JSON.stringify({ emoji }) });
+    update(data);
+  } catch (error) {
+    banner(error.message, true);
+  }
+}
+
+async function act(path, body, done) {
+  try {
+    const { data } = await api(path, { method: 'POST', body: JSON.stringify(body) });
+    done?.(data);
+    return data;
+  } catch (error) {
+    notify('error');
+    banner(error.message, true);
+    return null;
+  }
+}
+
+function openActions(message, { setReply, update, moderator, admin, room }) {
   tap();
+  const alive = message.text != null;
+  const canReact = !message.deleted;
+  const author = !message.mine && !message.admin;
+  const button = (act, label, extra = '') => `<button class="btn outline ${extra}" data-act="${act}">${label}</button>`;
   const sheet = openSheet('', `
+    ${canReact ? `<div class="chat-react-row">${(overview?.reactions || ['👍', '❤️', '😂', '😮', '😢', '🔥'])
+      .map((emoji) => `<button class="chat-react-pick ${message.my_reactions?.includes(emoji) ? 'on' : ''}"
+        data-pick="${emoji}">${emoji}</button>`).join('')}</div>` : ''}
     <div class="chat-actions">
-      ${message.text != null ? '<button class="btn outline" data-act="reply">Ответить</button>' : ''}
-      ${message.text != null ? '<button class="btn outline" data-act="copy">Скопировать</button>' : ''}
+      ${alive ? button('reply', 'Ответить') : ''}
+      ${alive ? button('copy', 'Скопировать') : ''}
+      ${author && alive ? button('report', 'Пожаловаться', 'danger') : ''}
+      ${(message.mine || moderator) && !message.deleted ? button('delete', 'Удалить', 'danger') : ''}
+      ${moderator && !message.deleted ? (message.hidden ? button('unhide', 'Показать снова') : button('hide', 'Скрыть')) : ''}
+      ${moderator && alive ? (message.pinned ? button('unpin', 'Открепить') : button('pin', 'Закрепить')) : ''}
+      ${moderator && author ? button('mute60', 'Запретить писать на 1 час') + button('mute1440', 'Запретить писать на сутки') : ''}
+      ${admin && author ? button('ban', 'Заблокировать в чатах', 'danger') + button('unban', 'Разблокировать') : ''}
+      ${admin && author && room.kind !== 'global' ? button('moderator', 'Сделать модератором школы') + button('unmoderator', 'Снять модератора') : ''}
     </div>`);
-  sheet.querySelector('[data-act="reply"]')?.addEventListener('click', () => {
+  sheet.querySelectorAll('[data-pick]').forEach((pick) => pick.addEventListener('click', () => {
     closeSheet();
-    setReply(message);
+    toggleReaction(message.id, pick.dataset.pick, update);
+  }));
+  const on = (name, handler) => sheet.querySelector(`[data-act="${name}"]`)?.addEventListener('click', () => {
+    closeSheet();
+    handler();
   });
-  sheet.querySelector('[data-act="copy"]')?.addEventListener('click', async () => {
-    closeSheet();
+  const path = `/api/chat/messages/${message.id}`;
+  on('reply', () => setReply(message));
+  on('copy', async () => {
     try {
       await navigator.clipboard.writeText(message.text);
       banner('Скопировано');
@@ -371,4 +449,71 @@ function openActions(message, { setReply }) {
       /* буфер обмена недоступен */
     }
   });
+  on('report', () => act(`${path}/report`, {}, (data) => {
+    update(data);
+    notify('success');
+    banner('Жалоба отправлена — модераторы посмотрят');
+    setTimeout(() => banner(''), 2500);
+  }));
+  on('delete', () => {
+    if (window.confirm('Удалить сообщение?')) act(`${path}/moderate`, { action: 'delete' }, update);
+  });
+  for (const action of ['hide', 'unhide', 'pin', 'unpin']) {
+    on(action, () => act(`${path}/moderate`, { action }, update));
+  }
+  const toAuthor = (body, text) => act(`${path}/author`, body, () => {
+    notify('success');
+    banner(text);
+    setTimeout(() => banner(''), 2500);
+  });
+  on('mute60', () => toAuthor({ action: 'mute', minutes: 60 }, 'Не сможет писать час'));
+  on('mute1440', () => toAuthor({ action: 'mute', minutes: 1440 }, 'Не сможет писать сутки'));
+  on('ban', () => {
+    if (window.confirm(`Заблокировать ${message.author} во всех чатах?`)) toAuthor({ action: 'ban' }, 'Заблокирован');
+  });
+  on('unban', () => toAuthor({ action: 'unban' }, 'Разблокирован'));
+  on('moderator', () => toAuthor({ action: 'moderator' }, `${message.author} теперь модератор школы`));
+  on('unmoderator', () => toAuthor({ action: 'unmoderator' }, 'Больше не модератор'));
+}
+
+/* ─────────────────────────── Жалобы ─────────────────────────── */
+
+async function openReports(onClose) {
+  const body = pushScreen('Жалобы');
+  const draw = async () => {
+    body.innerHTML = skeleton(3);
+    let items;
+    try {
+      items = (await api('/api/chat/reports')).data.items;
+    } catch (error) {
+      body.innerHTML = errorCard(error);
+      return;
+    }
+    if (!items.length) {
+      body.innerHTML = '<div class="empty big">Жалоб нет 🎉</div>';
+      return;
+    }
+    body.innerHTML = items.map((item, index) => `
+      <div class="card chat-report">
+        <div class="muted small">${esc(item.room.title)} · жалоб: ${item.reports}${item.hidden ? ' · скрыто' : ''}</div>
+        <div class="chat-author">${authorLabel(item)}</div>
+        <div class="chat-text">${esc(item.text ?? '')}</div>
+        <div class="chat-report-actions">
+          <button class="btn outline" data-r="${index}" data-a="dismiss">Всё в порядке</button>
+          <button class="btn outline" data-r="${index}" data-a="hide">Скрыть</button>
+          <button class="btn outline danger" data-r="${index}" data-a="delete">Удалить</button>
+        </div>
+      </div>`).join('');
+    body.querySelectorAll('[data-r]').forEach((button) => button.addEventListener('click', async () => {
+      const item = items[Number(button.dataset.r)];
+      if (await act(`/api/chat/messages/${item.id}/moderate`, { action: button.dataset.a })) draw();
+    }));
+  };
+  draw();
+  const watch = setInterval(() => {
+    if (!body.isConnected) {
+      clearInterval(watch);
+      onClose?.();
+    }
+  }, 500);
 }

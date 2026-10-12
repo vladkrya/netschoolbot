@@ -29,6 +29,9 @@ routes = web.RouteTableDef()
 REVERIFY_AFTER_S = 3 * 24 * 3600
 # Не чаще одного сообщения в столько секунд.
 SEND_INTERVAL_S = 1.5
+# Столько жалоб от разных людей — и сообщение прячется до решения модератора.
+AUTO_HIDE_REPORTS = 3
+REACTIONS = ("👍", "❤️", "😂", "😮", "😢", "🔥")
 
 RULES_TEXT = [
     "В чатах только ученики: вход проверяется через «Сетевой город».",
@@ -125,6 +128,10 @@ async def room_access(request: web.Request, room_id: str) -> tuple[rules.Room, d
             return room, profile
     if is_admin(request) and (room := rules.describe(room_id)):
         return room, profile
+    # Модератор школы заходит во все её комнаты — разбирать жалобы.
+    if (room := rules.describe(room_id)) and await repo(request).is_moderator(
+            current_user(request).telegram_id, rules.room_school(room_id)):
+        return room, profile
     if not profile and not is_admin(request):
         raise ChatDenied("Сначала вступите в чаты")
     raise ChatDenied("Нет доступа к этому чату", status=404)
@@ -201,9 +208,14 @@ async def overview(request: web.Request) -> dict[str, Any]:
     last = await chats.last_messages(ids)
     unread = await chats.unread(uid, ids)
     reads = await chats.reads(uid)
+    schools = None if admin else await chats.moderated_schools(uid)
+    reports = len(await chats.reported(schools)) if admin or schools else 0
     return {
         "joined": profile is not None,
         "admin": admin,
+        "moderator": admin or bool(schools),
+        "reports": reports,
+        "reactions": list(REACTIONS),
         "as_admin": bool(profile["as_admin"]) if profile else admin,
         "rules": RULES_TEXT,
         "profile": {
@@ -292,8 +304,11 @@ async def chat_messages(request: web.Request) -> web.Response:
     rows = await chats.messages(room_id, after=after, before=before)
     changed = await chats.changed_since(room_id, since, after) if after is not None and since else []
     moderator = await can_moderate(request, room_id)
+    pinned = await chats.pinned(room_id)
     return web.json_response({"ok": True, "data": {
         "room": {"id": room.id, "kind": room.kind, "title": room.title, "subtitle": room.subtitle},
+        "pinned": (await message_json(request, [pinned], moderator=moderator))[0] if pinned else None,
+        "admin": is_admin(request),
         "messages": await message_json(request, rows, moderator=moderator),
         "changed": await message_json(request, changed, moderator=moderator),
         "moderator": moderator,
@@ -357,3 +372,148 @@ async def chat_read(request: web.Request) -> web.Response:
     if isinstance(last_id, int) and last_id > 0:
         await repo(request).mark_read(current_user(request).telegram_id, room_id, last_id)
     return web.json_response({"ok": True})
+
+
+# ─────────────────────── Реакции, жалобы, модерация ───────────────────────
+
+
+async def _message_for(request: web.Request) -> tuple[dict[str, Any], rules.Room]:
+    try:
+        message_id = int(request.match_info["message_id"])
+    except ValueError:
+        raise ChatDenied("Сообщение не найдено", status=404) from None
+    message = await repo(request).message(message_id)
+    if not message:
+        raise ChatDenied("Сообщение не найдено", status=404)
+    room, _ = await room_access(request, message["room"])
+    return message, room
+
+
+async def _one(request: web.Request, message_id: int) -> dict[str, Any]:
+    row = await repo(request).message(message_id)
+    assert row is not None
+    return (await message_json(request, [row], moderator=await can_moderate(request, row["room"])))[0]
+
+
+@routes.post("/api/chat/messages/{message_id}/react")
+async def chat_react(request: web.Request) -> web.Response:
+    try:
+        message, _ = await _message_for(request)
+    except ChatDenied as exc:
+        return _denied(exc)
+    emoji = str((await request.json()).get("emoji") or "")
+    if emoji not in REACTIONS:
+        return json_error("Такой реакции нет")
+    if message["deleted_at"] is not None:
+        return json_error("Сообщение удалено")
+    await repo(request).toggle_reaction(message["id"], current_user(request).telegram_id, emoji)
+    return web.json_response({"ok": True, "data": await _one(request, message["id"])})
+
+
+@routes.post("/api/chat/messages/{message_id}/report")
+async def chat_report(request: web.Request) -> web.Response:
+    """Жалоба. После трёх от разных людей сообщение прячется до решения модератора."""
+    try:
+        message, _ = await _message_for(request)
+    except ChatDenied as exc:
+        return _denied(exc)
+    uid = current_user(request).telegram_id
+    if message["author_id"] == uid:
+        return json_error("На своё сообщение жаловаться нельзя")
+    count = await repo(request).report(message["id"], uid)
+    if count >= AUTO_HIDE_REPORTS and not message["hidden"]:
+        await repo(request).set_flag(message["id"], "hidden", 1)
+        await repo(request).log(0, "auto_hide", str(message["id"]), f"{count} жалоб")
+    return web.json_response({"ok": True, "data": await _one(request, message["id"])})
+
+
+@routes.post("/api/chat/messages/{message_id}/moderate")
+async def chat_moderate(request: web.Request) -> web.Response:
+    """Скрыть / показать / удалить / закрепить. Своё сообщение автор может удалить сам."""
+    try:
+        message, _ = await _message_for(request)
+    except ChatDenied as exc:
+        return _denied(exc)
+    action = str((await request.json()).get("action") or "")
+    uid = current_user(request).telegram_id
+    moderator = await can_moderate(request, message["room"])
+    own_delete = action == "delete" and message["author_id"] == uid
+    if not moderator and not own_delete:
+        return json_error("Нужны права модератора", status=403, reason="chat")
+    chats = repo(request)
+    if action == "hide":
+        await chats.set_flag(message["id"], "hidden", 1)
+    elif action == "unhide":
+        await chats.set_flag(message["id"], "hidden", 0)
+    elif action == "delete":
+        await chats.set_flag(message["id"], "deleted_at", time.time(), actor=uid)
+    elif action == "pin":
+        await chats.set_flag(message["id"], "pinned", 1)
+    elif action == "unpin":
+        await chats.set_flag(message["id"], "pinned", 0)
+    elif action == "dismiss":
+        pass
+    else:
+        return json_error("Неизвестное действие")
+    if moderator:
+        await chats.resolve_reports(message["id"])
+        await chats.log(uid, action, str(message["id"]))
+    return web.json_response({"ok": True, "data": await _one(request, message["id"])})
+
+
+@routes.post("/api/chat/messages/{message_id}/author")
+async def chat_author(request: web.Request) -> web.Response:
+    """Меры к автору: мьют (модератор), бан и назначение модератором (администратор)."""
+    try:
+        message, _ = await _message_for(request)
+    except ChatDenied as exc:
+        return _denied(exc)
+    body = await request.json()
+    action = str(body.get("action") or "")
+    chats, uid = repo(request), current_user(request).telegram_id
+    target = await chats.profile(message["author_id"])
+    if message["is_admin"] or not target or target["telegram_id"] == uid:
+        return json_error("К этому автору это не применить")
+    admin = is_admin(request)
+    if action == "mute":
+        if not await can_moderate(request, message["room"]):
+            return json_error("Нужны права модератора", status=403, reason="chat")
+        minutes = int(body.get("minutes") or 0)
+        if not 0 <= minutes <= 7 * 24 * 60:
+            return json_error("Некорректный срок")
+        await chats.set_profile_field(target["telegram_id"], "muted_until", time.time() + minutes * 60 if minutes else 0)
+        details = f"{minutes} мин"
+    elif action in ("ban", "unban"):
+        if not admin:
+            return json_error("Только для администратора", status=403, reason="chat")
+        await chats.set_profile_field(target["telegram_id"], "banned", int(action == "ban"))
+        details = ""
+    elif action in ("moderator", "unmoderator"):
+        if not admin:
+            return json_error("Только для администратора", status=403, reason="chat")
+        await chats.set_moderator(target["telegram_id"], target["school_key"], action == "moderator")
+        details = target["school_key"]
+    else:
+        return json_error("Неизвестное действие")
+    await chats.log(uid, action, str(target["telegram_id"]), details)
+    return web.json_response({"ok": True, "data": {
+        "muted_until": (await chats.profile(target["telegram_id"]) or {}).get("muted_until", 0),
+        "moderator": target["school_key"] in await chats.moderated_schools(target["telegram_id"]),
+    }})
+
+
+@routes.get("/api/chat/reports")
+async def chat_reports(request: web.Request) -> web.Response:
+    """Очередь жалоб: администратору — все, модератору — своей школы."""
+    chats, uid = repo(request), current_user(request).telegram_id
+    admin = is_admin(request)
+    schools = None if admin else await chats.moderated_schools(uid)
+    if not admin and not schools:
+        return json_error("Нужны права модератора", status=403, reason="chat")
+    rows = await chats.reported(schools)
+    items = await message_json(request, rows, moderator=True)
+    for item, row in zip(items, rows):
+        room = rules.describe(row["room"])
+        item["room"] = {"id": row["room"], "title": room.title if room else row["room"]}
+        item["reports"] = row["reports"]
+    return web.json_response({"ok": True, "data": {"items": items}})

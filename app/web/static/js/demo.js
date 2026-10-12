@@ -441,7 +441,8 @@ function demoChatSeed() {
 function demoChat(route, url, options, body) {
   demoChatSeed();
   const overview = () => ok({
-    joined: demoChatState.joined, admin: false, as_admin: false,
+    joined: demoChatState.joined, admin: false, as_admin: false, moderator: false, reports: 0,
+    reactions: ['👍', '❤️', '😂', '😮', '😢', '🔥'],
     rules: ['В чатах только ученики: вход проверяется через «Сетевой город».',
       'Другим видно только твоё имя и номер класса — без фамилии.',
       'Администрация видит все чаты и может удалять сообщения и блокировать нарушителей.',
@@ -457,6 +458,18 @@ function demoChat(route, url, options, body) {
   if (route === '/api/chat') return overview();
   if (route === '/api/chat/join') { demoChatState.joined = true; return overview(); }
   if (route === '/api/chat/leave') { demoChatState.joined = false; return overview(); }
+  const action = route.match(/^\/api\/chat\/messages\/(\d+)\/(react|report|moderate)$/);
+  if (action) {
+    const message = Object.values(demoChatState.messages).flat().find((m) => m.id === Number(action[1]));
+    if (action[2] === 'react') {
+      const mine = message.my_reactions.includes(body.emoji);
+      message.my_reactions = mine ? message.my_reactions.filter((e) => e !== body.emoji) : [...message.my_reactions, body.emoji];
+      const count = (message.reactions[body.emoji] || 0) + (mine ? -1 : 1);
+      if (count) message.reactions[body.emoji] = count; else delete message.reactions[body.emoji];
+    }
+    if (action[2] === 'moderate' && body.action === 'delete') Object.assign(message, { deleted: true, text: null });
+    return ok({ ...message, reactions: { ...message.reactions }, my_reactions: [...message.my_reactions] });
+  }
   const match = route.match(/^\/api\/chat\/rooms\/([^/]+)\/(messages|read)$/);
   if (!match) return overview();
   const room = decodeURIComponent(match[1]);
@@ -474,7 +487,7 @@ function demoChat(route, url, options, body) {
   }
   const after = url.searchParams.get('after');
   return ok({
-    room: DEMO_ROOMS.find((r) => r.id === room), moderator: false, now: Date.now() / 1000,
+    room: DEMO_ROOMS.find((r) => r.id === room), moderator: false, admin: false, pinned: null, now: Date.now() / 1000,
     messages: after != null ? list.filter((m) => m.id > Number(after)) : list.slice(-50),
     changed: [],
   });

@@ -169,3 +169,81 @@ class ChatRepository:
     async def is_moderator(self, telegram_id: int, school: str) -> bool:
         return bool(school) and bool(await self._db.fetch_one(
             "SELECT 1 FROM chat_moderators WHERE telegram_id = ? AND school_key = ?", (telegram_id, school)))
+
+    # ─────────────────────── Реакции, жалобы, модерация ───────────────────────
+
+    async def toggle_reaction(self, message_id: int, telegram_id: int, emoji: str) -> bool:
+        """Поставить или снять реакцию. True — теперь стоит."""
+        exists = await self._db.fetch_one(
+            "SELECT 1 FROM chat_reactions WHERE message_id = ? AND telegram_id = ? AND emoji = ?",
+            (message_id, telegram_id, emoji))
+        if exists:
+            await self._db.execute(
+                "DELETE FROM chat_reactions WHERE message_id = ? AND telegram_id = ? AND emoji = ?",
+                (message_id, telegram_id, emoji))
+        else:
+            await self._db.execute(
+                "INSERT INTO chat_reactions (message_id, telegram_id, emoji) VALUES (?, ?, ?)",
+                (message_id, telegram_id, emoji))
+        await self.touch(message_id)
+        return not exists
+
+    async def report(self, message_id: int, reporter_id: int) -> int:
+        """Жалоба (повторная от того же человека не считается). Возвращает число
+        нерассмотренных жалоб на сообщение."""
+        await self._db.execute(
+            "INSERT OR IGNORE INTO chat_reports (message_id, reporter_id, created_at) VALUES (?, ?, ?)",
+            (message_id, reporter_id, time.time()))
+        row = await self._db.fetch_one(
+            "SELECT COUNT(*) AS n FROM chat_reports WHERE message_id = ? AND resolved = 0", (message_id,))
+        return int(row["n"]) if row else 0
+
+    async def resolve_reports(self, message_id: int) -> None:
+        await self._db.execute("UPDATE chat_reports SET resolved = 1 WHERE message_id = ?", (message_id,))
+
+    async def set_flag(self, message_id: int, field: str, value: Any, *, actor: int | None = None) -> None:
+        if field not in {"hidden", "pinned", "deleted_at"}:
+            raise ValueError(field)
+        if field == "deleted_at":
+            await self._db.execute(
+                "UPDATE chat_messages SET deleted_at = ?, deleted_by = ?, updated_at = ? WHERE id = ?",
+                (value, actor, time.time(), message_id))
+        else:
+            await self._db.execute(f"UPDATE chat_messages SET {field} = ?, updated_at = ? WHERE id = ?",
+                                   (value, time.time(), message_id))
+
+    async def pinned(self, room: str) -> dict[str, Any] | None:
+        row = await self._db.fetch_one(
+            """SELECT * FROM chat_messages WHERE room = ? AND pinned = 1 AND deleted_at IS NULL AND hidden = 0
+               ORDER BY id DESC LIMIT 1""", (room,))
+        return dict(row) if row else None
+
+    async def reported(self, schools: list[str] | None) -> list[dict[str, Any]]:
+        """Сообщения с нерассмотренными жалобами. schools=None — все (администратор)."""
+        rows = await self._db.fetch_all(
+            """SELECT m.*, COUNT(r.reporter_id) AS reports FROM chat_messages m
+               JOIN chat_reports r ON r.message_id = m.id AND r.resolved = 0
+               WHERE m.deleted_at IS NULL
+               GROUP BY m.id ORDER BY MAX(r.created_at) DESC LIMIT 100""")
+        result = [dict(row) for row in rows]
+        if schools is None:
+            return result
+        from .rules import room_school
+        return [row for row in result if room_school(row["room"]) in schools]
+
+    async def moderated_schools(self, telegram_id: int) -> list[str]:
+        rows = await self._db.fetch_all("SELECT school_key FROM chat_moderators WHERE telegram_id = ?", (telegram_id,))
+        return [row["school_key"] for row in rows]
+
+    async def set_moderator(self, telegram_id: int, school: str, on: bool) -> None:
+        if on:
+            await self._db.execute(
+                "INSERT OR IGNORE INTO chat_moderators (telegram_id, school_key) VALUES (?, ?)", (telegram_id, school))
+        else:
+            await self._db.execute(
+                "DELETE FROM chat_moderators WHERE telegram_id = ? AND school_key = ?", (telegram_id, school))
+
+    async def log(self, actor: int, action: str, target: str, details: str = "") -> None:
+        await self._db.execute(
+            "INSERT INTO chat_mod_log (actor_id, action, target, details, created_at) VALUES (?, ?, ?, ?, ?)",
+            (actor, action, target, details, time.time()))
