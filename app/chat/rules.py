@@ -52,7 +52,7 @@ def band_of(grade: int) -> str | None:
 # как отдельный ник и не выдаст себя за администратора.
 
 NICK_RE = re.compile(r"^[A-Za-zА-Яа-яЁё][A-Za-zА-Яа-яЁё0-9_]{2,19}$")
-NICK_HINT = "3–20 символов: буквы, цифры и _, начинается с буквы"
+NICK_HINT = "3–20 символов: буквы одного алфавита (русского или английского), цифры и _, начинается с буквы"
 MENTION = re.compile(r"(?<![\w@])@([A-Za-zА-Яа-яЁё][A-Za-zА-Яа-яЁё0-9_]{1,19})")
 _LOOKALIKE = str.maketrans("аеорсухкмтвнё01l", "aeopcyxkmtbheoii")
 
@@ -75,6 +75,8 @@ def check_nick(nick: str) -> str:
     """Почему ник не подходит ("" — подходит)."""
     if not NICK_RE.match(nick):
         return f"Ник: {NICK_HINT}"
+    if re.search(r"[A-Za-z]", nick) and re.search(r"[А-Яа-яЁё]", nick):
+        return "Все буквы ника должны быть либо русскими, либо английскими"
     key = nick_key(nick)
     compact = nick.replace("_", "")
     if any(word in key.replace("_", "") for word in _RESERVED) or _ROLE.search(compact) or _SHORT_MOD.fullmatch(compact):

@@ -642,3 +642,12 @@ class TestChatIdentityAndInbox:
     @pytest.mark.parametrize('nick', ['admin', 'Admin123', 'a_d_m_i_n', 'Aдmиn', 'администратор', 'модер', 'm0der', 'мoдератор', 'moderator', 'mod_99', 'support_9'])
     async def test_role_nicks_rejected(self, client, student_token, nick):
         assert (await join(client, student_token, nick))[0] == 400
+
+
+@pytest.mark.parametrize('nick', ['Moon_9', 'Луна_9', 'Ёжик_42', 'Ян_123'])
+def test_nick_one_alphabet_allowed(nick):
+    assert rules.check_nick(nick) == ''
+
+@pytest.mark.parametrize('nick', ['Moon_Луна', 'Луна_9x', 'Cоsmos', 'Ёжик_A'])
+def test_nick_mixed_alphabets_blocked(nick):
+    assert rules.check_nick(nick) == 'Все буквы ника должны быть либо русскими, либо английскими'
