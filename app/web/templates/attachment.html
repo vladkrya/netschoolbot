@@ -24,6 +24,17 @@
   .error { color: var(--bad); }
   .small { font-size: 14px; margin-top: 16px; }
   .small a { color: var(--accent); }
+  .hint { color: var(--text); }
+  .compass { display: inline-block; width: 1.15em; height: 1.15em; vertical-align: -0.2em; }
+  /* Стрелка к компасу встроенного Safari: он в нижней панели справа,
+     сразу под страницей. */
+  .to-compass { position: fixed; right: 18px; bottom: calc(14px + env(safe-area-inset-bottom)); display: flex; align-items: center; gap: 6px;
+                padding: 8px 12px; border-radius: 12px; background: var(--accent); color: #fff; font-weight: 600; font-size: 15px;
+                animation: nudge 1.2s ease-in-out infinite; }
+  .to-compass::after { content: ""; position: absolute; right: 22px; bottom: -6px; border: 6px solid transparent;
+                       border-bottom: 0; border-top-color: var(--accent); }
+  @keyframes nudge { 50% { transform: translateY(5px); } }
+  @media (prefers-reduced-motion: reduce) { .to-compass { animation: none; } }
   [hidden] { display: none !important; }
 </style>
 </head>
@@ -38,10 +49,23 @@
     <a class="btn secondary" id="save" hidden>Скачать</a>
   </div>
   <button class="btn" id="retry" hidden type="button">Повторить</button>
+  <p class="hint" id="safari" hidden>Нажмите <svg class="compass" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M15.5 8.5l-2 5-5 2 2-5z" fill="currentColor" stroke-linejoin="round"/></svg> компас справа внизу — файл откроется в Safari, и там его можно посмотреть или сохранить.</p>
   <p class="small"><a id="direct" hidden>Не получается? Открыть файл напрямую</a></p>
 </div>
+<div class="to-compass" id="toCompass" hidden><svg class="compass" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M15.5 8.5l-2 5-5 2 2-5z" fill="currentColor" stroke-linejoin="round"/></svg> Нажмите компас ↓</div>
 <script>
 (function () {
+  // via=pwa — ссылку открыло установленное на iPhone приложение, и мы во
+  // встроенном Safari. Скачанный файл здесь показать нельзя, кнопки бесполезны:
+  // подсказываем компас. Метку сразу убираем из адреса — компас откроет в
+  // Safari уже обычную страницу, и там файл откроется сам.
+  var params = new URLSearchParams(location.search);
+  var inApp = params.get('via') === 'pwa';
+  if (inApp) {
+    params.delete('via');
+    var query = params.toString() ? '?' + params.toString() : '';
+    history.replaceState(null, '', location.pathname + query + location.hash);
+  }
   // Тот же адрес, только /api/attachment/ вместо /attachment/: билет и имя
   // файла уже в строке запроса.
   var file = location.pathname.replace(/\/attachment\/(\d+)\/?$/, '/api/attachment/$1') + location.search;
@@ -98,11 +122,17 @@
       return fail(message);
     }
     clearTimeout(slowTimer); clearInterval(tick);
+    if (inApp) {
+      show([]);
+      $('state').textContent = 'Файл готов.';
+      return;
+    }
     show(['open', 'save']);
     $('state').textContent = 'Файл готов. «Открыть» — посмотреть, «Скачать» — сохранить в «Файлы».';
     location.href = file;
   }
 
+  if (inApp) { $('safari').hidden = false; $('toCompass').hidden = false; }
   $('retry').addEventListener('click', load);
   load();
 })();

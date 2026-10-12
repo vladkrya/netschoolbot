@@ -353,7 +353,10 @@ export function attachmentUrl(id, name = '') {
   const filename = name ? `&name=${encodeURIComponent(name)}` : '';
   // Страница ожидания, а не сам файл: она показывает загрузку и ошибку,
   // пока перегруженный сервер школы отдаёт вложение.
-  return `${attachmentHost()}${base}/attachment/${id}?${credential}${filename}`;
+  const host = attachmentHost();
+  // via=pwa: страница вложения подскажет нажать компас «Открыть в Safari».
+  const via = host ? '&via=pwa' : '';
+  return `${host}${base}/attachment/${id}?${credential}${filename}${via}`;
 }
 
 // В установленном на iPhone приложении (PWA) ссылка на свой домен
@@ -361,9 +364,14 @@ export function attachmentUrl(id, name = '') {
 // «Открыть в…». Ссылку на другой домен того же сервера iOS открывает во
 // встроенном Safari: он предлагает просмотреть или сохранить файл, а
 // компас переносит в обычный Safari. Билет на вложения к домену не привязан.
+// Только iPhone и iPad: на Android Chrome и в установленном приложении
+// сам скачивает файл и предлагает открыть, а во вкладке другого домена
+// компаса нет — подсказка про него только запутала бы.
 function attachmentHost() {
   const standalone = window.matchMedia?.('(display-mode: standalone)').matches || navigator.standalone === true;
-  if (!standalone) return '';
+  // iPad с iPadOS 13 представляется Mac-ом, но у Mac нет сенсорного экрана.
+  const apple = /iPhone|iPad|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+  if (!standalone || !apple) return '';
   const hosts = window.NETSCHOOL.attachmentHosts || [];
   return hosts.find((host) => host !== location.origin) || '';
 }
