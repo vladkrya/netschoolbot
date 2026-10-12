@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Серверная часть выкладки. Запускается из deploy/deploy.sh: bash -s -- <commit>.
+# Серверная часть выкладки: bash -s -- <commit>. Запускают её двое — ручной
+# deploy/deploy.sh по SSH и deploy/autodeploy.sh на самом сервере; обоим она
+# достаётся из выкладываемого коммита.
 #
 # Порядок: копия базы → новый код и зависимости → перезапуск → проверка
 # /health. Если что-то упало после переключения кода — откат на прежний
@@ -11,6 +13,11 @@ TARGET="${1:?нужен коммит}"
 APP=/opt/netschoolbot
 PY="$APP/venv/bin/python"
 cd "$APP"
+
+# Ручная и автоматическая выкладки не должны идти разом: две поверх одного
+# каталога — это git merge под ногами у отката.
+exec 9>/run/lock/netschoolbot-deploy.lock
+flock -w 900 9 || { echo "Другая выкладка не закончилась за 15 минут"; exit 1; }
 
 PREV="$(git rev-parse HEAD)"
 STEP="подготовка"
@@ -71,6 +78,9 @@ install_units() {
   fi
   if [ -f deploy/systemd/netschoolbot-backup.timer ]; then
     install -m 644 deploy/systemd/netschoolbot-backup.service deploy/systemd/netschoolbot-backup.timer /etc/systemd/system/
+  fi
+  if [ -f deploy/systemd/netschoolbot-autodeploy.timer ]; then
+    install -m 644 deploy/systemd/netschoolbot-autodeploy.service deploy/systemd/netschoolbot-autodeploy.timer /etc/systemd/system/
   fi
   systemctl daemon-reload
 }
@@ -142,7 +152,9 @@ trap rollback ERR
 
 step "Получение кода"
 git fetch -q origin main
-[ "$(git rev-parse origin/main)" = "$TARGET" ] || { echo "origin/main не совпадает с $TARGET"; false; }
+# Коммит обязан быть в main, но не обязан быть его вершиной: автодеплой
+# выкатывает проверенный CI коммит, а main к этому времени может уйти дальше.
+git merge-base --is-ancestor "$TARGET" origin/main || { echo "$TARGET нет в origin/main"; false; }
 if [ "$PREV" = "$TARGET" ]; then echo "Уже выложено: $TARGET"; exit 0; fi
 
 step "Резервная копия базы"
@@ -163,6 +175,7 @@ step "Юниты systemd"
 install_units
 # Копия до установки таймера снималась вручную — теперь по расписанию.
 systemctl enable --now netschoolbot-backup.timer >/dev/null 2>&1 || true
+systemctl enable --now netschoolbot-autodeploy.timer >/dev/null 2>&1 || true
 
 step "Конфигурация nginx"
 install_nginx

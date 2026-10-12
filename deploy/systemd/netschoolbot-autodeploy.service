@@ -1,0 +1,17 @@
+# Автодеплой: выкатывает ветку `deploy` из GitHub, которую двигает CI после
+# зелёных тестов. См. deploy/autodeploy.sh.
+[Unit]
+Description=netschoolbot autodeploy (GitHub branch deploy -> /opt/netschoolbot)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/netschoolbot
+# Скрипт берётся из рабочего каталога, а выкладку делает remote-deploy.sh из
+# выкладываемого коммита.
+ExecStart=/bin/bash /opt/netschoolbot/deploy/autodeploy.sh
+TimeoutStartSec=20min
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7

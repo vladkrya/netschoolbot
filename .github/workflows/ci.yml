@@ -1,0 +1,77 @@
+name: CI
+
+# Ворота автодеплоя. Проверки — те же, что у deploy/deploy.sh; если они
+# зелёные на push в main, джоб `promote` двигает ветку `deploy` на этот
+# коммит, а сервер (deploy/autodeploy.sh, раз в минуту) её выкатывает.
+# Секретов у workflow нет и на сервер он не ходит: сервер сам читает ветку
+# deploy key-ем только на чтение.
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          # Как на сервере (Debian 13).
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Run tests
+        run: python -m pytest -q -p no:cacheprovider
+
+      - name: Import entry points
+        run: python -c "import app.main, app.web.server, app.bot.app"
+
+  promote:
+    name: Promote to deploy branch
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    # Одна передвижка за раз и без отмены: отменённая на полпути — это
+    # зелёный коммит, который так и не уехал.
+    concurrency:
+      group: promote-deploy
+      cancel-in-progress: false
+
+    steps:
+      - name: Checkout repository code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Move deploy branch forward
+        run: |
+          # Только вперёд: прогон старого коммита, закончившийся позже
+          # нового, не должен откатить ветку (и прод) назад.
+          if git fetch -q origin deploy 2>/dev/null; then
+            if git merge-base --is-ancestor "$GITHUB_SHA" FETCH_HEAD; then
+              echo "deploy уже на $GITHUB_SHA или новее"
+              exit 0
+            fi
+          fi
+          git push origin "$GITHUB_SHA:refs/heads/deploy"

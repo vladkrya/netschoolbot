@@ -1,0 +1,12 @@
+[Unit]
+Description=netschoolbot autodeploy: check GitHub branch deploy every minute
+
+[Timer]
+# По календарю, а не OnUnitInactiveSec: после упавшего запуска (нет сети)
+# таймер обязан проверить снова через минуту, а не замолчать.
+OnCalendar=*:*:00
+AccuracySec=10s
+Persistent=false
+
+[Install]
+WantedBy=timers.target
