@@ -155,6 +155,10 @@ class TestRules:
         # В своём классе ссылки на учебные сайты можно.
         assert rules.check_text("задание на resh.edu.ru", global_room=False) == ""
         assert rules.check_text("@Владислав привет", global_room=True) == ""
+        # «f57» — только отдельным словом: код «af57b» и ник «Student_6f57» не задевает.
+        assert "доверия" in rules.check_text("f57", global_room=False)
+        assert rules.check_text("код af57b", global_room=False) == ""
+        assert rules.check_nick("Student_9e1e6f57") == ""
 
 
 class TestJoin:
