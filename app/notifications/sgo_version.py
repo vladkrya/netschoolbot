@@ -20,6 +20,9 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("netschoolbot.sgo")
 
+# Адрес сервера и версия — не личные данные: в логе их видно целиком.
+PUBLIC = {"public": True}
+
 # Как часто сверять версию у работающего сервера. После простоя — сразу.
 CHECK_EVERY_S = 6 * 3600
 # logindata — маленький ответ без входа; дольше ждать нет смысла.
@@ -71,7 +74,7 @@ class VersionTracker:
         except asyncio.CancelledError:
             raise
         except Exception as exc:  # noqa: BLE001 — версия вторична, проверку не роняем
-            logger.info("Версию «Сетевого города» %s узнать не удалось: %s", host, exc)
+            logger.info("Версию «Сетевого города» %s узнать не удалось: %s", host, type(exc).__name__, extra=PUBLIC)
             return "", ""
         if not version:
             return "", ""
@@ -82,11 +85,11 @@ class VersionTracker:
             previous = self._known.get(host, "")
         self._known[host] = version
         if previous == version:
-            logger.debug("«Сетевой город» %s: версия %s", host, version)
+            logger.debug("«Сетевой город» %s: версия %s", host, version, extra=PUBLIC)
         elif not previous:
-            logger.info("«Сетевой город» %s: версия %s", host, version)
+            logger.info("«Сетевой город» %s: версия %s", host, version, extra=PUBLIC)
         else:
-            logger.warning("«Сетевой город» %s сменил версию: %s → %s", host, previous, version)
+            logger.warning("«Сетевой город» %s сменил версию: %s → %s", host, previous, version, extra=PUBLIC)
             if notify is not None:
                 await notify(f"⚠️ «Сетевой город» {host} обновился: {previous} → {version}")
         return previous, version
