@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import time
 import logging
 import secrets
 import hashlib
@@ -855,6 +856,27 @@ class MiniappRepository:
                    failures = 0""",
             (endpoint, telegram_id, p256dh, auth),
         )
+
+    async def record_visit(self, telegram_id: int, design: str, client: str) -> None:
+        """Открытие приложения: последний дизайн и откуда открыто."""
+        now = time.time()
+        await self._db.execute(
+            """INSERT INTO app_visits (telegram_id, design, client, first_seen_at, seen_at)
+               VALUES (?, ?, ?, ?, ?)
+               ON CONFLICT(telegram_id) DO UPDATE SET
+                   design = excluded.design, client = excluded.client, seen_at = excluded.seen_at""",
+            (telegram_id, design, client, now, now),
+        )
+
+    async def visit_stats(self, since: float) -> dict[str, dict[str, int]]:
+        """Сколько открывавших с `since` — по дизайну и по месту открытия."""
+        result: dict[str, dict[str, int]] = {}
+        for column in ("design", "client"):
+            rows = await self._db.fetch_all(
+                f"SELECT {column} AS key, COUNT(*) AS n FROM app_visits WHERE seen_at >= ? GROUP BY {column}",
+                (since,))
+            result[column] = {row["key"]: row["n"] for row in rows}
+        return result
 
     async def claim_chat_launch_notice(self, telegram_id: int) -> bool:
         """Выдать объявление один раз на аккаунт, в том числе между устройствами."""

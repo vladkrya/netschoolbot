@@ -431,6 +431,17 @@ MIGRATIONS: list[str] = [
     );
     INSERT INTO chat_launch_notices SELECT telegram_id FROM users;
     """,
+    # 24 — кто и как открывает приложение: дизайн и где открыто (Telegram,
+    # установленное приложение, браузер). Для /adminstats.
+    """
+    CREATE TABLE app_visits (
+        telegram_id INTEGER PRIMARY KEY REFERENCES users(telegram_id) ON DELETE CASCADE,
+        design TEXT NOT NULL,
+        client TEXT NOT NULL,
+        first_seen_at REAL NOT NULL,
+        seen_at REAL NOT NULL
+    );
+    """,
 ]
 
 

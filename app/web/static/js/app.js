@@ -457,6 +457,16 @@ function showDesignNotice() {
   });
 }
 
+/** Статистика для админа: какой дизайн и где открыто приложение. */
+function reportVisit() {
+  if (demo) return;
+  const client = tg?.initData ? 'telegram'
+    : window.matchMedia('(display-mode: standalone)').matches || navigator.standalone ? 'pwa' : 'web';
+  api('/api/visit', {
+    method: 'POST', body: JSON.stringify({ design: isNewDesign() ? 'new' : 'classic', client }),
+  }).catch(() => {});
+}
+
 async function showChatLaunchNotice() {
   if (demo) return;
   // Не заменяем уже открытую панель (например, объявление о дизайне).
@@ -506,6 +516,7 @@ async function start() {
     // Флаг «видел» уже пришёл с сервера — окошко не повторится на другом устройстве.
     showDesignNotice();
     showChatLaunchNotice();
+    reportVisit();
   });
   renderNav();
   renderIcons();

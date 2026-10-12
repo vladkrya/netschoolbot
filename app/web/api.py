@@ -1328,6 +1328,21 @@ async def get_prefs(request: web.Request) -> web.Response:
     return web.json_response({"ok": True, "data": await app.miniapp.prefs(user.telegram_id)})
 
 
+@routes.post("/api/visit")
+async def visit(request: web.Request) -> web.Response:
+    """Приложение открыли: какой дизайн и где (для статистики админа)."""
+    try:
+        body = await request.json()
+    except ValueError:
+        body = {}
+    design = body.get("design") if isinstance(body, dict) else None
+    client = body.get("client") if isinstance(body, dict) else None
+    if design not in {"new", "classic"} or client not in {"telegram", "pwa", "web"}:
+        return json_error("Некорректный запрос")
+    await context(request).miniapp.record_visit(current_user(request).telegram_id, design, client)
+    return web.json_response({"ok": True})
+
+
 @routes.post("/api/notices/chats")
 async def chat_launch_notice(request: web.Request) -> web.Response:
     app, user = context(request), current_user(request)

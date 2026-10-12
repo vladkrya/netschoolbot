@@ -12,7 +12,7 @@ from aiogram.types import BotCommand, MenuButtonCommands, MenuButtonWebApp, WebA
 
 from ..context import AppContext
 from ..settings import Settings
-from .handlers import auth, menu, settings as settings_handlers
+from .handlers import admin, auth, menu, settings as settings_handlers
 from .handlers.common import ContextMiddleware
 
 logger = logging.getLogger("netschoolbot.bot")
@@ -61,6 +61,7 @@ def create_dispatcher(context: AppContext) -> Dispatcher:
 
     # Порядок важен: auth перехватывает сообщения внутри диалога входа,
     # поэтому регистрируется раньше общего меню.
+    dispatcher.include_router(admin.router)
     dispatcher.include_router(auth.router)
     dispatcher.include_router(settings_handlers.router)
     dispatcher.include_router(menu.router)
