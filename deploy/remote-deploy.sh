@@ -167,14 +167,14 @@ step "Резервная копия базы"
 mkdir -p "$APP/data/backups"
 BACKUP="$APP/data/backups/netschoolbot-predeploy-$(date +%Y%m%d-%H%M%S).sqlite3"
 db_tool copy "$DB" "$BACKUP"
-# Копии перед выкладкой копятся отдельно от ежедневных: оставляем пять последних.
-ls -1t "$APP"/data/backups/netschoolbot-predeploy-*.sqlite3 2>/dev/null | tail -n +6 | xargs -r rm -f
+# Копии перед выкладкой копятся отдельно от ежедневных: оставляем десять последних.
+ls -1t "$APP"/data/backups/netschoolbot-predeploy-*.sqlite3 2>/dev/null | tail -n +11 | xargs -r rm -f
 for extra in "$APP"/data/backups/*.sqlite3-wal "$APP"/data/backups/*.sqlite3-shm; do
   [ -e "$extra" ] && [ ! -e "${extra%-*}" ] && rm -f "$extra"
 done
-# Копии конфигов nginx: по пять последних на сайт.
+# Копии конфигов nginx: по десять последних на сайт.
 for domain in netschool.ikrya.ru ns.ikrya.ru ns2.ikrya.ru yavds.ikrya.ru; do
-  ls -1t /etc/nginx/sites-available/"$domain".bak-* 2>/dev/null | tail -n +6 | xargs -r rm -f
+  ls -1t /etc/nginx/sites-available/"$domain".bak-* 2>/dev/null | tail -n +11 | xargs -r rm -f
 done
 
 step "Переключение на ${TARGET:0:7}"
