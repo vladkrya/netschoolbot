@@ -204,3 +204,11 @@ async def test_forgotten_pin_is_reset_with_account_password(client, app_context)
     assert (await post(client, "/api/lock/password-reset", {"password": "длинный-пароль"}, token))[0] == 200
     response = await client.get(f"{BASE}/api/account", params={"token": token})
     assert response.status == 200
+
+
+async def test_paused_notifications_do_not_ask_to_log_in_again(client, app_context, users):
+    from dataclasses import replace
+    await users.save(replace(make_user(6), enabled=False))
+    token = await app_context.miniapp.issue_token(6)
+    info = await (await client.get(f"{BASE}/api/account", params={"token": token})).json()
+    assert info["data"]["needs_sgo"] is False

@@ -220,7 +220,9 @@ async def account_info(request: web.Request) -> web.Response:
         "email": account["email"] if account else None,
         "verified": bool(account and account["email_verified_at"]),
         "telegram": has_telegram(user.telegram_id),
-        "needs_sgo": not user.school.configured or not user.enabled,
+        # Только «не вошёл» (нет школы). enabled=False — это и выключенные
+        # уведомления в боте: таким дневник открывать как обычно.
+        "needs_sgo": not user.school.configured,
         "school": user.school.name,
         "mail": app.mailer.configured,
         "login": attempt.status_json() if isinstance(attempt, WebLogin) else None,
