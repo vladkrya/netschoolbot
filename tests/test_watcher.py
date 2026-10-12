@@ -155,6 +155,15 @@ class FakeDiary:
             raise self.error
         return []
 
+    async def fetch_chat_identity(self, user):
+        if self.error:
+            raise self.error
+        identities = getattr(self, "chat_identities", {})
+        return identities.get(user.telegram_id, {
+            "is_student": True, "user_id": 100 + user.telegram_id,
+            "name": "Соловьёв Владислав", "class_name": "9б",
+        })
+
     async def fetch_assignment_comment(self, user, assignment_id):
         if self.error:
             raise self.error

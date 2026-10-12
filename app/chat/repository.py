@@ -1,0 +1,171 @@
+"""Хранение чатов в SQLite: профили, сообщения, прочитанное."""
+
+from __future__ import annotations
+
+import time
+from typing import Any
+
+from ..db.engine import Database
+
+PAGE = 50
+
+
+class ChatRepository:
+    def __init__(self, db: Database) -> None:
+        self._db = db
+
+    # ─────────────────────────────── Профили ───────────────────────────────
+
+    async def profile(self, telegram_id: int) -> dict[str, Any] | None:
+        row = await self._db.fetch_one("SELECT * FROM chat_profiles WHERE telegram_id = ?", (telegram_id,))
+        return dict(row) if row else None
+
+    async def save_profile(
+        self, telegram_id: int, *, netschool_user_id: int | None, school_key: str, school_name: str,
+        class_name: str, grade: int, first_name: str, consent: bool = False,
+    ) -> dict[str, Any]:
+        """Создать профиль (нужно согласие) или обновить проверенные данные."""
+        now = time.time()
+        if consent:
+            await self._db.execute(
+                """INSERT INTO chat_profiles (telegram_id, netschool_user_id, school_key, school_name,
+                       class_name, grade, first_name, consented_at, verified_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(telegram_id) DO UPDATE SET
+                       netschool_user_id = excluded.netschool_user_id, school_key = excluded.school_key,
+                       school_name = excluded.school_name, class_name = excluded.class_name,
+                       grade = excluded.grade, first_name = excluded.first_name,
+                       verified_at = excluded.verified_at""",
+                (telegram_id, netschool_user_id, school_key, school_name, class_name, grade, first_name, now, now),
+            )
+        else:
+            await self._db.execute(
+                """UPDATE chat_profiles SET netschool_user_id = ?, school_key = ?, school_name = ?,
+                       class_name = ?, grade = ?, first_name = ?, verified_at = ?
+                   WHERE telegram_id = ?""",
+                (netschool_user_id, school_key, school_name, class_name, grade, first_name, now, telegram_id),
+            )
+        profile = await self.profile(telegram_id)
+        assert profile is not None
+        return profile
+
+    async def touch_verified(self, telegram_id: int) -> None:
+        await self._db.execute("UPDATE chat_profiles SET verified_at = ? WHERE telegram_id = ?",
+                               (time.time(), telegram_id))
+
+    async def delete_profile(self, telegram_id: int) -> None:
+        await self._db.execute("DELETE FROM chat_profiles WHERE telegram_id = ?", (telegram_id,))
+
+    async def set_profile_field(self, telegram_id: int, field: str, value: Any) -> None:
+        if field not in {"as_admin", "muted_until", "banned", "last_sent_at"}:
+            raise ValueError(field)
+        await self._db.execute(f"UPDATE chat_profiles SET {field} = ? WHERE telegram_id = ?", (value, telegram_id))
+
+    # ─────────────────────────────── Сообщения ──────────────────────────────
+
+    async def add_message(
+        self, room: str, *, author_id: int, author_name: str, author_grade: int | None, is_admin: bool,
+        text: str, reply_to: int | None = None, kind: str = "text", payload: str | None = None,
+    ) -> int:
+        async with self._db.transaction() as conn:
+            cursor = await conn.execute(
+                """INSERT INTO chat_messages (room, author_id, author_name, author_grade, is_admin,
+                       text, reply_to, kind, payload, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (room, author_id, author_name, author_grade, int(is_admin), text, reply_to, kind, payload,
+                 time.time(), time.time()),
+            )
+            message_id = cursor.lastrowid
+            await conn.execute("UPDATE chat_profiles SET last_sent_at = ? WHERE telegram_id = ?",
+                               (time.time(), author_id))
+        assert message_id is not None
+        return int(message_id)
+
+    async def message(self, message_id: int) -> dict[str, Any] | None:
+        row = await self._db.fetch_one("SELECT * FROM chat_messages WHERE id = ?", (message_id,))
+        return dict(row) if row else None
+
+    async def messages(
+        self, room: str, *, after: int | None = None, before: int | None = None, limit: int = PAGE,
+    ) -> list[dict[str, Any]]:
+        """Страница сообщений по возрастанию id.
+
+        after — новые после известного (опрос открытого чата), before — более
+        старые при прокрутке вверх, без них — последние `limit`.
+        """
+        if after is not None:
+            rows = await self._db.fetch_all(
+                "SELECT * FROM chat_messages WHERE room = ? AND id > ? ORDER BY id LIMIT ?", (room, after, limit))
+        else:
+            rows = await self._db.fetch_all(
+                "SELECT * FROM chat_messages WHERE room = ? AND id < ? ORDER BY id DESC LIMIT ?",
+                (room, before if before is not None else 1 << 62, limit))
+            rows = list(reversed(rows))
+        return [dict(row) for row in rows]
+
+    async def changed_since(self, room: str, since: float, up_to: int) -> list[dict[str, Any]]:
+        """Уже показанные сообщения, которые поменялись (скрыли, удалили,
+        закрепили, отреагировали), — чтобы это дошло до открытых чатов."""
+        rows = await self._db.fetch_all(
+            "SELECT * FROM chat_messages WHERE room = ? AND updated_at > ? AND id <= ? ORDER BY id",
+            (room, since, up_to))
+        return [dict(row) for row in rows]
+
+    async def touch(self, message_id: int) -> None:
+        await self._db.execute("UPDATE chat_messages SET updated_at = ? WHERE id = ?", (time.time(), message_id))
+
+    async def reactions(self, ids: list[int]) -> dict[int, list[tuple[int, str]]]:
+        """{сообщение: [(кто, эмодзи)]}."""
+        if not ids:
+            return {}
+        marks = ",".join("?" * len(ids))
+        rows = await self._db.fetch_all(
+            f"SELECT message_id, telegram_id, emoji FROM chat_reactions WHERE message_id IN ({marks})", tuple(ids))
+        result: dict[int, list[tuple[int, str]]] = {}
+        for row in rows:
+            result.setdefault(row["message_id"], []).append((row["telegram_id"], row["emoji"]))
+        return result
+
+    async def last_messages(self, rooms: list[str]) -> dict[str, dict[str, Any]]:
+        if not rooms:
+            return {}
+        marks = ",".join("?" * len(rooms))
+        rows = await self._db.fetch_all(
+            f"""SELECT * FROM chat_messages WHERE id IN (
+                    SELECT MAX(id) FROM chat_messages
+                    WHERE room IN ({marks}) AND deleted_at IS NULL AND hidden = 0 GROUP BY room)""",
+            tuple(rooms))
+        return {row["room"]: dict(row) for row in rows}
+
+    async def unread(self, telegram_id: int, rooms: list[str]) -> dict[str, int]:
+        if not rooms:
+            return {}
+        marks = ",".join("?" * len(rooms))
+        rows = await self._db.fetch_all(
+            f"""SELECT m.room, COUNT(*) AS n FROM chat_messages m
+                LEFT JOIN chat_reads r ON r.telegram_id = ? AND r.room = m.room
+                WHERE m.room IN ({marks}) AND m.id > COALESCE(r.last_read, 0)
+                  AND m.author_id != ? AND m.deleted_at IS NULL AND m.hidden = 0
+                GROUP BY m.room""",
+            (telegram_id, *rooms, telegram_id))
+        return {row["room"]: int(row["n"]) for row in rows}
+
+    async def mark_read(self, telegram_id: int, room: str, last_id: int) -> None:
+        await self._db.execute(
+            """INSERT INTO chat_reads (telegram_id, room, last_read) VALUES (?, ?, ?)
+               ON CONFLICT(telegram_id, room) DO UPDATE SET last_read = MAX(last_read, excluded.last_read)""",
+            (telegram_id, room, last_id))
+
+    async def reads(self, telegram_id: int) -> dict[str, dict[str, int]]:
+        rows = await self._db.fetch_all("SELECT * FROM chat_reads WHERE telegram_id = ?", (telegram_id,))
+        return {row["room"]: {"last_read": row["last_read"], "muted": row["muted"]} for row in rows}
+
+    async def active_rooms(self) -> list[str]:
+        """Все комнаты, где кто-то писал, — список для администратора."""
+        rows = await self._db.fetch_all(
+            "SELECT room, MAX(id) AS last FROM chat_messages GROUP BY room ORDER BY last DESC")
+        return [row["room"] for row in rows]
+
+    async def is_moderator(self, telegram_id: int, school: str) -> bool:
+        return bool(school) and bool(await self._db.fetch_one(
+            "SELECT 1 FROM chat_moderators WHERE telegram_id = ? AND school_key = ?", (telegram_id, school)))

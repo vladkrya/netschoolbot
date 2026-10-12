@@ -304,6 +304,85 @@ MIGRATIONS: list[str] = [
     """
     ALTER TABLE app_locks ADD COLUMN require_telegram INTEGER NOT NULL DEFAULT 1;
     """,
+    # 18 — школьные чаты. Сообщения не удаляются вместе с пользователем
+    # (нет внешнего ключа): переписку нужно хранить для разбора жалоб.
+    """
+    CREATE TABLE chat_profiles (
+        telegram_id INTEGER PRIMARY KEY REFERENCES users(telegram_id) ON DELETE CASCADE,
+        netschool_user_id INTEGER,
+        school_key TEXT NOT NULL,
+        school_name TEXT NOT NULL DEFAULT '',
+        class_name TEXT NOT NULL,
+        grade INTEGER NOT NULL,
+        first_name TEXT NOT NULL,
+        consented_at REAL NOT NULL,
+        verified_at REAL NOT NULL,
+        as_admin INTEGER NOT NULL DEFAULT 1,
+        muted_until REAL NOT NULL DEFAULT 0,
+        banned INTEGER NOT NULL DEFAULT 0,
+        last_sent_at REAL NOT NULL DEFAULT 0
+    );
+    CREATE INDEX chat_profiles_school ON chat_profiles(school_key);
+    CREATE TABLE chat_messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        room TEXT NOT NULL,
+        author_id INTEGER NOT NULL,
+        author_name TEXT NOT NULL,
+        author_grade INTEGER,
+        is_admin INTEGER NOT NULL DEFAULT 0,
+        text TEXT NOT NULL,
+        reply_to INTEGER,
+        kind TEXT NOT NULL DEFAULT 'text',
+        payload TEXT,
+        created_at REAL NOT NULL,
+        updated_at REAL NOT NULL,
+        deleted_at REAL,
+        deleted_by INTEGER,
+        hidden INTEGER NOT NULL DEFAULT 0,
+        pinned INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX chat_messages_room ON chat_messages(room, id);
+    CREATE INDEX chat_messages_updated ON chat_messages(room, updated_at);
+    CREATE TABLE chat_reactions (
+        message_id INTEGER NOT NULL,
+        telegram_id INTEGER NOT NULL,
+        emoji TEXT NOT NULL,
+        PRIMARY KEY (message_id, telegram_id, emoji)
+    );
+    CREATE TABLE chat_reports (
+        message_id INTEGER NOT NULL,
+        reporter_id INTEGER NOT NULL,
+        created_at REAL NOT NULL,
+        resolved INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (message_id, reporter_id)
+    );
+    CREATE TABLE chat_reads (
+        telegram_id INTEGER NOT NULL,
+        room TEXT NOT NULL,
+        last_read INTEGER NOT NULL DEFAULT 0,
+        muted INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (telegram_id, room)
+    );
+    CREATE TABLE chat_moderators (
+        telegram_id INTEGER NOT NULL,
+        school_key TEXT NOT NULL,
+        PRIMARY KEY (telegram_id, school_key)
+    );
+    CREATE TABLE chat_poll_votes (
+        message_id INTEGER NOT NULL,
+        telegram_id INTEGER NOT NULL,
+        option INTEGER NOT NULL,
+        PRIMARY KEY (message_id, telegram_id)
+    );
+    CREATE TABLE chat_mod_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        actor_id INTEGER NOT NULL,
+        action TEXT NOT NULL,
+        target TEXT NOT NULL,
+        details TEXT NOT NULL DEFAULT '',
+        created_at REAL NOT NULL
+    );
+    """,
 ]
 
 

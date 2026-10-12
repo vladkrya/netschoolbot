@@ -387,6 +387,39 @@ class DiaryService:
 
         return await self._with_session(user, call)
 
+    async def fetch_chat_identity(self, user: User) -> dict[str, Any]:
+        """Кто вошёл — для школьных чатов: ученик ли, имя, класс, школа.
+
+        Пускаем только учеников. Мобильный API говорит это прямо
+        (`isStudent`/`isParent` в `/users`); в веб-API у ученика id
+        пользователя совпадает с id единственного «ребёнка» — у родителя это
+        id его детей.
+        """
+
+        async def call(client: Any) -> dict[str, Any]:
+            init = await _fetch_diary_init(client)
+            students, _ = students_from_diary_init(init)
+            raw = init.get("students") or []
+            entries = list(raw.values()) if isinstance(raw, dict) else list(raw)
+            if hasattr(client, "users"):
+                me = (await client.users() or [{}])[0]
+                is_student = bool(me.get("isStudent")) and not me.get("isParent") and not me.get("isStaff")
+                user_id = me.get("id")
+            else:
+                context = (await client._authed_get("context")).json()
+                user_id = context.get("userId") or (context.get("user") or {}).get("id")
+                is_student = len(students) == 1 and _safe_int(students[0]["id"]) == _safe_int(user_id)
+            entry = next((item for item in entries if isinstance(item, dict)
+                          and _safe_int(item.get("studentId")) == _safe_int(user_id)), {})
+            return {
+                "is_student": is_student,
+                "user_id": _safe_int(user_id),
+                "name": str(entry.get("nickName") or user.student_name or ""),
+                "class_name": str(entry.get("className") or ""),
+            }
+
+        return await self._with_session(user, call)
+
     async def fetch_recipients(self, user: User) -> list[dict[str, str]]:
         """Кому можно написать: учителя и администрация школы."""
 
