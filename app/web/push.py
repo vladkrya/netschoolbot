@@ -31,7 +31,7 @@ class PushSender:
     def configured(self) -> bool:
         return self._settings.configured
 
-    async def send(self, telegram_id: int, title: str, body: str, url: str = "") -> int:
+    async def send(self, telegram_id: int, title: str, body: str, url: str = "", kind: str = "") -> int:
         """Разослать уведомление на все устройства пользователя.
 
         Возвращает число успешных отправок.
@@ -43,7 +43,9 @@ class PushSender:
             return 0
 
         payload = json.dumps(
-            {"title": title, "body": body, "url": url}, ensure_ascii=False
+            # kind — чтобы приложение убрало уведомления об оценках, когда
+            # человек их уже посмотрел (см. clearNotifications в app.js).
+            {"title": title, "body": body, "url": url, "kind": kind}, ensure_ascii=False
         )
         results = await asyncio.gather(
             *(self._send_one(sub, payload) for sub in subscriptions),

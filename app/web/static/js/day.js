@@ -11,7 +11,6 @@ import {
 } from './core.js';
 import { ICONS } from './icons.js';
 import { isNewDesign, showWeekends } from './appearance.js';
-import { bellsHtml } from './schedule.js';
 import { canGoBack } from './screens.js';
 import { EDGE_PX } from './swipeback.js';
 import { lessonStatus, markBox, openHomework, openLesson, realMarks } from './details.js';
@@ -59,6 +58,29 @@ export async function ensureWeek(iso, force = false) {
   return request;
 }
 
+/** Две недели назад и две вперёд — заранее, в фоне после первого экрана:
+ *  тогда листание дней и недель не ждёт школьный сервер. Сервер без
+ *  window=current отдаёт неделю с соседями, поэтому хватает двух запросов:
+ *  week=-1 (−2…0) и week=1 (0…+2). */
+let prefetched = false;
+export async function prefetchAround() {
+  if (prefetched) return;
+  prefetched = true;
+  for (const center of [1, -1]) {
+    const weeks = [center, center * 2];
+    if (weeks.every((offset) => loadedWeeks.has(offset))) continue;
+    try {
+      const { data } = await api(`/api/diary?week=${center}`);
+      for (const day of data.days || []) days.set(day.date, day);
+      weeks.forEach((offset) => loadedWeeks.add(offset));
+    } catch {
+      /* не вышло — неделя загрузится, когда до неё долистают */
+    }
+  }
+  // Полоса недели и «Звонки» могли ждать этих данных.
+  if (state.tab === 'day') renderHeader();
+}
+
 // Пока человек сам не выбрал день (стрелки, свайп, календарь), день
 // выбирает приложение: сегодня, а если сегодня спрятанный выходной — первый
 // учебный день после него. Выбор пересчитывается при каждой загрузке, а не
@@ -100,6 +122,7 @@ export async function loadDay(force = false) {
     return;
   }
   renderDay();
+  prefetchAround();
 }
 
 function relativeLabel(iso) {
@@ -141,8 +164,7 @@ function renderWeekStrip() {
 }
 
 /** Сводка дня над уроками (новый дизайн): сколько уроков, с какого по какое
- *  время, сколько заданий и какие оценки. Нажатие — звонки шторкой: вкладки
- *  «Звонки» в панели может и не быть. */
+ *  время, сколько заданий и какие оценки. */
 function daySummary(lessons) {
   const first = lessons.find((lesson) => lesson.start)?.start;
   const last = [...lessons].reverse().find((lesson) => lesson.end)?.end;
@@ -150,19 +172,13 @@ function daySummary(lessons) {
   const marks = lessons.flatMap((lesson) => realMarks(lesson.marks)).map((m) => markBox(m.mark)).join('');
   const parts = [`${lessons.length} ${plural(lessons.length, 'урок', 'урока', 'уроков')}`];
   if (first && last) parts.push(`${first}–${last}`);
-  return `<button class="day-summary" type="button" data-bells>
+  return `<div class="day-summary">
       <div class="ds-main">
         <div class="ds-title">${esc(parts.join(' · '))}</div>
         <div class="ds-sub">${homework ? `Д/З по ${homework} ${plural(homework, 'предмету', 'предметам', 'предметам')}` : 'Без домашних заданий'}</div>
       </div>
       ${marks ? `<div class="ds-marks">${marks}</div>` : ''}
-      <span class="ds-more" aria-label="Звонки">${ICONS.right}</span>
-    </button>`;
-}
-
-function openBells() {
-  tap();
-  openSheet('Звонки', `<div class="bells-sheet">${bellsHtml(mondayOf(state.date))}</div>`);
+    </div>`;
 }
 
 let renderedKey = '';
@@ -189,7 +205,6 @@ function renderDay(quiet = false) {
   container.classList.toggle('quiet', quiet);
   container.innerHTML = daySummary(lessons)
     + lessons.map((lesson, index) => lessonCard(lesson, index, progress?.index === index ? progress : null)).join('');
-  container.querySelector('[data-bells]')?.addEventListener('click', openBells);
   container.querySelectorAll('[data-lesson]').forEach((card) => {
     card.addEventListener('click', (event) => {
       tap();
@@ -224,7 +239,8 @@ function activeProgress(lessons, now = new Date()) {
 }
 
 function lessonCard(lesson, index, progress) {
-  const marks = realMarks(lesson.marks).map((m) => markBox(m.mark)).join('');
+  // Новый дизайн: коэффициент маленькой цифрой у оценки, как в «Оценках».
+  const marks = realMarks(lesson.marks).map((m) => markBox(m.mark, '', isNewDesign() ? m.weight || 1 : null)).join('');
   const hasFiles = lesson.homework.some((h) => (h.attachments || []).length);
   const time = lesson.time || [lesson.start, lesson.end].filter(Boolean).join(' – ');
   // Новый дизайн: вместо бейджа «Д/З» — начало самого задания.
@@ -242,7 +258,7 @@ function lessonCard(lesson, index, progress) {
         <span class="hw-badge" data-hw-badge>Д/З</span>
         ${hasFiles ? `<span class="hw-badge clip">${ICONS.clip}</span>` : ''}
       </div>` : ''}
-      ${preview ? `<div class="lc-hw" data-hw-badge>${hasFiles ? ICONS.clip : ''}<span>${esc(preview)}</span></div>` : ''}
+      ${preview ? `<div class="lc-hw">${hasFiles ? ICONS.clip : ''}<span>${esc(preview)}</span></div>` : ''}
       ${progress ? `<div class="lesson-progress-label">${esc(progress.label)}</div><div class="lesson-progress"><span style="width:${Math.max(0, Math.min(100, progress.percent))}%"></span></div>` : ''}
       <div class="lc-bottom"><span>${esc(time)}</span><span>${esc(lessonStatus(lesson, state.date))}</span></div>
     </div>`;

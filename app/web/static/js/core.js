@@ -319,12 +319,26 @@ export async function api(path, options = {}) {
   return payload;
 }
 
+// Билет на вложения (см. attachment_ticket в api.py): ссылка открывается во
+// внешнем браузере, куда не передать ни initData, ни заголовок разблокировки.
+let attachmentTicket = '';
+export async function loadAttachmentTicket() {
+  if (demo) return;
+  try {
+    attachmentTicket = (await api('/api/attachment-ticket')).data.ticket;
+  } catch {
+    /* без билета — прежняя ссылка */
+  }
+}
+
 /** Ссылка на вложение: браузер качает её сам, заголовок туда не положить. */
 export function attachmentUrl(id, name = '') {
   if (demo) return '#';
-  const credential = initData
-    ? `tgWebAppData=${encodeURIComponent(initData)}`
-    : `token=${encodeURIComponent(token)}`;
+  const credential = attachmentTicket
+    ? `ticket=${encodeURIComponent(attachmentTicket)}`
+    : initData
+      ? `tgWebAppData=${encodeURIComponent(initData)}`
+      : `token=${encodeURIComponent(token)}`;
   // Имя нужно серверу для заголовка: без него файл сохранялся как
   // «attachment-123» без расширения и не открывался как docx или pdf.
   const filename = name ? `&name=${encodeURIComponent(name)}` : '';
@@ -336,7 +350,7 @@ export function attachmentsHtml(items) {
   return items
     .map(
       (item) =>
-        `<a class="attach" href="${attachmentUrl(item.id, item.name)}" target="_blank" rel="noopener">${ICONS.clip} ${esc(item.name)}</a>`
+        `<a class="attach" href="${attachmentUrl(item.id, item.name)}" data-attach="${esc(item.id)}" data-name="${esc(item.name)}" target="_blank" rel="noopener">${ICONS.clip} ${esc(item.name)}</a>`
     )
     .join('');
 }
@@ -495,35 +509,47 @@ function attachBusy(link, busy) {
   link.setAttribute('aria-busy', String(busy));
 }
 
-// Вложения при блокировке загружаются с секретом в заголовке, без URL-секретов.
+// Вложения открываются во внешнем браузере: там их можно посмотреть, сохранить
+// и переслать. Внутри Telegram — через openLink, иначе он открыл бы файл в
+// своём окне; в установленном приложении — обычной ссылкой в новой вкладке.
 document.addEventListener('click', async event => {
   const link = event.target.closest('a.attach');
   if (!link) return;
+  if (demo) {
+    event.preventDefault();
+    banner('В демо вложения не открываются', false, 2000);
+    return;
+  }
   if (link.classList.contains('loading')) {
     event.preventDefault();
     return;
   }
-  if (!unlockToken) {
-    // Обычная ссылка: файл открывает браузер. Крутилка — пока страница не
-    // ушла в фон (открылся просмотр) или не вышло время.
-    attachBusy(link, true);
-    const done = () => attachBusy(link, false);
-    document.addEventListener('visibilitychange', done, { once: true });
-    setTimeout(done, 8000);
+  attachBusy(link, true);
+  const done = () => attachBusy(link, false);
+  document.addEventListener('visibilitychange', done, { once: true });
+  setTimeout(done, 8000);
+  if (!attachmentTicket && (unlockToken || initData)) {
+    // Без билета ссылка во внешнем браузере не откроется: сначала берём его.
+    event.preventDefault();
+    await loadAttachmentTicket();
+    if (!attachmentTicket) {
+      done();
+      banner('Не удалось открыть вложение', true);
+      return;
+    }
+    openExternal(attachmentUrl(link.dataset.attach, link.dataset.name));
     return;
   }
-  event.preventDefault();
-  attachBusy(link, true);
-  try {
-    const response = await fetch(link.href, { headers: { 'X-Netschool-Unlock': unlockToken } });
-    if (!response.ok) throw new Error('Не удалось скачать вложение');
-    const url = URL.createObjectURL(await response.blob());
-    const download = document.createElement('a');
-    download.href = url; download.download = link.textContent.trim(); download.click();
-    setTimeout(() => URL.revokeObjectURL(url), 60000);
-  } catch (error) {
-    banner(error.message, true);
-  } finally {
-    attachBusy(link, false);
+  // Билет мог прийти позже, чем нарисовали ссылку, — адрес берём свежий.
+  if (link.dataset.attach) link.href = attachmentUrl(link.dataset.attach, link.dataset.name);
+  if (initData && tg?.openLink) {
+    event.preventDefault();
+    openExternal(link.href);
   }
 });
+
+function openExternal(url) {
+  const absolute = new URL(url, location.href).href;
+  if (initData && tg?.openLink) tg.openLink(absolute, { try_instant_view: false });
+  else window.open(absolute, '_blank', 'noopener');
+}

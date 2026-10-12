@@ -10,7 +10,7 @@
 
 const CACHE = 'ns-offline-v2';
 // Вложения и служебные запросы не храним: большие и бессмысленные без сети.
-const SKIP = [/\/api\/lock\//, /\/api\/attachment\//, /\/api\/push\//, /\/api\/pwa-link/, /\/api\/caldav-/];
+const SKIP = [/\/api\/lock\//, /\/api\/attachment/, /\/api\/push\//, /\/api\/pwa-link/, /\/api\/caldav-/];
 
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', (event) => event.waitUntil((async () => {
@@ -121,7 +121,9 @@ self.addEventListener('push', (event) => {
       body: payload.body || '',
       icon: '/static/icon-192.png',
       badge: '/static/icon-192.png',
-      data: { url: payload.url || '/' },
+      data: { url: payload.url || '/', kind: payload.kind || '' },
+      // Свой tag у каждого: иначе новое уведомление заменяло бы прежнее.
+      tag: `${payload.kind || 'note'}-${Date.now()}`,
       // Без общего tag: с ним каждое уведомление заменяло предыдущее, и из
       // «оценки + задания» на экране оставалось только последнее.
     })

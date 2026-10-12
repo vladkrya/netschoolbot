@@ -522,7 +522,7 @@ class TestTelegramNotifier:
             def __init__(self):
                 self.sent = []
 
-            async def send(self, telegram_id, title, body):
+            async def send(self, telegram_id, title, body, kind=""):
                 self.sent.append((telegram_id, title, body))
                 return 1
 
@@ -568,7 +568,7 @@ class TestTelegramNotifier:
         def __init__(self):
             self.sent: list[tuple[int, str, str]] = []
 
-        async def send(self, telegram_id, title, body):
+        async def send(self, telegram_id, title, body, kind=""):
             self.sent.append((telegram_id, title, body))
 
     async def test_telegram_off_leaves_only_push(self, users):
@@ -605,7 +605,7 @@ class TestPushDelivery:
             self.sent = []
             self.error = error
 
-        async def send(self, telegram_id, title, body, url=""):
+        async def send(self, telegram_id, title, body, url="", kind=""):
             if self.error:
                 raise self.error
             self.sent.append((telegram_id, title, body))

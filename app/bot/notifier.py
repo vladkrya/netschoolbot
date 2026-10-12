@@ -56,7 +56,7 @@ class TelegramNotifier:
     async def send_mark_events(self, user: User, events: list[MarkEvent]) -> None:
         if not events:
             return
-        await self._push_notify(user, "Новые оценки", _events_preview(events))
+        await self._push_notify(user, "Новые оценки", _events_preview(events), kind="marks")
         if len(events) > DIGEST_THRESHOLD:
             await self._notify(user, formatting.mark_events_digest(events))
         else:
@@ -72,6 +72,7 @@ class TelegramNotifier:
             user,
             "Новые задания",
             ", ".join(sorted({item.subject for item in items})[:4]),
+            kind="homework",
         )
         await self._notify(user, formatting.homework_digest(items, tz=user.tz))
 
@@ -82,13 +83,14 @@ class TelegramNotifier:
             user,
             "Отметки посещаемости",
             ", ".join(sorted({item.subject for item in items})[:4]),
+            kind="marks",
         )
         await self._notify(user, formatting.absences_digest(items))
 
     async def send_token_expiring(self, user: User, expires_at: dt.datetime) -> None:
         await self._send(user, formatting.token_expiring(expires_at, tz=user.tz))
 
-    async def _push_notify(self, user: User, title: str, body: str) -> None:
+    async def _push_notify(self, user: User, title: str, body: str, *, kind: str = "") -> None:
         """Отправить push, не давая его сбою повлиять на Telegram."""
         if self._push is None:
             return
@@ -98,15 +100,17 @@ class TelegramNotifier:
         if key in self._pushed:
             return
         try:
-            if await self._push.send(user.telegram_id, title, body):
+            if await self._push.send(user.telegram_id, title, body, kind=kind):
                 self._pushed[key] = now
         except Exception as exc:  # noqa: BLE001
             logger.warning("Push для %s не ушёл: %s", user.telegram_id, exc)
 
-    async def send_text(self, user: User, text: str, *, push: tuple[str, str] | None = None) -> None:
+    async def send_text(
+        self, user: User, text: str, *, push: tuple[str, str] | None = None, kind: str = ""
+    ) -> None:
         """Уведомление-текст (замены, сводки); push — заголовок и строка для браузера."""
         if push:
-            await self._push_notify(user, *push)
+            await self._push_notify(user, *push, kind=kind)
         await self._notify(user, text)
 
     async def _notify(self, user: User, text: str) -> None:

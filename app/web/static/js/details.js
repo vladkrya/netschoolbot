@@ -78,7 +78,8 @@ export function openLesson(lesson, iso) {
   ].filter(([, value]) => value);
 
   const blocks = [
-    ...realMarks(lesson.marks).map((mark, index) => `
+    // Новый дизайн: оценка целиком здесь — с коэффициентом и временем внесения.
+    ...realMarks(lesson.marks).map((mark, index) => isNewDesign() ? markBlock(mark) : `
       <button class="task-block task-mark" data-mark="${index}">
         <div class="task-head">
           <span class="task-icon">${ICONS.chat}</span>
@@ -122,6 +123,23 @@ export function openLesson(lesson, iso) {
   body.querySelectorAll('[data-hw]').forEach((el) =>
     el.addEventListener('click', () => openHomework(lesson.homework[Number(el.dataset.hw)], lesson.topic))
   );
+}
+
+/** Оценка на экране урока: вид работы, оценка с коэффициентом, комментарий
+ *  учителя и когда внесена. */
+function markBlock(mark) {
+  const work = realTopic(mark.topic, mark);
+  const entered = compactTime(mark.marked_at || mark.published_at);
+  return `<div class="task-block task-mark mark-inline">
+      <div class="task-head">
+        <span class="task-icon">${ICONS.chat}</span>
+        <span class="task-kind">${esc(mark.type || 'Оценка')}</span>
+        ${markBox(mark.mark, 'big', mark.weight || 1)}
+      </div>
+      ${work ? `<div class="detail-text">${esc(work)}</div>` : ''}
+      ${mark.comment ? `<div class="mark-comment"><span class="detail-label">Комментарий учителя</span>${esc(mark.comment)}</div>` : ''}
+      ${entered ? `<div class="hw-times">Внесена ${esc(entered)}</div>` : ''}
+    </div>`;
 }
 
 /** Домашнее задание на экране урока: текст, файлы и когда опубликовано. */

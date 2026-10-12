@@ -18,7 +18,7 @@ const haptic = initData ? tg?.HapticFeedback : null;
 const IOS_TAPPABLE = [
   'button', '[role="button"]',
   '.nav-item', '.btn', '.chip', '.topbar-btn', '.date-arrow', '.date-title', '.screen-back',
-  '.lesson-card', '.hw-card', '.mail-card', '.ann-card', '.task-block:not(.hw-inline)', '.tile',
+  '.lesson-card', '.hw-card', '.mail-card', '.ann-card', '.task-block:not(.hw-inline, .mark-inline)', '.tile',
   'button.tt-cell', '.cal-day', '.cal-arrow', '.calc-btn', '.fab', '.sheet-close',
   '.swatch', '.recipient', '.drawer-link', '.sched-toggle',
   // Калькулятор «что если» в итогах по предмету.

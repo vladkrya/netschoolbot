@@ -30,8 +30,9 @@ export const TAB_NAMES = {
   totals: 'Оценки', mail: 'Почта', settings: 'Настройки',
 };
 
-// Шесть — сколько помещается на узком телефоне с читаемыми подписями.
-export const MAX_TABS = 6;
+// Все семь: от шести вкладок подписи остаются только у активной (new.css),
+// у остальных — иконки, иначе подписи не помещались на узком телефоне.
+export const MAX_TABS = 7;
 
 export function availableTabs() {
   return Object.keys(TAB_DEFS).filter((tab) => tab !== 'assistant' || assistantEnabled);
@@ -72,7 +73,7 @@ export function renderNav(activeTab = '') {
   nav.querySelectorAll('.nav-item').forEach((item) => item.remove());
   nav.insertAdjacentHTML('beforeend', tabs.map((tab) => {
     const def = TAB_DEFS[tab];
-    return `<button class="nav-item${tab === activeTab ? ' active' : ''}" data-tab="${tab}">
+    return `<button class="nav-item${tab === activeTab ? ' active' : ''}" data-tab="${tab}" aria-label="${def.fresh}">
         <span class="ico" data-icon="${def.icon}">${ICONS[def.icon]}</span>
         <span class="lbl-old">${def.old}</span><span class="lbl-new">${def.fresh}</span></button>`;
   }).join(''));

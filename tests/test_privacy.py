@@ -181,3 +181,17 @@ async def test_session_only_login_restores_after_restart_and_requests_login_on_e
             pass
     assert error.value.reason is Reason.AUTH
     await pool.close_all()
+
+
+def test_netschool_error_reason_and_cause_are_logged_without_text():
+    import logging
+
+    from app.netschool.errors import NetSchoolError, Reason
+
+    secret = "Иванов Иван"
+    error = NetSchoolError(Reason.AUTH, f"Не удалось войти: {secret}", cause=ValueError(secret))
+    record = logging.LogRecord("netschoolbot.watcher", logging.WARNING, __file__, 1,
+                               "Проверка почты %s не завершилась: %s", (1, error), None)
+    rendered = SafeFormatter().format(record)
+    assert "NetSchoolError(auth) ← ValueError" in rendered
+    assert secret not in rendered

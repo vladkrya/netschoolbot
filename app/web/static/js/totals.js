@@ -261,6 +261,15 @@ function orderRows(rows) {
     ...ordered.filter((row) => !pinned.has(row.subject.subject))];
 }
 
+/** Заготовки карточек предметов, пока грузятся оценки. */
+function skeletonCards(count) {
+  return Array.from({ length: count }, () => `<div class="card subject-card glass sc-skeleton">
+      <div class="skeleton" style="width:55%"></div>
+      <div class="skeleton" style="height:6px"></div>
+      <div class="skeleton" style="width:40%"></div>
+    </div>`).join('');
+}
+
 function cardsHtml(rows) {
   const pinned = pins();
   return orderRows(rows).map((row) => {
@@ -322,13 +331,18 @@ function renderCards(data, quarters) {
     // Лесенка появления — только при открытии вкладки, не при смене периода.
     list.classList.toggle('rise', animate);
     if (data.archived && !data.loadedPeriods?.has(period)) {
+      // Оценки прошлого года ещё едут: вместо карточек «Оценок пока нет» —
+      // мерцающие заготовки, как при обычной загрузке.
       const key = period;
-      list.insertAdjacentHTML('afterbegin', '<div class="muted small archive-loading">Загружаем оценки за период…</div>');
+      hero.querySelector('.totals-hero')?.classList.add('is-loading');
+      list.innerHTML = skeletonCards(Math.min(rows.length || 4, 6));
+      list.classList.remove('rise');
       ensureArchivedPeriod(data, key).then(() => {
         if (key === period && list.isConnected) fill(false);
       }, () => {
-        list.querySelector('.archive-loading')?.replaceWith(Object.assign(document.createElement('div'),
-          { className: 'muted small archive-loading', textContent: 'Не удалось загрузить оценки за этот период.' }));
+        if (key !== period || !list.isConnected) return;
+        hero.querySelector('.totals-hero')?.classList.remove('is-loading');
+        list.innerHTML = '<div class="empty">Не удалось загрузить оценки за этот период.</div>';
       });
     }
   };

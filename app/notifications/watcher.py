@@ -91,7 +91,9 @@ class Notifier(Protocol):
 
     async def send_error(self, user: User, error: NetSchoolError) -> None: ...
 
-    async def send_text(self, user: User, text: str, *, push: tuple[str, str] | None = None) -> None: ...
+    async def send_text(
+        self, user: User, text: str, *, push: tuple[str, str] | None = None, kind: str = ""
+    ) -> None: ...
 
 
 class UserWatcher:
@@ -304,12 +306,13 @@ class UserWatcher:
                 lines.append(f"\n<b>{html.escape(str(item.get('subject') or 'Без темы'))}</b>"
                              f"\n{html.escape(str(item.get('author') or 'Без отправителя'))}")
             preview = str(items[0].get("subject") or "Без темы")
-            await self._notifier.send_text(user, "\n".join(lines), push=("Школьная почта", preview))
+            await self._notifier.send_text(user, "\n".join(lines), push=("Школьная почта", preview), kind="mail")
         elif kind is OutboxKind.SCHEDULE:
             await self._notifier.send_text(
                 user,
                 formatting.schedule_changes(items),
                 push=("Изменения в расписании", formatting.schedule_preview(items)),
+                kind="schedule",
             )
 
     async def _send_digests(self, user: User) -> None:

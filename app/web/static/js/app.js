@@ -2,7 +2,7 @@
 'use strict';
 
 import {
-  $, banner, base, demo, school, state, student, studentFirstName, syncFinished, syncStarted, tg, token,
+  $, banner, base, demo, loadAttachmentTicket, school, state, student, studentFirstName, syncFinished, syncStarted, tg, token,
 } from './core.js';
 import { initDay, loadDay } from './day.js';
 import { initSchedule, loadSchedule } from './schedule.js';
@@ -45,8 +45,37 @@ function moveLens(index) {
   nav.style.setProperty('--i', index);
 }
 
+/** Какие push-уведомления считаются просмотренными на вкладке: открыл
+ *  «День» или «Оценки» — уведомления об оценках с экрана блокировки уходят. */
+const SEEN_ON_TAB = {
+  day: ['marks', 'homework', 'schedule', ''],
+  totals: ['marks', ''],
+  homework: ['homework'],
+  schedule: ['schedule'],
+  mail: ['mail'],
+};
+
+async function clearNotifications(tab = state.tab) {
+  const kinds = SEEN_ON_TAB[tab];
+  if (!kinds || !('serviceWorker' in navigator)) return;
+  try {
+    const registration = await navigator.serviceWorker.getRegistration();
+    const shown = (await registration?.getNotifications()) || [];
+    // '' — уведомления старого вида, без kind: их убирает «День».
+    shown.filter((note) => kinds.includes(note.data?.kind || '')).forEach((note) => note.close());
+  } catch {
+    /* браузер без уведомлений — нечего убирать */
+  }
+}
+
+// Вернулись в приложение из уведомления или с другого экрана — то же самое.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') clearNotifications();
+});
+
 function switchTab(name) {
   state.tab = name;
+  clearNotifications(name);
   clearScreens();
   document.querySelectorAll('.panel').forEach((panel) => {
     panel.classList.toggle('active', panel.id === `panel-${name}`);
@@ -401,6 +430,9 @@ function onDesign() {
 }
 
 async function start() {
+  // Билет на вложения — заранее: внешний браузер открывается только прямо
+  // из нажатия, ждать сети в этот момент нельзя.
+  loadAttachmentTicket();
   applyStoredTheme();
   applyAccent();
   applyDesign();

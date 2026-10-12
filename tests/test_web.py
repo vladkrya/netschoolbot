@@ -477,10 +477,14 @@ class TestNewFeatures:
         tabs = ["day", "assistant", "homework", "totals", "mail", "settings"]
         response = await client.post(url, params={"token": token}, json={"tabs": tabs})
         assert (await response.json())["data"]["tabs"] == tabs
+        # Все семь вкладок разом — тоже можно.
+        every = ["day", "schedule", "assistant", "homework", "totals", "mail", "settings"]
+        response = await client.post(url, params={"token": token}, json={"tabs": every})
+        assert (await response.json())["data"]["tabs"] == every
         for bad in (
             ["day", "homework"],  # без «Настроек» панель уже не вернуть
             ["day", "day", "settings"],
-            ["day", "schedule", "assistant", "homework", "totals", "mail", "settings"],
+            ["day", "schedule", "assistant", "homework", "totals", "mail", "settings", "settings"],
             ["settings"],
             ["day", "news", "settings"],
             [{"x": 1}, "settings"],
@@ -894,6 +898,28 @@ class TestTelegramMiniApp:
         disposition = response.headers["Content-Disposition"]
         assert "filename*=UTF-8''_%D0%A1%D0%A1%D0%9F%20_1_.docx" in disposition
         assert 'filename="____ _1_.docx"' in disposition
+
+
+    async def test_attachment_opens_by_ticket_in_outside_browser(self, client, users, app_context):
+        # Внешний браузер не знает ни initData, ни заголовка разблокировки:
+        # билет на вложения выдаётся приложению и работает только для них.
+        await users.save(make_user())
+        response = await client.get(
+            f"{BASE}/api/attachment-ticket", headers={"X-Telegram-Init-Data": self.init_data(1)}
+        )
+        ticket = (await response.json())["data"]["ticket"]
+        response = await client.get(f"{BASE}/api/attachment/1", params={"ticket": ticket, "name": "лист.pdf"})
+        assert response.status == 200
+        assert response.headers["Content-Disposition"].startswith("inline;")
+        # Подделка, чужой id и истёкший билет не проходят; на остальное API билет не действует.
+        user_id, expires, signature = ticket.split(".")
+        for bad in (f"{user_id}.{expires}.{'0' * 32}", f"2.{expires}.{signature}", "garbage"):
+            response = await client.get(f"{BASE}/api/attachment/1", params={"ticket": bad})
+            assert response.status == 401, bad
+        from app.web.api import issue_attachment_ticket
+        old = issue_attachment_ticket(app_context, 1, now=0)
+        assert (await client.get(f"{BASE}/api/attachment/1", params={"ticket": old})).status == 401
+        assert (await client.get(f"{BASE}/api/profile", params={"ticket": ticket})).status == 401
 
 
 class TestDiaryScreen:

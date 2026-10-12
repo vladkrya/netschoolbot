@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import asyncio
 import datetime as dt
+import hashlib
+import hmac
 import json
 import logging
 import mimetypes
@@ -162,11 +164,54 @@ async def resolve_identity(request: web.Request) -> tuple[int | None, str]:
     return None, "none"
 
 
+# Билет на вложения: вложение открывается во внешнем браузере, куда не
+# передать ни заголовок разблокировки, ни initData. Постоянный токен в адресе
+# остался бы в истории браузера, поэтому в ссылке — подписанный билет только
+# на вложения, на те же 12 часов, что и разблокировка.
+ATTACHMENT_TICKET_TTL = 12 * 3600
+
+
+def _ticket_key(app: AppContext) -> bytes:
+    return hmac.new(b"attachment-ticket", app.settings.telegram.bot_token.encode(), hashlib.sha256).digest()
+
+
+def issue_attachment_ticket(app: AppContext, telegram_id: int, now: float | None = None) -> str:
+    expires = int((now if now is not None else dt.datetime.now().timestamp()) + ATTACHMENT_TICKET_TTL)
+    body = f"{telegram_id}.{expires}"
+    signature = hmac.new(_ticket_key(app), body.encode(), hashlib.sha256).hexdigest()[:32]
+    return f"{body}.{signature}"
+
+
+def verify_attachment_ticket(app: AppContext, ticket: str, now: float | None = None) -> int | None:
+    try:
+        telegram_id, expires, signature = ticket.split(".")
+        body = f"{int(telegram_id)}.{int(expires)}"
+    except ValueError:
+        return None
+    expected = hmac.new(_ticket_key(app), body.encode(), hashlib.sha256).hexdigest()[:32]
+    if not hmac.compare_digest(expected, signature):
+        return None
+    if int(expires) < (now if now is not None else dt.datetime.now().timestamp()):
+        return None
+    return int(telegram_id)
+
+
 @web.middleware
 async def auth_middleware(request: web.Request, handler):
     """Опознание пользователя для запросов к API."""
     # /captcha-proxy/api/v1/… — API капчи, а не наше: его зовёт виджет без входа.
     if "/api/" not in request.path or "/captcha-proxy/" in request.path:
+        return await handler(request)
+
+    # Вложение по билету: билет выдан уже опознанному и разблокированному
+    # приложению, поэтому ни входа, ни PIN здесь не спрашиваем.
+    ticket = request.query.get("ticket", "")
+    if ticket and "/api/attachment/" in request.path:
+        telegram_id = verify_attachment_ticket(context(request), ticket)
+        user = await context(request).users.get(telegram_id) if telegram_id else None
+        if user is None:
+            return json_error("Ссылка на вложение устарела — откройте его в приложении ещё раз", status=401, reason="auth")
+        request[USER] = user
         return await handler(request)
 
     telegram_id, method = await resolve_identity(request)
@@ -991,6 +1036,12 @@ async def mail_message(request: web.Request) -> web.Response:
 
 
 
+@routes.get("/api/attachment-ticket")
+async def attachment_ticket(request: web.Request) -> web.Response:
+    app, user = context(request), current_user(request)
+    return web.json_response({"ok": True, "data": {"ticket": issue_attachment_ticket(app, user.telegram_id)}})
+
+
 @routes.get("/api/attachment/{attachment_id}")
 async def attachment(request: web.Request) -> web.Response:
     try:
@@ -1022,10 +1073,17 @@ def _attachment_name(raw: str, attachment_id: int) -> str:
     return name or f"attachment-{attachment_id}"
 
 
+# Что браузер умеет показать сам — открываем просмотром, а не скачиванием:
+# вложение теперь открывается во внешнем браузере.
+_INLINE_TYPES = ("application/pdf", "image/")
+
+
 def _content_disposition(name: str) -> str:
     """Заголовок с именем в UTF-8 (RFC 6266) и ASCII-запасным для старых клиентов."""
     fallback = name.encode("ascii", "replace").decode().replace("?", "_")
-    return f"attachment; filename=\"{fallback}\"; filename*=UTF-8''{quote(name, safe='')}"
+    content_type = mimetypes.guess_type(name)[0] or ""
+    kind = "inline" if content_type.startswith(_INLINE_TYPES) else "attachment"
+    return f"{kind}; filename=\"{fallback}\"; filename*=UTF-8''{quote(name, safe='')}"
 
 
 @routes.post("/api/student")
@@ -1143,7 +1201,7 @@ async def mark_history(request: web.Request) -> web.Response:
 THEMES = ("auto", "light", "dark")
 # Вкладки нижней панели (tabs.js); «Настройки» убрать нельзя — иначе их не вернуть.
 NAV_TABS = ("day", "schedule", "assistant", "homework", "totals", "mail", "settings")
-MAX_NAV_TABS = 6
+MAX_NAV_TABS = 7
 # Закреплённые предметы в «Оценках» — с запасом на все предметы года.
 MAX_PINS = 40
 DESIGNS = ("classic", "new")

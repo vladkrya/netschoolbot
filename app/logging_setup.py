@@ -31,6 +31,23 @@ TELEGRAM_QUEUE_SIZE = 100
 _PLACEHOLDER = re.compile(r"%(?:\([^)]+\))?[#0 +\-]*\d*(?:\.\d+)?[diouxXeEfFgGcrsa%]")
 
 
+def _error_label(error: BaseException) -> str:
+    """Тип ошибки, а у ошибок «Сетевого города» — и причина: auth, server…
+
+    Причина — значение из короткого перечня (Reason), личных данных в ней
+    нет. Без неё «NetSchoolError» в логе не говорил, чинить ли что-то у нас
+    или у человека просто не проходит вход.
+    """
+    label = type(error).__name__
+    value = getattr(getattr(error, "reason", None), "value", None)
+    if isinstance(value, str) and value.isidentifier():
+        label += f"({value})"
+    cause = getattr(error, "cause", None)
+    if isinstance(cause, BaseException):
+        label += f" ← {type(cause).__name__}"
+    return label
+
+
 def _safe_message(record: logging.LogRecord) -> str:
     if not record.name.startswith("netschoolbot"):
         return "Событие внешней библиотеки"
@@ -39,7 +56,7 @@ def _safe_message(record: logging.LogRecord) -> str:
     if record.args:
         template = _PLACEHOLDER.sub(lambda m: "%" if m.group() == "%%" else "[скрыто]", template)
         values = record.args.values() if isinstance(record.args, dict) else record.args
-        types = [type(v).__name__ for v in values if isinstance(v, BaseException)]
+        types = [_error_label(v) for v in values if isinstance(v, BaseException)]
         if types:
             template += " | " + ", ".join(types)
     return template
