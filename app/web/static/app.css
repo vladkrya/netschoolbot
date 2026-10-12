@@ -1676,3 +1676,19 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
 .chat-report-actions { display: flex; gap: 6px; }
 .chat-report-actions .btn { flex: 1; padding: 8px 4px; font-size: 13px; }
 .chat-report-actions .danger { color: var(--g2); border-color: var(--g2); }
+.chat-mention { font-weight: 600; }
+.chat-poll { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; min-width: 220px; }
+.chat-poll-option {
+  position: relative; overflow: hidden; display: flex; justify-content: space-between; gap: 8px;
+  padding: 8px 10px; border-radius: 10px; text-align: left; font: inherit; font-size: 14px;
+  color: inherit; background: rgba(127, 127, 127, .14);
+}
+.chat-poll-option.on { box-shadow: inset 0 0 0 1.5px currentColor; }
+.chat-poll-bar { position: absolute; inset: 0 auto 0 0; background: rgba(127, 127, 127, .22); transition: width .3s; }
+.chat-poll-text, .chat-poll-count { position: relative; }
+.chat-poll-total { font-size: 12px; opacity: .7; }
+.chat-poll-btn { flex: none; width: 40px; height: 40px; font-size: 20px; border-radius: 50%; }
+.chat-bell { margin-left: auto; font-size: 18px; }
+.chat-screen .screen-titles { margin-right: 0; }
+#pollOptions { display: flex; flex-direction: column; gap: 8px; margin: 8px 0; }
+#pollAdd { display: block; margin-bottom: 12px; }

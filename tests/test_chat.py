@@ -254,3 +254,52 @@ class TestModeration:
         listing = await (await client.get(f"{BASE}/api/chat/rooms/{room}/messages",
                                           params={"token": other})).json()
         assert listing["data"]["pinned"]["id"] == sent["data"]["id"]
+
+
+class TestPollsAndNotifications:
+    async def test_poll_and_vote(self, client, student_token):
+        _, body = await join(client, student_token)
+        room = body["data"]["rooms"][0]["id"]
+        status, sent = await send(client, student_token, room, "Кто идёт на экскурсию?",
+                                  poll={"options": ["Иду", "Не иду", ""]})
+        assert status == 200 and [o["text"] for o in sent["data"]["poll"]["options"]] == ["Иду", "Не иду"]
+        mid = sent["data"]["id"]
+        _, voted = await post(client, f"/api/chat/messages/{mid}/vote", student_token, {"option": 0})
+        assert voted["data"]["poll"]["my"] == 0 and voted["data"]["poll"]["total"] == 1
+        _, voted = await post(client, f"/api/chat/messages/{mid}/vote", student_token, {"option": 1})
+        assert [o["votes"] for o in voted["data"]["poll"]["options"]] == [0, 1]
+        _, voted = await post(client, f"/api/chat/messages/{mid}/vote", student_token, {"option": 1})
+        assert voted["data"]["poll"]["my"] is None and voted["data"]["poll"]["total"] == 0
+        status, _ = await send(client, student_token, "global:8-9", "опрос", poll={"options": ["а", "б"]})
+        assert status == 400
+
+    async def test_mentions_and_replies_notify(self, client, app_context, users, student_token):
+        import asyncio
+
+        sent_to = []
+
+        async def capture(user, text, *, push=None, kind=""):
+            sent_to.append((user.telegram_id, kind))
+
+        app_context.watchers.notifier.send_text = capture
+        _, body = await join(client, student_token)  # Пётр, 9б
+        room = body["data"]["rooms"][0]["id"]
+        other = await make_student(app_context, users, 50, "Орлова Маша")
+        await join(client, other)
+        await send(client, other, room, "всем привет")  # без упоминания — тихо
+        await asyncio.sleep(0.05)
+        assert sent_to == []
+        await send(client, other, room, "@Пётр ты сделал алгебру?")
+        await asyncio.sleep(0.05)
+        assert sent_to == [(2, "chat")]
+        listing = await (await client.get(f"{BASE}/api/chat/rooms/{room}/messages",
+                                          params={"token": student_token})).json()
+        last = listing["data"]["messages"][-1]["id"]
+        await send(client, student_token, room, "да", reply_to=last)
+        await asyncio.sleep(0.05)
+        assert sent_to[-1] == (50, "chat")
+        # Заглушил чат — уведомлений нет.
+        await post(client, f"/api/chat/rooms/{room}/mute", student_token, {"muted": True})
+        await send(client, other, room, "@Петр ау")
+        await asyncio.sleep(0.05)
+        assert sent_to[-1] == (50, "chat") and len(sent_to) == 2

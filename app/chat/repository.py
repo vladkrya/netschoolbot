@@ -247,3 +247,63 @@ class ChatRepository:
         await self._db.execute(
             "INSERT INTO chat_mod_log (actor_id, action, target, details, created_at) VALUES (?, ?, ?, ?, ?)",
             (actor, action, target, details, time.time()))
+
+    # ─────────────────────── Опросы, участники, заглушение ───────────────────────
+
+    async def vote(self, message_id: int, telegram_id: int, option: int | None) -> None:
+        if option is None:
+            await self._db.execute("DELETE FROM chat_poll_votes WHERE message_id = ? AND telegram_id = ?",
+                                   (message_id, telegram_id))
+        else:
+            await self._db.execute(
+                """INSERT INTO chat_poll_votes (message_id, telegram_id, option) VALUES (?, ?, ?)
+                   ON CONFLICT(message_id, telegram_id) DO UPDATE SET option = excluded.option""",
+                (message_id, telegram_id, option))
+        await self.touch(message_id)
+
+    async def votes(self, ids: list[int]) -> dict[int, list[tuple[int, int]]]:
+        """{опрос: [(кто, вариант)]}."""
+        if not ids:
+            return {}
+        marks = ",".join("?" * len(ids))
+        rows = await self._db.fetch_all(
+            f"SELECT message_id, telegram_id, option FROM chat_poll_votes WHERE message_id IN ({marks})", tuple(ids))
+        result: dict[int, list[tuple[int, int]]] = {}
+        for row in rows:
+            result.setdefault(row["message_id"], []).append((row["telegram_id"], row["option"]))
+        return result
+
+    async def members(self, room: str) -> list[dict[str, Any]]:
+        """Участники комнаты (по профилям), кроме заблокированных."""
+        kind, _, rest = room.partition(":")
+        if kind == "global":
+            first, last = (int(x) for x in rest.split("-"))
+            rows = await self._db.fetch_all(
+                "SELECT * FROM chat_profiles WHERE banned = 0 AND grade BETWEEN ? AND ?", (first, last))
+        elif kind == "school":
+            rows = await self._db.fetch_all(
+                "SELECT * FROM chat_profiles WHERE banned = 0 AND school_key = ?", (rest,))
+        elif kind == "grade":
+            school, grade = rest.rsplit(":", 1)
+            rows = await self._db.fetch_all(
+                "SELECT * FROM chat_profiles WHERE banned = 0 AND school_key = ? AND grade = ?", (school, int(grade)))
+        elif kind == "class":
+            school, cls = rest.rsplit(":", 1)
+            rows = await self._db.fetch_all(
+                "SELECT * FROM chat_profiles WHERE banned = 0 AND school_key = ?", (school,))
+            from .rules import normalize_class
+            rows = [row for row in rows if normalize_class(row["class_name"]) == cls]
+        else:
+            rows = []
+        return [dict(row) for row in rows]
+
+    async def set_muted(self, telegram_id: int, room: str, muted: bool) -> None:
+        await self._db.execute(
+            """INSERT INTO chat_reads (telegram_id, room, muted) VALUES (?, ?, ?)
+               ON CONFLICT(telegram_id, room) DO UPDATE SET muted = excluded.muted""",
+            (telegram_id, room, int(muted)))
+
+    async def is_muted(self, telegram_id: int, room: str) -> bool:
+        row = await self._db.fetch_one(
+            "SELECT muted FROM chat_reads WHERE telegram_id = ? AND room = ?", (telegram_id, room))
+        return bool(row and row["muted"])

@@ -12,6 +12,10 @@
 
 from __future__ import annotations
 
+import asyncio
+import json
+import logging
+import re
 import time
 from typing import Any
 
@@ -23,6 +27,7 @@ from ..netschool.errors import NetSchoolError
 from .api import context, current_user, json_error
 
 routes = web.RouteTableDef()
+logger = logging.getLogger("netschoolbot.chat")
 
 # Профиль перепроверяется в «Сетевом городе» не реже этого: перевели в
 # другой класс, выпустился, вышел из аккаунта ученика.
@@ -32,6 +37,9 @@ SEND_INTERVAL_S = 1.5
 # Столько жалоб от разных людей — и сообщение прячется до решения модератора.
 AUTO_HIDE_REPORTS = 3
 REACTIONS = ("👍", "❤️", "😂", "😮", "😢", "🔥")
+POLL_OPTIONS = (2, 6)
+POLL_OPTION_LEN = 80
+MENTION = re.compile(r"@([A-Za-zА-Яа-яЁё]{2,30})")
 
 RULES_TEXT = [
     "В чатах только ученики: вход проверяется через «Сетевой город».",
@@ -150,6 +158,7 @@ async def message_json(
 ) -> list[dict[str, Any]]:
     chats, uid = repo(request), current_user(request).telegram_id
     reactions = await chats.reactions([row["id"] for row in rows])
+    votes = await chats.votes([row["id"] for row in rows if row["kind"] == "poll"])
     reply_ids = sorted({row["reply_to"] for row in rows if row["reply_to"]})
     replies = {row["id"]: row for row in await _messages_by_id(chats, reply_ids)}
     result = []
@@ -180,8 +189,22 @@ async def message_json(
             } if reply else None,
             "reactions": counts,
             "my_reactions": mine,
+            "poll": _poll_json(row, votes.get(row["id"], []), uid) if row["kind"] == "poll" and not hidden_for_me else None,
         })
     return result
+
+
+def _poll_json(row: dict[str, Any], votes: list[tuple[int, int]], uid: int) -> dict[str, Any]:
+    options = json.loads(row["payload"] or "{}").get("options", [])
+    counts = [0] * len(options)
+    my = None
+    for who, option in votes:
+        if 0 <= option < len(counts):
+            counts[option] += 1
+            if who == uid:
+                my = option
+    return {"options": [{"text": text, "votes": counts[i]} for i, text in enumerate(options)],
+            "total": sum(counts), "my": my}
 
 
 async def _messages_by_id(chats: ChatRepository, ids: list[int]) -> list[dict[str, Any]]:
@@ -308,6 +331,7 @@ async def chat_messages(request: web.Request) -> web.Response:
     return web.json_response({"ok": True, "data": {
         "room": {"id": room.id, "kind": room.kind, "title": room.title, "subtitle": room.subtitle},
         "pinned": (await message_json(request, [pinned], moderator=moderator))[0] if pinned else None,
+        "muted": await chats.is_muted(current_user(request).telegram_id, room_id),
         "admin": is_admin(request),
         "messages": await message_json(request, rows, moderator=moderator),
         "changed": await message_json(request, changed, moderator=moderator),
@@ -341,6 +365,17 @@ async def chat_send(request: web.Request) -> web.Response:
         return json_error(problem, reason="chat")
     if admin and not text.strip():
         return json_error("Пустое сообщение")
+    kind, payload = "text", None
+    if isinstance(body.get("poll"), dict):
+        if room.is_global:
+            return json_error("Опросы — в чатах своей школы")
+        options = [str(item).strip()[:POLL_OPTION_LEN] for item in body["poll"].get("options") or []]
+        options = [item for item in options if item]
+        if not POLL_OPTIONS[0] <= len(options) <= POLL_OPTIONS[1]:
+            return json_error(f"Вариантов — от {POLL_OPTIONS[0]} до {POLL_OPTIONS[1]}")
+        if not admin and (problem := rules.check_text(" / ".join(options), global_room=False)):
+            return json_error(problem, reason="chat")
+        kind, payload = "poll", json.dumps({"options": options}, ensure_ascii=False)
     reply_to = body.get("reply_to")
     chats = repo(request)
     if reply_to is not None:
@@ -351,8 +386,12 @@ async def chat_send(request: web.Request) -> web.Response:
     name, grade, as_admin = display(profile, admin)
     message_id = await chats.add_message(
         room_id, author_id=current_user(request).telegram_id, author_name=name, author_grade=grade,
-        is_admin=as_admin, text=text[:rules.MAX_TEXT], reply_to=reply_to,
+        is_admin=as_admin, text=text[:rules.MAX_TEXT], reply_to=reply_to, kind=kind, payload=payload,
     )
+    # Уведомления — фоном: отправитель не ждёт Telegram и push.
+    task = asyncio.create_task(notify_mentions(context(request), room, message_id))
+    _background.add(task)
+    task.add_done_callback(_background.discard)
     await chats.mark_read(current_user(request).telegram_id, room_id, message_id)
     row = await chats.message(message_id)
     assert row is not None
@@ -517,3 +556,86 @@ async def chat_reports(request: web.Request) -> web.Response:
         item["room"] = {"id": row["room"], "title": room.title if room else row["room"]}
         item["reports"] = row["reports"]
     return web.json_response({"ok": True, "data": {"items": items}})
+
+
+# ─────────────────────── Опросы, уведомления, заглушение ───────────────────────
+
+_background: set[asyncio.Task] = set()
+
+
+async def notify_mentions(app: Any, room: rules.Room, message_id: int) -> None:
+    """Уведомить тех, кого упомянули (@Имя) или кому ответили. Обо всех
+    сообщениях подряд не уведомляем — иначе push быстро выключат совсем."""
+    notifier = app.watchers.notifier
+    if notifier is None:
+        return
+    try:
+        chats = ChatRepository(app.db)
+        message = await chats.message(message_id)
+        if not message:
+            return
+        targets: set[int] = set()
+        if message["reply_to"] and (replied := await chats.message(message["reply_to"])):
+            targets.add(replied["author_id"])
+        names = {_fold(name) for name in MENTION.findall(message["text"])}
+        if names:
+            for member in await chats.members(room.id):
+                if _fold(member["first_name"]) in names:
+                    targets.add(member["telegram_id"])
+            admin_id = app.settings.telegram.admin_id
+            if admin_id and _fold(rules.ADMIN_NAME) in names:
+                targets.add(admin_id)
+        targets.discard(message["author_id"])
+        author = rules.ADMIN_NAME if message["is_admin"] else (
+            f"{message['author_name']} · {message['author_grade']}" if message["author_grade"] else message["author_name"])
+        preview = message["text"][:120]
+        for telegram_id in targets:
+            if await chats.is_muted(telegram_id, room.id):
+                continue
+            user = await app.users.get(telegram_id)
+            if not user:
+                continue
+            await notifier.send_text(
+                user, f"💬 <b>{_esc(author)}</b> в «{_esc(room.title)}»:\n{_esc(preview)}",
+                push=(f"{author} · {room.title}", preview), kind="chat")
+    except Exception as exc:  # noqa: BLE001 — уведомление не должно ронять чат
+        logger.warning("Уведомление о сообщении %s не ушло: %s", message_id, exc)
+
+
+def _fold(name: str) -> str:
+    return name.strip().lower().replace("ё", "е")
+
+
+def _esc(text: str) -> str:
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+@routes.post("/api/chat/messages/{message_id}/vote")
+async def chat_vote(request: web.Request) -> web.Response:
+    """Голос в опросе; повторный выбор того же варианта снимает голос."""
+    try:
+        message, _ = await _message_for(request)
+    except ChatDenied as exc:
+        return _denied(exc)
+    if message["kind"] != "poll" or message["deleted_at"] is not None:
+        return json_error("Это не опрос")
+    option = (await request.json()).get("option")
+    options = json.loads(message["payload"] or "{}").get("options", [])
+    if not isinstance(option, int) or not 0 <= option < len(options):
+        return json_error("Нет такого варианта")
+    uid = current_user(request).telegram_id
+    current = dict((who, choice) for who, choice in (await repo(request).votes([message["id"]])).get(message["id"], []))
+    await repo(request).vote(message["id"], uid, None if current.get(uid) == option else option)
+    return web.json_response({"ok": True, "data": await _one(request, message["id"])})
+
+
+@routes.post("/api/chat/rooms/{room}/mute")
+async def chat_mute(request: web.Request) -> web.Response:
+    room_id = request.match_info["room"]
+    try:
+        await room_access(request, room_id)
+    except ChatDenied as exc:
+        return _denied(exc)
+    muted = bool((await request.json()).get("muted"))
+    await repo(request).set_muted(current_user(request).telegram_id, room_id, muted)
+    return web.json_response({"ok": True, "data": {"muted": muted}})

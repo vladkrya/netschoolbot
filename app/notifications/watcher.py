@@ -530,6 +530,11 @@ class WatcherRegistry:
         self._tasks: dict[int, asyncio.Task] = {}
         self._lock = asyncio.Lock()
 
+    @property
+    def notifier(self) -> Notifier | None:
+        """Тот же канал уведомлений, что у проверок, — для чатов."""
+        return self._notifier
+
     def attach_notifier(self, notifier: Notifier) -> None:
         """Задать способ доставки уведомлений.
 
