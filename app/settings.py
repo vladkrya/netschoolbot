@@ -165,6 +165,24 @@ class AssistantSettings:
 
 
 @dataclass(frozen=True, slots=True)
+class MailSettings:
+    """Почта для входа без Telegram: коды подтверждения и сброса пароля.
+    Без хоста письма не отправляются — вход по почте работает и так."""
+
+    host: str = ""
+    port: int = 587
+    user: str = ""
+    password: str = ""
+    sender: str = ""
+    # starttls (587), ssl (465) или plain (локальный сервер без шифрования).
+    security: str = "starttls"
+
+    @property
+    def configured(self) -> bool:
+        return bool(self.host and self.sender)
+
+
+@dataclass(frozen=True, slots=True)
 class Settings:
     data_dir: Path
     db_path: Path
@@ -178,6 +196,7 @@ class Settings:
     caldav_enabled: bool = True
     caldav_interval: int = 1800
     assistant: AssistantSettings = field(default_factory=AssistantSettings)
+    mail: MailSettings = field(default_factory=MailSettings)
 
     @property
     def logs_dir(self) -> Path:
@@ -304,5 +323,13 @@ def load_settings(*, require_bot_token: bool = True) -> Settings:
             base_url=_env("NETSCHOOL_ASSISTANT_URL", "https://openrouter.ai/api/v1").rstrip("/"),
             proxy=_env("NETSCHOOL_ASSISTANT_PROXY"),
             daily_limit=max(1, _env_int("NETSCHOOL_ASSISTANT_DAILY_LIMIT", 30)),
+        ),
+        mail=MailSettings(
+            host=_env("MAIL_SMTP_HOST"),
+            port=_env_int("MAIL_SMTP_PORT", 587),
+            user=_env("MAIL_SMTP_USER"),
+            password=_env("MAIL_SMTP_PASSWORD"),
+            sender=_env("MAIL_FROM"),
+            security=(_env("MAIL_SMTP_SECURITY") or "starttls").lower(),
         ),
     )

@@ -214,6 +214,11 @@ async def auth_middleware(request: web.Request, handler):
         request[USER] = user
         return await handler(request)
 
+    # Регистрация, вход по почте и сброс пароля — до всякого входа.
+    from .account import is_public
+    if is_public(request.path):
+        return await handler(request)
+
     # Короткий билет выдан запросом, прошедшим обычную авторизацию и PIN.
     if request.path.rstrip('/').endswith('/api/chat/ws'):
         from .chat import verify_ws_ticket

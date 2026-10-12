@@ -484,6 +484,7 @@ function render() {
       <div class="drawer-heading">Дополнительно</div>
       ${data.assistant && !demo && !navTabs().includes('assistant') ? `<button class="drawer-link" id="drawerAssistant">${ICONS.sparkles} ИИ-помощник</button>` : ''}
       ${demo ? '' : `<button class="drawer-link" id="drawerLock">${ICONS.shield} Защита входа</button>`}
+      ${demo ? '' : `<button class="drawer-link" id="drawerAccount">${ICONS.mail} Вход по почте</button>`}
       ${demo ? '' : `<button class="drawer-link" id="drawerBug">${ICONS.chat} Сообщить об ошибке</button>`}
       <button class="drawer-link" id="drawerCalc">${ICONS.calc} Калькулятор баллов</button>
       <button class="drawer-link" id="drawerHistory">${ICONS.clock} История оценок</button>
@@ -614,6 +615,12 @@ function bindDrawer() {
   $('drawerHistory').addEventListener('click', () => { tap(); openHistory(); });
   $('drawerLock')?.addEventListener('click', () => { closeDrawer(); openLockSettings().catch(error => banner(error.message, true)); });
   $('drawerCalendar')?.addEventListener('click', () => { tap(); openCalendar(); });
+  $('drawerAccount')?.addEventListener('click', async () => {
+    tap();
+    closeDrawer();
+    const { openAccountSettings } = await import('./account.js');
+    openAccountSettings();
+  });
   $('drawerBug')?.addEventListener('click', () => { tap(); closeDrawer(); openBugReport(); });
   bindTabs();
   bindPushToggle();

@@ -16,6 +16,7 @@ from aiogram import Bot
 from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.exceptions import TelegramForbiddenError, TelegramRetryAfter
 
+from ..accounts import WEB_ID_BASE
 from ..settings import load_settings
 
 # Telegram пускает около 30 сообщений в секунду; держимся с запасом.
@@ -23,10 +24,11 @@ PAUSE_S = 0.1
 
 
 def recipients(db_path, schools: list[str] | None = None) -> list[int]:
-    query, params = "SELECT telegram_id FROM users", []
+    # Вошедшие по почте без Telegram (служебные номера) в рассылку не попадают.
+    query, params = "SELECT telegram_id FROM users WHERE telegram_id < ?", [WEB_ID_BASE]
     if schools:
-        query += " WHERE " + " OR ".join("instr(school_url, ?) > 0" for _ in schools)
-        params = schools
+        query += " AND (" + " OR ".join("instr(school_url, ?) > 0" for _ in schools) + ")"
+        params += schools
     with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as db:
         return [row[0] for row in db.execute(query + " ORDER BY telegram_id", params)]
 

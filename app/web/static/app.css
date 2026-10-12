@@ -1718,3 +1718,27 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
 .chat-poll { min-width: min(220px, 100%); }
 .chat-screen .screen-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chat-screen .screen-titles { min-width: 0; }
+
+/* Вход по почте и вход в «Сетевой город» с сайта (account.js). */
+.account-screen .account-card { display: flex; flex-direction: column; gap: 4px; max-height: calc(100dvh - 48px); overflow: auto; }
+.account-card h2 { margin: 0 0 6px; }
+.account-card .muted { margin: 0 0 10px; line-height: 1.4; }
+.account-form .btn { width: 100%; margin-top: 4px; }
+.account-row { display: flex; gap: 8px; align-items: center; }
+.account-row .field { margin: 0; }
+.account-row .btn { width: auto; margin: 0; flex: none; }
+.account-list { display: flex; flex-direction: column; gap: 6px; margin: 10px 0; max-height: 46vh; overflow: auto; }
+.account-list .btn { justify-content: flex-start; text-align: left; }
+.account-links { display: flex; justify-content: space-between; gap: 12px; margin-top: 12px; }
+.account-card > .link, .account-links .link { color: var(--primary); font-size: 14px; }
+.account-error { color: var(--g2, #d33); margin: 4px 0 8px; font-size: 14px; }
+.account-error[hidden] { display: none; }
+.account-check { display: flex; gap: 8px; align-items: flex-start; margin: 4px 0 10px; font-size: 14px; color: var(--text2); }
+.account-check input { margin-top: 3px; flex: none; }
+.account-qr { display: block; width: min(100%, 260px); margin: 6px auto 10px; border-radius: 12px; background: #fff; padding: 8px; image-rendering: pixelated; }
+.account-qr-left { text-align: center; }
+.account-wait { display: flex; justify-content: center; padding: 18px 0; }
+.account-settings p { margin: 6px 0; }
+.account-logout { width: 100%; margin-top: 8px; color: var(--g2, #d33); border-color: var(--g2, #d33); }
+.account-link-code code { user-select: all; }
+.account-link-code .btn { margin: 8px 0; }

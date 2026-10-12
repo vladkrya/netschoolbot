@@ -16,6 +16,7 @@ from aiogram import Bot
 from aiogram.exceptions import TelegramForbiddenError, TelegramRetryAfter
 from aiogram.types import ReplyKeyboardRemove
 
+from ..accounts import has_telegram
 from ..db.repositories import UserRepository
 from ..domain import formatting
 from ..domain.models import User
@@ -130,6 +131,9 @@ class TelegramNotifier:
             await self._send_part(user, part)
 
     async def _send_part(self, user: User, text: str, *, retry: bool = True) -> None:
+        if not has_telegram(user.telegram_id):
+            # Вошёл по почте без Telegram: уведомления — только push в браузер.
+            return
         try:
             await self._bot.send_message(
                 user.telegram_id, text, parse_mode="HTML", reply_markup=ReplyKeyboardRemove()

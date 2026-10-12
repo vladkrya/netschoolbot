@@ -37,6 +37,7 @@ from ...context import AppContext
 from ...domain import formatting
 from ...domain.models import ApiMode, Credentials, LoginType, School, User
 from ...netschool.errors import NetSchoolError, Reason, wrap
+from ...netschool import login as login_flow
 from ...netschool.patches import http as http_patch
 from .. import keyboards
 from .common import reply, report_error
@@ -374,39 +375,7 @@ async def _perform_login(
     user: User, app: AppContext, message: Message, login_type: LoginType
 ) -> str | None:
     """Выполнить вход и вернуть сессию для сохранения после проверки попытки."""
-    from netschoolpy import NetSchool
-
-    proxy = app.settings.netschool.proxy_for(user.school.url)
-    client = NetSchool(user.school.url, proxy=proxy) if proxy else NetSchool(user.school.url)
-
-    try:
-        if login_type is LoginType.ESIA:
-            await client.login_via_gosuslugi(
-                esia_login=user.credentials.login,
-                esia_password=user.credentials.password,
-                school=user.school.name or None,
-                timeout=60,
-                otp_callback=_make_otp_callback(message, user.telegram_id),
-            )
-        else:
-            await client.login(
-                user_name=user.credentials.login,
-                password=user.credentials.password,
-                school=user.school.name,
-            )
-        payload = client.export_session()
-    except Exception as exc:
-        raise wrap(exc, context="вход") from exc
-    finally:
-        # Клиент входа больше не нужен: дальше работает пул.
-        try:
-            http = getattr(client, "_http", None)
-            if http is not None and hasattr(http, "aclose"):
-                await http.aclose()
-        except Exception as exc:  # noqa: BLE001
-            logger.debug("Не удалось закрыть клиент после входа: %s", exc)
-
-    return payload
+    return await login_flow.password_login(app, user, _make_otp_callback(message, user.telegram_id))
 
 
 def _make_otp_callback(message: Message, telegram_id: int):
@@ -512,39 +481,18 @@ async def _qr_attempt(callback: CallbackQuery, state: FSMContext, user: User, ap
             ),
         )
 
-    from netschoolpy import NetSchool
-
-    proxy = app.settings.netschool.proxy_for(url)
-    client = NetSchool(url, proxy=proxy) if proxy else NetSchool(url)
-
     try:
-        await asyncio.wait_for(
-            client.login_via_gosuslugi_qr(
-                qr_callback=show_qr, qr_timeout=ttl + 30, school=school, timeout=30
-            ),
-            # Даём чуть больше времени, чем живёт код: иначе успешное
-            # сканирование на последней секунде пропадало впустую.
-            timeout=ttl + 45,
-        )
-        payload = client.export_session()
+        payload = await login_flow.qr_login(app, url, school, show_qr)
     except asyncio.TimeoutError:
         await _delete_quietly(qr_message)
         await notice.delete()
         await _offer_qr_retry(callback, state, attempt, "⌛️ QR-код истёк. Получите новый кнопкой ниже.")
         return
-    except Exception as exc:
+    except NetSchoolError as error:
         await _delete_quietly(qr_message)
         await notice.delete()
-        error = wrap(exc, context="QR-вход")
         await _offer_qr_retry(callback, state, attempt, f"❌ {formatting.esc(error.user_message)}")
         return
-    finally:
-        try:
-            http = getattr(client, "_http", None)
-            if http is not None and hasattr(http, "aclose"):
-                await http.aclose()
-        except Exception as exc:  # noqa: BLE001
-            logger.debug("Не удалось закрыть QR-клиент: %s", exc)
 
     await _delete_quietly(qr_message)
     await notice.delete()
@@ -604,47 +552,12 @@ def _render_qr(content: str) -> bytes | None:
 
 
 async def _settle_api_mode(user: User, app: AppContext) -> tuple[User, str]:
-    """Довести новую веб-сессию входа до рабочего мобильного режима.
-
-    После входа у пользователя есть только веб-сессия, а
-    мобильному клиенту нужен токен. Пока пользователь в мобильном режиме,
-    меняем живую веб-сессию на токен прямо сейчас — позже, без нового кода
-    подтверждения, этого не сделать. Не вышло — возвращаем веб-режим и
-    говорим об этом, чтобы человек не застрял в цикле «войдите заново».
-
-    Возвращает пользователя и пояснение для сообщения (пустое, если
-    сказать нечего).
-    """
-    if user.api_mode is not ApiMode.MOBILE:
-        return user, ""
-    try:
-        await app.pool.switch_api(user, ApiMode.MOBILE)
-    except Exception as exc:  # noqa: BLE001 — любой сбой означает «остаёмся на вебе»
-        logger.info("Мобильный токен после входа не получен для %s: %s", user.telegram_id, exc)
-        reverted = await app.users.save(replace(user, api_mode=ApiMode.WEB))
-        return reverted, (
-            "⚠️ Мобильное API включить не удалось — работаю через веб-API. "
-            "Попробовать снова: /changeapi."
-        )
-    return user, "📱 Мобильное API включено: вход держится 60 дней."
+    return await login_flow.settle_api_mode(app, user)
 
 
 async def _finish_login(user: User, app: AppContext, message: Message) -> None:
     """Завершить вход: сохранить пользователя, найти детей, запустить проверку."""
-    saved = await app.users.save(replace(user, enabled=True))
-    saved, api_note = await _settle_api_mode(saved, app)
-
-    try:
-        saved = await app.diary.sync_students(saved)
-    except NetSchoolError as exc:
-        # Вход удался, а список детей — нет. Это не повод откатывать вход.
-        logger.info("Не удалось получить список учеников для %s: %s", saved.telegram_id, exc.reason)
-
-    # Новая школа или новый ребёнок — старое состояние слежения неприменимо.
-    await app.state.forget_all(saved.telegram_id)
-    await app.state.mark_baseline_pending(saved.telegram_id, True)
-    await app.cache.clear(saved.telegram_id)
-    await app.watchers.start(saved.telegram_id)
+    saved, api_note = await login_flow.finish_login(app, user, None)
 
     lines = [
         "✅ <b>Вход выполнен</b>",

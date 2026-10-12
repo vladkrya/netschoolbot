@@ -453,6 +453,31 @@ MIGRATIONS: list[str] = [
     );
     CREATE INDEX chat_edits_message ON chat_edits(message_id);
     """,
+    # 26 — вход без Telegram: почта и пароль. Коды (подтверждение почты,
+    # сброс пароля) хранятся хэшем; код привязки Telegram — на 15 минут.
+    """
+    CREATE TABLE accounts (
+        telegram_id INTEGER PRIMARY KEY REFERENCES users(telegram_id) ON DELETE CASCADE,
+        email TEXT NOT NULL UNIQUE,
+        password_hash TEXT NOT NULL,
+        email_verified_at REAL,
+        created_at REAL NOT NULL,
+        password_changed_at REAL NOT NULL
+    );
+    CREATE TABLE account_codes (
+        email TEXT NOT NULL,
+        purpose TEXT NOT NULL,
+        code_hash TEXT NOT NULL,
+        expires_at REAL NOT NULL,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (email, purpose)
+    );
+    CREATE TABLE telegram_link_codes (
+        code TEXT PRIMARY KEY,
+        telegram_id INTEGER NOT NULL REFERENCES users(telegram_id) ON DELETE CASCADE,
+        expires_at REAL NOT NULL
+    );
+    """,
 ]
 
 

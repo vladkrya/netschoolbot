@@ -23,7 +23,7 @@ import jinja2
 from aiohttp import web
 
 from ..context import AppContext
-from . import api, assistant, bugreport, caldav, captcha_proxy, chat, lock
+from . import account, api, assistant, bugreport, caldav, captcha_proxy, chat, lock
 from .api import BOT, CONTEXT
 
 logger = logging.getLogger("netschoolbot.web")
@@ -132,6 +132,7 @@ def create_app(context: AppContext, bot=None) -> web.Application:
     inner.add_routes(api.routes)
     inner.add_routes(lock.routes)
     inner.add_routes(chat.routes)
+    inner.add_routes(account.routes)
     inner.add_routes(bugreport.routes)
     inner.add_routes(assistant.routes)
     inner.add_routes(captcha_proxy.routes)

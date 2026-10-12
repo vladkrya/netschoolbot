@@ -28,6 +28,8 @@ from .db.repositories import (
 )
 from .netschool.service import DiaryService
 from .netschool.session import SessionPool
+from .accounts.mailer import Mailer
+from .accounts.repository import AccountRepository
 from .chat.hub import ChatHub
 from .notifications.watcher import Notifier, WatcherRegistry
 from .settings import Settings
@@ -56,6 +58,17 @@ class AppContext:
     login_tasks: dict[int, set[asyncio.Task]] = field(default_factory=dict)
     # Вопросы ИИ-помощнику за сутки: {telegram_id: (день, сколько)}.
     assistant_usage: dict[int, tuple] = field(default_factory=dict)
+    # Вход по почте без Telegram и письма с кодами.
+    accounts: AccountRepository | None = None
+    mailer: Mailer | None = None
+    # Незавершённые входы в «Сетевой город» с сайта: {telegram_id: попытка}.
+    web_logins: dict[int, object] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if self.accounts is None:
+            self.accounts = AccountRepository(self.db)
+        if self.mailer is None:
+            self.mailer = Mailer(self.settings.mail)
 
     @classmethod
     async def create(cls, settings: Settings, notifier: Notifier | None = None) -> "AppContext":
