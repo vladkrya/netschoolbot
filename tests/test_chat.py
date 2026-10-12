@@ -86,8 +86,9 @@ class TestJoin:
         status, body = await join(client, student_token)
         assert status == 200 and body["data"]["joined"]
         rooms = body["data"]["rooms"]
-        assert [room["kind"] for room in rooms] == ["class", "grade", "school", "global"]
-        assert rooms[3]["id"] == "global:6-11" and rooms[3]["title"] == "Общий чат"
+        assert [room["kind"] for room in rooms] == ["grade", "school", "global"]
+        assert rooms[0]["title"] == "9-е классы"
+        assert rooms[2]["id"] == "global:6-11" and rooms[2]["title"] == "Общий чат"
         assert body["data"]["profile"]["first_name"] == "Пётр"
 
 
@@ -116,7 +117,7 @@ class TestMessages:
 
     async def test_other_school_room_is_closed(self, client, student_token):
         await join(client, student_token)
-        status, _ = await send(client, student_token, "class:deadbeef0000:9б", "эй")
+        status, _ = await send(client, student_token, "grade:deadbeef0000:9", "эй")
         assert status == 404
         status, _ = await send(client, student_token, "global:1-4", "эй")
         assert status == 404
@@ -124,7 +125,7 @@ class TestMessages:
     async def test_no_global_chat_below_sixth_grade(self, client, app_context, users):
         token = await make_student(app_context, users, 60, "Малышев Коля", class_name="5а")
         _, body = await join(client, token)
-        assert [room["kind"] for room in body["data"]["rooms"]] == ["class", "grade", "school"]
+        assert [room["kind"] for room in body["data"]["rooms"]] == ["grade", "school"]
         status, _ = await send(client, token, "global:6-11", "привет")
         assert status == 404
 
@@ -221,7 +222,7 @@ class TestModeration:
         mod = await make_student(app_context, users, 30, "Сидорова Аня", class_name="11а")
         _, mod_body = await join(client, mod)
         # Модератора назначает администратор — по его сообщению.
-        _, sent = await send(client, mod, mod_body["data"]["rooms"][2]["id"], "я тут")
+        _, sent = await send(client, mod, mod_body["data"]["rooms"][1]["id"], "я тут")
         status, _ = await post(client, f"/api/chat/messages/{sent['data']['id']}/author", student_token,
                                {"action": "moderator"})
         assert status == 403

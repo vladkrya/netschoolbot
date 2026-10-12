@@ -3,8 +3,8 @@
 
 Комнаты не хранятся отдельно — их id выводятся из профиля:
 
-* ``class:<школа>:<класс>`` — свой класс («9б»);
-* ``grade:<школа>:<параллель>`` — все классы параллели своей школы;
+* ``grade:<школа>:<параллель>`` — своя параллель своей школы (все 9-е);
+  отдельного чата класса нет — у каждой параллели каждой школы свой чат;
 * ``school:<школа>`` — вся школа;
 * ``global:6-11`` — общий чат всех школ, с 6 по 11 класс. Младшим он не
   виден: им общий чат с подростками ни к чему.
@@ -54,14 +54,10 @@ def first_name(full_name: str) -> str:
     return parts[0] if parts else "Ученик"
 
 
-def normalize_class(class_name: str) -> str:
-    return re.sub(r"\s+", "", class_name or "").lower()
-
-
 @dataclass(frozen=True, slots=True)
 class Room:
     id: str
-    kind: str  # class | grade | school | global
+    kind: str  # grade | school | global
     title: str
     subtitle: str = ""
 
@@ -72,9 +68,7 @@ class Room:
 
 def rooms_for(school: str, class_name: str, grade: int, school_name: str = "") -> list[Room]:
     """Комнаты ученика — в порядке списка на экране."""
-    cls = normalize_class(class_name)
     rooms = [
-        Room(f"class:{school}:{cls}", "class", f"{class_name.strip()} класс", school_name),
         Room(f"grade:{school}:{grade}", "grade", f"{grade}-е классы", school_name),
         Room(f"school:{school}", "school", "Вся школа", school_name),
     ]
@@ -97,8 +91,6 @@ def describe(room_id: str) -> Room | None:
         return Room(room_id, "school", "Вся школа")
     if kind == "grade" and ":" in rest:
         return Room(room_id, "grade", f"{rest.rsplit(':', 1)[1]}-е классы")
-    if kind == "class" and ":" in rest:
-        return Room(room_id, "class", f"{rest.rsplit(':', 1)[1]} класс")
     return None
 
 

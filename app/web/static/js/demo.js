@@ -413,7 +413,6 @@ export async function demoApi(path, options = {}) {
 /* ───────── Чаты в демо: всё в памяти, сервер не участвует ───────── */
 
 const DEMO_ROOMS = [
-  { id: 'class:demo:9б', kind: 'class', title: '9б класс', subtitle: 'Демо-школа №1' },
   { id: 'grade:demo:9', kind: 'grade', title: '9-е классы', subtitle: 'Демо-школа №1' },
   { id: 'school:demo', kind: 'school', title: 'Вся школа', subtitle: 'Демо-школа №1' },
   { id: 'global:6-11', kind: 'global', title: 'Общий чат', subtitle: 'Все школы · 6–11 классы' },
@@ -431,9 +430,9 @@ function demoChatSeed() {
       at: now - ago, reply: null, reactions: {}, my_reactions: [], ...extra,
     });
   };
-  add('class:demo:9б', 'Маша', 9, 'Кто понял, что задали по алгебре?', 3600);
-  add('class:demo:9б', 'Артём', 9, '№272, №274 и №277, на завтра', 3400, { reactions: { '👍': 3 } });
-  add('class:demo:9б', 'Маша', 9, 'Спасибо!', 3300);
+  add('grade:demo:9', 'Маша', 9, 'Кто понял, что задали по алгебре?', 3600);
+  add('grade:demo:9', 'Артём', 9, '№272, №274 и №277, на завтра', 3400, { reactions: { '👍': 3 } });
+  add('grade:demo:9', 'Маша', 9, 'Спасибо!', 3300);
   add('grade:demo:9', 'Даня', 9, 'В пятницу экскурсия у всех 9-х?', 7200);
   add('global:6-11', 'Лиза', 8, 'Всем привет! Кто готовится к ОГЭ по биологии?', 600);
 }
@@ -451,7 +450,7 @@ function demoChat(route, url, options, body) {
     rooms: demoChatState.joined ? DEMO_ROOMS.map((room) => {
       const list = demoChatState.messages[room.id] || [];
       const last = list[list.length - 1];
-      return { ...room, unread: room.kind === 'class' ? 2 : 0, muted: false,
+      return { ...room, unread: room.kind === 'grade' ? 2 : 0, muted: false,
         last: last ? { author: last.author, text: last.text, at: last.at } : null };
     }) : [],
   });

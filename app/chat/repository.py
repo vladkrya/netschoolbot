@@ -287,12 +287,6 @@ class ChatRepository:
             school, grade = rest.rsplit(":", 1)
             rows = await self._db.fetch_all(
                 "SELECT * FROM chat_profiles WHERE banned = 0 AND school_key = ? AND grade = ?", (school, int(grade)))
-        elif kind == "class":
-            school, cls = rest.rsplit(":", 1)
-            rows = await self._db.fetch_all(
-                "SELECT * FROM chat_profiles WHERE banned = 0 AND school_key = ?", (school,))
-            from .rules import normalize_class
-            rows = [row for row in rows if normalize_class(row["class_name"]) == cls]
         else:
             rows = []
         return [dict(row) for row in rows]
