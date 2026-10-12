@@ -1109,8 +1109,7 @@ async def attachment(request: web.Request) -> web.Response:
         body=payload,
         headers={
             "Content-Type": content_type,
-            # download=1 — кнопка «Скачать»: сохранить, а не смотреть.
-            "Content-Disposition": _content_disposition(name, bool(request.query.get("download"))),
+            "Content-Disposition": _content_disposition(name),
         },
     )
 
@@ -1163,12 +1162,11 @@ _INLINE_TYPES = (
 )
 
 
-def _content_disposition(name: str, download: bool = False) -> str:
+def _content_disposition(name: str) -> str:
     """Заголовок с именем в UTF-8 (RFC 6266) и ASCII-запасным для старых клиентов."""
     fallback = name.encode("ascii", "replace").decode().replace("?", "_")
     content_type = mimetypes.guess_type(name)[0] or ""
-    inline = not download and content_type.startswith(_INLINE_TYPES)
-    kind = "inline" if inline else "attachment"
+    kind = "inline" if content_type.startswith(_INLINE_TYPES) else "attachment"
     return f"{kind}; filename=\"{fallback}\"; filename*=UTF-8''{quote(name, safe='')}"
 
 
