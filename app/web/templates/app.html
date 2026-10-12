@@ -4,12 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
 <meta name="theme-color" content="#4a6fae">
-<!-- iPhone, приложение с домашнего экрана: страница во весь экран, под
-     строкой состояния, а не под голубой полосой цвета theme-color. Отступ
-     сверху даёт safe-area-inset-top (см. --safe-top в app.css). -->
+<!-- iPhone, приложение с домашнего экрана: строка состояния — отдельной
+     полосой цвета theme-color (его ставим в цвет шапки), страница начинается
+     под ней. Под прозрачной строкой (black-translucent) iOS 26 размывает
+     верх страницы, и заголовок шапки в этой зоне выходил мыльным. -->
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <script>
   // Системная область получает цвет шапки уже до первой отрисовки.
   try {

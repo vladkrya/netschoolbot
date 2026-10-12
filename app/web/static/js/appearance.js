@@ -164,6 +164,7 @@ export function initFullscreen() {
     const content = tg.contentSafeAreaInset || {};
     root.setProperty('--tg-top', `${(safe.top || 0) + (content.top || 0)}px`);
     root.setProperty('--tg-bottom', `${safe.bottom || 0}px`);
+    document.documentElement.classList.toggle('tg-inset', Boolean(content.top));
   };
   sync();
   for (const event of ['safeAreaChanged', 'contentSafeAreaChanged', 'fullscreenChanged']) {

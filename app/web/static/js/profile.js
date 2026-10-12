@@ -755,6 +755,36 @@ async function currentSubscription() {
   }
 }
 
+/**
+ * Первый запуск с экрана «Домой»: сразу спросить разрешение на уведомления
+ * и подписать устройство на пуш. iOS показывает запрос только в ответ на
+ * нажатие — если без него не вышло, спросим при первом касании экрана.
+ */
+export function offerPushOnFirstLaunch() {
+  const installed = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  if (demo || !installed || pushAvailability() !== 'ready') return;
+  if (Notification.permission !== 'default') return;
+  try {
+    if (localStorage.getItem('pushAsked')) return;
+  } catch { /* без хранилища просто спросим */ }
+  const ask = async () => {
+    try {
+      if ((await Notification.requestPermission()) === 'default') return false;
+      try { localStorage.setItem('pushAsked', '1'); } catch { /* ничего */ }
+      if (Notification.permission === 'granted') await subscribePush();
+    } catch { /* откажет — включат в настройках */ }
+    return true;
+  };
+  ask().then((answered) => {
+    if (answered) return;
+    const onTap = () => {
+      document.removeEventListener('click', onTap, true);
+      ask();
+    };
+    document.addEventListener('click', onTap, true);
+  });
+}
+
 /** Подсказать, если выключены оба канала. */
 function syncNowhere(pushOn) {
   const hint = $('notifyNowhere');
