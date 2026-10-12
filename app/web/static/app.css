@@ -53,6 +53,11 @@
   --radius: 12px;
   --press-glass: inset 0 1px 0 rgba(255, 255, 255, .45), inset 0 0 0 1px rgba(255, 255, 255, .2);
 }
+/* В полноэкранном Telegram под шапкой его ряд «Закрыть» и «…» с запасом
+   снизу: строку шапки поднимаем к нему, без дополнительного сдвига iOS. */
+:root.tg-inset {
+  --bar-top: max(env(safe-area-inset-top, 0px), calc(var(--tg-top) - 12px));
+}
 
 [data-theme="dark"] {
   --head: #3f63a3;

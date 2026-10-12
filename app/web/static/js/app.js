@@ -13,7 +13,8 @@ import { initMail, loadMail, openAnnouncements, openCompose, selectChats } from 
 import { applyAccent, applyDesign, applyScheduleTab, initFullscreen, isNewDesign, saveDesign } from './appearance.js';
 import { ICONS } from './icons.js';
 import {
-  applyStoredTheme, closeDrawer, initStudentSwitch, isDrawerOpen, loadProfile, loadSettings, openDrawer, syncTimezone,
+  applyStoredTheme, closeDrawer, initStudentSwitch, isDrawerOpen, loadProfile, loadSettings, offerPushOnFirstLaunch, openDrawer,
+  syncTimezone,
 } from './profile.js';
 import { loadAssistantTab, openAssistant } from './assistant.js';
 import { navTabs, renderNav } from './tabs.js';
@@ -538,6 +539,7 @@ async function start() {
     showChatLaunchNotice();
     reportVisit();
   });
+  offerPushOnFirstLaunch();
   renderNav();
   renderIcons();
   applyScheduleTab();
