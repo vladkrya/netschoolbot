@@ -3,12 +3,82 @@
 'use strict';
 
 import {
-  absenceText, api, attachmentsHtml, esc, escRich, forDate, fullDate, isAbsence,
-  markClass,
+  absenceText, api, attachmentsHtml, banner, esc, escRich, forDate, fullDate, isAbsence,
+  markClass, state,
 } from './core.js';
+import { notify, tap } from './haptics.js';
 import { pushScreen } from './screens.js';
 import { ICONS } from './icons.js';
 import { isNewDesign } from './appearance.js';
+
+/* ───────────────────── Отметка «выполнено» ───────────────────── */
+// Общая для «Д/З», экрана урока и экрана задания; хранится на сервере и
+// видна в /dz бота.
+
+export async function loadDone() {
+  try {
+    const { data } = await api('/api/homework/done');
+    state.hwDone = new Set(data.keys);
+  } catch {
+    state.hwDone = state.hwDone || new Set();
+  }
+}
+
+/** Выполнено: отмечено человеком или учитель написал «Не предусмотрено». */
+export function isDoneItem(item, done = state.hwDone || new Set()) {
+  return Boolean(item.auto_done) || done.has(item.key);
+}
+
+/** Отметить и сохранить. apply(value) рисует состояние — сразу, не дожидаясь
+ *  сервера, и ещё раз с прежним значением, если сохранить не вышло.
+ *  source — кто отметил: этот экран уже перерисован и событие пропустит. */
+export async function saveDone(item, next, apply, source = '') {
+  const done = state.hwDone || (state.hwDone = new Set());
+  const set = (value) => {
+    if (value) done.add(item.key);
+    else done.delete(item.key);
+    apply(value);
+    // Главная перекрашивает Д/З (подсветка «сделано / не сделано»).
+    window.dispatchEvent(new CustomEvent('netschool:hwdone', { detail: { source } }));
+  };
+  set(next);
+  next ? notify('success') : tap('soft');
+  try {
+    await api('/api/homework/done', { method: 'POST', body: JSON.stringify({ key: item.key, done: next }) });
+  } catch (error) {
+    set(!next);
+    notify('error');
+    banner(error.message, true);
+  }
+}
+
+/** Кнопка «выполнено» под заданием на экранах урока и задания. */
+function doneToggle(item, index) {
+  if (item.auto_done) return '<div class="hw-done-toggle on auto">✓ Не предусмотрено — отмечено само</div>';
+  if (!item.key) return '';
+  return `<button class="hw-done-toggle" data-done-toggle="${index}" aria-pressed="false">Отметить выполненным</button>`;
+}
+
+function paintToggle(button, on) {
+  button.classList.toggle('on', on);
+  button.setAttribute('aria-pressed', String(on));
+  button.textContent = on ? '✓ Выполнено' : 'Отметить выполненным';
+}
+
+/** Оживить кнопки «выполнено»; отметки подгружаются, если их ещё нет. */
+function bindDoneToggles(body, items) {
+  const buttons = [...body.querySelectorAll('[data-done-toggle]')];
+  if (!buttons.length) return;
+  const paintAll = () => buttons.forEach((button) =>
+    paintToggle(button, isDoneItem(items[Number(button.dataset.doneToggle)])));
+  if (state.hwDone) paintAll();
+  else loadDone().then(paintAll);
+  buttons.forEach((button) => button.addEventListener('click', (event) => {
+    event.stopPropagation();
+    const item = items[Number(button.dataset.doneToggle)];
+    saveDone(item, !isDoneItem(item), (value) => paintToggle(button, value));
+  }));
+}
 
 /** Статус урока справа от времени, как в официальном приложении. */
 export function lessonStatus(lesson, iso, now = new Date()) {
@@ -89,7 +159,7 @@ export function openLesson(lesson, iso) {
         <span class="task-go">Перейти ›</span>
       </button>`),
     // Новый дизайн: задание целиком прямо здесь, без отдельного экрана.
-    ...(lesson.homework || []).map((item, index) => isNewDesign() ? homeworkBlock(item) : `
+    ...(lesson.homework || []).map((item, index) => isNewDesign() ? homeworkBlock(item, index) : `
       <button class="task-block task-hw" data-hw="${index}">
         <div class="task-head">
           <span class="task-icon">${ICONS.homework}</span>
@@ -97,7 +167,7 @@ export function openLesson(lesson, iso) {
           ${item.attachments?.length ? `<span class="clip">${ICONS.clip}</span>` : ''}
         </div>
         <span class="task-go">Перейти ›</span>
-      </button>`),
+      </button>${doneToggle(item, index)}`),
   ];
 
   body.innerHTML = `
@@ -116,6 +186,7 @@ export function openLesson(lesson, iso) {
 
   bindSubject(body, lesson.subject, iso);
   if (isNewDesign()) loadComments(body, lesson.homework || []);
+  bindDoneToggles(body, lesson.homework || []);
 
   const marks = realMarks(lesson.marks);
   body.querySelectorAll('[data-mark]').forEach((el) =>
@@ -144,7 +215,7 @@ function markBlock(mark) {
 }
 
 /** Домашнее задание на экране урока: текст, файлы и когда опубликовано. */
-function homeworkBlock(item) {
+function homeworkBlock(item, index) {
   const timestamps = homeworkTimes(item);
   return `<div class="task-block task-hw hw-inline">
       <div class="task-head">
@@ -156,6 +227,7 @@ function homeworkBlock(item) {
       ${commentSlot(item)}
       ${attachmentsHtml(item.attachments)}
       ${timestamps.length ? `<div class="hw-times">${timestamps.map(esc).join(' · ')}</div>` : ''}
+      ${doneToggle(item, index)}
     </div>`;
 }
 
@@ -229,9 +301,11 @@ export function openHomework(item, topic = '') {
       <div class="detail-text">${escRich(item.text) || '<span class="muted">—Не указано—</span>'}</div>
       ${commentSlot(item)}
       ${attachmentsHtml(item.attachments)}
+      ${doneToggle(item, 0)}
     </div>`;
   bindSubject(body, item.subject, item.date);
   loadComments(body, [item]);
+  bindDoneToggles(body, [item]);
 }
 
 /** Текст, который на самом деле тема, а не повтор оценки или типа работы. */

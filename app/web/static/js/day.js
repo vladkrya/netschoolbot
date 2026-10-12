@@ -11,11 +11,10 @@ import {
 } from './core.js';
 import { ICONS } from './icons.js';
 import { isNewDesign, saveBells, showBells, showHomeworkStatus, showWeekends } from './appearance.js';
-import { isDoneItem, loadDone } from './homework.js';
 import { bellsHtml, weekCardsHtml } from './schedule.js';
 import { canGoBack } from './screens.js';
 import { EDGE_PX } from './swipeback.js';
-import { lessonStatus, markBox, openHomework, openLesson, realMarks } from './details.js';
+import { isDoneItem, lessonStatus, loadDone, markBox, openHomework, openLesson, realMarks } from './details.js';
 import { closeSheet, openSheet } from './sheet.js';
 import { select, tap } from './haptics.js';
 
@@ -451,6 +450,8 @@ export function initDay() {
   $('dayTitle').addEventListener('click', () => openCalendar());
   $('dayBells').addEventListener('click', openWeekSheet);
   $('dayToday').addEventListener('click', () => slideTo(pickDay()));
+  // Отметку поставили на экране урока или задания — перекрасить Д/З.
+  window.addEventListener('netschool:hwdone', () => { if (dayData(state.date)) renderDay(true); });
   $('weekStrip').addEventListener('click', (event) => {
     const button = event.target.closest('[data-week-day]');
     if (button && button.dataset.weekDay !== state.date) slideTo(button.dataset.weekDay);

@@ -4,25 +4,16 @@
 'use strict';
 
 import {
-  $, addDays, api, banner, dayMonth, errorCard, esc, isoToday, observedTime, showFailure, showLoading, skeleton, state,
+  $, addDays, api, dayMonth, errorCard, esc, isoToday, observedTime, showFailure, showLoading, skeleton, state,
   WEEKDAYS_FULL, weekdayIndex,
 } from './core.js';
 import { ICONS } from './icons.js';
-import { homeworkTimes, openHomework } from './details.js';
-import { notify, select, tap } from './haptics.js';
+import { homeworkTimes, isDoneItem, loadDone, openHomework, saveDone } from './details.js';
+import { select } from './haptics.js';
 
 let query = '';
 // all — с сегодняшнего дня, todo — только невыполненные, past — прошедшие.
 let filter = 'all';
-
-export async function loadDone() {
-  try {
-    const { data } = await api('/api/homework/done');
-    state.hwDone = new Set(data.keys);
-  } catch {
-    state.hwDone = state.hwDone || new Set();
-  }
-}
 
 export async function loadHomework(force = false) {
   const container = $('homeworkContent');
@@ -115,11 +106,6 @@ function render() {
   );
 }
 
-/** Выполнено: отмечено человеком или учитель написал «Не предусмотрено». */
-export function isDoneItem(item, done) {
-  return Boolean(item.auto_done) || done.has(item.key);
-}
-
 function dayHeading(iso) {
   const today = isoToday();
   const near = { [today]: 'Сегодня', [addDays(today, 1)]: 'Завтра', [addDays(today, -1)]: 'Вчера' }[iso];
@@ -135,29 +121,18 @@ function paintCard(button, isDone) {
   button.closest('.hw-card')?.classList.toggle('done', isDone);
 }
 
-async function toggleDone(item, button) {
-  const done = state.hwDone || (state.hwDone = new Set());
-  const next = !done.has(item.key);
+function toggleDone(item, button) {
   // Сразу на экране, сервер — следом: галочка не должна ждать сети.
-  const apply = (value) => {
-    if (value) done.add(item.key);
-    else done.delete(item.key);
-    // В «Не сделано» выполненное уходит из списка — тут перерисовка нужна.
-    if (filter === 'todo') render();
-    else paintCard(button, value);
-  };
-  apply(next);
-  next ? notify('success') : tap('soft');
-  try {
-    await api('/api/homework/done', { method: 'POST', body: JSON.stringify({ key: item.key, done: next }) });
-  } catch (error) {
-    apply(!next);
-    notify('error');
-    banner(error.message, true);
-  }
+  // В «Не сделано» выполненное уходит из списка — тут перерисовка нужна.
+  saveDone(item, !isDoneItem(item), (value) => (filter === 'todo' ? render() : paintCard(button, value)), 'list');
 }
 
 export function initHomework() {
+  // Отметили на экране урока или задания — галочки в списке должны совпасть.
+  window.addEventListener('netschool:hwdone', (event) => {
+    const source = filter === 'past' ? state.homeworkPast : state.homework;
+    if (event.detail?.source !== 'list' && source) render();
+  });
   $('hwSearch').addEventListener('input', (event) => {
     query = event.target.value;
     if (state.homework) render();
