@@ -294,6 +294,18 @@ async def index(request: web.Request) -> web.Response:
     return response
 
 
+@page_routes.get("/attachment/{attachment_id:\\d+}")
+async def attachment_page(request: web.Request) -> web.Response:
+    """Страница ожидания вложения: сервер школы бывает перегружен, и прямая
+    ссылка на файл минутами держала пустую вкладку. Здесь — анимация,
+    прогресс, понятная ошибка и «Повторить». Файл качает сам скрипт страницы
+    с тем же билетом; данных пользователя в странице нет."""
+    response = aiohttp_jinja2.render_template(
+        "attachment.html", request, {"name": request.query.get("name", "")[:200]})
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
 @page_routes.get("/demo")
 async def demo(request: web.Request) -> web.Response:
     """Демо на выдуманных данных: страница та же, данные генерирует браузер."""

@@ -351,7 +351,9 @@ export function attachmentUrl(id, name = '') {
   // Имя нужно серверу для заголовка: без него файл сохранялся как
   // «attachment-123» без расширения и не открывался как docx или pdf.
   const filename = name ? `&name=${encodeURIComponent(name)}` : '';
-  return `${base}/api/attachment/${id}?${credential}${filename}`;
+  // Страница ожидания, а не сам файл: она показывает загрузку и ошибку,
+  // пока перегруженный сервер школы отдаёт вложение.
+  return `${base}/attachment/${id}?${credential}${filename}`;
 }
 
 export function attachmentsHtml(items) {

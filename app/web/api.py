@@ -16,6 +16,7 @@ import json
 import logging
 import mimetypes
 import re
+import time
 from urllib.parse import quote
 from dataclasses import asdict, replace
 from typing import Any
@@ -1083,7 +1084,18 @@ async def attachment(request: web.Request) -> web.Response:
         return json_error("Некорректный идентификатор вложения")
 
     app, user = context(request), current_user(request)
-    payload = await app.diary.download_attachment(user, attachment_id)
+    cached = _attachment_cache(app, user.telegram_id, attachment_id)
+    if cached.exists() and time.time() - cached.stat().st_mtime < ATTACHMENT_CACHE_S:
+        payload = cached.read_bytes()
+    else:
+        try:
+            payload = await asyncio.wait_for(
+                app.diary.download_attachment(user, attachment_id), ATTACHMENT_TIMEOUT_S)
+        except asyncio.TimeoutError:
+            return json_error(
+                "«Сетевой город» не отдал файл за 2 минуты — сервер школы перегружен. "
+                "Попробуйте ещё раз позже.", status=504, reason="server")
+        _store_attachment(cached, payload)
     # Без имени и типа файл сохранялся как «attachment-123» без расширения,
     # и телефон не понимал, что это docx или pdf.
     name = _attachment_name(request.query.get("name", ""), attachment_id)
@@ -1095,6 +1107,31 @@ async def attachment(request: web.Request) -> web.Response:
             "Content-Disposition": _content_disposition(name),
         },
     )
+
+
+# Файл из «Сетевого города» ждём не дольше этого: перегруженный сервер школы
+# иначе держал вкладку пустой без конца. Скачанное час лежит на диске —
+# повторное открытие (или «Повторить» после обрыва) мгновенное.
+ATTACHMENT_TIMEOUT_S = 120
+ATTACHMENT_CACHE_S = 3600
+
+
+def _attachment_cache(app: AppContext, telegram_id: int, attachment_id: int):
+    return app.settings.attachments_dir / f"attachment-{telegram_id}-{attachment_id}"
+
+
+def _store_attachment(path, payload: bytes) -> None:
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        partial = path.with_suffix(".partial")
+        partial.write_bytes(payload)
+        partial.replace(path)
+        now = time.time()
+        for old in path.parent.glob("attachment-*"):
+            if now - old.stat().st_mtime > ATTACHMENT_CACHE_S:
+                old.unlink(missing_ok=True)
+    except OSError as exc:
+        logger.debug("Вложение не сохранено в кэш: %s", exc)
 
 
 _UNSAFE_NAME = re.compile(r'[\x00-\x1f\x7f/\\"]+')

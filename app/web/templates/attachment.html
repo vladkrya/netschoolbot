@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>{{ name or "Вложение" }}</title>
+<style>
+  :root { color-scheme: light dark; --bg: #eef1f6; --card: #fff; --text: #202733; --muted: #6b7486; --accent: #4a6fae; --bad: #c0392b; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #111318; --card: #1b1e25; --text: #e8eaf0; --muted: #9aa2b2; --accent: #6f9be0; --bad: #ff7a6b; } }
+  body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 16px; box-sizing: border-box;
+         background: var(--bg); color: var(--text); font: 16px/1.4 -apple-system, system-ui, "Segoe UI", Roboto, sans-serif; }
+  .card { width: min(100%, 380px); background: var(--card); border-radius: 18px; padding: 24px; text-align: center; }
+  h1 { font-size: 18px; margin: 0 0 6px; word-break: break-word; }
+  p { margin: 6px 0; color: var(--muted); }
+  .spinner { width: 34px; height: 34px; margin: 4px auto 14px; border: 3px solid color-mix(in srgb, var(--accent) 20%, transparent);
+             border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 3s; } }
+  .bar { height: 6px; border-radius: 3px; background: color-mix(in srgb, var(--accent) 18%, transparent); overflow: hidden; margin: 12px 0 4px; }
+  .bar span { display: block; height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+  .btn { display: inline-block; margin-top: 14px; padding: 11px 18px; border-radius: 12px; border: 0; background: var(--accent); color: #fff;
+         font: inherit; font-weight: 600; text-decoration: none; cursor: pointer; }
+  .error { color: var(--bad); }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="spinner" id="spinner"></div>
+  <h1>{{ name or "Вложение" }}</h1>
+  <p id="state">Скачиваем файл из «Сетевого города»…</p>
+  <div class="bar" id="bar" hidden><span></span></div>
+  <p id="slow" hidden>Сервер школы отвечает медленно — подождите, загрузка не остановилась.</p>
+  <a class="btn" id="open" hidden>Открыть файл</a>
+  <button class="btn" id="retry" hidden type="button">Повторить</button>
+</div>
+<script>
+(function () {
+  // Тот же адрес, только /api/attachment/ вместо /attachment/: билет и имя
+  // файла уже в строке запроса.
+  var api = location.pathname.replace(/\/attachment\/(\d+)\/?$/, '/api/attachment/$1') + location.search;
+  var name = {{ (name or "файл") | tojson }};
+  var $ = function (id) { return document.getElementById(id); };
+  var slowTimer;
+
+  function fail(message) {
+    clearTimeout(slowTimer);
+    $('spinner').hidden = true; $('bar').hidden = true; $('slow').hidden = true;
+    $('state').textContent = message; $('state').className = 'error';
+    $('retry').hidden = false;
+  }
+
+  function done(blob) {
+    clearTimeout(slowTimer);
+    var url = URL.createObjectURL(blob);
+    var open = $('open');
+    open.href = url;
+    open.download = name;
+    open.hidden = false;
+    $('spinner').hidden = true; $('bar').hidden = true; $('slow').hidden = true;
+    $('state').textContent = 'Файл скачан. Если он не открылся сам — нажмите кнопку.';
+    try { open.click(); } catch (e) { /* браузер просит нажать самому */ }
+  }
+
+  async function load() {
+    $('retry').hidden = true; $('open').hidden = true; $('spinner').hidden = false;
+    $('state').className = ''; $('state').textContent = 'Скачиваем файл из «Сетевого города»…';
+    slowTimer = setTimeout(function () { $('slow').hidden = false; }, 12000);
+    var response;
+    try {
+      response = await fetch(api, { credentials: 'same-origin' });
+    } catch (e) {
+      return fail('Нет связи с сервером. Проверьте интернет и повторите.');
+    }
+    if (!response.ok) {
+      var message = 'Не удалось скачать файл.';
+      try { message = (await response.json()).error || message; } catch (e) { /* не JSON */ }
+      return fail(message);
+    }
+    var total = Number(response.headers.get('Content-Length')) || 0;
+    var type = response.headers.get('Content-Type') || 'application/octet-stream';
+    if (!response.body || !total) return done(await response.blob());
+    $('bar').hidden = false;
+    var reader = response.body.getReader(), parts = [], received = 0;
+    for (;;) {
+      var chunk = await reader.read();
+      if (chunk.done) break;
+      parts.push(chunk.value); received += chunk.value.length;
+      $('bar').firstElementChild.style.width = Math.round(received * 100 / total) + '%';
+    }
+    done(new Blob(parts, { type: type }));
+  }
+
+  $('retry').addEventListener('click', load);
+  load();
+})();
+</script>
+</body>
+</html>
