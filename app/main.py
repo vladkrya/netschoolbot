@@ -121,6 +121,10 @@ async def run(settings: Settings, args: argparse.Namespace) -> int:
     if not push.configured:
         logger.info("VAPID-ключи не заданы — push в браузер отключён")
     context.watchers.attach_notifier(TelegramNotifier(bot, context.users, push))
+    if settings.telegram.admin_id:
+        async def tell_admin(text: str) -> None:
+            await bot.send_message(settings.telegram.admin_id, text)
+        context.watchers.outages.attach(tell_admin)
 
     tasks: list[asyncio.Task] = [
         asyncio.create_task(cleanup_sessions(context), name="session-cleanup"),

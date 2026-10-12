@@ -25,6 +25,7 @@ from ..db.repositories import MarkStateRepository, UserRepository
 from ..domain import formatting
 from ..domain.models import ApiMode, MarkKind, NotificationPrefs, User
 from ..domain.records import AbsenceRecord, HomeworkRecord, MarkEvent, RecentEvents
+from .outage import OutageMonitor
 from ..netschool.errors import NetSchoolError, Reason
 from ..netschool.mapping import absences_from_days, is_placeholder_name
 from ..netschool.service import DiaryService, TokenState
@@ -108,8 +109,10 @@ class UserWatcher:
         diary: DiaryService,
         notifier: Notifier,
         clock: Callable[[], float] = time.monotonic,
+        outages: OutageMonitor | None = None,
     ) -> None:
         self._user_id = user_id
+        self._outages = outages
         self._users = users
         self._state = state
         self._diary = diary
@@ -152,6 +155,9 @@ class UserWatcher:
         try:
             await self._check(user)
         except NetSchoolError as exc:
+            if self._outages is not None:
+                await self._outages.record(user.school.url, ok=False,
+                                           server_down=exc.reason is Reason.SERVER_UNAVAILABLE)
             delay = await self._handle_error(user, exc)
             await self._record_status(ok=False, error=exc.user_message, delay=delay)
             await self._flush_outbox(user)
@@ -174,6 +180,8 @@ class UserWatcher:
         await self._send_digests(user)
 
         self._backoff = 0.0
+        if self._outages is not None:
+            await self._outages.record(user.school.url, ok=True)
         await self._record_status(ok=True, delay=float(user.check_interval))
         return float(user.check_interval)
 
@@ -524,6 +532,8 @@ class WatcherRegistry:
         self._state = state
         self._diary = diary
         self._notifier = notifier
+        # Простои школьных серверов — админу (общий на все проверки).
+        self.outages = OutageMonitor()
         self._tasks: dict[int, asyncio.Task] = {}
         self._lock = asyncio.Lock()
 
@@ -556,6 +566,7 @@ class WatcherRegistry:
                 state=self._state,
                 diary=self._diary,
                 notifier=self._notifier,
+                outages=self.outages,
             )
             task = asyncio.create_task(watcher.run(), name=f"watch-{user_id}")
             self._tasks[user_id] = task

@@ -1,0 +1,8 @@
+[Unit]
+Description=Проверка, что бот «Сетевого города» отвечает
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/netschoolbot
+EnvironmentFile=-/opt/netschoolbot/.env
+ExecStart=/opt/netschoolbot/venv/bin/python -m app.tools.healthcheck /opt/netschoolbot/data/health-state.json
