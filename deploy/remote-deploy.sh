@@ -47,6 +47,9 @@ elif action in ("copy", "restore"):
         assert source.execute("PRAGMA integrity_check").fetchone()[0] == "ok", "копия повреждена"
     target = sqlite3.connect(dst)
     source.backup(target)
+    if action == "copy":
+        # Иначе копия в WAL и каждое открытие оставляет пустые -wal/-shm.
+        target.execute("PRAGMA journal_mode = DELETE")
     target.close()
     if action == "copy":
         check = ro(dst)
@@ -163,6 +166,13 @@ BACKUP="$APP/data/backups/netschoolbot-predeploy-$(date +%Y%m%d-%H%M%S).sqlite3"
 db_tool copy "$DB" "$BACKUP"
 # Копии перед выкладкой копятся отдельно от ежедневных: оставляем пять последних.
 ls -1t "$APP"/data/backups/netschoolbot-predeploy-*.sqlite3 2>/dev/null | tail -n +6 | xargs -r rm -f
+for extra in "$APP"/data/backups/*.sqlite3-wal "$APP"/data/backups/*.sqlite3-shm; do
+  [ -e "$extra" ] && [ ! -e "${extra%-*}" ] && rm -f "$extra"
+done
+# Копии конфигов nginx: по пять последних на сайт.
+for domain in netschool.ikrya.ru ns.ikrya.ru ns2.ikrya.ru yavds.ikrya.ru; do
+  ls -1t /etc/nginx/sites-available/"$domain".bak-* 2>/dev/null | tail -n +6 | xargs -r rm -f
+done
 
 step "Переключение на ${TARGET:0:7}"
 SWITCHED=1

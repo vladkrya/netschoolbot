@@ -54,6 +54,9 @@ def make_backup(db_path: Path, target_dir: Path, *, now: dt.datetime | None = No
         copy = sqlite3.connect(partial)
         try:
             source.backup(copy)
+            # Копия наследует WAL рабочей базы, и каждое открытие на чтение
+            # оставляло рядом пустые -wal и -shm — их набралось под две сотни.
+            copy.execute("PRAGMA journal_mode = DELETE")
         finally:
             copy.close()
     finally:
@@ -118,7 +121,16 @@ def prune(target_dir: Path, keep: int) -> list[Path]:
     stale = backups[:-keep] if keep > 0 else []
     for path in stale:
         path.unlink()
+    remove_orphans(target_dir)
     return stale
+
+
+def remove_orphans(target_dir: Path) -> None:
+    """Служебные -wal/-shm без самой копии."""
+    for suffix in ("-wal", "-shm"):
+        for path in target_dir.glob(f"*.sqlite3{suffix}"):
+            if not Path(str(path)[: -len(suffix)]).exists():
+                path.unlink(missing_ok=True)
 
 
 def _count_users(db_path: Path) -> int:

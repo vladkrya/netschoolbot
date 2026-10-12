@@ -47,3 +47,15 @@ async def test_restore_returns_previous_state(db, users, tmp_path):
     restore_backup(path, db._path)
     await db.connect()
     assert await users.all_ids() == [1]
+
+
+async def test_backup_leaves_no_wal_companions(db, tmp_path):
+    """Копия не в WAL: проверка не оставляет пустых -wal/-shm, а осиротевшие
+    служебные файлы убирает ротация."""
+    target = tmp_path / "backups"
+    path = make_backup(db._path, target)
+    verify_backup(path)
+    assert sorted(p.name for p in target.iterdir()) == [path.name]
+    (target / "netschoolbot-20200101-000000.sqlite3-wal").write_bytes(b"")
+    prune(target, keep=5)
+    assert sorted(p.name for p in target.iterdir()) == [path.name]
