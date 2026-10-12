@@ -451,10 +451,9 @@ async def chat_participants(request: web.Request) -> web.Response:
 
 @routes.get("/api/chat/unread")
 async def chat_unread(request: web.Request) -> web.Response:
-    """Лёгкий запрос для значка «Почты»: число и нужен ли сокет."""
-    profile = await current_profile(request)
-    return web.json_response({"ok": True, "data": {
-        "total": await unread_total(request), "live": profile is not None or is_admin(request)}})
+    """Лёгкий запрос для значка «Почты»: число и нужен ли сокет. Сокет нужен
+    всем: по нему приходят и чаты, и новые оценки."""
+    return web.json_response({"ok": True, "data": {"total": await unread_total(request), "live": True}})
 
 
 async def _check_new_nick(request: web.Request, nick: str, owner_id: int | None = None) -> str:

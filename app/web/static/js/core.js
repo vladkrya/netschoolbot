@@ -177,6 +177,12 @@ const STALE_TEXT = 'Не удалось обновить дневник. Пок�
 // Пути, которые за этот запуск уже сверили со школьным сервером.
 const revalidated = new Set();
 
+/** Сервер сообщил о новом в дневнике: всё показанное снова сверить
+ *  со школьным сервером при следующем открытии вкладки. */
+export function forgetRevalidated() {
+  revalidated.clear();
+}
+
 function staleBanner(show) {
   // Свежий ответ пришёл — плашка о сохранённых данных больше не правда.
   if (show) showNotice(STALE_TEXT);

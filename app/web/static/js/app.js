@@ -2,12 +2,13 @@
 'use strict';
 
 import {
-  $, api, assistantEnabled, banner, base, demo, loadAttachmentTicket, school, state, student, studentFirstName, syncFinished, syncStarted, tg, token,
+  $, api, assistantEnabled, forgetRevalidated, banner, base, demo, loadAttachmentTicket, school, state, student, studentFirstName, syncFinished, syncStarted, tg, token,
 } from './core.js';
 import { initDay, loadDay } from './day.js';
 import { initSchedule, loadSchedule } from './schedule.js';
 import { initHomework, loadHomework } from './homework.js';
 import { loadTotals } from './totals.js';
+import { chatEvents } from './chat-live.js';
 import { initMail, loadMail, openAnnouncements, openCompose, selectChats } from './mail.js';
 import { applyAccent, applyDesign, applyScheduleTab, initFullscreen, isNewDesign, saveDesign } from './appearance.js';
 import { ICONS } from './icons.js';
@@ -338,6 +339,24 @@ function initNav() {
   });
 }
 
+// Новое в дневнике по сокету (проверка оценок нашла) — какие вкладки это показывают.
+const DIARY_TABS = {
+  marks: ['day', 'totals'],
+  homework: ['day', 'homework'],
+  absences: ['day', 'totals'],
+  schedule: ['day', 'schedule'],
+};
+
+function initLiveDiary() {
+  chatEvents.addEventListener('change', ({ detail }) => {
+    if (detail.t !== 'diary') return;
+    forgetRevalidated();
+    const tabs = new Set((detail.kinds || []).flatMap((kind) => DIARY_TABS[kind] || []));
+    if (!tabs.has(state.tab) || $('screens').childElementCount || state.refreshing) return;
+    quietly(() => TABS[state.tab](true));
+  });
+}
+
 // Какие вкладки показывают данные с этого адреса API.
 const FRESH_TABS = {
   '/api/diary': ['day', 'schedule'],
@@ -393,6 +412,7 @@ function initChrome() {
   initNav();
   initIosHaptics();
   initFresh();
+  initLiveDiary();
   $('menuBtn').addEventListener('click', openDrawer);
   $('navMenuBtn').addEventListener('click', openDrawer);
   $('drawerShade').addEventListener('click', closeDrawer);

@@ -28,6 +28,7 @@ from .db.repositories import (
 )
 from .netschool.service import DiaryService
 from .netschool.session import SessionPool
+from .chat.hub import ChatHub
 from .notifications.watcher import Notifier, WatcherRegistry
 from .settings import Settings
 
@@ -48,6 +49,8 @@ class AppContext:
     pool: SessionPool
     diary: DiaryService
     watchers: WatcherRegistry
+    # Живые соединения приложения (WebSocket): чаты и мгновенные оценки.
+    hub: ChatHub = field(default_factory=ChatHub)
     cache_refreshes: dict[tuple, asyncio.Task] = field(default_factory=dict)
     caldav: CaldavService | None = None
     login_tasks: dict[int, set[asyncio.Task]] = field(default_factory=dict)

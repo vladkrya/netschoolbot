@@ -22,7 +22,6 @@ import aiohttp_jinja2
 import jinja2
 from aiohttp import web
 
-from ..chat.hub import ChatHub
 from ..context import AppContext
 from . import api, assistant, bugreport, caldav, captcha_proxy, chat, lock
 from .api import BOT, CONTEXT
@@ -106,7 +105,9 @@ def create_app(context: AppContext, bot=None) -> web.Application:
     inner = web.Application(middlewares=[security_headers, caldav.root_discovery, compress_static, api.error_middleware, api.auth_middleware])
     inner[CONTEXT] = context
     inner[BOT] = bot
-    inner[chat.HUB] = ChatHub()
+    inner[chat.HUB] = context.hub
+    # Проверка оценок сообщает открытому приложению о новом сразу, по сокету.
+    context.watchers.live = context.hub.publish_user
     async def stop_refreshes(app):
         await app[chat.HUB].close()
         await context.stop_cache_refreshes()

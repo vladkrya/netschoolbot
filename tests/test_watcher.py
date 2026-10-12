@@ -236,6 +236,28 @@ class TestFirstRun:
         assert notifier.mark_events[0].kind is MarkKind.NEW
 
 
+    async def test_open_app_hears_new_marks_even_with_notifications_off(self, users, marks, diary, notifier):
+        """Сигнал приложению по сокету — о любом новом, но не о первой сверке."""
+        from app.domain.models import NotificationPrefs
+
+        signals = []
+
+        async def live(user_id, event):
+            signals.append((user_id, event))
+
+        await users.save(make_user(notifications=NotificationPrefs(grades=False)))
+        watcher = UserWatcher(1, users=users, state=marks, diary=diary, notifier=notifier, live=live)
+        diary.marks = [record(0)]
+        await watcher.run_once()
+        assert signals == []
+        await watcher.run_once()
+        assert signals == []  # ничего не поменялось
+        diary.marks = [record(0), record(1)]
+        await watcher.run_once()
+        assert signals == [(1, {"t": "diary", "kinds": ["marks"]})]
+        assert notifier.mark_events == []
+
+
 class TestChanges:
     async def test_changed_mark(self, users, watcher, diary, notifier):
         await users.save(make_user())

@@ -18,7 +18,7 @@ import datetime as dt
 import json
 import logging
 import time
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from typing import Protocol
 
 from ..db.repositories import MarkStateRepository, UserRepository
@@ -110,9 +110,11 @@ class UserWatcher:
         notifier: Notifier,
         clock: Callable[[], float] = time.monotonic,
         outages: OutageMonitor | None = None,
+        live: Callable[[int, dict], Awaitable[None]] | None = None,
     ) -> None:
         self._user_id = user_id
         self._outages = outages
+        self._live = live
         self._users = users
         self._state = state
         self._diary = diary
@@ -256,6 +258,16 @@ class UserWatcher:
             today=today,
         )
         self._note_full_sync(events)
+        # Открытое приложение обновит экраны сразу, не дожидаясь своего опроса.
+        # Сообщаем о любых изменениях, даже если уведомления о них выключены.
+        changed = [kind for kind, present in (
+            ("marks", result.events), ("homework", fresh_homework),
+            ("absences", fresh_absences), ("schedule", schedule_changes)) if present]
+        if changed and self._live is not None and not first_run:
+            try:
+                await self._live(user.telegram_id, {"t": "diary", "kinds": changed})
+            except Exception as exc:  # noqa: BLE001 — сигнал приложению не важнее проверки
+                logger.debug("Сигнал приложению %s не ушёл: %s", user.telegram_id, exc)
 
     async def _flush_outbox(self, user: User) -> None:
         """Отправить накопленные уведомления, кроме тихих часов.
@@ -534,6 +546,8 @@ class WatcherRegistry:
         self._notifier = notifier
         # Простои школьных серверов — админу (общий на все проверки).
         self.outages = OutageMonitor()
+        # Сигнал открытому приложению о новом (задаёт веб-сервер).
+        self.live: Callable[[int, dict], Awaitable[None]] | None = None
         self._tasks: dict[int, asyncio.Task] = {}
         self._lock = asyncio.Lock()
 
@@ -567,10 +581,16 @@ class WatcherRegistry:
                 diary=self._diary,
                 notifier=self._notifier,
                 outages=self.outages,
+                live=self._signal,
             )
             task = asyncio.create_task(watcher.run(), name=f"watch-{user_id}")
             self._tasks[user_id] = task
             logger.info("Запущена проверка оценок для %s", user_id)
+
+    async def _signal(self, user_id: int, event: dict) -> None:
+        # Берём live в момент события: проверки стартуют раньше веб-сервера.
+        if self.live is not None:
+            await self.live(user_id, event)
 
     async def stop(self, user_id: int) -> None:
         async with self._lock:
