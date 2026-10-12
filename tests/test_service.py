@@ -94,6 +94,18 @@ class TestFetch:
         assert all(d.weekday() == 0 for d in requested)
         assert requested == sorted(requested)
 
+    async def test_assignment_comment_is_plain_text(self, service, users, client_holder):
+        user = make_user()
+        await users.save(user)
+
+        async def details(assignment_id):
+            assert assignment_id == 7
+            return SimpleNamespace(description="<p>Решать &laquo;в тетради&raquo;</p><p>---Не указана---</p>")
+
+        async with service._pool.acquire(user) as client:
+            client.assignment_details = details
+        assert await service.fetch_assignment_comment(user, 7) == "Решать «в тетради»"
+
     async def test_marks_are_returned(self, service, users, client_holder):
         user = make_user()
         await users.save(user)

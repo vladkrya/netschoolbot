@@ -386,6 +386,13 @@ class TestData:
         assert items[0]["topic"] == "Дроби"
         assert items[0]["published_at"] == "2026-03-01T09:30:00+00:00"
 
+    async def test_homework_comment(self, client, app_context, token):
+        app_context.diary.comments = {34192144: "выполнить диагностику"}
+        response = await client.get(f"{BASE}/api/homework/34192144/comment", params={"token": token})
+        assert (await response.json())["data"]["comment"] == "выполнить диагностику"
+        bad = await client.get(f"{BASE}/api/homework/abc/comment", params={"token": token})
+        assert bad.status in (400, 404)
+
 
 class TestNewFeatures:
     async def test_notification_toggle_is_saved(self, client, users, token):

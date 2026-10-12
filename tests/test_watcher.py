@@ -155,6 +155,11 @@ class FakeDiary:
             raise self.error
         return []
 
+    async def fetch_assignment_comment(self, user, assignment_id):
+        if self.error:
+            raise self.error
+        return getattr(self, "comments", {}).get(assignment_id, "")
+
     async def fetch_mail_message(self, user, message_id):
         if self.error:
             raise self.error
