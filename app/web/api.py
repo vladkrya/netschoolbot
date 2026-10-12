@@ -123,7 +123,7 @@ async def error_middleware(request: web.Request, handler):
         return json_error(exc.user_message, status=status, reason=exc.reason.value)
     except Exception:
         logger.exception("Ошибка в %s %s", request.method, request.path)
-        return json_error("Внутренняя ошибка. Она записана, я разберусь.", status=500)
+        return json_error("Не удалось выполнить запрос из-за ошибки приложения. Попробуйте позже.", status=500)
 
 
 async def resolve_identity(request: web.Request) -> tuple[int | None, str]:

@@ -173,7 +173,7 @@ const REQUEST_TIMEOUT_MS = 75000;
 // перепроверять незачем.
 const REVALIDATE_AFTER_S = 60;
 const OFFLINE_TEXT = 'Нет связи — показаны сохранённые данные';
-const STALE_TEXT = 'Сервер дневника сейчас недоступен. Показаны сохранённые данные.';
+const STALE_TEXT = 'Не удалось обновить дневник. Показаны сохранённые данные.';
 // Пути, которые за этот запуск уже сверили со школьным сервером.
 const revalidated = new Set();
 
@@ -206,7 +206,7 @@ async function request(path, options = {}) {
     });
   } catch (error) {
     const failure = new Error(error.name === 'AbortError'
-      ? 'Сервер школы долго не отвечает. Попробуйте обновить чуть позже.'
+      ? 'Запрос выполняется слишком долго. Повторите попытку позже.'
       : 'Нет связи с сервером. Проверьте интернет.');
     failure.reason = 'server';
     throw failure;
@@ -218,7 +218,7 @@ async function request(path, options = {}) {
   try {
     payload = await response.json();
   } catch {
-    throw new Error('Сервер ответил неожиданным образом');
+    throw new Error('Не удалось прочитать ответ сервера. Повторите попытку позже.');
   }
   if (!response.ok || !payload.ok) {
     if (payload.reason === 'locked' && lockedHandler && !retried && !path.startsWith('/api/lock/') &&
