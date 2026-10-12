@@ -383,6 +383,13 @@ MIGRATIONS: list[str] = [
         created_at REAL NOT NULL
     );
     """,
+    # 19 — новый дизайн выходит из беты и включается всем. Сохранённый выбор
+    # «classic» сбрасываем один раз; вернуть старый можно в настройках, а
+    # приложение один раз покажет об этом окошко (designNotice).
+    """
+    UPDATE web_prefs SET payload = json_set(payload, '$.design', 'new')
+    WHERE json_valid(payload);
+    """,
 ]
 
 

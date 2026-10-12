@@ -491,8 +491,8 @@ function render() {
     </section>
     <section class="drawer-section">
       <div class="drawer-heading">Оформление</div>
-      <label class="switch-row design-row"><span>Новый дизайн<span class="design-tag">beta</span></span>
-        <input type="checkbox" switch class="switch" id="designNew" ${isNewDesign() ? 'checked' : ''}></label>
+      <label class="switch-row design-row"><span>Старый дизайн</span>
+        <input type="checkbox" switch class="switch" id="designOld" ${isNewDesign() ? '' : 'checked'}></label>
       <label class="switch-row"><span>Подсвечивать Д/З на главной<span class="muted small switch-note">красным — не сделано, зелёным — сделано</span></span>
         <input type="checkbox" switch class="switch" id="hwStatusShow" ${showHomeworkStatus() ? 'checked' : ''}></label>
       <label class="switch-row"><span>Показывать выходные без уроков</span>
@@ -565,9 +565,9 @@ function bindDrawer() {
     select();
     saveBells(event.target.checked);
   });
-  $('designNew').addEventListener('change', (event) => {
+  $('designOld').addEventListener('change', (event) => {
     select();
-    saveDesign(event.target.checked);
+    saveDesign(!event.target.checked);
   });
   body.querySelectorAll('[data-accent]').forEach((button) =>
     button.addEventListener('click', () => {

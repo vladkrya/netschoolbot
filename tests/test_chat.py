@@ -303,3 +303,25 @@ class TestPollsAndNotifications:
         await send(client, other, room, "@Петр ау")
         await asyncio.sleep(0.05)
         assert sent_to[-1] == (50, "chat") and len(sent_to) == 2
+
+
+async def test_migration_switches_everyone_to_new_design(tmp_path):
+    """Миграция 19: сохранённый «classic» становится «new», остальное не трогаем."""
+    import json
+
+    import aiosqlite
+
+    from app.db.migrations import MIGRATIONS, migrate
+
+    db = await aiosqlite.connect(tmp_path / "m.sqlite3")
+    for version, script in enumerate(MIGRATIONS[:18]):
+        await db.executescript(script)
+        await db.execute(f"PRAGMA user_version = {version + 1}")
+    await db.execute("INSERT INTO users (telegram_id) VALUES (1)")
+    await db.execute("INSERT INTO web_prefs (telegram_id, payload, updated_at) VALUES (1, ?, datetime('now'))",
+                     (json.dumps({"design": "classic", "theme": "dark"}),))
+    await db.commit()
+    await migrate(db)
+    row = await (await db.execute("SELECT payload FROM web_prefs WHERE telegram_id = 1")).fetchone()
+    assert json.loads(row[0]) == {"design": "new", "theme": "dark"}
+    await db.close()

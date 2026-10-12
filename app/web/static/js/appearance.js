@@ -75,11 +75,12 @@ export function syncChromeColor() {
 // В режиме «как в системе» оформление меняется без перезапуска приложения.
 window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', syncChromeColor);
 
+/** Новый дизайн — по умолчанию у всех; старый остаётся тумблером «Старый дизайн». */
 export function isNewDesign() {
-  return getPref('design') === 'new';
+  return getPref('design') !== 'classic';
 }
 
-/** Включить или выключить «Новый дизайн»: атрибут на <html>, правила в new.css. */
+/** Включить или выключить новый дизайн: атрибут на <html>, правила в new.css. */
 export function applyDesign() {
   if (isNewDesign()) document.documentElement.setAttribute('data-design', 'new');
   else document.documentElement.removeAttribute('data-design');

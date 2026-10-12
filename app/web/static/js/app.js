@@ -9,18 +9,18 @@ import { initSchedule, loadSchedule } from './schedule.js';
 import { initHomework, loadHomework } from './homework.js';
 import { loadTotals } from './totals.js';
 import { initMail, loadMail, openAnnouncements, openCompose } from './mail.js';
-import { applyAccent, applyDesign, applyScheduleTab, initFullscreen, isNewDesign } from './appearance.js';
+import { applyAccent, applyDesign, applyScheduleTab, initFullscreen, isNewDesign, saveDesign } from './appearance.js';
 import { ICONS } from './icons.js';
 import {
   applyStoredTheme, closeDrawer, initStudentSwitch, isDrawerOpen, loadProfile, loadSettings, openDrawer, syncTimezone,
 } from './profile.js';
 import { loadAssistantTab, openAssistant } from './assistant.js';
 import { navTabs, renderNav } from './tabs.js';
-import { closeSheet, initSheet } from './sheet.js';
+import { closeSheet, initSheet, openSheet } from './sheet.js';
 import { clearScreens, handleBack, hasScreens, setFallbackBack } from './screens.js';
 import { initSwipeBack } from './swipeback.js';
 import { initIosHaptics, notify, tap } from './haptics.js';
-import { syncPrefs } from './prefs.js';
+import { getPref, setPref, syncPrefs } from './prefs.js';
 
 const TABS = {
   day: loadDay,
@@ -439,6 +439,24 @@ function storedName() {
   try { return studentFirstName(localStorage.getItem(NAME_KEY) || ''); } catch { return ''; }
 }
 
+/** Один раз: дизайн по умолчанию сменился, старый — в настройках. */
+function showDesignNotice() {
+  if (demo || getPref('designNotice') === 'seen') return;
+  const seen = () => setPref('designNotice', 'seen');
+  const body = openSheet('Новый дизайн', `
+    <p>Мы обновили приложение: новый дизайн теперь включён у всех.</p>
+    <p class="muted">Если привычнее старый — его можно вернуть в настройках, тумблер «Старый дизайн».</p>
+    <div class="chat-actions">
+      <button class="btn" id="designNoticeOk">Понятно</button>
+      <button class="btn outline" id="designNoticeOld">Вернуть старый дизайн</button>
+    </div>`, { onClose: seen });
+  body.querySelector('#designNoticeOk').addEventListener('click', closeSheet);
+  body.querySelector('#designNoticeOld').addEventListener('click', () => {
+    saveDesign(false);
+    closeSheet();
+  });
+}
+
 async function start() {
   // Билет на вложения — заранее: внешний браузер открывается только прямо
   // из нажатия, ждать сети в этот момент нельзя.
@@ -450,12 +468,15 @@ async function start() {
   initTelegram();
   // Тема, дизайн и цвет, выбранные в Telegram, — и на сайте (и наоборот).
   syncPrefs().then((changed) => {
-    if (!changed) return;
-    applyStoredTheme();
-    applyAccent();
-    applyDesign();
-    renderNav();
-    window.dispatchEvent(new CustomEvent('netschool:design'));
+    if (changed) {
+      applyStoredTheme();
+      applyAccent();
+      applyDesign();
+      renderNav();
+      window.dispatchEvent(new CustomEvent('netschool:design'));
+    }
+    // Флаг «видел» уже пришёл с сервера — окошко не повторится на другом устройстве.
+    showDesignNotice();
   });
   renderNav();
   renderIcons();
