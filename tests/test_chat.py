@@ -594,3 +594,51 @@ class TestAdminPrivateChats:
         await socket.send_json({'t': 'ping'})
         assert (await socket.receive_json(timeout=2))['t'] == 'pong'
         await socket.close()
+
+
+class TestChatIdentityAndInbox:
+    async def test_sender_identity_and_permissions(self, client, student_token, admin_token):
+        _, joined = await join(client, student_token, 'Cosmos_9')
+        room = joined['data']['rooms'][0]['id']
+        await join(client, admin_token, 'Vlad_9')
+        _, sent = await send(client, admin_token, room, 'От администратора')
+        admin_mid = sent['data']['id']
+        assert sent['data']['mine']
+        await post(client, '/api/chat/identity', admin_token, {'as_admin': False})
+        listing = (await (await client.get(f'{BASE}/api/chat/rooms/{room}/messages', params={'token': admin_token})).json())['data']
+        message = next(m for m in listing['messages'] if m['id'] == admin_mid)
+        assert not message['mine'] and message['admin'] and message['author'] == 'admin'
+        assert (await post(client, f'/api/chat/messages/{admin_mid}/moderate', admin_token, {'action': 'delete'}))[0] == 403
+        assert (await client.get(f'{BASE}/api/chat/messages/{admin_mid}/reads', params={'token': admin_token})).status == 403
+        _, personal = await send(client, admin_token, room, 'От моего профиля')
+        assert personal['data']['mine'] and not personal['data']['admin']
+        await post(client, '/api/chat/identity', admin_token, {'as_admin': True})
+        listing = (await (await client.get(f'{BASE}/api/chat/rooms/{room}/messages', params={'token': admin_token})).json())['data']
+        assert not next(m for m in listing['messages'] if m['id'] == personal['data']['id'])['mine']
+
+    async def test_private_inbox_only_started_rooms_and_admin_can_start(self, client, student_token, admin_token, app_context, users):
+        await join(client, student_token, 'Cosmos_9')
+        await join(client, admin_token, 'Vlad_9')
+        other = await make_student(app_context, users, 60, 'Иван')
+        await join(client, other, 'Moon_9')
+        async def admin_rooms():
+            return (await (await client.get(f'{BASE}/api/chat', params={'token': admin_token})).json())['data']['rooms']
+        assert not [r for r in await admin_rooms() if r['kind'] == 'support']
+        assert (await send(client, admin_token, 'support:1', 'Самому себе'))[0] == 404
+        assert (await client.get(f'{BASE}/api/chat/participants', params={'token': student_token})).status == 403
+        participants = (await (await client.get(f'{BASE}/api/chat/participants', params={'token': admin_token})).json())['data']['items']
+        assert {item['id'] for item in participants} == {2, 60}
+        assert {item['nick'] for item in participants} == {'Cosmos_9', 'Moon_9'}
+        # Ученик написал первым — появилась только его переписка.
+        await send(client, student_token, 'support:2', 'Прошу помощь')
+        assert [r['id'] for r in await admin_rooms() if r['kind'] == 'support'] == ['support:2']
+        # Админ может начать переписку без первого сообщения ученика.
+        assert (await send(client, admin_token, 'support:60', 'Здравствуйте'))[0] == 200
+        assert {r['id'] for r in await admin_rooms() if r['kind'] == 'support'} == {'support:2', 'support:60'}
+        await post(client, '/api/chat/identity', admin_token, {'as_admin': False})
+        assert not [r for r in await admin_rooms() if r['kind'] == 'support']
+        assert (await client.get(f'{BASE}/api/chat/participants', params={'token': admin_token})).status == 403
+
+    @pytest.mark.parametrize('nick', ['admin', 'Admin123', 'a_d_m_i_n', 'Aдmиn', 'администратор', 'модер', 'm0der', 'мoдератор', 'moderator', 'mod_99', 'support_9'])
+    async def test_role_nicks_rejected(self, client, student_token, nick):
+        assert (await join(client, student_token, nick))[0] == 400

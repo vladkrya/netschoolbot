@@ -84,14 +84,18 @@ async def admin_mode(request: web.Request) -> bool:
     return not profile or bool(profile["as_admin"])
 
 
+def participant_label(profile: dict[str, Any]) -> str:
+    return profile["nick"] or f"Без ника · {profile['grade']} класс · #{profile['telegram_id']}"
+
+
 async def describe(request: web.Request, room_id: str) -> rules.Room | None:
     """Чужая комната с названием школы — из профилей её учеников."""
     if room_id.startswith("support:"):
         owner = rules.support_owner(room_id)
-        if owner is None or not (profile := await repo(request).profile(owner)):
+        if owner is None or owner == admin_id(request) or not (profile := await repo(request).profile(owner)):
             return None
         own = owner == current_user(request).telegram_id
-        return rules.Room(room_id, "support", "ЛС с админом" if own else f"ЛС · {profile['nick'] or 'Участник'}",
+        return rules.Room(room_id, "support", "ЛС с админом" if own else f"ЛС · {participant_label(profile)}",
                           "Смена ника и помощь" if own else "Личный чат с участником")
     school = rules.room_school(room_id)
     names = request.setdefault("chat_school_names", {})
@@ -168,7 +172,7 @@ def profile_rooms(profile: dict[str, Any] | None) -> list[rules.Room]:
 async def visible_rooms(request: web.Request, profile: dict[str, Any] | None) -> list[rules.Room]:
     """Свои комнаты, а у администратора — все комнаты всех школ:
     сначала те, где пишут, потом пустые."""
-    own = profile_rooms(profile)
+    own = [room for room in profile_rooms(profile) if room.id != f"support:{admin_id(request)}"]
     if not await admin_mode(request):
         return own
     seen = {room.id for room in own}
@@ -182,9 +186,6 @@ async def visible_rooms(request: web.Request, profile: dict[str, Any] | None) ->
     for first, last in rules.AGE_BANDS:
         await add(f"global:{first}-{last}")
     chats = repo(request)
-    for member in await chats.all_profiles():
-        if member["telegram_id"] != admin_id(request):
-            await add(f"support:{member['telegram_id']}")
     for room_id in await chats.active_rooms():
         await add(room_id)
     for school, grade in await chats.known_rooms():
@@ -195,6 +196,8 @@ async def visible_rooms(request: web.Request, profile: dict[str, Any] | None) ->
 
 async def room_access(request: web.Request, room_id: str) -> tuple[rules.Room, dict[str, Any] | None]:
     profile = await current_profile(request)
+    if room_id == f"support:{admin_id(request)}":
+        raise ChatDenied("Личный чат с самим собой недоступен", status=404)
     for room in profile_rooms(profile):
         if room.id == room_id:
             return room, profile
@@ -243,6 +246,7 @@ async def message_json(
     replies = {row["id"]: row for row in await _messages_by_id(chats, reply_ids)}
     profiles = await chats.profiles(sorted({row["author_id"] for row in [*rows, *replies.values()]}))
     admin = admin_id(request)
+    acting_admin = await admin_mode(request)
     result = []
     for row in rows:
         hidden_for_me = (row["deleted_at"] is not None) or (row["hidden"] and not moderator)
@@ -257,17 +261,17 @@ async def message_json(
             "id": row["id"],
             "kind": row["kind"],
             "author": _author(row, profiles),
-            "author_id": row["author_id"] if await admin_mode(request) else None,
+            "author_id": row["author_id"] if acting_admin else None,
             "grade": row["author_grade"],
             "admin": bool(row["is_admin"]),
-            "mine": row["author_id"] == uid,
+            "mine": row["author_id"] == uid and bool(row["is_admin"]) == acting_admin,
             "text": None if hidden_for_me else row["text"],
             "deleted": row["deleted_at"] is not None,
             "deleted_by": _deleted_by(row, admin),
             "hidden": bool(row["hidden"]),
             "pinned": bool(row["pinned"]),
             "at": row["created_at"],
-            "read": row["author_id"] == uid and others_read >= row["id"],
+            "read": row["author_id"] == uid and bool(row["is_admin"]) == acting_admin and others_read >= row["id"],
             "reply": {
                 "id": reply["id"], "author": _author(reply, profiles),
                 "text": None if reply["deleted_at"] is not None or (reply["hidden"] and not moderator)
@@ -397,6 +401,24 @@ async def _body(request: web.Request) -> dict[str, Any]:
 @routes.get("/api/chat")
 async def chat_overview(request: web.Request) -> web.Response:
     return web.json_response({"ok": True, "data": await overview(request)})
+
+
+@routes.get("/api/chat/participants")
+async def chat_participants(request: web.Request) -> web.Response:
+    """Админ выбирает участника для первого личного сообщения."""
+    if not await admin_mode(request):
+        return json_error("Переключитесь на аккаунт Админ", status=403, reason="chat")
+    items = []
+    for profile in await repo(request).all_profiles():
+        uid = profile["telegram_id"]
+        if uid == admin_id(request):
+            continue
+        room = await describe(request, f"support:{uid}")
+        items.append({"id": uid, "nick": participant_label(profile), "grade": profile["grade"],
+                      "school": profile["school_name"], "room": {
+                          "id": room.id, "kind": room.kind, "title": room.title,
+                          "owner_id": uid, "owner_nick": profile["nick"], "notify": "all"}})
+    return web.json_response({"ok": True, "data": {"items": items}})
 
 
 @routes.get("/api/chat/unread")
@@ -760,7 +782,7 @@ async def chat_reads(request: web.Request) -> web.Response:
     except ChatDenied as exc:
         return _denied(exc)
     uid = current_user(request).telegram_id
-    if message["author_id"] != uid and not await admin_mode(request):
+    if not await admin_mode(request) and (message["author_id"] != uid or message["is_admin"]):
         return json_error("Прочтения видны только автору", status=403, reason="chat")
     chats = repo(request)
     excluded = {message["author_id"]}
@@ -806,7 +828,8 @@ async def chat_moderate(request: web.Request) -> web.Response:
     action = str((await _body(request)).get("action") or "")
     uid = current_user(request).telegram_id
     moderator = await can_moderate(request, message["room"])
-    own_delete = action == "delete" and message["author_id"] == uid and message["kind"] != "system"
+    own_delete = (action == "delete" and message["author_id"] == uid
+                  and bool(message["is_admin"]) == await admin_mode(request) and message["kind"] != "system")
     if not moderator and not own_delete:
         return json_error("Нужны права модератора", status=403, reason="chat")
     chats = repo(request)

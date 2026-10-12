@@ -66,13 +66,19 @@ _RESERVED = tuple(nick_key(word) for word in (
     "admin", "админ", "moder", "модер", "support", "поддержк", "telegram", "сетевой"))
 
 
+# Проверяем также смешанные алфавиты и разделители: Aдmиn, a_d_m_i_n, m0der.
+_ROLE = re.compile(r"[aа][dд][mм][iи1l][nн]|[mм][oо0][dд][eе][rрp]|[sс][uу][pрп][pрп][oо0][rр][tт]", re.I)
+_SHORT_MOD = re.compile(r"^[mм][oо0][dд](?:\d+)?$", re.I)
+
+
 def check_nick(nick: str) -> str:
     """Почему ник не подходит ("" — подходит)."""
     if not NICK_RE.match(nick):
         return f"Ник: {NICK_HINT}"
     key = nick_key(nick)
-    if any(word in key for word in _RESERVED):
-        return "Такой ник занят"
+    compact = nick.replace("_", "")
+    if any(word in key.replace("_", "") for word in _RESERVED) or _ROLE.search(compact) or _SHORT_MOD.fullmatch(compact):
+        return "Ник не должен выдавать участника за администратора или модератора"
     if _DRUGS.search(nick) or _SUICIDE.search(nick):
         return "Такой ник нельзя"
     return ""

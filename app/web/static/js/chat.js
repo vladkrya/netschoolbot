@@ -143,7 +143,9 @@ function renderRooms(container) {
     </button>` : '';
   const joinHint = overview.admin && !overview.joined
     ? '<button class="card chat-join-hint" id="chatJoinSelf">Вступить, чтобы писать и от своего имени ›</button>' : '';
-  container.innerHTML = identity + reports + joinHint + overview.rooms.map((room, index) => `
+  const startPrivate = overview.admin_mode
+    ? '<button class="btn outline" id="chatStartPrivate">Написать участнику</button>' : '';
+  container.innerHTML = identity + reports + joinHint + startPrivate + overview.rooms.map((room, index) => `
     <button class="card chat-room" data-room="${index}">
       <span class="chat-room-icon kind-${room.kind}">${ICONS.mail}</span>
       <span class="chat-room-main">
@@ -156,8 +158,9 @@ function renderRooms(container) {
         ${room.unread ? `<span class="nav-badge chat-unread">${room.unread > 99 ? '99+' : room.unread}</span>` : ''}
       </span>
     </button>`).join('') + (overview.joined
-    ? `<button class="link chat-leave" id="chatEditNick">Ник: ${esc(overview.profile.nick)} · смена через админа</button>
+    ? `${overview.admin ? '<span class="muted small">Ник:' : '<button class="link chat-leave" id="chatEditNick">Ник:'} ${esc(overview.profile.nick)}${overview.admin ? '</span>' : ' · смена через админа</button>'}
        <button class="link chat-leave" id="chatLeave">Выйти из чатов</button>` : '');
+  container.querySelector('#chatStartPrivate')?.addEventListener('click', () => chooseParticipant(() => renderChats(container, true)));
   container.querySelector('#chatEditNick')?.addEventListener('click', () => {
     const room = overview.rooms.find(item => item.kind === 'support' && item.own);
     if (room) openRoom(room, () => renderChats(container, true));
@@ -187,6 +190,27 @@ function renderRooms(container) {
     refreshChatUnread();
     renderChats(container);
   });
+}
+
+async function chooseParticipant(onClose) {
+  const sheet = openSheet('Написать участнику', skeleton(3));
+  try {
+    const { data } = await api('/api/chat/participants');
+    sheet.innerHTML = '<input class="field" placeholder="Найти по нику" aria-label="Найти участника"><div class="chat-participant-list"></div>';
+    const list = sheet.querySelector('.chat-participant-list');
+    const input = sheet.querySelector('input');
+    const draw = () => {
+      const items = data.items.filter(item => `${item.nick} ${item.school}`.toLowerCase().includes(input.value.trim().toLowerCase()));
+      list.innerHTML = items.map((item, index) => `<button class="card chat-room" data-participant="${index}"><span>${esc(item.nick)}<br><span class="muted small">${item.grade} класс · ${esc(item.school)}</span></span></button>`).join('') || '<p class="muted">Участников нет</p>';
+      list.querySelectorAll('[data-participant]').forEach(button => button.addEventListener('click', () => {
+        const item = items[Number(button.dataset.participant)];
+        closeSheet();
+        openRoom(item.room, onClose);
+      }));
+    };
+    input.addEventListener('input', draw);
+    draw();
+  } catch (error) { sheet.innerHTML = errorCard(error); }
 }
 
 /* ─────────────────────────── Переписка ─────────────────────────── */
