@@ -19,6 +19,8 @@
   @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 3s; } }
   .btn { display: inline-block; margin-top: 14px; padding: 11px 18px; border-radius: 12px; border: 0; background: var(--accent); color: #fff;
          font: inherit; font-weight: 600; text-decoration: none; cursor: pointer; }
+  .btn.secondary { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
+  .actions { display: flex; flex-wrap: wrap; gap: 0 10px; justify-content: center; }
   .error { color: var(--bad); }
   .small { font-size: 14px; margin-top: 16px; }
   .small a { color: var(--accent); }
@@ -31,7 +33,10 @@
   <h1>{{ name or "Вложение" }}</h1>
   <p id="state">Скачиваем файл из «Сетевого города»…</p>
   <p id="slow" hidden>Сервер школы отвечает медленно — подождите, загрузка не остановилась.</p>
-  <a class="btn" id="open" hidden>Открыть файл</a>
+  <div class="actions">
+    <a class="btn" id="open" hidden>Открыть</a>
+    <a class="btn secondary" id="save" hidden>Скачать</a>
+  </div>
   <button class="btn" id="retry" hidden type="button">Повторить</button>
   <p class="small"><a id="direct" hidden>Не получается? Открыть файл напрямую</a></p>
 </div>
@@ -48,10 +53,11 @@
   // просмотром, имя файла берётся из заголовка сервера, и всё работает
   // во встроенных браузерах, где blob-ссылки не открываются.
   $('open').href = file;
+  $('save').href = file + (location.search ? '&' : '?') + 'download=1';
   $('direct').href = file;
 
   function show(ids) {
-    ['spinner', 'slow', 'open', 'retry', 'direct'].forEach(function (id) {
+    ['spinner', 'slow', 'open', 'save', 'retry', 'direct'].forEach(function (id) {
       $(id).hidden = ids.indexOf(id) < 0;
     });
   }
@@ -92,8 +98,8 @@
       return fail(message);
     }
     clearTimeout(slowTimer); clearInterval(tick);
-    show(['open']);
-    $('state').textContent = 'Файл готов. Если он не открылся сам — нажмите кнопку.';
+    show(['open', 'save']);
+    $('state').textContent = 'Файл готов. «Открыть» — посмотреть, «Скачать» — сохранить в «Файлы».';
     location.href = file;
   }
 

@@ -1109,7 +1109,8 @@ async def attachment(request: web.Request) -> web.Response:
         body=payload,
         headers={
             "Content-Type": content_type,
-            "Content-Disposition": _content_disposition(name),
+            # download=1 — кнопка «Скачать»: сохранить, а не смотреть.
+            "Content-Disposition": _content_disposition(name, bool(request.query.get("download"))),
         },
     )
 
@@ -1151,15 +1152,23 @@ def _attachment_name(raw: str, attachment_id: int) -> str:
 
 
 # Что браузер умеет показать сам — открываем просмотром, а не скачиванием:
-# вложение теперь открывается во внешнем браузере.
-_INLINE_TYPES = ("application/pdf", "image/")
+# вложение теперь открывается во внешнем браузере. Safari на iPhone и iPad
+# показывает и документы Office; с «attachment» он предлагал только
+# «Открыть в…», и pptx из ДЗ было не посмотреть. Браузеры, которые Office
+# не показывают, с «inline» просто скачивают файл, как раньше.
+_INLINE_TYPES = (
+    "application/pdf", "image/", "text/plain", "application/rtf",
+    "application/msword", "application/vnd.ms-excel", "application/vnd.ms-powerpoint",
+    "application/vnd.openxmlformats-officedocument.",
+)
 
 
-def _content_disposition(name: str) -> str:
+def _content_disposition(name: str, download: bool = False) -> str:
     """Заголовок с именем в UTF-8 (RFC 6266) и ASCII-запасным для старых клиентов."""
     fallback = name.encode("ascii", "replace").decode().replace("?", "_")
     content_type = mimetypes.guess_type(name)[0] or ""
-    kind = "inline" if content_type.startswith(_INLINE_TYPES) else "attachment"
+    inline = not download and content_type.startswith(_INLINE_TYPES)
+    kind = "inline" if inline else "attachment"
     return f"{kind}; filename=\"{fallback}\"; filename*=UTF-8''{quote(name, safe='')}"
 
 

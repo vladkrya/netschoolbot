@@ -960,6 +960,14 @@ class TestTelegramMiniApp:
         disposition = response.headers["Content-Disposition"]
         assert "filename*=UTF-8''_%D0%A1%D0%A1%D0%9F%20_1_.docx" in disposition
         assert 'filename="____ _1_.docx"' in disposition
+        # Safari на iPhone показывает Office сам — только с «inline»;
+        # кнопка «Скачать» просит сохранить файл.
+        assert disposition.startswith("inline;")
+        response = await client.get(
+            f"{BASE}/api/attachment/1",
+            params={"tgWebAppData": self.init_data(1), "name": "Мозг.pptx", "download": "1"},
+        )
+        assert response.headers["Content-Disposition"].startswith("attachment;")
 
 
     async def test_attachment_opens_by_ticket_in_outside_browser(self, client, users, app_context):
