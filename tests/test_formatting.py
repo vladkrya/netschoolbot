@@ -239,3 +239,17 @@ class TestSplitMessage:
     def test_nothing_is_lost(self):
         text = "\n".join(f"строка {i}" for i in range(500))
         assert "\n".join(split_message(text)) == text
+
+
+@pytest.mark.parametrize(("raw", "label"), [
+    ("9б", "9 «Б» класс"),
+    ("9 Б", "9 «Б» класс"),
+    ("10-А", "10 «А» класс"),
+    ("11 «В»", "11 «В» класс"),
+    ("5", "5 класс"),
+    ("", ""),
+    ("Группа ИЗО", "Группа ИЗО"),
+])
+def test_class_label(raw, label):
+    from app.domain.formatting import class_label
+    assert class_label(raw) == label

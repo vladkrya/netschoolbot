@@ -387,6 +387,21 @@ class DiaryService:
 
         return await self._with_session(user, call)
 
+    async def fetch_class_name(self, user: User) -> str:
+        """Класс выбранного ученика, как его пишет «Сетевой город» («9б», «10-А»)."""
+
+        async def call(client: Any) -> str:
+            init = await _fetch_diary_init(client)
+            raw = init.get("students") or []
+            entries = [item for item in (raw.values() if isinstance(raw, dict) else raw) if isinstance(item, dict)]
+            entry = next((item for item in entries
+                          if _safe_int(item.get("studentId")) == user.selected_student_id), None)
+            if entry is None and len(entries) == 1:
+                entry = entries[0]
+            return str((entry or {}).get("className") or "").strip()
+
+        return await self._with_session(user, call)
+
     async def fetch_chat_identity(self, user: User) -> dict[str, Any]:
         """Кто вошёл — для школьных чатов: ученик ли, имя, класс, школа.
 
