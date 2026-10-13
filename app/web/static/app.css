@@ -1047,6 +1047,19 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 
 .howto { padding-left: 18px; font-size: 14px; line-height: 1.5; }
 .howto li { margin-bottom: 6px; }
+
+/* Подсказка «установить на экран Домой». */
+.install-head { display: flex; gap: 14px; align-items: center; margin-bottom: 14px; font-size: 14px; line-height: 1.4; }
+.install-icon { width: 64px; height: 64px; border-radius: 15px; flex: none; box-shadow: 0 2px 8px rgba(0, 0, 0, .18); }
+.install-steps { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
+.install-steps li { display: flex; gap: 12px; align-items: center; padding: 10px 12px; border-radius: 12px; background: var(--card-2); font-size: 14px; line-height: 1.5; }
+.install-num { width: 24px; height: 24px; flex: none; border-radius: 50%; background: var(--head); color: #fff; font-size: 13px; font-weight: 600; display: flex; align-items: center; justify-content: center; }
+.install-chip { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; margin: 0 2px; vertical-align: middle; border-radius: 8px; background: var(--card); color: var(--primary); box-shadow: 0 1px 3px rgba(0, 0, 0, .15); }
+.install-chip svg { width: 18px; height: 18px; }
+.install-note { font-size: 14px; line-height: 1.5; }
+.install-arrow { display: flex; justify-content: center; margin-top: 8px; color: var(--primary); animation: install-bounce 1.2s ease-in-out infinite; }
+.install-arrow svg { width: 28px; height: 28px; }
+@keyframes install-bounce { 50% { transform: translateY(6px); } }
 .demo-badge { margin: -4px 0 8px; padding: 8px 10px; border-radius: 10px; background: color-mix(in srgb, var(--head) 20%, transparent); color: var(--primary); font-size: 13px; font-weight: 600; text-align: center; }
 .demo-box .drawer-heading { display: flex; align-items: center; gap: 6px; }
 .attach { display: flex; align-items: center; gap: 8px; }

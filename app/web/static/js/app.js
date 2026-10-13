@@ -12,6 +12,7 @@ import { chatEvents } from './chat-live.js';
 import { initMail, loadMail, openAnnouncements, openCompose, selectChats } from './mail.js';
 import { applyAccent, applyDesign, applyScheduleTab, initFullscreen, isNewDesign, saveDesign } from './appearance.js';
 import { ICONS } from './icons.js';
+import { initInstallPrompt } from './install.js';
 import {
   applyStoredTheme, closeDrawer, initStudentSwitch, isDrawerOpen, loadProfile, loadSettings, offerPushOnFirstLaunch, openDrawer,
   syncTimezone,
@@ -540,6 +541,7 @@ async function start() {
     reportVisit();
   });
   offerPushOnFirstLaunch();
+  initInstallPrompt();
   renderNav();
   renderIcons();
   applyScheduleTab();
