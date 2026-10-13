@@ -20,6 +20,7 @@ import { getPref, setPref } from './prefs.js';
 import { closeSheet, openSheet } from './sheet.js';
 import { openBugReport } from './bugreport.js';
 import { openLockSettings } from './lock.js';
+import { canInstall, openInstallGuide } from './install.js';
 
 export async function loadProfile(force = false) {
   if (state.profile && !force) return state.profile;
@@ -406,15 +407,17 @@ function pushAvailability() {
 
 function pushRow() {
   const where = pushAvailability();
+  if (where === 'install') {
+    return `<div class="muted small">Пуш на iPhone работает в приложении с экрана «Домой».</div>
+        <button class="btn outline" id="installGuide">Как установить</button>`;
+  }
+  const install = canInstall()
+    ? '<button class="btn outline" id="installGuide">Установить на экран «Домой»</button>' : '';
   if (where === 'ready') {
     return `<label class="switch-row"><span>Пуш на этом устройстве</span>
-        <input type="checkbox" switch class="switch" id="pushToggle" disabled></label>`;
+        <input type="checkbox" switch class="switch" id="pushToggle" disabled></label>${install}`;
   }
-  if (where === 'install') {
-    return `<div class="muted small">Пуш на iPhone: откройте дневник в Safari, «Поделиться» → «На экран Домой»
-        и запустите приложение с новой иконки.</div>`;
-  }
-  return '';
+  return install;
 }
 
 function pushHowto() {
@@ -625,6 +628,7 @@ function bindDrawer() {
   bindTabs();
   bindPushToggle();
   $('pwaOpen')?.addEventListener('click', openInBrowser);
+  $('installGuide')?.addEventListener('click', openInstallGuide);
   if (demo) bindDemo();
 }
 
