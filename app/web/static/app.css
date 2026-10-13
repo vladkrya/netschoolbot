@@ -1059,6 +1059,14 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .install-note { font-size: 14px; line-height: 1.5; }
 .install-arrow { display: flex; justify-content: center; margin-top: 8px; color: var(--primary); animation: install-bounce 1.2s ease-in-out infinite; }
 .install-arrow svg { width: 28px; height: 28px; }
+/* Карточка над уроками: у кого приложения на экране «Домой» ещё нет. */
+.install-card { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; padding: 12px 8px 12px 12px; border-radius: 16px; background: color-mix(in srgb, var(--head) 16%, var(--card)); border: 1px solid color-mix(in srgb, var(--head) 35%, transparent); cursor: pointer; }
+.install-card-icon { width: 40px; height: 40px; border-radius: 10px; flex: none; }
+.install-card-text { flex: 1; min-width: 0; }
+.install-card-title { font-weight: 600; font-size: 15px; }
+.install-card-sub { font-size: 13px; color: var(--text2); margin-top: 2px; }
+.install-card-close { width: 32px; height: 32px; flex: none; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: var(--text2); }
+.install-card-close svg { width: 18px; height: 18px; }
 @keyframes install-bounce { 50% { transform: translateY(6px); } }
 .demo-badge { margin: -4px 0 8px; padding: 8px 10px; border-radius: 10px; background: color-mix(in srgb, var(--head) 20%, transparent); color: var(--primary); font-size: 13px; font-weight: 600; text-align: center; }
 .demo-box .drawer-heading { display: flex; align-items: center; gap: 6px; }

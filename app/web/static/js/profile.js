@@ -20,7 +20,7 @@ import { getPref, setPref } from './prefs.js';
 import { closeSheet, openSheet } from './sheet.js';
 import { openBugReport } from './bugreport.js';
 import { openLockSettings } from './lock.js';
-import { canInstall, openInstallGuide } from './install.js';
+import { canInstall, openInBrowser, openInstallGuide, wantsInstall } from './install.js';
 
 export async function loadProfile(force = false) {
   if (state.profile && !force) return state.profile;
@@ -423,13 +423,13 @@ function pushRow() {
 function pushHowto() {
   // Внутри Telegram web push недоступен: уведомления браузера работают только
   // у сайта, открытого в самом браузере или установленного на экран «Домой».
-  if (pushAvailability() !== 'telegram') return '';
+  if (pushAvailability() !== 'telegram' || !wantsInstall()) return '';
   return `<section class="drawer-section">
-      <div class="drawer-heading">Пуш-уведомления на телефон</div>
+      <div class="drawer-heading">Приложение на экране «Домой»</div>
       <ol class="howto">
         <li>Нажмите «Открыть в браузере» — откроется ваша личная ссылка.</li>
         <li><b>iPhone:</b> в Safari «Поделиться» → «На экран Домой». <b>Android:</b> в Chrome ⋮ → «Установить приложение».</li>
-        <li>Запустите дневник с иконки на экране и ${isNewDesign() ? 'во вкладке «Настройки»' : 'в меню ☰'} включите «Пуш на этом устройстве».</li>
+        <li>Запустите дневник с иконки — он сам спросит про уведомления.</li>
       </ol>
       <button class="btn outline" id="pwaOpen">Открыть в браузере</button>
     </section>`;
@@ -475,6 +475,7 @@ function render() {
   $(isNewDesign() ? 'drawerBody' : 'settingsContent').replaceChildren();
   settingsRoot().innerHTML = `
     ${demo ? '<div class="demo-badge">Демо-режим · данные выдуманные</div>' : ''}
+    ${pushHowto()}
     <section class="drawer-section">
       <div class="drawer-heading">Аккаунт ученика</div>
       <div class="drawer-name">${esc(data.name)}</div>
@@ -527,7 +528,6 @@ function render() {
       <div class="muted small">Проверка каждые ${data.interval_minutes} мин</div>
       ${statusLine(data.status)}
     </section>
-    ${pushHowto()}
     ${demoSection()}
     <div class="drawer-foot muted small">Дневник «Сетевого города»</div>`;
 
@@ -630,19 +630,6 @@ function bindDrawer() {
   $('pwaOpen')?.addEventListener('click', openInBrowser);
   $('installGuide')?.addEventListener('click', openInstallGuide);
   if (demo) bindDemo();
-}
-
-async function openInBrowser() {
-  tap();
-  try {
-    const { data } = await api('/api/pwa-link');
-    // openLink открывает внешний браузер, а не встроенный в Telegram.
-    if (tg?.openLink) tg.openLink(data.url, { try_instant_view: false });
-    else window.open(data.url, '_blank');
-  } catch (error) {
-    notify('error');
-    banner(error.message, true);
-  }
 }
 
 async function bindDemo() {

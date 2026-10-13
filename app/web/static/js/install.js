@@ -3,9 +3,11 @@
 // по кнопке, на iPhone такого окна нет: показываем, куда нажимать в Safari.
 'use strict';
 
-import { $, base, demo, initData } from './core.js';
+import { $, api, banner, base, demo, initData, tg } from './core.js';
 import { ICONS } from './icons.js';
 import { closeSheet, openSheet } from './sheet.js';
+import { getPref, setPref } from './prefs.js';
+import { notify, tap } from './haptics.js';
 
 const SEEN_KEY = 'installNudge';
 // Закрыли подсказку — напомним не раньше чем через неделю, всего три раза.
@@ -122,9 +124,101 @@ export function openInstallGuide() {
   });
 }
 
-/** Можно ли вообще установить: телефон, браузер, ещё не установлено. */
+/** Приложение с экрана «Домой» уже открывали — на этом или другом устройстве. */
+function appInstalled() {
+  return installed() || getPref('pwa') === 'installed';
+}
+
+/** Телефон, где приложения на экране «Домой» ещё нет. */
+export function wantsInstall() {
+  if (demo || appInstalled()) return false;
+  return initData ? ['ios', 'android'].includes(tg?.platform) : browser() !== 'desktop';
+}
+
+/** Можно ли установить прямо отсюда: браузер телефона, а не Telegram. */
 export function canInstall() {
-  return !initData && !demo && !installed() && browser() !== 'desktop';
+  return !initData && wantsInstall();
+}
+
+/** Личная ссылка во внешнем браузере: устанавливать приложение — оттуда. */
+export async function openInBrowser() {
+  tap();
+  try {
+    const { data } = await api('/api/pwa-link');
+    // openLink открывает внешний браузер, а не встроенный в Telegram.
+    if (tg?.openLink) tg.openLink(data.url, { try_instant_view: false });
+    else window.open(data.url, '_blank');
+  } catch (error) {
+    notify('error');
+    banner(error.message, true);
+  }
+}
+
+/** Из Telegram на экран «Домой» не добавить — сначала в браузер. */
+function openTelegramGuide() {
+  const iphone = tg?.platform === 'ios';
+  const body = openSheet('Установить на экран «Домой»', `
+    <div class="install-head">
+      <img class="install-icon" src="${base}/static/apple-touch-icon.png" alt="" width="64" height="64">
+      <p>Дневник откроется с иконки, как обычное приложение: во весь экран, быстрее и с пуш-уведомлениями.</p>
+    </div>
+    <ol class="install-steps">
+      <li><span class="install-num">1</span><span>Нажмите «Открыть в ${iphone ? 'Safari' : 'браузере'}» — откроется ваша личная ссылка</span></li>
+      <li><span class="install-num">2</span><span>Там появится подсказка, куда нажать, чтобы добавить иконку</span></li>
+      <li><span class="install-num">3</span><span>Запустите дневник с иконки — уведомления включатся сами</span></li>
+    </ol>
+    <button class="btn" id="installBrowser">Открыть в ${iphone ? 'Safari' : 'браузере'}</button>`);
+  body.querySelector('#installBrowser').addEventListener('click', () => {
+    closeSheet();
+    openInBrowser();
+  });
+}
+
+/** Инструкция, подходящая к месту: Telegram или браузер. */
+export function openInstall() {
+  if (initData) openTelegramGuide();
+  else openInstallGuide();
+}
+
+// Карточку на главном экране закрыли — вернётся через три дня.
+const CARD_KEY = 'installCardHidden';
+const CARD_PAUSE = 3 * 24 * 3600 * 1000;
+
+function cardHidden() {
+  try {
+    return Date.now() - Number(localStorage.getItem(CARD_KEY) || 0) < CARD_PAUSE;
+  } catch {
+    return false;
+  }
+}
+
+/** Карточка «Добавить на экран Домой» над уроками дня. */
+export function installCardHtml() {
+  if (!wantsInstall() || cardHidden()) return '';
+  return `<div class="install-card" data-install-card role="button" tabindex="0">
+      <img class="install-card-icon" src="${base}/static/apple-touch-icon.png" alt="" width="40" height="40">
+      <div class="install-card-text">
+        <div class="install-card-title">Добавьте дневник на экран «Домой»</div>
+        <div class="install-card-sub">Быстрее и с пуш-уведомлениями</div>
+      </div>
+      <button class="install-card-close" type="button" data-install-hide aria-label="Скрыть">${ICONS.close}</button>
+    </div>`;
+}
+
+export function bindInstallCard(container) {
+  const card = container.querySelector('[data-install-card]');
+  if (!card) return;
+  card.addEventListener('click', (event) => {
+    event.stopPropagation();
+    if (event.target.closest('[data-install-hide]')) {
+      tap();
+      try { localStorage.setItem(CARD_KEY, String(Date.now())); } catch { /* ничего */ }
+      card.remove();
+      return;
+    }
+    tap();
+    openInstall();
+  });
 }
 
 function remember() {
@@ -161,6 +255,9 @@ async function waitForSheet() {
  * показываем подсказку — после первого экрана и других окошек.
  */
 export function initInstallPrompt() {
+  // Запуск с иконки: запомним для аккаунта — в Telegram и на других
+  // устройствах больше не предлагать.
+  if (installed() && !demo && getPref('pwa') !== 'installed') setPref('pwa', 'installed');
   window.addEventListener('beforeinstallprompt', (event) => {
     event.preventDefault();
     deferredPrompt = event;

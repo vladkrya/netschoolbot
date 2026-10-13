@@ -520,6 +520,13 @@ class TestNewFeatures:
         response = await client.post(url, params={"token": token}, json={"design": "retro"})
         assert response.status == 400
 
+    async def test_pwa_pref_is_validated(self, client, token):
+        url = f"{BASE}/api/prefs"
+        response = await client.post(url, params={"token": token}, json={"pwa": "installed"})
+        assert (await response.json())["data"]["pwa"] == "installed"
+        response = await client.post(url, params={"token": token}, json={"pwa": "maybe"})
+        assert response.status == 400
+
     async def test_nav_tabs_pref_is_validated(self, client, token):
         url = f"{BASE}/api/prefs"
         tabs = ["day", "assistant", "homework", "totals", "mail", "settings"]
