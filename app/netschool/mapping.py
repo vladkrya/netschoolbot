@@ -128,8 +128,13 @@ def homework_from_day(
             raw_content = _attr(assignment, "content", "") or ""
             text = clean_content(raw_content)
             attachments = _attachments(assignment)
-            # «---Не указана---» означает «задание есть, текста нет».
-            explicitly_empty = str(raw_content).strip() in {"---Не указана---", "Не указана"}
+            # «---Не указана---» у домашнего задания означает «задание есть,
+            # текста нет». У остальных типов («Ответ на уроке» и т. п.) это
+            # просто пустое название — «Сетевой город» не показывает их как Д/З.
+            explicitly_empty = (
+                str(raw_content).strip() in {"---Не указана---", "Не указана"}
+                and _is_homework_kind(assignment)
+            )
             if not text and not attachments and not explicitly_empty:
                 continue
 
@@ -155,6 +160,15 @@ def homework_from_day(
                 )
             )
     return records
+
+
+def _is_homework_kind(assignment: Any) -> bool:
+    """Тип задания — «Домашнее задание» (ДЗ). Без типа считаем, что да."""
+    kind = str(_attr(assignment, "kind") or _attr(assignment, "type") or "").strip().lower()
+    abbr = str(_attr(assignment, "kind_abbr") or "").strip().lower()
+    if not kind and not abbr:
+        return True
+    return abbr == "дз" or "домашн" in kind
 
 
 def _comment(assignment: Any) -> str | None:
