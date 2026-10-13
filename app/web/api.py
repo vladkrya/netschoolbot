@@ -1381,7 +1381,11 @@ def _clean_periods(value: Any) -> dict[str, Any] | None:
 async def get_prefs(request: web.Request) -> web.Response:
     """Тема, дизайн, цвет шапки и веса калькулятора — общие для Telegram и сайта."""
     app, user = context(request), current_user(request)
-    return web.json_response({"ok": True, "data": await app.miniapp.prefs(user.telegram_id)})
+    data = await app.miniapp.prefs(user.telegram_id)
+    # Поставили приложение до того, как оно стало отмечать это само.
+    if "pwa" not in data and await app.miniapp.has_installed_app(user.telegram_id):
+        data = await app.miniapp.save_prefs(user.telegram_id, {"pwa": "installed"})
+    return web.json_response({"ok": True, "data": data})
 
 
 @routes.post("/api/visit")
@@ -1395,7 +1399,10 @@ async def visit(request: web.Request) -> web.Response:
     client = body.get("client") if isinstance(body, dict) else None
     if design not in {"new", "classic"} or client not in {"telegram", "pwa", "web"}:
         return json_error("Некорректный запрос")
-    await context(request).miniapp.record_visit(current_user(request).telegram_id, design, client)
+    miniapp, telegram_id = context(request).miniapp, current_user(request).telegram_id
+    await miniapp.record_visit(telegram_id, design, client)
+    if client == "pwa" and (await miniapp.prefs(telegram_id)).get("pwa") != "installed":
+        await miniapp.save_prefs(telegram_id, {"pwa": "installed"})
     return web.json_response({"ok": True})
 
 

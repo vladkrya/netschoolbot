@@ -527,6 +527,17 @@ class TestNewFeatures:
         response = await client.post(url, params={"token": token}, json={"pwa": "maybe"})
         assert response.status == 400
 
+    async def test_pwa_visit_marks_app_installed(self, client, token):
+        url = f"{BASE}/api/prefs"
+        assert "pwa" not in (await (await client.get(url, params={"token": token})).json())["data"]
+        await client.post(f"{BASE}/api/visit", params={"token": token}, json={"design": "new", "client": "pwa"})
+        assert (await (await client.get(url, params={"token": token})).json())["data"]["pwa"] == "installed"
+
+    async def test_apple_push_marks_app_installed(self, client, token, app_context):
+        await app_context.miniapp.add_push_subscription(1, "https://web.push.apple.com/abc", "p", "a")
+        data = (await (await client.get(f"{BASE}/api/prefs", params={"token": token})).json())["data"]
+        assert data["pwa"] == "installed"
+
     async def test_nav_tabs_pref_is_validated(self, client, token):
         url = f"{BASE}/api/prefs"
         tabs = ["day", "assistant", "homework", "totals", "mail", "settings"]

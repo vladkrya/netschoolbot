@@ -424,7 +424,7 @@ function pushHowto() {
   // Внутри Telegram web push недоступен: уведомления браузера работают только
   // у сайта, открытого в самом браузере или установленного на экран «Домой».
   if (pushAvailability() !== 'telegram' || !wantsInstall()) return '';
-  return `<section class="drawer-section">
+  return `<section class="drawer-section" data-install-hint>
       <div class="drawer-heading">Приложение на экране «Домой»</div>
       <ol class="howto">
         <li>Нажмите «Открыть в браузере» — откроется ваша личная ссылка.</li>
@@ -754,6 +754,12 @@ async function currentSubscription() {
 export function offerPushOnFirstLaunch() {
   const installed = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
   if (demo || !installed || pushAvailability() !== 'ready') return;
+  // Пуш включён по умолчанию: разрешение уже есть, а подписки нет (например,
+  // приложение переустановили) — подписываемся, если сами не выключали.
+  if (Notification.permission === 'granted') {
+    if (!pushTurnedOff()) currentSubscription().then((found) => found || subscribePush()).catch(() => {});
+    return;
+  }
   if (Notification.permission !== 'default') return;
   try {
     if (localStorage.getItem('pushAsked')) return;
@@ -774,6 +780,12 @@ export function offerPushOnFirstLaunch() {
     };
     document.addEventListener('click', onTap, true);
   });
+}
+
+const PUSH_OFF_KEY = 'pushOff';
+
+function pushTurnedOff() {
+  try { return localStorage.getItem(PUSH_OFF_KEY) === '1'; } catch { return false; }
 }
 
 /** Подсказать, если выключены оба канала. */
@@ -800,6 +812,10 @@ async function bindPushToggle() {
     try {
       if (input.checked) await subscribePush();
       else await unsubscribePush();
+      try {
+        if (input.checked) localStorage.removeItem(PUSH_OFF_KEY);
+        else localStorage.setItem(PUSH_OFF_KEY, '1');
+      } catch { /* ничего */ }
       notify('success');
     } catch (error) {
       notify('error');
