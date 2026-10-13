@@ -145,9 +145,11 @@ export async function openInBrowser() {
   tap();
   try {
     const { data } = await api('/api/pwa-link');
+    // Метка: в браузере после PIN сразу показать, как установить.
+    const url = `${data.url}${data.url.includes('?') ? '&' : '?'}install=1`;
     // openLink открывает внешний браузер, а не встроенный в Telegram.
-    if (tg?.openLink) tg.openLink(data.url, { try_instant_view: false });
-    else window.open(data.url, '_blank');
+    if (tg?.openLink) tg.openLink(url, { try_instant_view: false });
+    else window.open(url, '_blank');
   } catch (error) {
     notify('error');
     banner(error.message, true);
@@ -195,7 +197,7 @@ function cardHidden() {
 /** Карточка «Добавить на экран Домой» над уроками дня. */
 export function installCardHtml() {
   if (!wantsInstall() || cardHidden()) return '';
-  return `<div class="install-card" data-install-card role="button" tabindex="0">
+  return `<div class="install-card" data-install-card data-install-hint role="button" tabindex="0">
       <img class="install-card-icon" src="${base}/static/apple-touch-icon.png" alt="" width="40" height="40">
       <div class="install-card-text">
         <div class="install-card-title">Добавьте дневник на экран «Домой»</div>
@@ -203,6 +205,12 @@ export function installCardHtml() {
       </div>
       <button class="install-card-close" type="button" data-install-hide aria-label="Скрыть">${ICONS.close}</button>
     </div>`;
+}
+
+/** Флаг «установлено» пришёл с сервера после отрисовки — убрать подсказки. */
+export function dropInstallHints() {
+  if (wantsInstall()) return;
+  document.querySelectorAll('[data-install-hint]').forEach((element) => element.remove());
 }
 
 export function bindInstallCard(container) {
@@ -266,7 +274,21 @@ export function initInstallPrompt() {
     deferredPrompt = null;
     try { localStorage.setItem(SEEN_KEY, JSON.stringify({ count: MAX_SHOWS, at: Date.now() })); } catch { /* ничего */ }
   });
+  // Пришли по кнопке «Открыть в Safari» из Telegram — инструкция сразу,
+  // без паузы и без счётчика показов. Метку из адреса убираем: иначе она
+  // попала бы в иконку на экране «Домой».
+  const params = new URLSearchParams(location.search);
+  const asked = params.get('install') === '1';
+  if (asked) {
+    params.delete('install');
+    const query = params.toString();
+    history.replaceState(history.state, '', `${location.pathname}${query ? `?${query}` : ''}${location.hash}`);
+  }
   if (!canInstall()) return;
+  if (asked) {
+    waitForSheet().then(() => { if (!installed()) openInstallGuide(); });
+    return;
+  }
   // Chrome присылает событие не сразу — даём ему пару секунд.
   setTimeout(async () => {
     await waitForSheet();

@@ -868,6 +868,19 @@ class MiniappRepository:
             (telegram_id, design, client, now, now),
         )
 
+    async def has_installed_app(self, telegram_id: int) -> bool:
+        """Открывали ли приложение с экрана «Домой»: последний вход оттуда
+        или пуш-подписка Apple (на iPhone она есть только у установленного)."""
+        row = await self._db.fetch_one(
+            """SELECT 1 FROM app_visits WHERE telegram_id = ? AND client = 'pwa'
+               UNION ALL
+               SELECT 1 FROM push_subscriptions
+               WHERE telegram_id = ? AND endpoint LIKE 'https://web.push.apple.com/%'
+               LIMIT 1""",
+            (telegram_id, telegram_id),
+        )
+        return row is not None
+
     async def visit_stats(self, since: float) -> dict[str, dict[str, int]]:
         """Сколько открывавших с `since` — по дизайну и по месту открытия."""
         result: dict[str, dict[str, int]] = {}
