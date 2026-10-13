@@ -17,6 +17,7 @@ import { EDGE_PX } from './swipeback.js';
 import { isDoneItem, lessonStatus, loadDone, markBox, openHomework, openLesson, realMarks } from './details.js';
 import { closeSheet, openSheet } from './sheet.js';
 import { select, tap } from './haptics.js';
+import { bindInstallCard, installCardHtml } from './install.js';
 
 /** Загруженные дни по ISO-дате и недели, которые уже спрашивали. */
 const days = new Map();
@@ -199,7 +200,9 @@ function renderDay(quiet = false) {
 
   if (!lessons.length) {
     renderedKey = '';
-    container.innerHTML = `<div class="empty big">${weekdayIndex(state.date) >= 5 ? 'Выходной' : 'Уроков нет'}</div>`;
+    container.innerHTML = installCardHtml()
+      + `<div class="empty big">${weekdayIndex(state.date) >= 5 ? 'Выходной' : 'Уроков нет'}</div>`;
+    bindInstallCard(container);
     return;
   }
 
@@ -208,8 +211,9 @@ function renderDay(quiet = false) {
   if (quiet && key === renderedKey && container.children.length) return;
   renderedKey = key;
   container.classList.toggle('quiet', quiet);
-  container.innerHTML = daySummary(lessons)
+  container.innerHTML = installCardHtml() + daySummary(lessons)
     + lessons.map((lesson, index) => lessonCard(lesson, index, progress?.index === index ? progress : null)).join('');
+  bindInstallCard(container);
   container.querySelectorAll('[data-lesson]').forEach((card) => {
     card.addEventListener('click', (event) => {
       tap();
