@@ -248,12 +248,19 @@ async function biometry(register = false) {
     if (tg?.initData) throw new Error('Биометрия недоступна в Telegram на этом устройстве. Используйте PIN.');
     return passkey(register);
   }
+  const label = biometricLabel(manager.biometricType, tg.platform);
+  // Доступ уже запрещали: Telegram больше не спросит сам, сразу ответит «нет».
+  // Разрешить можно только в его настройках бота — открываем их.
+  if (manager.isAccessRequested && !manager.isAccessGranted) {
+    try { manager.openSettings(); } catch { /* старый Telegram — подскажем словами */ }
+    throw new Error(`Разрешите ${label} для бота в открывшихся настройках Telegram и попробуйте снова. Вход по PIN работает.`);
+  }
   biometricPrompt = true;
   try {
     if (register) {
       if (!manager.isAccessGranted) {
         const granted = await new Promise(resolve => manager.requestAccess({ reason: 'Разблокировка школьного дневника' }, resolve));
-        if (!granted) throw new Error('Разрешите биометрию в настройках Telegram или используйте PIN.');
+        if (!granted) throw new Error(`Доступ к ${label} не разрешён. Вход по PIN работает.`);
       }
       const { data } = await post('biometric/register', { device: manager.deviceId });
       const saved = await new Promise(resolve => manager.updateBiometricToken(data.token, resolve));
@@ -262,7 +269,7 @@ async function biometry(register = false) {
       const token = await new Promise((resolve, reject) => {
         manager.authenticate({ reason: 'Открыть школьный дневник' }, (ok, secret) => {
           if (ok && secret) resolve(secret);
-          else reject(new Error('Биометрия отменена. Можно войти по PIN.'));
+          else reject(new Error(`${label} не подтверждён. Можно войти по PIN.`));
         });
       });
       const result = await post('biometric/unlock', { device: manager.deviceId, token });
@@ -363,7 +370,10 @@ export async function unlockApp() {
       }
       const available = nativeBiometricEnabled(native, registered) ||
         (!tg?.initData && status.passkeys && await supportsBiometry());
-      return available ? { label: native ? biometricLabel(native.biometricType, tg.platform) : webBiometricLabel() } : null;
+      // Telegram сам показывает Face ID / Touch ID — запускаем сразу, как
+      // в банковских приложениях; PIN остаётся под ним, если отменить.
+      return available ? { label: native ? biometricLabel(native.biometricType, tg.platform) : webBiometricLabel(),
+        auto: Boolean(native) } : null;
     })();
     await new Promise(resolve => {
       let pad;
@@ -389,10 +399,12 @@ export async function unlockApp() {
           if (offlinePin && navigator.onLine !== false) resync();
         }, { forgot: status.password_reset && !tg?.initData ? FORGOT_PASSWORD : FORGOT_TELEGRAM });
         biometricReady.then(config => {
-          if (config && root.isConnected) pad.setBiometric({ ...config, run: async () => {
+          if (!config || !root.isConnected) return;
+          const run = pad.setBiometric({ ...config, run: async () => {
             await (config.offline ? offlinePasskey() : biometry());
             await pad.success(); await finish();
           } });
+          if (config.auto && !document.hidden) run?.();
         }).catch(() => {});
       } else {
         root.querySelector('.lock-fields').innerHTML = '<p>Введите прежний пароль, затем замените его на PIN из 4 цифр.</p><label>Прежний пароль<input type="password" autocomplete="current-password" required maxlength="128" autofocus></label>';

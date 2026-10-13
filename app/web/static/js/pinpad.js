@@ -109,6 +109,8 @@ export function mountPinpad(root, complete, { hint = 'Введите 4 цифр�
       catch (error) { root.querySelector('.lock-error').textContent = error.message; }
       finally { busy = false; if (!disposed) paint(); }
     };
+    // Экран входа может запустить биометрию сам, как по нажатию.
+    return button.onclick;
   }
   if (biometric) setBiometric(biometric);
   field.querySelector('[data-forgot]')?.addEventListener('click', () => {
