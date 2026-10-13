@@ -204,9 +204,19 @@ class TestHomework:
     def test_placeholder_content_is_kept(self):
         # «---Не указана---» означает, что задание есть, а текста нет.
         records = homework_from_day(
-            day([lesson([assignment(content="---Не указана---")])]), today=self.TODAY
+            day([lesson([assignment(kind="Домашнее задание", content="---Не указана---")])]),
+            today=self.TODAY,
         )
         assert [r.text for r in records] == ["Не указана"]
+
+    def test_placeholder_of_other_kinds_is_not_homework(self):
+        # «Ответ на уроке» с «---Не указана---» — это оценка за урок, а не
+        # пустое Д/З: «Сетевой город» его в домашке не показывает.
+        records = homework_from_day(
+            day([lesson([assignment(kind="Ответ на уроке", content="---Не указана---")])]),
+            today=self.TODAY,
+        )
+        assert records == []
 
     def test_attachments_are_collected(self):
         att = SimpleNamespace(id=7, name="задание.pdf")
