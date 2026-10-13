@@ -1248,3 +1248,27 @@ class TestSecurityHeaders:
         assert "frame-ancestors 'self'" in page.headers['Content-Security-Policy']
         api = await client.get(f'{BASE}/api/profile')
         assert api.headers['Cache-Control'] == 'no-store'
+
+
+class TestStudentClass:
+    async def test_class_is_cached_and_survives_school_outage(self, client, token, app_context, monkeypatch):
+        calls = []
+
+        async def fetch(user):
+            calls.append(user.telegram_id)
+            return "9б"
+
+        monkeypatch.setattr(app_context.diary, "fetch_class_name", fetch, raising=False)
+        url = f"{BASE}/api/student-class"
+        data = (await (await client.get(url, params={"token": token})).json())["data"]
+        assert data == {"name": "9б", "label": "9 «Б» класс"}
+        await client.get(url, params={"token": token})
+        assert len(calls) == 1
+
+    async def test_outage_without_cache_gives_empty_class(self, client, token, app_context, monkeypatch):
+        async def fetch(user):
+            raise NetSchoolError(Reason.UNKNOWN, "нет связи")
+
+        monkeypatch.setattr(app_context.diary, "fetch_class_name", fetch, raising=False)
+        response = await client.get(f"{BASE}/api/student-class", params={"token": token})
+        assert (await response.json())["data"] == {"name": "", "label": ""}

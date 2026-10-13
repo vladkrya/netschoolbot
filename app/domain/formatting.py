@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import datetime as dt
 import html
+import re
 from collections import Counter
 
 from .models import DEFAULT_TIMEZONE, ApiMode, MarkKind, User, timezone_label, zone
@@ -475,3 +476,14 @@ def split_message(text: str, limit: int = MAX_MESSAGE_LENGTH) -> list[str]:
     if current:
         parts.append("\n".join(current))
     return parts
+
+
+def class_label(class_name: str) -> str:
+    """«9б», «9 Б», «10-А» → «9 «Б» класс»; что не разобрать — как есть."""
+    text = (class_name or "").strip()
+    match = re.fullmatch(r"(\d{1,2})\s*[-–—]?\s*[«\"']?([А-ЯЁа-яёA-Za-z])[»\"']?(?:\s*класс)?", text, flags=re.I)
+    if match:
+        return f"{match.group(1)} «{match.group(2).upper()}» класс"
+    if re.fullmatch(r"\d{1,2}", text):
+        return f"{text} класс"
+    return text

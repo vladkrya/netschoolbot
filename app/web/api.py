@@ -1499,6 +1499,28 @@ async def save_prefs(request: web.Request) -> web.Response:
     return web.json_response({"ok": True, "data": data})
 
 
+CLASS_FRESH = dt.timedelta(days=1)
+
+
+@routes.get("/api/student-class")
+async def student_class(request: web.Request) -> web.Response:
+    """Класс ученика для настроек. Меняется раз в год — храним сутки, а без
+    связи со школой отдаём прошлый ответ или пустую строку."""
+    app, user = context(request), current_user(request)
+    section = f"class:{user.selected_student_id}"
+    cached = await app.cache.get(user.telegram_id, section)
+    now_utc = dt.datetime.now(dt.timezone.utc).replace(tzinfo=None)
+    if cached is not None and now_utc - cached[1] < CLASS_FRESH:
+        name = cached[0]
+    else:
+        try:
+            name = await app.diary.fetch_class_name(user)
+            await app.cache.put(user.telegram_id, section, name)
+        except NetSchoolError:
+            name = cached[0] if cached is not None else ""
+    return web.json_response({"ok": True, "data": {"name": name, "label": formatting.class_label(name)}})
+
+
 @routes.get("/api/pwa-link")
 async def pwa_link(request: web.Request) -> web.Response:
     """Постоянная ссылка для установки на домашний экран (как /app_install)."""

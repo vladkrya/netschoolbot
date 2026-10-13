@@ -454,8 +454,31 @@ function demoSection() {
     </section>`;
 }
 
+// Класс ученика: отдельным запросом — профиль не ждёт ответа школы.
+const classLabels = new Map();
+
+async function loadStudentClass(studentId) {
+  if (demo || classLabels.has(studentId)) return;
+  classLabels.set(studentId, '');
+  try {
+    const { data } = await api('/api/student-class');
+    classLabels.set(studentId, data.label || '');
+  } catch {
+    classLabels.delete(studentId);
+    return;
+  }
+  const line = $('studentClass');
+  const current = state.profile?.students?.find((s) => s.current)?.id ?? null;
+  if (line && current === studentId && classLabels.get(studentId)) {
+    line.textContent = classLabels.get(studentId);
+    line.hidden = false;
+  }
+}
+
 function render() {
   const data = state.profile;
+  const currentStudent = data.students.find((s) => s.current)?.id ?? null;
+  const studentClass = classLabels.get(currentStudent) || '';
   const theme = currentTheme();
   const accent = currentAccent();
   const radio = (value, label) =>
@@ -479,6 +502,7 @@ function render() {
     <section class="drawer-section">
       <div class="drawer-heading">Аккаунт ученика</div>
       <div class="drawer-name">${esc(data.name)}</div>
+      <div class="muted small" id="studentClass"${studentClass ? '' : ' hidden'}>${esc(studentClass)}</div>
       <div class="muted small">${esc(data.school)}</div>
       ${data.students.length > 1 ? `<div class="drawer-children">${data.students
         .map((s) => `<button class="chip ${s.current ? 'active' : ''}" data-student="${s.id}">${esc(s.name)}</button>`)
@@ -532,6 +556,7 @@ function render() {
     <div class="drawer-foot muted small">Дневник «Сетевого города»</div>`;
 
   bindDrawer();
+  loadStudentClass(currentStudent);
 }
 
 function bindDrawer() {
