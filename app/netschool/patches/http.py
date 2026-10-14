@@ -15,8 +15,9 @@
   * даём пометке «хост требует прокси» срок жизни, чтобы одна неудача не
     выключала прямые запросы навсегда;
   * заданный прокси — основной маршрут, но не единственный: если он не
-    соединяется с сервером школы, тот же запрос уходит напрямую с сервера
-    бота (см. `ProxyFallbackTransport`).
+    соединяется с сервером школы, тот же запрос уходит через запасной прокси
+    (NETSCHOOL_BACKUP_PROXY), а затем напрямую с сервера бота
+    (см. `ProxyFallbackTransport`).
 """
 
 from __future__ import annotations
@@ -51,7 +52,7 @@ _PROXY_FAILURES = (httpx.ProxyError, httpx.ConnectError, httpx.ConnectTimeout, h
 
 
 class ProxyFallbackTransport(httpx.AsyncBaseTransport):
-    """Транспорт httpx: сначала через прокси, при отказе — напрямую.
+    """Транспорт httpx: основной прокси, при отказе — запасной, затем напрямую.
 
     Повторяем только ошибки соединения: запрос до сервера школы ещё не дошёл,
     повтор безопасен. Ответ сервера (в том числе 403) — это ответ, его не
@@ -59,27 +60,38 @@ class ProxyFallbackTransport(httpx.AsyncBaseTransport):
     переживают смену маршрута.
     """
 
-    _down: dict[str, float] = {}
+    # (номер маршрута, хост) -> когда маршрут не довёл запрос до хоста.
+    _down: dict[tuple[int, str], float] = {}
+    # NETSCHOOL_BACKUP_PROXY: задаётся в `apply`, общий для всех клиентов.
+    backup_proxy: str = ""
 
     def __init__(self, proxy: str, **kwargs) -> None:
-        self._proxy = proxy
-        self._via_proxy = httpx.AsyncHTTPTransport(proxy=proxy, **kwargs)
+        proxies = [proxy]
+        if self.backup_proxy and self.backup_proxy != proxy:
+            proxies.append(self.backup_proxy)
+        self._proxies = [httpx.AsyncHTTPTransport(proxy=p, **kwargs) for p in proxies]
         self._direct = httpx.AsyncHTTPTransport(**kwargs)
 
     async def handle_async_request(self, request):
         host = request.url.host
-        if time.monotonic() - self._down.get(host, -PROXY_RETRY_AFTER_S) >= PROXY_RETRY_AFTER_S:
+        for index, transport in enumerate(self._proxies):
+            key = (index, host)
+            if time.monotonic() - self._down.get(key, -PROXY_RETRY_AFTER_S) < PROXY_RETRY_AFTER_S:
+                continue
             try:
-                response = await self._via_proxy.handle_async_request(request)
-                self._down.pop(host, None)
+                response = await transport.handle_async_request(request)
+                self._down.pop(key, None)
                 return response
             except _PROXY_FAILURES as exc:
-                logger.warning("Прокси не довёл запрос до %s (%s), пробуем напрямую", host, exc)
-                self._down[host] = time.monotonic()
+                following = "запасной прокси" if index + 1 < len(self._proxies) else "напрямую"
+                logger.warning("%s прокси не довёл запрос до %s (%s), пробуем %s",
+                               "Основной" if index == 0 else "Запасной", host, exc, following)
+                self._down[key] = time.monotonic()
         return await self._direct.handle_async_request(request)
 
     async def aclose(self) -> None:
-        await self._via_proxy.aclose()
+        for transport in self._proxies:
+            await transport.aclose()
         await self._direct.aclose()
 
 
@@ -175,7 +187,7 @@ def reset_blocked_hosts() -> None:
     ns_http._tor_hosts.clear()
 
 
-def apply(*, timeout: int, blocked_host_ttl: int, fallback_proxy: str = "") -> None:
+def apply(*, timeout: int, blocked_host_ttl: int, fallback_proxy: str = "", backup_proxy: str = "") -> None:
     """Применить правки. Безопасно вызывать несколько раз."""
     global _applied
     if _applied:
@@ -188,6 +200,7 @@ def apply(*, timeout: int, blocked_host_ttl: int, fallback_proxy: str = "") -> N
 
     ns_http._DEFAULT_TIMEOUT = timeout
     ns_http._tor_hosts = ExpiringHostSet(blocked_host_ttl)
+    ProxyFallbackTransport.backup_proxy = backup_proxy
     _install_proxy_fallback(ns_http)
 
     disabled = fallback_proxy.lower() in {"off", "none", "no"}

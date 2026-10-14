@@ -101,7 +101,7 @@ async def test_proxy_failure_falls_back_to_direct(monkeypatch):
     monkeypatch.setattr(patch.ProxyFallbackTransport, '_down', {})
     transport = patch.ProxyFallbackTransport('socks5://127.0.0.1:9')
     failing = _Failing()
-    transport._via_proxy = failing
+    transport._proxies = [failing]
     transport._direct = httpx.MockTransport(lambda request: httpx.Response(200, json={'ok': True}))
     async with httpx.AsyncClient(transport=transport) as client:
         assert (await client.get('https://school.example/webapi/x')).status_code == 200
@@ -113,10 +113,42 @@ async def test_proxy_failure_falls_back_to_direct(monkeypatch):
 async def test_proxy_answer_is_not_replaced(monkeypatch):
     monkeypatch.setattr(patch.ProxyFallbackTransport, '_down', {})
     transport = patch.ProxyFallbackTransport('socks5://127.0.0.1:9')
-    transport._via_proxy = httpx.MockTransport(lambda request: httpx.Response(403))
+    transport._proxies = [httpx.MockTransport(lambda request: httpx.Response(403))]
     transport._direct = httpx.MockTransport(lambda request: httpx.Response(200))
     async with httpx.AsyncClient(transport=transport) as client:
         assert (await client.get('https://school.example/')).status_code == 403
+
+
+async def test_backup_proxy_comes_before_direct(monkeypatch):
+    monkeypatch.setattr(patch.ProxyFallbackTransport, '_down', {})
+    monkeypatch.setattr(patch.ProxyFallbackTransport, 'backup_proxy', 'socks5://127.0.0.1:10')
+    transport = patch.ProxyFallbackTransport('socks5://127.0.0.1:9')
+    assert len(transport._proxies) == 2
+    failing = _Failing()
+    transport._proxies = [failing, httpx.MockTransport(lambda request: httpx.Response(200, text='backup'))]
+    transport._direct = httpx.MockTransport(lambda request: httpx.Response(200, text='direct'))
+    async with httpx.AsyncClient(transport=transport) as client:
+        assert (await client.get('https://school.example/a')).text == 'backup'
+        assert (await client.get('https://school.example/b')).text == 'backup'
+    assert failing.calls == 1
+
+
+async def test_both_proxies_down_goes_direct(monkeypatch):
+    monkeypatch.setattr(patch.ProxyFallbackTransport, '_down', {})
+    monkeypatch.setattr(patch.ProxyFallbackTransport, 'backup_proxy', 'socks5://127.0.0.1:10')
+    transport = patch.ProxyFallbackTransport('socks5://127.0.0.1:9')
+    main, backup = _Failing(), _Failing()
+    transport._proxies = [main, backup]
+    transport._direct = httpx.MockTransport(lambda request: httpx.Response(200, text='direct'))
+    async with httpx.AsyncClient(transport=transport) as client:
+        assert (await client.get('https://school.example/a')).text == 'direct'
+        assert (await client.get('https://school.example/b')).text == 'direct'
+    assert (main.calls, backup.calls) == (1, 1)
+
+
+def test_backup_same_as_main_is_not_duplicated(monkeypatch):
+    monkeypatch.setattr(patch.ProxyFallbackTransport, 'backup_proxy', 'socks5://127.0.0.1:9')
+    assert len(patch.ProxyFallbackTransport('socks5://127.0.0.1:9')._proxies) == 1
 
 
 def test_client_with_proxy_gets_fallback_transport(direct_mode):

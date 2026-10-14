@@ -151,6 +151,9 @@ class NetSchoolSettings:
     # host-подстрока -> прокси. Некоторые региональные серверы «Сетевого
     # города» отбивают запросы с datacenter-адресов.
     proxy_hosts: dict[str, str] = field(default_factory=dict)
+    # Запасной прокси: через него идёт запрос, если основной не соединился
+    # с сервером школы. Только при заданном основном.
+    backup_proxy: str = ""
 
     def proxy_for(self, url: str) -> str | None:
         for host, proxy in self.proxy_hosts.items():
@@ -325,6 +328,7 @@ def load_settings(*, require_bot_token: bool = True) -> Settings:
                 _env("NETSCHOOL_PROXY_HOSTS"),
                 _env("NETSCHOOL_PROXY"),
             ),
+            backup_proxy=_env("NETSCHOOL_BACKUP_PROXY"),
         ),
         debug=_env_bool("DEBUG_MODE", False),
         secret_key=_env("NETSCHOOL_SECRET_KEY"),

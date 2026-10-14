@@ -81,6 +81,7 @@ class AppContext:
             timeout=settings.netschool.http_timeout,
             blocked_host_ttl=settings.netschool.blocked_host_ttl,
             fallback_proxy=settings.netschool.fallback_proxy,
+            backup_proxy=settings.netschool.backup_proxy,
         )
         esia.apply()
         assignments.apply()
