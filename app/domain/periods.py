@@ -198,3 +198,30 @@ def current_quarter(today: dt.date) -> str:
     if found:
         return found
     return QUARTER_KEYS[0]
+
+
+def resolve_periods(setting: dict[str, Any] | None, terms: list[dict[str, Any]] | None, today: dt.date) -> list[Quarter]:
+    """Периоды по настройке приложения (`prefs.periods`) и периодам школы.
+
+    Тот же порядок, что у экрана «Итоги»: свои даты, периоды школы, общепринятые.
+    """
+    setting = setting or {}
+    scheme_name = setting.get("scheme") or "auto"
+    if scheme_name != "auto":
+        try:
+            scheme = PeriodScheme(scheme_name)
+            starts = setting.get("starts")
+            parsed = [tuple(int(x) for x in item.split("-")) for item in starts] if starts else None
+            return periods(today, scheme, parsed)
+        except (ValueError, TypeError):
+            return periods(today)
+    return periods_from_terms(terms or [], today) or periods(today)
+
+
+def current_period(year: list[Quarter], today: dt.date) -> Quarter:
+    """Текущий период; на каникулах — последний начавшийся."""
+    for item in year:
+        if item.covers(today):
+            return item
+    started = [item for item in year if item.start <= today]
+    return started[-1] if started else year[0]

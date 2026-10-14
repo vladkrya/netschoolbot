@@ -165,6 +165,8 @@
 
 <main>
   <section class="panel active" id="panel-day">
+    <!-- Таймер урока (timer.js): отдельно от списка, чтобы перерисовка дня не обрывала анимацию. -->
+    <div class="lesson-timer" id="lessonTimer" hidden></div>
     <div class="list" id="dayContent"></div>
     <!-- ИИ-помощник кнопкой (новый дизайн, если помощник включён на сервере). -->
     <button class="fab ai-fab" id="aiFab" aria-label="ИИ-помощник" data-icon="sparkles" hidden></button>

@@ -8,9 +8,10 @@ import logging
 
 from aiogram import F, Router
 from aiogram.filters import Command, CommandStart, StateFilter
-from aiogram.types import CallbackQuery, Message, ReplyKeyboardRemove
+from aiogram.types import BufferedInputFile, CallbackQuery, Message, ReplyKeyboardRemove
 
 from ...context import AppContext
+from ...exporting import SCOPES, export_grades
 from ...domain import formatting
 from ...domain.models import MarkKind, User, normalize
 from ...notifications.outbox import mark_from_dict
@@ -220,6 +221,86 @@ async def week_summary(message: Message, user: User, app: AppContext) -> None:
         return
     week = [r for r in records if start <= r.date <= today]
     await reply(message, formatting.weekly_summary(week, start, today))
+
+
+async def _day_command(message: Message, user: User, app: AppContext, *, tomorrow: bool) -> None:
+    if hint := require_school(user):
+        await reply(message, hint)
+        return
+    today = user.today()
+    # «Завтра» в пятницу — понедельник: в выходные уроков нет.
+    day = next_school_days(today + dt.timedelta(days=1), 1)[0] if tomorrow else today
+    try:
+        days = await app.diary.fetch_period(user, day, day, today=today)
+    except NetSchoolError as exc:
+        await report_error(message, exc)
+        return
+    found = next((d for d in days if d.day == day), None)
+    if tomorrow:
+        title = "Завтра" if day == today + dt.timedelta(days=1) else "Следующий учебный день"
+    else:
+        title = "Сегодня"
+    done = await app.state.done_homework(user.telegram_id)
+    text = formatting.day_brief(found, day, title, done=done)
+    notes = [n for n in await app.notes.between(user.telegram_id, day, day) if not n["done"]]
+    if notes:
+        text += "\n\n📝 <b>Свои задачи</b>\n" + "\n".join(
+            f"⬜ {formatting.esc(n['subject'] + ': ' if n['subject'] else '')}{formatting.esc(n['text'])}" for n in notes
+        )
+    await reply(message, text)
+
+
+@router.message(Command("today"))
+async def today_command(message: Message, user: User, app: AppContext) -> None:
+    await _day_command(message, user, app, tomorrow=False)
+
+
+@router.message(Command("tomorrow"))
+async def tomorrow_command(message: Message, user: User, app: AppContext) -> None:
+    await _day_command(message, user, app, tomorrow=True)
+
+
+@router.message(Command("last"))
+async def last_command(message: Message, user: User, app: AppContext) -> None:
+    if hint := require_school(user):
+        await reply(message, hint)
+        return
+    try:
+        records = await app.diary.fetch_marks(user, weeks_back=3, weeks_forward=0, today=user.today())
+    except NetSchoolError as exc:
+        await report_error(message, exc)
+        return
+    await reply(message, formatting.last_marks(records))
+
+
+@router.message(Command("export"))
+async def export_command(message: Message, user: User) -> None:
+    if hint := require_school(user):
+        await reply(message, hint)
+        return
+    await reply(message, "📤 Выгрузить оценки в Excel — за какой срок?", reply_markup=keyboards.export_periods())
+
+
+@router.callback_query(F.data.startswith("export:"))
+async def export_file(callback: CallbackQuery, user: User, app: AppContext) -> None:
+    scope = callback.data.split(":", 1)[1]
+    if scope not in SCOPES or (hint := require_school(user)):
+        await callback.answer("Не получится")
+        return
+    await callback.answer("Готовлю файл…")
+    if callback.message:
+        await callback.message.edit_text("⏳ Собираю оценки — за весь год это может занять до минуты…")
+    try:
+        data, name = await export_grades(app, user, scope)
+    except NetSchoolError as exc:
+        await report_error(callback, exc)
+        return
+    if callback.message:
+        await callback.message.answer_document(
+            BufferedInputFile(data, filename=name),
+            caption="📊 Оценки: лист «Итоги» — средние по предметам, «Оценки» — все работы.",
+        )
+        await callback.message.delete()
 
 
 @router.message(Command("profile"))

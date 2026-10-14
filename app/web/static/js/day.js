@@ -18,6 +18,8 @@ import { isDoneItem, lessonStatus, loadDone, markBox, openHomework, openLesson, 
 import { closeSheet, openSheet } from './sheet.js';
 import { select, tap } from './haptics.js';
 import { bindInstallCard, installCardHtml } from './install.js';
+import { updateTimer } from './timer.js';
+import { isTestWork, loadNotes, setNoteDone } from './notes.js';
 
 /** Загруженные дни по ISO-дате и недели, которые уже спрашивали. */
 const days = new Map();
@@ -127,6 +129,7 @@ export async function loadDay(force = false) {
   prefetchAround();
   // Отметки «выполнено» — для подсветки Д/З; день рисуется, не дожидаясь их.
   if (showHomeworkStatus() && !state.hwDone) loadDone().then(() => { if (state.tab === 'day') renderDay(true); });
+  if (!state.notes) loadNotes().then(() => { if (state.tab === 'day') renderDay(true); });
 }
 
 function relativeLabel(iso) {
@@ -198,6 +201,7 @@ function renderDay(quiet = false) {
   const lessons = day?.lessons || [];
   const container = $('dayContent');
 
+  updateTimer(lessons, state.date === isoToday());
   if (!lessons.length) {
     renderedKey = '';
     container.innerHTML = installCardHtml()
@@ -207,13 +211,21 @@ function renderDay(quiet = false) {
   }
 
   const progress = activeProgress(lessons);
-  const key = `${state.date}|${progress?.index}|${progress?.label}|${state.hwDone?.size ?? '-'}`;
+  const notes = (state.notes || []).filter((note) => note.date === state.date);
+  const key = `${state.date}|${progress?.index}|${progress?.label}|${state.hwDone?.size ?? '-'}|${notes.map((n) => `${n.id}${n.done}`).join()}`;
   if (quiet && key === renderedKey && container.children.length) return;
   renderedKey = key;
   container.classList.toggle('quiet', quiet);
   container.innerHTML = installCardHtml() + daySummary(lessons)
-    + lessons.map((lesson, index) => lessonCard(lesson, index, progress?.index === index ? progress : null)).join('');
+    + lessons.map((lesson, index) => lessonCard(lesson, index, progress?.index === index ? progress : null)).join('')
+    + notesBlock(notes);
   bindInstallCard(container);
+  container.querySelectorAll('[data-note]').forEach((row) => row.addEventListener('click', async () => {
+    const note = notes[Number(row.dataset.note)];
+    const next = !note.done;
+    row.classList.toggle('done', next);
+    if (!await setNoteDone(note, next)) row.classList.toggle('done', !next);
+  }));
   container.querySelectorAll('[data-lesson]').forEach((card) => {
     card.addEventListener('click', (event) => {
       tap();
@@ -247,6 +259,14 @@ function activeProgress(lessons, now = new Date()) {
   return null;
 }
 
+/** Свои задачи на этот день — под уроками; нажатие отмечает сделанной. */
+function notesBlock(notes) {
+  if (!notes.length) return '';
+  return `<div class="card day-notes"><div class="card-title">Свои задачи</div>${notes.map((note, index) =>
+    `<button class="day-note ${note.done ? 'done' : ''}" data-note="${index}"><span class="dn-box"></span>
+      <span>${note.subject ? `<b>${esc(note.subject)}:</b> ` : ''}${esc(note.text)}</span></button>`).join('')}</div>`;
+}
+
 /** Цвет Д/З на главной: hw-todo — не сделано, hw-done — всё сделано.
  *  Пусто, если подсветку выключили или отметки ещё не загрузились. */
 function homeworkStatus(homework) {
@@ -262,6 +282,7 @@ function lessonCard(lesson, index, progress) {
   const hasFiles = lesson.homework.some((h) => (h.attachments || []).length);
   const hasComment = lesson.homework.some((h) => h.comment);
   const status = homeworkStatus(lesson.homework);
+  const test = lesson.homework.find(isTestWork);
   const time = lesson.time || [lesson.start, lesson.end].filter(Boolean).join(' – ');
   // Новый дизайн: вместо бейджа «Д/З» — начало самого задания.
   const preview = isNewDesign()
@@ -274,6 +295,7 @@ function lessonCard(lesson, index, progress) {
         <span class="lc-marks">${marks}</span>
       </div>
       ${lesson.is_elective ? '<div class="lc-badges"><span class="elective-badge">Факультатив</span></div>' : ''}
+      ${test ? `<div class="lc-badges"><span class="lc-test">📝 ${esc(test.type || 'Проверочная')}</span></div>` : ''}
       ${lesson.homework.length && !preview ? `<div class="lc-badges">
         <span class="hw-badge ${status}" data-hw-badge>Д/З</span>
         ${hasFiles ? `<span class="hw-badge clip">${ICONS.clip}</span>` : ''}

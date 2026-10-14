@@ -33,6 +33,11 @@ def _events_preview(events: list[MarkEvent]) -> str:
         parts.append(f"и ещё {len(events) - 3}")
     return ", ".join(parts)
 
+def _many_children(user: User) -> bool:
+    """Следят за несколькими детьми — уведомление нужно подписать именем."""
+    return user.notifications.all_children and len(user.available_students) > 1
+
+
 # Больше этого числа событий — присылаем одну сводку вместо потока сообщений.
 DIGEST_THRESHOLD = 5
 BETWEEN_MESSAGES = 2.0
@@ -42,9 +47,11 @@ PUSH_DEDUP_SECONDS = 24 * 3600
 
 
 class TelegramNotifier:
-    def __init__(self, bot: Bot, users: UserRepository, push=None) -> None:
+    def __init__(self, bot: Bot, users: UserRepository, push=None, family=None) -> None:
         self._bot = bot
         self._users = users
+        # Второй родитель (FamilyRepository): копии уведомлений в его Telegram.
+        self._family = family
         # Push в браузер — дополнение к Telegram, а не замена: приложение
         # может быть не установлено, а подписка — отозвана без уведомления.
         self._push = push
@@ -97,6 +104,8 @@ class TelegramNotifier:
             return
         now = time.monotonic()
         self._pushed = {key: at for key, at in self._pushed.items() if now - at < PUSH_DEDUP_SECONDS}
+        if _many_children(user) and user.student_name:
+            body = f"{user.student_name}: {body}"
         key = (user.telegram_id, title, body)
         if key in self._pushed:
             return
@@ -119,8 +128,34 @@ class TelegramNotifier:
 
         Служебное — ошибки входа, истекающий токен — идёт в Telegram всегда.
         """
+        if _many_children(user) and user.student_name and not text.startswith("👤"):
+            text = f"{formatting.student_header(user.student_name)}\n{text}"
         if user.notifications.telegram:
             await self._send(user, text)
+        await self._copy_to_followers(user, text)
+
+    async def _copy_to_followers(self, user: User, text: str) -> None:
+        """Копия второму родителю. Его сбой не задерживает уведомление владельцу."""
+        if self._family is None:
+            return
+        try:
+            followers = await self._family.followers(user.telegram_id)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Список родителей %s не прочитан: %s", user.telegram_id, exc)
+            return
+        if not followers:
+            return
+        if not text.startswith("👤"):
+            text = f"👪 <b>{formatting.esc(user.label)}</b>\n{text}"
+        for follower in followers:
+            try:
+                for part in formatting.split_message(text):
+                    await self._bot.send_message(follower["id"], part, parse_mode="HTML")
+            except TelegramForbiddenError:
+                logger.info("Родитель %s заблокировал бота — убираю из копий %s", follower["id"], user.telegram_id)
+                await self._family.remove(user.telegram_id, follower["id"])
+            except Exception as exc:  # noqa: BLE001 — копия вторична
+                logger.info("Копия для %s не ушла: %s", follower["id"], exc)
 
     async def send_error(self, user: User, error: NetSchoolError) -> None:
         await self._send(user, f"⚠️ {formatting.esc(error.user_message)}")

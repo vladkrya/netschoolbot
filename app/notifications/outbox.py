@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
+from ..domain.insights import RiskAlert
 from ..domain.models import MarkKind
 from .schedule_diff import ScheduleChange
 from ..domain.records import (
@@ -32,6 +33,7 @@ class OutboxKind(str, Enum):
     ABSENCES = "absences"
     SCHEDULE = "schedule"
     MAIL = "mail"
+    RISK = "risk"
 
 
 @dataclass(frozen=True, slots=True)
@@ -162,12 +164,26 @@ def _schedule_from_dict(data: dict[str, Any]) -> ScheduleChange:
     )
 
 
+def _risk_to_dict(item: RiskAlert) -> dict[str, Any]:
+    return {"subject": item.subject, "average": item.average, "grade": item.grade,
+            "previous_grade": item.previous_grade, "fives": item.fives}
+
+
+def _risk_from_dict(data: dict[str, Any]) -> RiskAlert:
+    return RiskAlert(
+        subject=data["subject"], average=float(data["average"]), grade=int(data["grade"]),
+        previous_grade=int(data["previous_grade"]),
+        fives=int(data["fives"]) if data.get("fives") is not None else None,
+    )
+
+
 _ENCODERS = {
     OutboxKind.MARKS: _event_to_dict,
     OutboxKind.HOMEWORK: _homework_to_dict,
     OutboxKind.ABSENCES: _absence_to_dict,
     OutboxKind.SCHEDULE: _schedule_to_dict,
     OutboxKind.MAIL: dict,
+    OutboxKind.RISK: _risk_to_dict,
 }
 _DECODERS = {
     OutboxKind.MARKS: _event_from_dict,
@@ -175,6 +191,7 @@ _DECODERS = {
     OutboxKind.ABSENCES: _absence_from_dict,
     OutboxKind.SCHEDULE: _schedule_from_dict,
     OutboxKind.MAIL: dict,
+    OutboxKind.RISK: _risk_from_dict,
 }
 
 

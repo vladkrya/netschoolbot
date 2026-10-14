@@ -23,6 +23,7 @@ from ...domain.models import (
     QuietHours,
     User,
     clamp_interval,
+    clamp_reminder_hour,
     timezone_label,
 )
 from .. import keyboards
@@ -48,6 +49,11 @@ TOGGLES = {
     "schedule": "schedule",
     "absences": "absences",
     "telegram": "telegram",
+    "reminder": "homework_reminder",
+    "tests": "test_reminder",
+    "risk": "grade_risk",
+    "monthly": "monthly_summary",
+    "allkids": "all_children",
 }
 
 
@@ -130,6 +136,67 @@ async def set_interval(callback: CallbackQuery, user: User, app: AppContext) -> 
             parse_mode="HTML",
             reply_markup=keyboards.settings_menu(updated),
         )
+
+
+@router.callback_query(F.data == "settings:reminder")
+async def choose_reminder(callback: CallbackQuery, user: User) -> None:
+    await callback.answer()
+    if callback.message:
+        await callback.message.edit_text(
+            "⏰ Во сколько напоминать о несделанных заданиях на завтра?\n"
+            "<i>Напоминание приходит накануне учебного дня; о контрольных — в то же время.</i>",
+            parse_mode="HTML",
+            reply_markup=keyboards.reminder_choices(user),
+        )
+
+
+@router.callback_query(F.data.startswith("remind:"))
+async def set_reminder(callback: CallbackQuery, user: User, app: AppContext) -> None:
+    try:
+        hour = clamp_reminder_hour(int(callback.data.split(":", 1)[1]))
+    except ValueError:
+        await callback.answer("Не понял время")
+        return
+    updated = await app.users.save(replace(user, notifications=replace(user.notifications, reminder_hour=hour)))
+    await callback.answer(f"Напоминание в {hour}:00")
+    if callback.message:
+        await callback.message.edit_reply_markup(reply_markup=keyboards.reminder_choices(updated))
+
+
+@router.callback_query(F.data == "settings:marks")
+async def choose_marks_filter(callback: CallbackQuery, user: User) -> None:
+    await callback.answer()
+    if callback.message:
+        await callback.message.edit_text(
+            "🎯 О каких новых оценках сообщать?\n"
+            "<i>Изменения и удаления оценок приходят всегда, «зачёт» и «н/а» — тоже.</i>",
+            parse_mode="HTML",
+            reply_markup=keyboards.marks_filter_choices(user),
+        )
+
+
+@router.callback_query(F.data.startswith("markf:"))
+async def set_marks_filter(callback: CallbackQuery, user: User, app: AppContext) -> None:
+    choice = callback.data.split(":", 1)[1]
+    chosen = set(user.notifications.marks_filter) or {2, 3, 4, 5}
+    if choice == "all":
+        chosen = set()
+    elif choice in {"2", "3", "4", "5"}:
+        chosen ^= {int(choice)}
+        if not chosen:
+            await callback.answer("Хотя бы одна оценка должна остаться")
+            return
+        if chosen >= {2, 3, 4, 5}:
+            chosen = set()
+    else:
+        await callback.answer("Не понял")
+        return
+    updated = await app.users.save(
+        replace(user, notifications=replace(user.notifications, marks_filter=tuple(sorted(chosen))))
+    )
+    await callback.answer("Готово")
+    if callback.message:
+        await callback.message.edit_reply_markup(reply_markup=keyboards.marks_filter_choices(updated))
 
 
 @router.message(Command("interval"))

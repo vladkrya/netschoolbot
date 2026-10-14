@@ -74,6 +74,9 @@ class SessionPool:
         entry = await self._entry_for(user.telegram_id)
         async with entry.lock:
             client = await self._ensure_logged_in(user, entry)
+            # Клиент в пуле один на аккаунт, а запросы бывают за разных детей
+            # (слежение за всеми детьми): ребёнок выставляется каждый раз.
+            _apply_student(client, user)
             entry.last_used = dt.datetime.now()
             try:
                 yield client

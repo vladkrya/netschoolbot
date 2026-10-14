@@ -3,7 +3,7 @@
 // вкладка «Настройки» с ещё одним разделом: какие вкладки в нижней панели.
 'use strict';
 
-import { $, api, banner, demo, errorCard, esc, initData, pushEnabled, state, tg } from './core.js';
+import { $, api, apiBlob, banner, demo, errorCard, esc, initData, pushEnabled, skeleton, state, tg } from './core.js';
 import {
   ACCENTS, currentAccent, isNewDesign, saveAccent, saveBells, saveDesign, saveHomeworkStatus, saveWeekends, showBells,
   showHomeworkStatus, showWeekends, syncChromeColor,
@@ -182,6 +182,18 @@ const NOTIFY_LABELS = {
   evening_summary: 'Вечером — сводка на завтра',
   schedule: 'Замены и отмены уроков',
   absences: 'Новые пропуски',
+  homework_reminder: 'Напоминать о несделанном Д/З',
+  test_reminder: 'Контрольные — за день-два',
+  grade_risk: 'Итоговая оценка под угрозой',
+  monthly_summary: 'Итоги месяца и четверти',
+  all_children: 'Следить за всеми детьми',
+};
+
+// Подписи-пояснения под переключателями.
+const NOTIFY_NOTES = {
+  homework_reminder: 'накануне учебного дня — что ещё не отмечено',
+  grade_risk: 'если из-за новой оценки итоговая стала ниже',
+  all_children: 'уведомления подписываются именем',
 };
 
 // Отметки посещаемости есть только в мобильном API.
@@ -190,7 +202,8 @@ const MOBILE_ONLY = new Set(['absences']);
 // Атрибут switch — системный переключатель: в Safari на iPhone он сам
 // тактильно щёлкает от касания (vibrate там нет, см. haptics.js).
 function toggle(key, label, on) {
-  return `<label class="switch-row"><span>${label}</span>
+  const note = NOTIFY_NOTES[key] ? `<span class="muted small switch-note">${NOTIFY_NOTES[key]}</span>` : '';
+  return `<label class="switch-row"><span>${label}${note}</span>
       <input type="checkbox" switch class="switch" data-notify="${key}" ${on ? 'checked' : ''}></label>`;
 }
 
@@ -211,6 +224,112 @@ function statusLine(status) {
   if (status.running && status.next_check_at) rows.push(`Следующая: ${when(status.next_check_at)}`);
   if (status.queued) rows.push(`Ждут отправки: ${status.queued}`);
   return `<div class="muted small sync-status ${failing ? 'failing' : ''}">${rows.join('<br>')}</div>`;
+}
+
+/** Оценки в Excel: в Telegram — файлом в чат с ботом, в браузере — скачиванием. */
+function openExport() {
+  tap();
+  const body = openSheet('Оценки в Excel', `
+    <p class="muted small">Лист «Итоги» — средние и выходящие оценки по предметам, «Оценки» — все работы с датами и весом.</p>
+    <div class="export-choices">
+      <button class="btn" data-export="period">Текущий период</button>
+      <button class="btn outline" data-export="year">Весь учебный год</button>
+    </div>
+    <div class="muted small export-status"></div>`);
+  const status = body.querySelector('.export-status');
+  body.querySelectorAll('[data-export]').forEach((button) => button.addEventListener('click', async () => {
+    select();
+    const scope = button.dataset.export;
+    body.querySelectorAll('[data-export]').forEach((b) => { b.disabled = true; });
+    status.textContent = 'Собираю оценки — за год это может занять до минуты…';
+    try {
+      if (initData) {
+        await api('/api/export/send', { method: 'POST', body: JSON.stringify({ scope }) });
+        status.textContent = 'Готово: файл в чате с ботом.';
+      } else {
+        const blob = await apiBlob(`/api/export.xlsx?scope=${scope}`);
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob.data);
+        link.download = blob.name || 'Оценки.xlsx';
+        document.body.appendChild(link);
+        link.click();
+        setTimeout(() => { URL.revokeObjectURL(link.href); link.remove(); }, 1000);
+        status.textContent = 'Файл скачан.';
+      }
+      notify('success');
+    } catch (error) {
+      notify('error');
+      status.textContent = error.message;
+    } finally {
+      body.querySelectorAll('[data-export]').forEach((b) => { b.disabled = false; });
+    }
+  }));
+}
+
+/** Второй родитель: ссылка-приглашение и кто получает копии уведомлений. */
+async function openFamily() {
+  tap();
+  const screen = pushScreen('Второй родитель');
+  screen.innerHTML = skeleton(3);
+  const draw = (data) => {
+    screen.innerHTML = `<div class="card">
+        <p>Второй родитель будет получать в Telegram те же уведомления: оценки, задания и сводки.
+        Пароль от «Сетевого города» ему не нужен, менять что-либо в дневнике он не сможет.</p>
+        <button class="btn" id="familyInvite">Пригласить по ссылке</button>
+        <div class="family-link" id="familyLink" hidden></div>
+      </div>
+      ${data.followers.length ? `<div class="card"><div class="card-title">Получают копии</div>${data.followers.map((f) =>
+        `<div class="family-row"><span>${esc(f.name || `ID ${f.id}`)}</span><button class="btn outline small" data-drop="${f.id}">Убрать</button></div>`).join('')}</div>` : ''}
+      ${data.following.length ? `<div class="card"><div class="card-title">Вы получаете уведомления об</div>${data.following.map((f) =>
+        `<div class="family-row"><span>${esc(f.name)}</span><button class="btn outline small" data-leave="${f.id}">Не получать</button></div>`).join('')}</div>` : ''}`;
+    $('familyInvite').addEventListener('click', async (event) => {
+      select();
+      event.currentTarget.disabled = true;
+      try {
+        const { data: invite } = await api('/api/family/invite', { method: 'POST', body: '{}' });
+        const box = $('familyLink');
+        box.hidden = false;
+        box.innerHTML = `<p class="muted small">Перешлите ссылку второму родителю. Она одноразовая и действует сутки.</p>
+          <input class="field" readonly value="${esc(invite.url)}">
+          <div class="family-actions"><button class="btn" id="familyShare">Поделиться</button>
+          <button class="btn outline" id="familyCopy">Скопировать</button></div>`;
+        $('familyShare').addEventListener('click', () => {
+          const text = 'Ссылка, чтобы получать уведомления из школьного дневника';
+          if (tg?.openTelegramLink) tg.openTelegramLink(`https://t.me/share/url?url=${encodeURIComponent(invite.url)}&text=${encodeURIComponent(text)}`);
+          else if (navigator.share) navigator.share({ url: invite.url, text }).catch(() => {});
+          else window.open(invite.url, '_blank');
+        });
+        $('familyCopy').addEventListener('click', async () => {
+          try { await navigator.clipboard.writeText(invite.url); notify('success'); banner('Скопировано', false, 2500); }
+          catch { prompt('Скопируйте ссылку', invite.url); }
+        });
+      } catch (error) {
+        notify('error');
+        banner(error.message, true);
+      } finally {
+        event.currentTarget.disabled = false;
+      }
+    });
+    screen.querySelectorAll('[data-drop], [data-leave]').forEach((button) => button.addEventListener('click', async () => {
+      tap();
+      const leave = 'leave' in button.dataset;
+      try {
+        const { data: fresh } = await api('/api/family/remove', {
+          method: 'POST', body: JSON.stringify({ id: Number(button.dataset.drop || button.dataset.leave), leave }),
+        });
+        notify('success');
+        draw(fresh);
+      } catch (error) {
+        notify('error');
+        banner(error.message, true);
+      }
+    }));
+  };
+  try {
+    draw((await api('/api/family')).data);
+  } catch (error) {
+    screen.innerHTML = errorCard(error);
+  }
 }
 
 async function openCalendar() {
@@ -516,6 +635,8 @@ function render() {
       ${demo ? '' : `<button class="drawer-link" id="drawerBug">${ICONS.chat} Сообщить об ошибке</button>`}
       <button class="drawer-link" id="drawerCalc">${ICONS.calc} Калькулятор баллов</button>
       <button class="drawer-link" id="drawerHistory">${ICONS.clock} История оценок</button>
+      ${demo ? '' : `<button class="drawer-link" id="drawerExport">${ICONS.table} Оценки в Excel</button>`}
+      ${demo ? '' : `<button class="drawer-link" id="drawerFamily">${ICONS.users} Второй родитель</button>`}
       ${demo ? '' : `<button class="drawer-link" id="drawerCalendar">${ICONS.calendar} Расписание в календаре</button>`}
     </section>
     <section class="drawer-section">
@@ -547,8 +668,19 @@ function render() {
       <div class="drawer-sub">О чём сообщать</div>
       ${Object.entries(NOTIFY_LABELS)
         .filter(([key]) => !MOBILE_ONLY.has(key) || data.api_mode === 'mobile')
+        .filter(([key]) => key !== 'all_children' || data.students.length > 1)
         .map(([key, label]) => toggle(key, label, data.notifications[key]))
         .join('')}
+      <label class="switch-row"><span>Время напоминания</span>
+        <select class="field reminder-hour" id="reminderHour">${[15, 16, 17, 18, 19, 20, 21].map((hour) =>
+          `<option value="${hour}" ${hour === (data.notifications.reminder_hour ?? 18) ? 'selected' : ''}>${hour}:00</option>`).join('')}</select></label>
+      <div class="drawer-sub">Какие новые оценки присылать</div>
+      <div class="chips marks-filter" id="marksFilter">${[5, 4, 3, 2].map((value) => {
+        const chosen = data.notifications.marks_filter || [];
+        const on = !chosen.length || chosen.includes(value);
+        return `<button class="chip ${on ? 'active' : ''}" data-mark-value="${value}" aria-pressed="${on}">${value}</button>`;
+      }).join('')}</div>
+      <div class="muted small">Изменения и удаления оценок приходят всегда.</div>
       <div class="muted small">Проверка каждые ${data.interval_minutes} мин</div>
       ${statusLine(data.status)}
     </section>
@@ -630,6 +762,41 @@ function bindDrawer() {
       }
     })
   );
+  $('reminderHour')?.addEventListener('change', async (event) => {
+    select();
+    try {
+      const { data } = await api('/api/settings/reminder', { method: 'POST', body: JSON.stringify({ hour: Number(event.target.value) }) });
+      state.profile.notifications = data;
+    } catch (error) {
+      notify('error');
+      banner(error.message, true);
+    }
+  });
+  $('marksFilter')?.addEventListener('click', async (event) => {
+    const chip = event.target.closest('[data-mark-value]');
+    if (!chip) return;
+    const chips = [...$('marksFilter').querySelectorAll('[data-mark-value]')];
+    chip.classList.toggle('active');
+    const values = chips.filter((c) => c.classList.contains('active')).map((c) => Number(c.dataset.markValue));
+    if (!values.length) {
+      chip.classList.add('active');
+      notify('error');
+      banner('Хотя бы одна оценка должна остаться', true, 2500);
+      return;
+    }
+    select();
+    chips.forEach((c) => c.setAttribute('aria-pressed', String(c.classList.contains('active'))));
+    try {
+      const { data } = await api('/api/settings/marks-filter', { method: 'POST', body: JSON.stringify({ values }) });
+      state.profile.notifications = data;
+    } catch (error) {
+      chip.classList.toggle('active');
+      notify('error');
+      banner(error.message, true);
+    }
+  });
+  $('drawerExport')?.addEventListener('click', () => { closeDrawer(); openExport(); });
+  $('drawerFamily')?.addEventListener('click', () => { closeDrawer(); openFamily(); });
   body.querySelectorAll('[data-student]').forEach((button) =>
     button.addEventListener('click', () => switchStudent(button))
   );

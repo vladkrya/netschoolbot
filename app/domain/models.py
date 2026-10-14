@@ -156,6 +156,31 @@ class NotificationPrefs:
     # Канал: присылать ли всё это в Telegram. Push в браузер включается
     # подпиской на устройстве, и у кого он есть, могут выключить Telegram.
     telegram: bool = True
+    # Напоминание в `reminder_hour` накануне учебного дня: что из заданий
+    # на завтра ещё не отмечено выполненным.
+    homework_reminder: bool = False
+    reminder_hour: int = 18
+    # Контрольные и другие работы с большим весом — за один-два дня.
+    test_reminder: bool = False
+    # Средний по предмету опустился ниже порога оценки.
+    grade_risk: bool = False
+    # Сводка за месяц (1-го числа) и итоги учебного периода.
+    monthly_summary: bool = False
+    # Следить за всеми детьми аккаунта, а не только за выбранным.
+    all_children: bool = False
+    # О каких новых оценках сообщать: пусто — обо всех, иначе только об этих
+    # значениях (например, (2, 3)). Изменения и удаления — всегда.
+    marks_filter: tuple[int, ...] = ()
+
+    def wants_mark(self, mark: str) -> bool:
+        """Подходит ли новая оценка под фильтр значений."""
+        if not self.marks_filter:
+            return True
+        from .records import mark_to_int
+
+        value = mark_to_int(mark)
+        # «Зачёт», «н/а» и прочее без числа фильтр не отсекает.
+        return value is None or value in self.marks_filter
 
 
 @dataclass(frozen=True, slots=True)
@@ -265,6 +290,19 @@ class User:
 
     def with_interval(self, seconds: int) -> "User":
         return replace(self, check_interval=clamp_interval(seconds))
+
+
+REMINDER_HOURS = (15, 16, 17, 18, 19, 20, 21)
+
+
+def clamp_reminder_hour(hour: int) -> int:
+    return max(REMINDER_HOURS[0], min(REMINDER_HOURS[-1], int(hour)))
+
+
+def parse_marks_filter(raw: str) -> tuple[int, ...]:
+    """«2,3» из базы → (2, 3); мусор пропускается."""
+    values = {int(part) for part in str(raw or "").split(",") if part.strip().isdigit()}
+    return tuple(sorted(v for v in values if 1 <= v <= 5))
 
 
 def clamp_interval(seconds: int) -> int:

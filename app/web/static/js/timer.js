@@ -1,0 +1,187 @@
+// Таймер урока над «Днём»: «До конца урока 12:34» с секундами, следующий
+// урок и кабинет. На перемене — «До начала урока». Когда время вышло,
+// карточка показывает «Урок окончен ✓», красиво сворачивается и, если дальше
+// перемена или урок, раскрывается уже с новым отсчётом.
+//
+// Живёт в своём контейнере (#lessonTimer), а не в списке уроков: «День»
+// перерисовывается по своему таймеру, и анимация не должна обрываться.
+'use strict';
+
+import { esc } from './core.js';
+import { notify } from './haptics.js';
+
+// Перед первым уроком отсчёт показывается не раньше чем за столько минут.
+const BEFORE_FIRST_MIN = 60;
+// Сколько держится «Урок окончен», прежде чем карточка свернётся.
+const DONE_HOLD_MS = 1600;
+// Длительность сворачивания и раскрытия (как в CSS).
+const COLLAPSE_MS = 520;
+// Последние секунды — заметнее.
+const URGENT_S = 10;
+
+let lessons = [];
+let active = false;
+let shownKey = '';
+let busy = false;
+let timer = 0;
+let lastDigits = '';
+
+function at(time, base) {
+  const [h, m] = String(time || '').split(':').map(Number);
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
+  const date = new Date(base);
+  date.setHours(h, m, 0, 0);
+  return date;
+}
+
+/** Что сейчас: урок, перемена перед уроком или ничего. */
+export function timerPhase(list, now = new Date()) {
+  const items = list
+    .map((lesson) => ({ lesson, start: at(lesson.start, now), end: at(lesson.end, now) }))
+    .filter((item) => item.start && item.end && item.end > item.start)
+    .sort((a, b) => a.start - b.start);
+  for (let i = 0; i < items.length; i += 1) {
+    const { lesson, start, end } = items[i];
+    const next = items[i + 1]?.lesson || null;
+    if (now >= start && now < end) {
+      return { kind: 'lesson', key: `lesson:${i}:${lesson.subject}`, lesson, next, from: start, until: end };
+    }
+    if (now < start) {
+      const prevEnd = i ? items[i - 1].end : new Date(start.getTime() - BEFORE_FIRST_MIN * 60000);
+      if (now < prevEnd) return null;
+      return { kind: 'break', key: `break:${i}:${lesson.subject}`, lesson, next: lesson, from: prevEnd, until: start, first: i === 0 };
+    }
+  }
+  return null;
+}
+
+function clockText(seconds) {
+  const s = Math.max(0, seconds);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  const mm = String(m).padStart(h ? 2 : 2, '0');
+  return `${h ? `${h}:` : ''}${mm}:${String(sec).padStart(2, '0')}`;
+}
+
+function nextText(phase) {
+  if (phase.kind === 'break') {
+    const room = phase.lesson.room ? ` · каб. ${phase.lesson.room}` : '';
+    return `${phase.lesson.number ? `${phase.lesson.number} урок — ` : ''}${phase.lesson.subject}${room}`;
+  }
+  if (!phase.next) return 'Последний урок на сегодня';
+  const room = phase.next.room ? ` · каб. ${phase.next.room}` : '';
+  return `Дальше — ${phase.next.subject}${room}`;
+}
+
+function cardHtml(phase) {
+  const isLesson = phase.kind === 'lesson';
+  const title = isLesson
+    ? `Идёт ${phase.lesson.number ? `${phase.lesson.number} урок` : 'урок'} · ${phase.lesson.subject}`
+    : phase.first ? 'Скоро уроки' : 'Перемена';
+  return `<div class="lt-inner"><div class="lt-card ${isLesson ? '' : 'break'}">
+      <div class="lt-head"><span class="lt-dot"></span><span class="lt-title">${esc(title)}</span></div>
+      <div class="lt-main">
+        <span class="lt-label">${isLesson ? 'До конца урока' : 'До начала урока'}</span>
+        <span class="lt-clock" aria-live="off"></span>
+      </div>
+      <div class="lt-bar"><span></span></div>
+      <div class="lt-next">${esc(nextText(phase))}</div>
+      <div class="lt-done" aria-hidden="true"><span class="lt-check">✓</span>
+        <span>${isLesson ? 'Урок окончен' : 'Перемена окончена'}</span></div>
+    </div></div>`;
+}
+
+/** Цифры по одной: изменившаяся «перекатывается» сверху вниз. */
+function paintClock(box, text) {
+  const card = box.querySelector('.lt-card');
+  const clock = box.querySelector('.lt-clock');
+  if (!clock) return;
+  if (clock.childElementCount !== text.length) {
+    clock.innerHTML = [...text].map((ch) => `<span class="${ch === ':' ? 'lt-colon' : 'lt-digit'}">${ch}</span>`).join('');
+    lastDigits = text;
+    return;
+  }
+  [...text].forEach((ch, index) => {
+    if (lastDigits[index] === ch) return;
+    const cell = clock.children[index];
+    cell.textContent = ch;
+    cell.classList.remove('roll');
+    void cell.offsetWidth;
+    cell.classList.add('roll');
+  });
+  lastDigits = text;
+  card?.classList.toggle('urgent', text.length <= 5 && text <= `00:${String(URGENT_S).padStart(2, '0')}`);
+}
+
+function paint(box, phase, now = new Date()) {
+  const left = Math.ceil((phase.until - now) / 1000);
+  paintClock(box, clockText(left));
+  const total = phase.until - phase.from;
+  const percent = total > 0 ? Math.min(100, Math.max(0, (now - phase.from) / total * 100)) : 0;
+  const bar = box.querySelector('.lt-bar span');
+  if (bar) bar.style.width = `${percent}%`;
+}
+
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function show(box, phase) {
+  box.innerHTML = cardHtml(phase);
+  lastDigits = '';
+  paint(box, phase);
+  shownKey = phase.key;
+  box.hidden = false;
+  box.classList.add('collapsed');
+  void box.offsetWidth;
+  box.classList.remove('collapsed');
+}
+
+async function collapse(box, { finished }) {
+  busy = true;
+  try {
+    if (finished) {
+      const card = box.querySelector('.lt-card');
+      paintClock(box, clockText(0));
+      card?.classList.add('done');
+      notify('success');
+      await wait(DONE_HOLD_MS);
+    }
+    box.classList.add('collapsed');
+    await wait(COLLAPSE_MS);
+    box.hidden = true;
+    box.innerHTML = '';
+    shownKey = '';
+  } finally {
+    busy = false;
+  }
+}
+
+async function tick() {
+  const box = document.getElementById('lessonTimer');
+  if (!box || busy) return;
+  const phase = active ? timerPhase(lessons) : null;
+  const key = phase?.key || '';
+  if (key === shownKey) {
+    if (phase) paint(box, phase);
+    return;
+  }
+  if (shownKey) {
+    // Отсчёт дошёл до нуля — праздничное сворачивание; ушли на другой день — тихо.
+    await collapse(box, { finished: active });
+    if (!active) return;
+  }
+  const fresh = active ? timerPhase(lessons) : null;
+  if (fresh) await show(box, fresh);
+}
+
+/** День перерисован: уроки сегодняшнего дня или null (другой день, нет уроков). */
+export function updateTimer(list, isToday) {
+  lessons = Array.isArray(list) ? list : [];
+  // Перешли на другой день — tick свернёт карточку тихо, без «Урок окончен».
+  active = Boolean(isToday && lessons.length);
+  if (!timer) {
+    timer = setInterval(tick, 1000);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) tick(); });
+  }
+  tick();
+}

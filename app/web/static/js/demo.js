@@ -232,6 +232,8 @@ function demoKey(text) {
   return hash.toString(16).padStart(8, '0').repeat(2);
 }
 
+const demoNotes = [];
+
 export async function demoApi(path, options = {}) {
   // Небольшая задержка — чтобы в демо были видны анимации загрузки.
   await new Promise((resolve) => setTimeout(resolve, 250));
@@ -378,6 +380,36 @@ export async function demoApi(path, options = {}) {
     const notifications = { ...cfg.notifications, [body.key]: Boolean(body.value) };
     saveDemoConfig({ notifications });
     return ok(notifications);
+  }
+
+  if (route === '/api/settings/reminder') {
+    const notifications = { ...cfg.notifications, reminder_hour: Number(body.hour) || 18 };
+    saveDemoConfig({ notifications });
+    return ok(notifications);
+  }
+
+  if (route === '/api/settings/marks-filter') {
+    const values = (body.values || []).length === 4 ? [] : body.values || [];
+    const notifications = { ...cfg.notifications, marks_filter: values };
+    saveDemoConfig({ notifications });
+    return ok(notifications);
+  }
+
+  // Свои задачи в демо живут до перезагрузки страницы.
+  if (route === '/api/notes') {
+    if (options.method === 'POST') {
+      const note = { id: demoNotes.length + 1, date: body.date, subject: body.subject || '', text: body.text, done: false };
+      demoNotes.push(note);
+      return ok(note);
+    }
+    return ok({ items: demoNotes.filter((note) => !note.deleted) });
+  }
+  const noteMatch = route.match(/^\/api\/notes\/(\d+)$/);
+  if (noteMatch) {
+    const note = demoNotes.find((item) => item.id === Number(noteMatch[1]));
+    if (note && body.delete) note.deleted = true;
+    else if (note && 'done' in body) note.done = Boolean(body.done);
+    return ok({});
   }
 
   if (route === '/api/student') {
