@@ -259,3 +259,22 @@ async def test_telegram_pin_toggle_rejects_non_boolean(client, token):
         response = await client.post(f'{BASE}/api/lock/settings', headers=headers,
                                      json={'require_telegram': value})
         assert response.status == 400
+
+
+async def test_pin_blocked_after_max_failures_until_biometric_unlock(client, token, app_context):
+    session = await enable(client, token)
+    headers = {'X-Netschool-Token': token, 'X-Netschool-Unlock': session}
+    response = await client.post(f'{BASE}/api/lock/biometric/register', headers=headers, json={'device': 'iphone'})
+    secret = (await response.json())['data']['token']
+    await client.post(f'{BASE}/api/lock/logout', headers=headers)
+    headers.pop('X-Netschool-Unlock')
+    # Без пауз: доводим счётчик почти до предела напрямую.
+    await app_context.db.execute('UPDATE app_locks SET failures=9, retry_at=0')
+    response = await client.post(f'{BASE}/api/lock/unlock', headers=headers, json={'pin': '0000'})
+    assert response.status == 403 and (await response.json())['reason'] == 'pin_blocked'
+    await app_context.db.execute('UPDATE app_locks SET retry_at=0')
+    response = await client.post(f'{BASE}/api/lock/unlock', headers=headers, json={'pin': '1234'})
+    assert response.status == 429 and (await response.json())['reason'] == 'pin_blocked'
+    response = await client.post(f'{BASE}/api/lock/biometric/unlock', headers=headers, json={'device': 'iphone', 'token': secret})
+    assert response.status == 200
+    assert (await client.post(f'{BASE}/api/lock/unlock', headers=headers, json={'pin': '1234'})).status == 200

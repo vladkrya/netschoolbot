@@ -42,9 +42,12 @@ let pending = null;
 let biometricPrompt = false;
 
 // PIN без сети. Сервер не спросить, поэтому после каждого входа по PIN
-// на устройстве хранится его PBKDF2-хеш с солью: без интернета PIN
-// сверяется с ним и открывает сохранённые данные. Сами данные и так лежат
-// в кэше этого устройства — хеш их не раскрывает сверх того.
+// на устройстве хранится один байт его PBKDF2-хеша с солью: без интернета
+// PIN сверяется с ним и открывает сохранённые данные. Полный хеш четырёх
+// цифр перебирается за минуты и выдал бы PIN для сервера и других
+// устройств; по байту остаётся ~40 кандидатов, а сервер после 10 ошибок
+// PIN больше не принимает. Случайный PIN без сети проходит в 1 случае
+// из 256 — открываются лишь данные, и так лежащие в кэше устройства.
 const VERIFIER_KEY = 'offlinePin';
 const FAILS_KEY = 'offlinePinFails';
 const OFFLINE_ATTEMPTS = 10;
@@ -52,18 +55,27 @@ const OFFLINE_ATTEMPTS = 10;
 // входим на сервере, чтобы не спрашивать второй раз.
 let offlinePin = '';
 
-async function pinHash(pin, salt) {
+async function pinTag(pin, salt) {
   const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(pin), 'PBKDF2', false, ['deriveBits']);
-  return encode(await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt, iterations: 200000 }, key, 256));
+  return new Uint8Array(await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt, iterations: 200000 }, key, 256))[0];
 }
 function savedVerifier() {
-  try { return window.crypto?.subtle ? JSON.parse(localStorage.getItem(VERIFIER_KEY) || 'null') : null; }
-  catch { return null; }
+  try {
+    if (!window.crypto?.subtle) return null;
+    const saved = JSON.parse(localStorage.getItem(VERIFIER_KEY) || 'null');
+    // Прежний формат с полным хешем урезаем на месте до первого байта.
+    if (saved?.hash) {
+      const short = { salt: saved.salt, tag: decode(saved.hash)[0] };
+      localStorage.setItem(VERIFIER_KEY, JSON.stringify(short));
+      return short;
+    }
+    return Number.isInteger(saved?.tag) ? saved : null;
+  } catch { return null; }
 }
 async function rememberPin(pin) {
   try {
     const salt = crypto.getRandomValues(new Uint8Array(16));
-    localStorage.setItem(VERIFIER_KEY, JSON.stringify({ salt: encode(salt), hash: await pinHash(pin, salt) }));
+    localStorage.setItem(VERIFIER_KEY, JSON.stringify({ salt: encode(salt), tag: await pinTag(pin, salt) }));
     localStorage.removeItem(FAILS_KEY);
   } catch { /* без хеша вход без сети просто недоступен */ }
 }
@@ -114,7 +126,7 @@ async function offlinePasskey() {
 async function checkOffline(pin) {
   const saved = savedVerifier();
   if (!saved) throw new Error(savedPasskeys().length ? 'Без интернета PIN не проверить — войдите по биометрии.' : 'Без интернета PIN не проверить. Подключитесь к сети.');
-  if (await pinHash(pin, decode(saved.salt)) === saved.hash) {
+  if (await pinTag(pin, decode(saved.salt)) === saved.tag) {
     try { localStorage.removeItem(FAILS_KEY); } catch { /* приватный режим */ }
     return;
   }
