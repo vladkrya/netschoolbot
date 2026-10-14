@@ -235,6 +235,11 @@
   font-size: 13px;
   font-variant-numeric: tabular-nums;
 }
+/* Одной строкой «08:00–08:40 · Пропуск по болезни»: длинный статус
+ * переносится как обычный текст, а не столбиком рядом со временем. */
+:root[data-design="new"] .lc-bottom { display: block; line-height: 1.4; }
+:root[data-design="new"] .lc-bottom > span:last-child { text-align: left; }
+:root[data-design="new"] .lc-bottom > span:last-child:not(:empty)::before { content: ' · '; }
 :root[data-design="new"] .hw-badge {
   padding: 3px 9px;
   border: 0;
