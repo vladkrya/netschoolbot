@@ -69,10 +69,10 @@ async def session(request):
 # сразу следом, получал «Слишком много попыток».
 FREE_ATTEMPTS = 5
 # После MAX_ATTEMPTS ошибок подряд PIN не принимается, пока владелец не
-# войдёт по биометрии или не сбросит защиту (/resetapplock, пароль от аккаунта).
+# войдёт по биометрии или не сбросит защиту (/resetpin, пароль от аккаунта).
 MAX_ATTEMPTS = 10
 BLOCKED = ('Вход по PIN заблокирован после {} ошибок подряд. Войдите по Face ID / Touch ID '
-           'или сбросьте PIN: «Забыли PIN?» или /resetapplock в чате с ботом.'.format(MAX_ATTEMPTS))
+           'или сбросьте PIN: «Забыли PIN?» или /resetpin в чате с ботом.'.format(MAX_ATTEMPTS))
 
 
 def _backoff(failures: int) -> int:

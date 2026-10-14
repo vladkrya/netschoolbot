@@ -528,7 +528,8 @@ async def set_api(callback: CallbackQuery, user: User, app: AppContext) -> None:
         )
 
 
-@router.message(Command("resetapplock"), F.chat.type == "private")
+# /resetapplock — прежнее имя команды, остаётся для старых подсказок.
+@router.message(Command("resetpin", "resetapplock"), F.chat.type == "private")
 async def reset_app_lock(message: Message, user: User, app: AppContext) -> None:
     """Восстановление доступа через подтверждённый Telegram-аккаунт."""
     async with app.db.transaction() as db:

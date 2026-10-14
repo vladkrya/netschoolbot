@@ -311,7 +311,7 @@ async def telegram_link(request: web.Request) -> web.Response:
 @routes.post("/api/lock/password-reset")
 async def lock_password_reset(request: web.Request) -> web.Response:
     """Забыли PIN, а Telegram нет: сбросить защиту входа паролем от аккаунта
-    (как /resetapplock в боте подтверждает владельца через Telegram)."""
+    (как /resetpin в боте подтверждает владельца через Telegram)."""
     app, user = context(request), current_user(request)
     key = f"lock:{user.telegram_id}"
     if LOGIN_FAILURES.blocked(key):

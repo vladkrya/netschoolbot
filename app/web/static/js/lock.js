@@ -4,12 +4,12 @@ import { biometricLabel, nativeBiometricEnabled, webBiometricLabel } from './bio
 import { mountPinpad } from './pinpad.js';
 
 let active = false;
-const FORGOT_TELEGRAM = 'Отправьте /resetapplock в личный чат с ботом — защита сбросится, и PIN можно будет задать заново.';
+const FORGOT_TELEGRAM = 'Отправьте /resetpin в личный чат с ботом — защита сбросится, и PIN можно будет задать заново.';
 // Вне Telegram (вход по почте) PIN сбрасывается паролем от аккаунта.
 // Вне Telegram и только при аккаунте с паролем — сброс паролем; иначе бот.
 const FORGOT_PASSWORD = (root) => {
   const box = root.querySelector('.lock-error');
-  box.textContent = 'Введите пароль от аккаунта (почта и пароль) — PIN сбросится. Или отправьте боту /resetapplock.';
+  box.textContent = 'Введите пароль от аккаунта (почта и пароль) — PIN сбросится. Или отправьте боту /resetpin.';
   // Форма — рядом с подсказкой, а не внутри: подсказка — абзац, и форму в нём браузер не создаёт.
   root.querySelector('.lock-reset')?.remove();
   const form = document.createElement('form');
