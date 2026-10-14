@@ -21,7 +21,9 @@ from .db.crypto import PasswordCipher
 from .db.engine import Database
 from .db.repositories import (
     CacheRepository,
+    FamilyRepository,
     MarkStateRepository,
+    NotesRepository,
     MiniappRepository,
     SessionRepository,
     UserRepository,
@@ -63,8 +65,15 @@ class AppContext:
     mailer: Mailer | None = None
     # Незавершённые входы в «Сетевой город» с сайта: {telegram_id: попытка}.
     web_logins: dict[int, object] = field(default_factory=dict)
+    # Второй родитель и свои заметки ученика.
+    family: FamilyRepository | None = None
+    notes: NotesRepository | None = None
 
     def __post_init__(self) -> None:
+        if self.family is None:
+            self.family = FamilyRepository(self.db)
+        if self.notes is None:
+            self.notes = NotesRepository(self.db)
         if self.accounts is None:
             self.accounts = AccountRepository(self.db)
         if self.mailer is None:
@@ -112,7 +121,8 @@ class AppContext:
             pool=pool,
             diary=diary,
             watchers=WatcherRegistry(
-                users=users, state=state, diary=diary, notifier=notifier
+                users=users, state=state, diary=diary, notifier=notifier,
+                notes=NotesRepository(db),
             ),
         )
 

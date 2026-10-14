@@ -19,18 +19,30 @@ import json
 import logging
 import time
 from collections.abc import Awaitable, Callable
-from typing import Protocol
+from dataclasses import replace
+from typing import Any, Protocol
 
 from ..db.repositories import MarkStateRepository, UserRepository
-from ..domain import formatting
-from ..domain.models import ApiMode, MarkKind, NotificationPrefs, User
+from ..domain import formatting, insights
+from ..domain.models import ApiMode, MarkKind, NotificationPrefs, Student, User
+from ..domain.periods import Quarter, current_period, resolve_periods
 from ..domain.records import AbsenceRecord, HomeworkRecord, MarkEvent, RecentEvents
 from .outage import OutageMonitor
 from ..netschool.errors import NetSchoolError, Reason
 from ..netschool.mapping import absences_from_days, is_placeholder_name
 from ..netschool.service import DiaryService, TokenState
 from .diff import confirm_deletions, diff_homework, diff_marks
-from .digests import DigestKind, evening_period, previous_week, weekly_period
+from .digests import (
+    DigestKind,
+    ended_period,
+    evening_period,
+    month_bounds,
+    monthly_period,
+    next_school_day,
+    previous_week,
+    reminder_period,
+    weekly_period,
+)
 from .outbox import OutboxKind, decode, encode, mark_to_dict
 from .schedule_diff import diff_schedule, watched_days
 
@@ -59,6 +71,16 @@ ABSENCE_NOTIFY_DAYS = 7
 # Срок мобильного токена меряется в днях — проверять его каждый проход незачем.
 TOKEN_CHECK_INTERVAL = 6 * 3600.0
 
+# Остальных детей (при слежении за всеми) сверяем не чаще этого: у них нет
+# дешёвой ленты событий, и каждый проход — полный дневник.
+CHILD_CHECK_INTERVAL = 900.0
+
+# Состояние заданий невыбранного ребёнка дальше этого не растёт.
+CHILD_HOMEWORK_LIMIT = 3000
+
+# Отметки посещаемости, которые не считаются пропуском урока.
+NOT_ABSENT = frozenset({"ОП", "ОСВ"})
+
 
 # Отложенное уведомление живёт в очереди не дольше этого: утренняя досылка
 # после тихих часов укладывается, а недельной давности новость уже не нужна.
@@ -73,10 +95,18 @@ def _local_now(user: User) -> dt.datetime:
 
 def _mark_event_wanted(event: MarkEvent, prefs: NotificationPrefs) -> bool:
     if event.kind is MarkKind.NEW:
-        return prefs.grades
+        return prefs.grades and prefs.wants_mark(event.record.mark)
     if event.kind is MarkKind.CHANGED:
         return prefs.changes
     return prefs.deletes
+
+
+def _count_absences(days: list) -> int:
+    """Пропущенные уроки (без опозданий и освобождений)."""
+    return sum(
+        1 for day in days for lesson in day.lessons
+        if (code := (lesson.absence or "").strip().upper()) and code not in NOT_ABSENT
+    )
 
 
 class Notifier(Protocol):
@@ -111,8 +141,12 @@ class UserWatcher:
         clock: Callable[[], float] = time.monotonic,
         outages: OutageMonitor | None = None,
         live: Callable[[int, dict], Awaitable[None]] | None = None,
+        notes: Any = None,
     ) -> None:
         self._user_id = user_id
+        # Свои задачи ученика — для вечернего напоминания (NotesRepository).
+        self._notes = notes
+        self._last_children_check: float | None = None
         self._outages = outages
         self._live = live
         self._users = users
@@ -156,6 +190,7 @@ class UserWatcher:
 
         try:
             await self._check(user)
+            await self._check_children(user)
         except NetSchoolError as exc:
             if self._outages is not None:
                 await self._outages.record(user.school.url, ok=False,
@@ -232,6 +267,10 @@ class UserWatcher:
             outbox.append((OutboxKind.ABSENCES.value, encode(OutboxKind.ABSENCES, fresh_absences)))
         if schedule_changes and prefs.schedule:
             outbox.append((OutboxKind.SCHEDULE.value, encode(OutboxKind.SCHEDULE, schedule_changes)))
+        if prefs.grade_risk and not first_run and result.events:
+            risks = await self._grade_risks(user, result.events, today)
+            if risks:
+                outbox.append((OutboxKind.RISK.value, encode(OutboxKind.RISK, risks)))
         history = [
             (
                 event.kind.value,
@@ -298,8 +337,12 @@ class UserWatcher:
                 logger.warning("Повреждённое уведомление %s: %s", row["id"], exc)
                 await self._state.ack_outbox(row["id"])
                 continue
+            target = user
+            student = row["student"] if "student" in row.keys() else ""
+            if student:
+                target = replace(user, student_name=student)
             try:
-                await self._send(user, kind, items)
+                await self._send(target, kind, items)
             except asyncio.CancelledError:
                 raise
             except Exception as exc:  # noqa: BLE001 — любой сбой доставки = попробовать позже
@@ -331,9 +374,16 @@ class UserWatcher:
                 push=("Изменения в расписании", formatting.schedule_preview(items)),
                 kind="schedule",
             )
+        elif kind is OutboxKind.RISK:
+            await self._notifier.send_text(
+                user,
+                formatting.risk_alerts(items),
+                push=("Итоговая оценка под угрозой", formatting.risk_preview(items)),
+                kind="marks",
+            )
 
     async def _send_digests(self, user: User) -> None:
-        """Вечерняя сводка на завтра и недельная по понедельникам.
+        """Сводки и напоминания: вечером на завтра, по понедельникам, раз в месяц.
 
         Сбой сводки не трогает проверку оценок: отметка о периоде ставится
         только после отправки, поэтому следующий проход попробует снова.
@@ -341,34 +391,266 @@ class UserWatcher:
         if self._is_quiet(user):
             return
         now = _local_now(user)
-        jobs = []
-        if user.notifications.evening_summary and (period := evening_period(now)):
-            jobs.append((DigestKind.EVENING, period))
-        if user.notifications.weekly_summary and (period := weekly_period(now)):
-            jobs.append((DigestKind.WEEKLY, period))
-        for kind, period in jobs:
+        prefs = user.notifications
+        jobs: list[tuple[DigestKind, str, Any]] = []
+        if prefs.evening_summary and (period := evening_period(now)):
+            jobs.append((DigestKind.EVENING, period, None))
+        if (prefs.homework_reminder or prefs.test_reminder) and (
+            period := reminder_period(now, prefs.reminder_hour)
+        ):
+            jobs.append((DigestKind.REMINDER, period, None))
+        if prefs.weekly_summary and (period := weekly_period(now)):
+            jobs.append((DigestKind.WEEKLY, period, None))
+        if prefs.monthly_summary and (period := monthly_period(now)):
+            jobs.append((DigestKind.MONTHLY, period, None))
+        for kind, period, extra in jobs:
             if await self._state.digest_period(user.telegram_id, kind.value) == period:
                 continue
+            await self._deliver_digest(user, kind, period, extra)
+        if prefs.monthly_summary and await self._term_digest_due(user, now):
+            # Итоги периода: границы зависят от школы, их узнаём раз в сутки.
             try:
-                text = await self._digest_text(user, kind, dt.date.fromisoformat(period))
-                if text:
-                    await self._notifier.send_text(user, text)
+                year, _ = await self._periods(user, now.date())
             except asyncio.CancelledError:
                 raise
             except Exception as exc:  # noqa: BLE001 — сводка вторична
-                logger.info("Сводка %s для %s не отправлена: %s", kind.value, user.telegram_id, exc)
-                continue
-            await self._state.set_digest_period(user.telegram_id, kind.value, period)
+                logger.info("Периоды для %s не получены: %s", user.telegram_id, exc)
+                return
+            ended = ended_period(now, year)
+            if ended is not None and await self._state.digest_period(
+                user.telegram_id, DigestKind.TERM.value
+            ) != ended.start.isoformat():
+                await self._deliver_digest(user, DigestKind.TERM, ended.start.isoformat(), (ended, year))
 
-    async def _digest_text(self, user: User, kind: DigestKind, day: dt.date) -> str | None:
+    async def _term_digest_due(self, user: User, now: dt.datetime) -> bool:
+        """Дешёвая проверка перед запросом периодов: раз в сутки, а не каждый проход."""
+        if now.time() < dt.time(8, 0):
+            return False
+        today = now.date().isoformat()
+        if await self._state.digest_period(user.telegram_id, "term-check") == today:
+            return False
+        await self._state.set_digest_period(user.telegram_id, "term-check", today)
+        return True
+
+    async def _deliver_digest(self, user: User, kind: DigestKind, period: str, extra: Any) -> None:
+        try:
+            parts = []
+            targets = self._children_of(user)
+            for index, child in enumerate(targets):
+                # Свои задачи общие на аккаунт — напоминаем о них один раз.
+                text = await self._digest_text(child, kind, dt.date.fromisoformat(period), extra,
+                                               with_notes=index == 0)
+                if text:
+                    parts.append(
+                        f"{formatting.student_header(child.student_name)}\n{text}" if len(targets) > 1 else text
+                    )
+            if parts:
+                await self._notifier.send_text(user, "\n\n".join(parts))
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001 — сводка вторична
+            logger.info("Сводка %s для %s не отправлена: %s", kind.value, user.telegram_id, exc)
+            return
+        await self._state.set_digest_period(user.telegram_id, kind.value, period)
+
+    def _children_of(self, user: User) -> list[User]:
+        """Для кого собирать сводку: выбранный ребёнок или все дети аккаунта."""
+        if not (user.notifications.all_children and len(user.available_students) > 1):
+            return [user]
+        selected = [s for s in user.available_students if s.id == user.selected_student_id]
+        others = [s for s in user.available_students if s.id != user.selected_student_id]
+        return [replace(user, selected_student_id=s.id, student_name=s.name) for s in selected + others]
+
+    async def _digest_text(
+        self, user: User, kind: DigestKind, day: dt.date, extra: Any = None, *, with_notes: bool = True
+    ) -> str | None:
+        today = _local_now(user).date()
         if kind is DigestKind.EVENING:
-            days = await self._diary.fetch_period(user, day, day, today=_local_now(user).date())
+            days = await self._diary.fetch_period(user, day, day, today=today)
             found = next((d for d in days if d.day == day), None)
             return formatting.evening_summary(found, day, tz=user.tz)
+        if kind is DigestKind.REMINDER:
+            return await self._reminder_text(user, day, today, with_notes=with_notes)
+        if kind is DigestKind.MONTHLY:
+            return await self._monthly_text(user, day, today)
+        if kind is DigestKind.TERM:
+            ended, year = extra
+            return await self._term_text(user, ended, year, today)
         start, end = previous_week(day)
         days = await self._diary.fetch_period(user, start, end, today=day)
         week = [r for d in days for r in d.marks if start <= r.date <= end]
-        return formatting.weekly_summary(week, start, end)
+        text = formatting.weekly_summary(week, start, end)
+        if user.notifications.grade_risk:
+            try:
+                year, prefs = await self._periods(user, day)
+                period = current_period(year, day)
+                period_days = await self._diary.fetch_period(user, period.start, day, today=day)
+                marks = [r for d in period_days for r in d.marks if period.covers(r.date)]
+                text = "\n".join([text, *formatting.edge_lines(insights.on_the_edge(marks, prefs))])
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # noqa: BLE001 — без этой части сводка всё равно полезна
+                logger.info("Средние за период для %s не посчитаны: %s", user.telegram_id, exc)
+        return text
+
+    async def _reminder_text(self, user: User, day: dt.date, today: dt.date, *, with_notes: bool) -> str | None:
+        """Что на завтра не отмечено сделанным, свои задачи и ближайшие проверочные."""
+        prefs = user.notifications
+        after = next_school_day(day)
+        days = await self._diary.fetch_period(user, day, after, today=today)
+        homework = [h for d in days for h in d.homework]
+        tests = insights.upcoming_tests(homework, [day, after]) if prefs.test_reminder else []
+        undone: list[HomeworkRecord] = []
+        notes: list[dict] = []
+        if prefs.homework_reminder:
+            done = await self._state.done_homework(user.telegram_id)
+            reminded_tests = {(t.due_date, t.subject) for t in tests}
+            undone = [
+                h for h in homework
+                if h.due_date == day and not h.nothing_to_do and h.key not in done
+                # Проверочная уже в своём разделе — второй раз не повторяем.
+                and (h.due_date, h.subject) not in reminded_tests
+            ]
+            if with_notes and self._notes is not None:
+                notes = [n for n in await self._notes.between(user.telegram_id, day, day) if not n["done"]]
+        return formatting.reminder(day, undone, notes, tests)
+
+    async def _monthly_text(self, user: User, first: dt.date, today: dt.date) -> str:
+        start, end = month_bounds(first)
+        previous_start, _ = month_bounds((start - dt.timedelta(days=1)).replace(day=1))
+        days = await self._diary.fetch_period(user, previous_start, end, today=today)
+
+        def stats(low: dt.date, high: dt.date) -> insights.PeriodStats:
+            chosen = [d for d in days if low <= d.day <= high]
+            return insights.period_stats(
+                [r for d in chosen for r in d.marks if low <= r.date <= high],
+                absences=_count_absences(chosen),
+            )
+
+        return formatting.monthly_summary(start, stats(start, end), stats(previous_start, start - dt.timedelta(days=1)))
+
+    async def _term_text(self, user: User, ended: Quarter, year: list[Quarter], today: dt.date) -> str:
+        index = next((i for i, item in enumerate(year) if item.key == ended.key), 0)
+        previous = year[index - 1] if index > 0 else None
+        days = await self._diary.fetch_period(user, (previous or ended).start, ended.end, today=today)
+        marks = [r for d in days for r in d.marks if ended.covers(r.date)]
+        prefs = await self._state.user_prefs(user.telegram_id)
+        stats = insights.period_stats(marks, absences=_count_absences([d for d in days if ended.covers(d.day)]))
+        previous_average = None
+        if previous is not None:
+            previous_average = insights.weighted([r for d in days for r in d.marks if previous.covers(r.date)])
+        return formatting.term_summary(ended.label, insights.subject_grades(marks, prefs), stats, previous_average)
+
+    async def _periods(self, user: User, today: dt.date) -> tuple[list[Quarter], dict]:
+        """Учебные периоды пользователя и его настройки приложения."""
+        prefs = await self._state.user_prefs(user.telegram_id)
+        setting = prefs.get("periods") or {}
+        terms = None
+        if (setting.get("scheme") or "auto") == "auto":
+            try:
+                terms = await self._diary.fetch_terms(user)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # noqa: BLE001 — без периодов школы есть общепринятые
+                logger.debug("Периоды школы для %s не получены: %s", user.telegram_id, exc)
+        return resolve_periods(setting, terms, today), prefs
+
+    async def _grade_risks(self, user: User, events: list[MarkEvent], today: dt.date) -> list:
+        """Предметы, где итоговая за текущий период из-за новых оценок стала ниже.
+
+        Окно фоновой проверки — несколько недель, а итоговая считается за
+        весь период, поэтому период запрашивается отдельно; сбой здесь не
+        мешает остальным уведомлениям.
+        """
+        try:
+            year, prefs = await self._periods(user, today)
+            period = current_period(year, today)
+            relevant = [e for e in events if period.covers(e.record.date)]
+            if not relevant:
+                return []
+            days = await self._diary.fetch_period(user, period.start, today, today=today)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001 — предупреждение вторично
+            logger.info("Риск по оценкам для %s не посчитан: %s", user.telegram_id, exc)
+            return []
+        after = [
+            r for d in days for r in d.marks
+            if period.covers(r.date) and r.mark and user.filters.allows_subject(r.subject)
+        ]
+        new = {e.record.identity for e in relevant if e.kind is MarkKind.NEW}
+        changed = {e.record.identity: e.old_mark for e in relevant if e.kind is MarkKind.CHANGED}
+        before = []
+        for record in after:
+            if record.identity in new:
+                continue
+            if record.identity in changed:
+                record = replace(record, mark=changed[record.identity])
+            before.append(record)
+        before.extend(e.record for e in relevant if e.kind is MarkKind.DELETED)
+        return insights.grade_drops(before, after, prefs)
+
+    async def _check_children(self, user: User) -> None:
+        """Остальные дети аккаунта, если родитель следит за всеми.
+
+        Состояние каждого — отдельно (child_state), уведомления подписаны
+        именем. Сбой у одного ребёнка не мешает ни другим, ни выбранному.
+        """
+        if not (user.notifications.all_children and len(user.available_students) > 1):
+            return
+        now = self._clock()
+        if self._last_children_check is not None and now - self._last_children_check < CHILD_CHECK_INTERVAL:
+            return
+        self._last_children_check = now
+        for student in user.available_students:
+            if student.id == user.selected_student_id:
+                continue
+            child = replace(user, selected_student_id=student.id, student_name=student.name)
+            try:
+                await self._check_child(child, student)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # noqa: BLE001 — другой ребёнок важнее одного сбоя
+                logger.info("Проверка ребёнка %s у %s не прошла: %s", student.id, user.telegram_id, exc)
+
+    async def _check_child(self, child: User, student: Student) -> None:
+        days = await self._diary.fetch_diary(child)
+        marks = [record for day in days for record in day.marks]
+        homework = [record for day in days for record in day.homework]
+        saved = await self._state.load_child(child.telegram_id, student.id)
+        first_run = saved is None
+        result = diff_marks(saved["marks"] if saved else {}, marks, filters=child.filters, first_run=first_run)
+        if result.pending_deletes:
+            confirmed = await self._confirm_deletes(child, result.pending_deletes)
+            result.events.extend(confirm_deletions(result, confirmed))
+        known_homework = saved["homework"] if saved else set()
+        fresh_homework, current_homework = diff_homework(known_homework, homework, first_run=first_run)
+        all_homework = known_homework | current_homework
+        if len(all_homework) > CHILD_HOMEWORK_LIMIT:
+            all_homework = current_homework
+        absences: set[str] | None = None
+        fresh_absences: list[AbsenceRecord] = []
+        if child.effective_api_mode is ApiMode.MOBILE:
+            current = absences_from_days(days)
+            known_absences = saved["absences"] if saved else set()
+            absences = known_absences | {a.identity for a in current}
+            if not first_run:
+                earliest = _local_now(child).date() - dt.timedelta(days=ABSENCE_NOTIFY_DAYS)
+                fresh_absences = [a for a in current if a.identity not in known_absences and a.date >= earliest]
+
+        prefs = child.notifications
+        outbox: list[tuple[str, str]] = []
+        mark_events = [e for e in result.events if _mark_event_wanted(e, prefs)]
+        if mark_events:
+            outbox.append((OutboxKind.MARKS.value, encode(OutboxKind.MARKS, mark_events)))
+        if fresh_homework and prefs.homework:
+            outbox.append((OutboxKind.HOMEWORK.value, encode(OutboxKind.HOMEWORK, fresh_homework)))
+        if fresh_absences and prefs.absences:
+            outbox.append((OutboxKind.ABSENCES.value, encode(OutboxKind.ABSENCES, fresh_absences)))
+        await self._state.save_child_check(
+            child.telegram_id, student.id, student.name,
+            tracked=result.tracked, homework=all_homework, absences=absences, outbox=outbox,
+        )
 
     async def _record_status(self, *, ok: bool, delay: float, error: str = "") -> None:
         next_at = dt.datetime.now(dt.timezone.utc).replace(tzinfo=None) + dt.timedelta(seconds=delay)
@@ -539,11 +821,13 @@ class WatcherRegistry:
         state: MarkStateRepository,
         diary: DiaryService,
         notifier: Notifier | None = None,
+        notes: Any = None,
     ) -> None:
         self._users = users
         self._state = state
         self._diary = diary
         self._notifier = notifier
+        self._notes = notes
         # Простои школьных серверов — админу (общий на все проверки).
         self.outages = OutageMonitor()
         # Сигнал открытому приложению о новом (задаёт веб-сервер).
@@ -582,6 +866,7 @@ class WatcherRegistry:
                 notifier=self._notifier,
                 outages=self.outages,
                 live=self._signal,
+                notes=self._notes,
             )
             task = asyncio.create_task(watcher.run(), name=f"watch-{user_id}")
             self._tasks[user_id] = task

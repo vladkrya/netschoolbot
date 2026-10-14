@@ -12,13 +12,16 @@ from aiogram.types import BotCommand, MenuButtonCommands, MenuButtonWebApp, WebA
 
 from ..context import AppContext
 from ..settings import Settings
-from .handlers import account, admin, auth, menu, settings as settings_handlers
+from .handlers import account, admin, auth, family, menu, settings as settings_handlers
 from .handlers.common import ContextMiddleware
 
 logger = logging.getLogger("netschoolbot.bot")
 
 COMMANDS = [
     BotCommand(command="menu", description="Главное меню"),
+    BotCommand(command="today", description="Сегодня: уроки, оценки, задания"),
+    BotCommand(command="tomorrow", description="Завтра: уроки и задания"),
+    BotCommand(command="last", description="Последние оценки"),
     BotCommand(command="dz", description="Домашние задания"),
     BotCommand(command="rasp", description="Расписание"),
     BotCommand(command="grades", description="Оценки по предметам"),
@@ -31,6 +34,8 @@ COMMANDS = [
     BotCommand(command="profile", description="Профиль"),
     BotCommand(command="status", description="Состояние проверки"),
     BotCommand(command="history", description="История изменений оценок"),
+    BotCommand(command="export", description="Оценки в Excel"),
+    BotCommand(command="family", description="Второй родитель"),
     BotCommand(command="timezone", description="Часовой пояс"),
     BotCommand(command="child", description="Переключить ребёнка"),
     BotCommand(command="changeapi", description="Сменить API: веб или мобильное"),
@@ -63,6 +68,7 @@ def create_dispatcher(context: AppContext) -> Dispatcher:
     # поэтому регистрируется раньше общего меню.
     dispatcher.include_router(admin.router)
     dispatcher.include_router(account.router)
+    dispatcher.include_router(family.router)
     dispatcher.include_router(auth.router)
     dispatcher.include_router(settings_handlers.router)
     dispatcher.include_router(menu.router)

@@ -9,7 +9,10 @@ import {
 } from './core.js';
 import { ICONS } from './icons.js';
 import { homeworkTimes, isDoneItem, loadDone, openHomework, saveDone } from './details.js';
-import { select } from './haptics.js';
+import { select, tap } from './haptics.js';
+import {
+  bindStreaks, deleteNote, isTestWork, loadNotes, notesAsItems, openNoteEditor, setNoteDone, streaks, streaksHtml,
+} from './notes.js';
 
 let query = '';
 // all — с сегодняшнего дня, todo — только невыполненные, past — прошедшие.
@@ -28,6 +31,7 @@ export async function loadHomework(force = false) {
           onFresh: (fresh) => { state[slot] = fresh.data; },
         }),
         loadDone(),
+        loadNotes(force),
       ]);
       state[slot] = data;
     } catch (error) {
@@ -35,8 +39,8 @@ export async function loadHomework(force = false) {
       $('hwRetry')?.addEventListener('click', () => loadHomework(true));
       return;
     }
-  } else if (!state.hwDone) {
-    await loadDone();
+  } else if (!state.hwDone || !state.notes) {
+    await Promise.all([state.hwDone ? null : loadDone(), loadNotes()]);
   }
   render();
 }
@@ -46,15 +50,37 @@ function visibleItems() {
   const needle = query.trim().toLowerCase();
   const done = state.hwDone || new Set();
   const source = filter === 'past' ? state.homeworkPast : state.homework;
-  let items = source.items;
+  // Свои задачи — вперемешку со школьными, после них в пределах дня.
+  let items = [...source.items, ...notesAsItems()].sort((a, b) =>
+    a.date.localeCompare(b.date) || Number(Boolean(a.own)) - Number(Boolean(b.own)));
   if (filter === 'past') {
-    items = items.filter((item) => item.date < today).slice().reverse();
+    items = items.filter((item) => item.date < today).reverse();
   } else {
     // Прошедшее здесь не показываем: домашка нужна на «сейчас и вперёд».
     items = items.filter((item) => item.date >= today);
-    if (filter === 'todo') items = items.filter((item) => !isDoneItem(item, done));
+    if (filter === 'todo') items = items.filter((item) => !itemDone(item, done));
   }
   return items.filter((item) => !needle || `${item.subject} ${item.text}`.toLowerCase().includes(needle));
+}
+
+const itemDone = (item, done) => (item.own ? item.done : isDoneItem(item, done));
+
+/** Карточка своей задачи: та же форма, что у школьного задания, с пометкой «Своё». */
+function ownCard(item, index) {
+  return `<div class="card hw-card own ${item.done ? 'done' : ''}" data-hw="${index}">
+      <div class="hw-top">
+        <div class="hw-subject">${esc(item.subject)} <span class="hw-tag own">Своё</span></div>
+        <button class="note-delete" data-delete="${index}" aria-label="Удалить задачу">✕</button>
+        <button class="hw-check ${item.done ? 'on' : ''}" data-done="${index}" aria-pressed="${item.done}"
+          aria-label="${item.done ? 'Снять отметку' : 'Отметить выполненным'}">${item.done ? '✓' : ''}</button>
+      </div>
+      <div class="hw-text">${esc(item.text)}</div>
+      <div class="hw-foot"><span></span><span class="muted small">${esc(dayMonth(item.date))}</span></div>
+    </div>`;
+}
+
+function subjectNames() {
+  return [...new Set((state.homework?.items || []).map((item) => item.subject))].sort((a, b) => a.localeCompare(b, 'ru'));
 }
 
 function render() {
@@ -66,24 +92,30 @@ function render() {
     chip.classList.toggle('active', chip.dataset.filter === filter));
 
   const container = $('homeworkContent');
+  const top = filter === 'past' || query.trim() ? ''
+    : streaksHtml(streaks(state.grades, state.homework?.items, done, state.notes || []))
+      + '<button class="hw-add" data-add-note>＋ Своя задача</button>';
   if (!items.length) {
     const empty = query.trim() ? 'Ничего не найдено' : filter === 'todo' ? 'Всё сделано 🎉' : 'Заданий нет 🎉';
-    container.innerHTML = `<div class="empty big">${empty}</div>`;
+    container.innerHTML = `${top}<div class="empty big">${empty}</div>`;
+    bindTop(container);
     return;
   }
 
   const perDay = new Map();
   for (const item of items) perDay.set(item.date, (perDay.get(item.date) || 0) + 1);
-  container.innerHTML = items
+  container.innerHTML = top + items
     .map((item, index) => {
-      const isDone = isDoneItem(item, done);
+      const isDone = itemDone(item, done);
       // Заголовок дня перед первым его заданием (виден только в новом дизайне).
       const heading = item.date !== items[index - 1]?.date
         ? `<div class="hw-day"><span>${esc(dayHeading(item.date))}</span><span class="hw-day-count">${perDay.get(item.date)}</span></div>`
         : '';
-      return `${heading}<div class="card hw-card ${isDone ? 'done' : ''}" data-hw="${index}">
+      if (item.own) return heading + ownCard(item, index);
+      const test = isTestWork(item);
+      return `${heading}<div class="card hw-card ${isDone ? 'done' : ''} ${test ? 'test' : ''}" data-hw="${index}">
           <div class="hw-top">
-            <div class="hw-subject">${esc(item.subject)}</div>
+            <div class="hw-subject">${esc(item.subject)}${test ? ` <span class="hw-tag test">${esc(item.type || 'Проверочная')}${Number(item.weight) > 1 ? ` · вес ${esc(item.weight)}` : ''}</span>` : ''}</div>
             ${item.auto_done ? '<span class="hw-check on auto" title="Задание не предусмотрено — отмечено само">✓</span>'
               : item.key ? `<button class="hw-check ${isDone ? 'on' : ''}" data-done="${index}" aria-pressed="${isDone}"
               aria-label="${isDone ? 'Снять отметку' : 'Отметить выполненным'}">${isDone ? '✓' : ''}</button>` : ''}
@@ -98,12 +130,32 @@ function render() {
     })
     .join('');
   container.querySelectorAll('[data-hw]').forEach((card) =>
-    card.addEventListener('click', (event) => {
+    card.addEventListener('click', async (event) => {
+      const item = items[Number(card.dataset.hw)];
       const check = event.target.closest('[data-done]');
-      if (check) toggleDone(items[Number(check.dataset.done)], check);
-      else openHomework(items[Number(card.dataset.hw)]);
+      if (item.own) {
+        if (event.target.closest('[data-delete]')) {
+          tap();
+          if (confirm('Удалить свою задачу?') && await deleteNote(item)) render();
+          return;
+        }
+        // Своя задача не открывается отдельным экраном: нажатие — отметка.
+        const next = !item.done;
+        paintCard(card.querySelector('[data-done]'), next);
+        if (!await setNoteDone(item, next)) paintCard(card.querySelector('[data-done]'), !next);
+        else if (filter === 'todo') render();
+        return;
+      }
+      if (check) toggleDone(item, check);
+      else openHomework(item);
     })
   );
+  bindTop(container);
+}
+
+function bindTop(container) {
+  bindStreaks(container);
+  container.querySelector('[data-add-note]')?.addEventListener('click', () => openNoteEditor(subjectNames(), () => render()));
 }
 
 function dayHeading(iso) {

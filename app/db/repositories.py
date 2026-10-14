@@ -32,7 +32,9 @@ from ..domain.models import (
     Student,
     User,
     clamp_interval,
+    clamp_reminder_hour,
     normalize,
+    parse_marks_filter,
 )
 from ..domain.records import MarkRecord, TrackedMark
 from .crypto import NO_ENCRYPTION, PasswordCipher
@@ -116,8 +118,10 @@ class UserRepository:
                     check_interval, notify_grades, notify_changes, notify_deletes,
                     notify_homework, notify_mail, weekly_summary, notify_absences,
                     quiet_start, quiet_end, api_mode, timezone, evening_summary, notify_schedule,
-                    updated_at, remember_credentials, notify_telegram
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    updated_at, remember_credentials, notify_telegram,
+                    homework_reminder, reminder_hour, test_reminder, grade_risk,
+                    monthly_summary, all_children, marks_filter
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(telegram_id) DO UPDATE SET
                     enabled = excluded.enabled,
                     display_name = excluded.display_name,
@@ -144,6 +148,13 @@ class UserRepository:
                     evening_summary = excluded.evening_summary,
                     notify_schedule = excluded.notify_schedule,
                     notify_telegram = excluded.notify_telegram,
+                    homework_reminder = excluded.homework_reminder,
+                    reminder_hour = excluded.reminder_hour,
+                    test_reminder = excluded.test_reminder,
+                    grade_risk = excluded.grade_risk,
+                    monthly_summary = excluded.monthly_summary,
+                    all_children = excluded.all_children,
+                    marks_filter = excluded.marks_filter,
                     updated_at = excluded.updated_at
                 """,
                 (
@@ -174,6 +185,13 @@ class UserRepository:
                     now,
                     int(user.credentials.remember),
                     int(user.notifications.telegram),
+                    int(user.notifications.homework_reminder),
+                    clamp_reminder_hour(user.notifications.reminder_hour),
+                    int(user.notifications.test_reminder),
+                    int(user.notifications.grade_risk),
+                    int(user.notifications.monthly_summary),
+                    int(user.notifications.all_children),
+                    ",".join(str(v) for v in sorted(set(user.notifications.marks_filter))),
                 ),
             )
             await self._replace_students(db, user)
@@ -271,6 +289,13 @@ class UserRepository:
                 schedule=bool(row["notify_schedule"]),
                 absences=bool(row["notify_absences"]),
                 telegram=bool(row["notify_telegram"]),
+                homework_reminder=bool(row["homework_reminder"]),
+                reminder_hour=clamp_reminder_hour(row["reminder_hour"]),
+                test_reminder=bool(row["test_reminder"]),
+                grade_risk=bool(row["grade_risk"]),
+                monthly_summary=bool(row["monthly_summary"]),
+                all_children=bool(row["all_children"]),
+                marks_filter=parse_marks_filter(row["marks_filter"]),
             ),
             filters=Filters(
                 exclude_titles=frozenset(
@@ -538,7 +563,7 @@ class MarkStateRepository:
     async def pending_outbox(self, telegram_id: int) -> list[aiosqlite.Row]:
         """Неотправленные уведомления в порядке появления."""
         return await self._db.fetch_all(
-            """SELECT id, kind, payload, created_at, attempts FROM outbox
+            """SELECT id, kind, payload, created_at, attempts, student FROM outbox
                WHERE telegram_id = ? ORDER BY id""",
             (telegram_id,),
         )
@@ -707,14 +732,239 @@ class MarkStateRepository:
                 (telegram_id, key),
             )
 
+    async def user_prefs(self, telegram_id: int) -> dict[str, Any]:
+        """Настройки приложения (пороги оценок, учебные периоды) — для сводок."""
+        row = await self._db.fetch_one(
+            "SELECT payload FROM web_prefs WHERE telegram_id = ?", (telegram_id,)
+        )
+        try:
+            data = json.loads(row["payload"]) if row else {}
+        except ValueError:
+            return {}
+        return data if isinstance(data, dict) else {}
+
+    async def load_child(self, telegram_id: int, student_id: int) -> dict[str, Any] | None:
+        """Состояние слежения за невыбранным ребёнком; None — ещё не сверяли."""
+        rows = await self._db.fetch_all(
+            "SELECT section, payload FROM child_state WHERE telegram_id = ? AND student_id = ?",
+            (telegram_id, student_id),
+        )
+        if not rows:
+            return None
+        state: dict[str, Any] = {}
+        for row in rows:
+            try:
+                state[row["section"]] = json.loads(row["payload"])
+            except ValueError:
+                continue
+        marks: dict[str, TrackedMark] = {}
+        for identity, item in (state.get("marks") or {}).items():
+            record = _record_from_json(json.dumps(item.get("record"), ensure_ascii=False))
+            if record is not None:
+                marks[identity] = TrackedMark(record=record, missing_streak=int(item.get("streak") or 0))
+        return {
+            "marks": marks,
+            "homework": set(state.get("homework") or []),
+            "absences": set(state.get("absences") or []),
+        }
+
+    async def save_child_check(
+        self,
+        telegram_id: int,
+        student_id: int,
+        student: str,
+        *,
+        tracked: dict[str, TrackedMark],
+        homework: set[str],
+        absences: set[str] | None,
+        outbox: list[tuple[str, str]],
+    ) -> None:
+        """Итог проверки невыбранного ребёнка и его уведомления — одной транзакцией."""
+        sections = {
+            "marks": {
+                identity: {"record": json.loads(_record_to_json(item.record)), "streak": item.missing_streak}
+                for identity, item in tracked.items()
+            },
+            "homework": sorted(homework),
+        }
+        if absences is not None:
+            sections["absences"] = sorted(absences)
+        async with self._db.transaction() as db:
+            await db.executemany(
+                """INSERT INTO child_state (telegram_id, student_id, section, payload) VALUES (?, ?, ?, ?)
+                   ON CONFLICT(telegram_id, student_id, section) DO UPDATE SET payload = excluded.payload""",
+                [
+                    (telegram_id, student_id, section, json.dumps(payload, ensure_ascii=False))
+                    for section, payload in sections.items()
+                ],
+            )
+            if outbox:
+                await db.executemany(
+                    "INSERT INTO outbox (telegram_id, kind, payload, student) VALUES (?, ?, ?, ?)",
+                    [(telegram_id, kind, payload, student) for kind, payload in outbox],
+                )
+
+    async def forget_children(self, telegram_id: int, keep: set[int] | None = None) -> None:
+        """Забыть состояние детей, кроме `keep` (выбранный ребёнок сменился и т. п.)."""
+        rows = await self._db.fetch_all(
+            "SELECT DISTINCT student_id FROM child_state WHERE telegram_id = ?", (telegram_id,)
+        )
+        drop = [(telegram_id, int(r["student_id"])) for r in rows if int(r["student_id"]) not in (keep or set())]
+        if drop:
+            await self._db.execute_many(
+                "DELETE FROM child_state WHERE telegram_id = ? AND student_id = ?", drop
+            )
+
     async def forget_all(self, telegram_id: int) -> None:
         """Сбросить слежение — например при смене школы или ученика."""
         async with self._db.transaction() as db:
             for table in (
                 "tracked_marks", "tracked_homework", "seen_mail", "mail_baselines", "tracked_absences",
-                "outbox", "mark_history", "homework_done", "tracked_schedule",
+                "outbox", "mark_history", "homework_done", "tracked_schedule", "child_state",
             ):
                 await db.execute(f"DELETE FROM {table} WHERE telegram_id = ?", (telegram_id,))
+
+
+FOLLOW_INVITE_TTL = 24 * 3600
+MAX_FOLLOWERS = 5
+
+
+class FamilyRepository:
+    """Второй родитель: приглашения и кто получает копии уведомлений."""
+
+    def __init__(self, db: Database) -> None:
+        self._db = db
+
+    async def issue_invite(self, owner_id: int) -> str:
+        code = secrets.token_urlsafe(9).replace("-", "x").replace("_", "y")
+        now = time.time()
+        async with self._db.transaction() as db:
+            await db.execute("DELETE FROM follow_invites WHERE expires_at < ? OR owner_id = ?", (now, owner_id))
+            await db.execute(
+                "INSERT INTO follow_invites (code, owner_id, expires_at) VALUES (?, ?, ?)",
+                (code, owner_id, now + FOLLOW_INVITE_TTL),
+            )
+        return code
+
+    async def invite_owner(self, code: str) -> int | None:
+        row = await self._db.fetch_one(
+            "SELECT owner_id FROM follow_invites WHERE code = ? AND expires_at >= ?", (code, time.time())
+        )
+        return int(row["owner_id"]) if row else None
+
+    async def accept(self, code: str, follower_id: int, name: str = "") -> int | None:
+        """Принять приглашение. Возвращает владельца или None (просрочено, своё, лимит)."""
+        async with self._db.transaction() as db:
+            cursor = await db.execute(
+                "SELECT owner_id FROM follow_invites WHERE code = ? AND expires_at >= ?", (code, time.time())
+            )
+            row = await cursor.fetchone()
+            if row is None or int(row[0]) == follower_id:
+                return None
+            owner_id = int(row[0])
+            cursor = await db.execute("SELECT COUNT(*) FROM followers WHERE owner_id = ?", (owner_id,))
+            if (await cursor.fetchone())[0] >= MAX_FOLLOWERS:
+                return None
+            await db.execute(
+                """INSERT INTO followers (owner_id, follower_id, name, created_at) VALUES (?, ?, ?, ?)
+                   ON CONFLICT(owner_id, follower_id) DO UPDATE SET name = excluded.name""",
+                (owner_id, follower_id, name[:64], time.time()),
+            )
+            # Ссылка одноразовая: пересланная дальше, она уже не сработает.
+            await db.execute("DELETE FROM follow_invites WHERE code = ?", (code,))
+        return owner_id
+
+    async def followers(self, owner_id: int) -> list[dict[str, Any]]:
+        rows = await self._db.fetch_all(
+            "SELECT follower_id, name, created_at FROM followers WHERE owner_id = ? ORDER BY created_at",
+            (owner_id,),
+        )
+        return [{"id": int(r["follower_id"]), "name": r["name"], "since": r["created_at"]} for r in rows]
+
+    async def following(self, follower_id: int) -> list[int]:
+        rows = await self._db.fetch_all(
+            "SELECT owner_id FROM followers WHERE follower_id = ? ORDER BY created_at", (follower_id,)
+        )
+        return [int(r["owner_id"]) for r in rows]
+
+    async def remove(self, owner_id: int, follower_id: int) -> bool:
+        async with self._db.transaction() as db:
+            cursor = await db.execute(
+                "DELETE FROM followers WHERE owner_id = ? AND follower_id = ?", (owner_id, follower_id)
+            )
+            return cursor.rowcount > 0
+
+
+MAX_NOTES = 300
+MAX_NOTE_TEXT = 500
+
+
+class NotesRepository:
+    """Свои заметки и задачи ученика: к дате и, если нужно, к предмету."""
+
+    def __init__(self, db: Database) -> None:
+        self._db = db
+
+    @staticmethod
+    def _row(row: aiosqlite.Row) -> dict[str, Any]:
+        return {"id": int(row["id"]), "date": row["day"], "subject": row["subject"],
+                "text": row["text"], "done": bool(row["done"])}
+
+    async def between(self, telegram_id: int, start: dt.date, end: dt.date) -> list[dict[str, Any]]:
+        rows = await self._db.fetch_all(
+            """SELECT id, day, subject, text, done FROM user_notes
+               WHERE telegram_id = ? AND day >= ? AND day <= ? ORDER BY day, id""",
+            (telegram_id, start.isoformat(), end.isoformat()),
+        )
+        return [self._row(r) for r in rows]
+
+    async def add(self, telegram_id: int, day: dt.date, text: str, subject: str = "") -> dict[str, Any] | None:
+        text = " ".join(text.split())[:MAX_NOTE_TEXT]
+        if not text:
+            return None
+        async with self._db.transaction() as db:
+            cursor = await db.execute("SELECT COUNT(*) FROM user_notes WHERE telegram_id = ?", (telegram_id,))
+            if (await cursor.fetchone())[0] >= MAX_NOTES:
+                # Старые выполненные уступают место новым.
+                await db.execute(
+                    """DELETE FROM user_notes WHERE id IN (SELECT id FROM user_notes
+                       WHERE telegram_id = ? ORDER BY done DESC, day LIMIT 1)""",
+                    (telegram_id,),
+                )
+            cursor = await db.execute(
+                "INSERT INTO user_notes (telegram_id, day, subject, text, created_at) VALUES (?, ?, ?, ?, ?)",
+                (telegram_id, day.isoformat(), subject.strip()[:120], text, time.time()),
+            )
+            note_id = cursor.lastrowid
+        return {"id": note_id, "date": day.isoformat(), "subject": subject.strip()[:120], "text": text, "done": False}
+
+    async def update(self, telegram_id: int, note_id: int, *, done: bool | None = None,
+                     text: str | None = None) -> bool:
+        sets, params = [], []
+        if done is not None:
+            sets.append("done = ?")
+            params.append(int(done))
+        if text is not None:
+            text = " ".join(text.split())[:MAX_NOTE_TEXT]
+            if not text:
+                return False
+            sets.append("text = ?")
+            params.append(text)
+        if not sets:
+            return False
+        async with self._db.transaction() as db:
+            cursor = await db.execute(
+                f"UPDATE user_notes SET {', '.join(sets)} WHERE id = ? AND telegram_id = ?",
+                (*params, note_id, telegram_id),
+            )
+            return cursor.rowcount > 0
+
+    async def delete(self, telegram_id: int, note_id: int) -> bool:
+        async with self._db.transaction() as db:
+            cursor = await db.execute(
+                "DELETE FROM user_notes WHERE id = ? AND telegram_id = ?", (note_id, telegram_id)
+            )
+            return cursor.rowcount > 0
 
 
 class SessionRepository:

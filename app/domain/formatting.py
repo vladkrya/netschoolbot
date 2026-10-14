@@ -441,6 +441,18 @@ def profile(user: User) -> str:
                 if user.effective_api_mode is ApiMode.MOBILE
                 else []
             ),
+            f"• Напоминание о Д/З: {enabled(notifications.homework_reminder)}"
+            f" ({notifications.reminder_hour}:00)",
+            f"• Контрольные заранее: {enabled(notifications.test_reminder)}",
+            f"• Итоговая под угрозой: {enabled(notifications.grade_risk)}",
+            f"• Итоги месяца и четверти: {enabled(notifications.monthly_summary)}",
+            *(
+                [f"• Все дети: {enabled(notifications.all_children)}"]
+                if len(user.available_students) > 1
+                else []
+            ),
+            "• Новые оценки: "
+            + ("все" if not notifications.marks_filter else "только " + ", ".join(map(str, notifications.marks_filter))),
             f"• Тихие часы: {user.quiet_hours.as_text()}",
             "",
             f"• Фильтр работ: {', '.join(sorted(user.filters.exclude_titles)) or 'нет'}",
@@ -487,3 +499,178 @@ def class_label(class_name: str) -> str:
     if re.fullmatch(r"\d{1,2}", text):
         return f"{text} класс"
     return text
+
+
+MONTHS = (
+    "январь", "февраль", "март", "апрель", "май", "июнь",
+    "июль", "август", "сентябрь", "октябрь", "ноябрь", "декабрь",
+)
+
+
+def _number(value: float) -> str:
+    return f"{value:.2f}".replace(".", ",")
+
+
+def student_header(name: str) -> str:
+    """Подпись ребёнка над уведомлением, когда следят за несколькими."""
+    return f"👤 <b>{esc(name)}</b>"
+
+
+def reminder(
+    day: dt.date,
+    homework: list[HomeworkRecord],
+    notes: list[dict],
+    tests: list[HomeworkRecord],
+) -> str | None:
+    """Вечернее напоминание: несделанное на завтра и ближайшие проверочные.
+
+    None — напоминать не о чем.
+    """
+    if not homework and not notes and not tests:
+        return None
+    lines = []
+    if homework or notes:
+        lines.append(f"⏰ <b>На {date_label(day)} не сделано</b>")
+        for item in sorted(homework, key=lambda h: (h.lesson_number or 0, h.subject)):
+            text = esc(item.text)
+            if len(text) > 120:
+                text = text[:120] + "…"
+            lines.append(f"⬜ {esc(item.subject)}: {text or '—'}")
+        for note in notes:
+            subject = f"{esc(note.get('subject'))}: " if note.get("subject") else ""
+            lines.append(f"⬜ {subject}{esc(note.get('text'))} <i>(своя задача)</i>")
+        lines.append("\nОтметить сделанное — /dz или в приложении.")
+    if tests:
+        if lines:
+            lines.append("")
+        lines.append("📝 <b>Скоро проверочные</b>")
+        for item in tests:
+            when = "завтра" if item.due_date == day else date_label(item.due_date)
+            weight = f", вес {item.weight}" if item.weight and item.weight > 1 else ""
+            lines.append(f"• {when} — {esc(item.subject)}: {esc(item.assignment_type)}{weight}")
+    return "\n".join(lines)
+
+
+def risk_alerts(alerts: list) -> str:
+    lines = ["⚠️ <b>Итоговая оценка под угрозой</b>", ""]
+    for alert in alerts:
+        line = (f"• {esc(alert.subject)}: средний {_number(alert.average)} — "
+                f"сейчас выходит «{alert.grade}» вместо «{alert.previous_grade}»")
+        if alert.fives:
+            line += (f". Чтобы вернуть «{alert.previous_grade}», нужно "
+                     f"{alert.fives} {plural(alert.fives, 'пятёрка', 'пятёрки', 'пятёрок')}")
+        lines.append(line)
+    return "\n".join(lines)
+
+
+def risk_preview(alerts: list) -> str:
+    return ", ".join(f"{a.subject}: «{a.previous_grade}» → «{a.grade}»" for a in alerts[:3])
+
+
+def edge_lines(alerts: list) -> list[str]:
+    """Строки «на грани» для недельной сводки."""
+    if not alerts:
+        return []
+    lines = ["", "⚠️ <b>На грани</b> (одна плохая оценка — и итог ниже):"]
+    lines.extend(
+        f"• {esc(a.subject)} — {_number(a.average)}, пока «{a.grade}»" for a in alerts[:6]
+    )
+    return lines
+
+
+def _counts_line(counts: dict[int, int]) -> str:
+    return " | ".join(f"{mark}: {counts.get(mark, 0)}" for mark in (5, 4, 3, 2))
+
+
+def _delta(now: float | None, before: float | None) -> str:
+    if now is None or before is None:
+        return ""
+    diff = now - before
+    if abs(diff) < 0.005:
+        return " (как в прошлый раз)"
+    arrow = "↑" if diff > 0 else "↓"
+    return f" ({arrow} {_number(abs(diff))})"
+
+
+def monthly_summary(month: dt.date, stats, previous=None) -> str:
+    """Сводка за месяц: число оценок, средний, лучшие и слабые предметы."""
+    header = f"📅 <b>Итоги месяца: {MONTHS[month.month - 1]} {month.year}</b>"
+    if not stats.count:
+        return f"{header}\n\nОценок за месяц нет."
+    lines = [header, "", f"• Оценок: <b>{stats.count}</b>"]
+    if stats.average is not None:
+        lines.append(f"• Средний балл: <b>{_number(stats.average)}</b>"
+                     f"{_delta(stats.average, previous.average if previous else None)}")
+        lines.append(f"• {_counts_line(stats.counts)}")
+    if stats.absences:
+        lines.append(f"• Пропусков уроков: {stats.absences}")
+    if stats.subjects:
+        lines.extend(["", "<b>Лучше всего:</b>"])
+        lines.extend(f"• {esc(s)} — {_number(avg)} ({n})" for s, avg, n in stats.subjects[:3])
+        weak = [item for item in stats.subjects[3:][-3:]]
+        if weak:
+            lines.extend(["", "<b>Подтянуть:</b>"])
+            lines.extend(f"• {esc(s)} — {_number(avg)} ({n})" for s, avg, n in reversed(weak))
+    return "\n".join(lines)
+
+
+def term_summary(label: str, grades: list, stats, previous_average: float | None = None) -> str:
+    """Итоги учебного периода: какая оценка выходит по каждому предмету."""
+    header = f"🏁 <b>Итоги: {esc(label)}</b>"
+    if not grades:
+        return f"{header}\n\nОценок за период нет."
+    lines = [header, ""]
+    if stats.average is not None:
+        lines.append(f"Средний балл: <b>{_number(stats.average)}</b>{_delta(stats.average, previous_average)}")
+        lines.append(_counts_line(stats.counts))
+    if stats.absences:
+        lines.append(f"Пропусков уроков: {stats.absences}")
+    lines.extend(["", "<b>Выходит по предметам</b> (по среднему и порогам):"])
+    icons = {5: "🟢", 4: "🔵", 3: "🟡", 2: "🔴"}
+    for subject, average, grade, count in sorted(grades, key=lambda g: (-g[2], -g[1], g[0])):
+        lines.append(f"{icons.get(grade, '•')} {esc(subject)} — «{grade}» ({_number(average)}, {count})")
+    lines.append("\n<i>Официальные итоговые ставит учитель — они могут отличаться.</i>")
+    return "\n".join(lines)
+
+
+def day_brief(day: object | None, when: dt.date, title: str, *, done: set[str] | None = None) -> str:
+    """День одним сообщением: уроки с оценками и заданием — для /today и /tomorrow."""
+    lessons = list(getattr(day, "lessons", None) or [])
+    header = f"📅 <b>{title}, {date_label(when)}</b>"
+    if not lessons:
+        return f"{header}\n\nУроков нет."
+    lines = [header, ""]
+    for index, lesson in enumerate(
+        sorted(lessons, key=lambda l: (l.number or 0, _clock(l.start))), start=1
+    ):
+        when_text = f"{lesson.start}–{lesson.end} " if lesson.start and lesson.end else ""
+        room = f" (каб. {esc(lesson.room)})" if lesson.room else ""
+        marks = " ".join(f"<b>{esc(m.mark)}</b>" for m in lesson.marks)
+        lines.append(f"{lesson.number or index}. {when_text}{esc(lesson.subject)}{room}"
+                     + (f" — {marks}" if marks else ""))
+        if lesson.absence:
+            lines.append(f"   🚫 {esc(lesson.absence)}")
+        for item in lesson.homework:
+            mark = "✅" if item.nothing_to_do or (done and item.key in done) else "📚"
+            text = esc(item.text)
+            if len(text) > 160:
+                text = text[:160] + "…"
+            lines.append(f"   {mark} {text or '—'}")
+    return "\n".join(lines)
+
+
+def last_marks(records: list[MarkRecord], limit: int = 15) -> str:
+    """Последние выставленные оценки — для /last."""
+    if not records:
+        return "🆕 <b>Последние оценки</b>\n\nОценок за последние недели нет."
+
+    def moment(record: MarkRecord) -> tuple:
+        stamp = record.marked_at or record.published_at
+        return (record.date, stamp.replace(tzinfo=None) if stamp else dt.datetime.min, record.lesson_number or 0)
+
+    lines = ["🆕 <b>Последние оценки</b>", ""]
+    for record in sorted(records, key=moment, reverse=True)[:limit]:
+        weight = f" ×{record.weight}" if record.weight and record.weight != 1 else ""
+        lines.append(f"• {date_label(record.date)} · {esc(record.subject)}: <b>{esc(record.mark)}</b>{weight}"
+                     f" <i>{esc(record.assignment_type)}</i>")
+    return "\n".join(lines)

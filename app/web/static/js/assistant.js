@@ -19,10 +19,20 @@ import { navTabs } from './tabs.js';
 
 const SUGGESTIONS = [
   'Что задали на завтра?',
+  'Что исправить в этой четверти?',
+  'Составь план на неделю',
+  'Объясни тему завтрашнего урока',
   'Сколько пятёрок нужно до «5» по алгебре?',
-  'По каким предметам выходит тройка?',
   'Напиши письмо учителю, что я болею',
   'Как поставить PIN-код на вход?',
+];
+
+// Короткие продолжения над полем ввода, когда разговор уже идёт.
+const FOLLOW_UPS = [
+  'Что исправить в этой четверти?',
+  'Составь план на неделю',
+  'Объясни тему завтрашнего урока',
+  'Что задали на завтра?',
 ];
 
 const FIXES = [
@@ -116,6 +126,7 @@ function mount(body, { tab = false } = {}) {
       <div class="chips ai-suggest">${SUGGESTIONS.map((text, index) => `<button class="chip ai-stagger" style="--i:${index + 1}" data-suggest="${esc(text)}">${esc(text)}</button>`).join('')}</div>
       <div class="muted small ai-stagger" style="--i:${SUGGESTIONS.length + 1}">Вопросы и оценки уходят в OpenRouter без имени ученика и школы. Решать домашку за вас помощник не будет — но объяснит, с чего начать.</div>
     </div>
+    <div class="ai-quick" id="aiQuick" hidden>${FOLLOW_UPS.map((text) => `<button class="chip" data-suggest="${esc(text)}">${esc(text)}</button>`).join('')}</div>
     <form class="ai-input" id="aiForm">
       <textarea class="field" id="aiText" rows="1" maxlength="2000" placeholder="Ваш вопрос"></textarea>
       <button class="ai-send" id="aiSend" aria-label="Отправить">${ICONS.send}</button>
@@ -126,7 +137,10 @@ function mount(body, { tab = false } = {}) {
   // Экран прокручивается сам, вкладка — вместе со страницей.
   const scroller = () => body.closest('.screen') || document.scrollingElement;
   const scroll = () => requestAnimationFrame(() => scroller().scrollTo({ top: scroller().scrollHeight, behavior: 'smooth' }));
-  const syncIntro = () => { q('aiIntro').hidden = chat.messages.length > 0; };
+  const syncIntro = () => {
+    q('aiIntro').hidden = chat.messages.length > 0;
+    q('aiQuick').hidden = chat.messages.length === 0;
+  };
   const syncSend = () => q('aiSend').classList.toggle('ready', Boolean(input.value.trim()) && !busy);
 
   /* ── Карточка письма ── */

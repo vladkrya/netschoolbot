@@ -489,6 +489,58 @@ MIGRATIONS: list[str] = [
         seen_at REAL NOT NULL
     );
     """,
+    # 28 — напоминания о заданиях и контрольных, риск по оценке, месячная
+    # сводка, фильтр значений оценок, слежение за всеми детьми, второй
+    # родитель и свои заметки.
+    """
+    ALTER TABLE users ADD COLUMN homework_reminder INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE users ADD COLUMN reminder_hour INTEGER NOT NULL DEFAULT 18;
+    ALTER TABLE users ADD COLUMN test_reminder INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE users ADD COLUMN grade_risk INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE users ADD COLUMN monthly_summary INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE users ADD COLUMN all_children INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE users ADD COLUMN marks_filter TEXT NOT NULL DEFAULT '';
+
+    -- Чей это ребёнок в уведомлении: при слежении за всеми детьми.
+    ALTER TABLE outbox ADD COLUMN student TEXT NOT NULL DEFAULT '';
+
+    -- Состояние слежения за остальными детьми (не выбранным): разделы
+    -- (оценки, задания, пропуски) целиком JSON — их немного.
+    CREATE TABLE child_state (
+        telegram_id INTEGER NOT NULL REFERENCES users(telegram_id) ON DELETE CASCADE,
+        student_id  INTEGER NOT NULL,
+        section     TEXT    NOT NULL,
+        payload     TEXT    NOT NULL,
+        PRIMARY KEY (telegram_id, student_id, section)
+    );
+
+    -- Второй родитель получает копии уведомлений без пароля от школы.
+    CREATE TABLE followers (
+        owner_id    INTEGER NOT NULL REFERENCES users(telegram_id) ON DELETE CASCADE,
+        follower_id INTEGER NOT NULL REFERENCES users(telegram_id) ON DELETE CASCADE,
+        name        TEXT    NOT NULL DEFAULT '',
+        created_at  REAL    NOT NULL,
+        PRIMARY KEY (owner_id, follower_id)
+    );
+    CREATE INDEX followers_follower ON followers(follower_id);
+    CREATE TABLE follow_invites (
+        code       TEXT PRIMARY KEY,
+        owner_id   INTEGER NOT NULL REFERENCES users(telegram_id) ON DELETE CASCADE,
+        expires_at REAL NOT NULL
+    );
+
+    -- Свои заметки и задачи ученика: к дате и, если нужно, к предмету.
+    CREATE TABLE user_notes (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        telegram_id INTEGER NOT NULL REFERENCES users(telegram_id) ON DELETE CASCADE,
+        day         TEXT    NOT NULL,
+        subject     TEXT    NOT NULL DEFAULT '',
+        text        TEXT    NOT NULL,
+        done        INTEGER NOT NULL DEFAULT 0,
+        created_at  REAL    NOT NULL
+    );
+    CREATE INDEX user_notes_day ON user_notes(telegram_id, day);
+    """,
 ]
 
 

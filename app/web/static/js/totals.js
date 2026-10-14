@@ -204,6 +204,16 @@ function periodRows(data) {
   });
 }
 
+/** Стрелка в таблице: куда сдвинула средний последняя оценка периода. */
+function trendArrow(marks) {
+  const numeric = marks.filter((mark) => !isAttendance(mark));
+  if (numeric.length < 2) return '';
+  const now = weightedAverage(numeric);
+  const before = weightedAverage(numeric.slice(0, -1));
+  if (now == null || before == null || Math.abs(now - before) < 0.005) return '';
+  return `<span class="tt-trend ${now > before ? 'up' : 'down'}" aria-label="${now > before ? 'растёт' : 'падает'}">${now > before ? '↑' : '↓'}</span>`;
+}
+
 /** Какая оценка за период выходит по предмету: выставленная или по среднему. */
 function expectedGrade(row) {
   const grade = row.official ? markGrade(row.official)
@@ -420,7 +430,7 @@ function render() {
             const official = subject.totals?.terms?.[q.key]?.mark;
             const avg = subject.totals?.terms?.[q.key]?.average ?? weightedAverage(quarterMarks(subject, q.key));
             const grade = official ? markGrade(official) : avg == null ? '' : avgClass(avg, thresholdsFor(subject.subject));
-            return `<button class="tt-cell ${official ? 'official' : ''} ${grade}" data-subject="${index}" data-q="${q.key}">${official ? esc(official) : formatAverage(avg)}</button>`;
+            return `<button class="tt-cell ${official ? 'official' : ''} ${grade}" data-subject="${index}" data-q="${q.key}">${official ? esc(official) : formatAverage(avg)}${!official && q.key === data.current_quarter ? trendArrow(quarterMarks(subject, q.key)) : ''}</button>`;
           })
           .join('')}
         ${hasYear ? `<div class="tt-cell official ${markGrade(subject.totals?.year)}">${esc(subject.totals?.year || '')}</div>` : ''}
@@ -495,6 +505,85 @@ function attendanceLine(counts) {
   return `<div class="muted small attendance">Посещаемость: ${parts.join(', ')}</div>`;
 }
 
+/** Средний после каждой числовой оценки: точки графика. */
+function averagePoints(marks) {
+  const points = [];
+  let sum = 0;
+  let weights = 0;
+  for (const mark of marks) {
+    const value = Number(mark.mark);
+    if (!(value >= 1 && value <= 5)) continue;
+    const weight = Number(mark.weight) > 0 ? Number(mark.weight) : 1;
+    sum += value * weight;
+    weights += weight;
+    points.push({ avg: sum / weights, mark: value, date: mark.date, weight });
+  }
+  return points;
+}
+
+/** Как менялся средний балл за период: после каждой оценки — средний с учётом
+ *  веса. Пунктир — пороги «5», «4», «3»; нажатие на точку — подсказка. */
+function averageChart(marks, thresholds) {
+  const points = averagePoints(marks);
+  if (points.length < 2) return '';
+  const W = 320, H = 150, L = 26, R = 10, T = 12, B = 22;
+  const low = Math.min(2, Math.floor(Math.min(...points.map((p) => p.avg)) * 2) / 2);
+  const x = (i) => L + (W - L - R) * (points.length === 1 ? 0.5 : i / (points.length - 1));
+  const y = (v) => T + (H - T - B) * (5 - v) / (5 - low);
+  const path = points.map((p, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(p.avg).toFixed(1)}`).join('');
+  const area = `${path}L${x(points.length - 1).toFixed(1)},${H - B}L${x(0).toFixed(1)},${H - B}Z`;
+  const lines = [5, 4, 3].filter((g) => thresholds[g] > low).map((g) => `
+      <line class="ac-thr" x1="${L}" x2="${W - R}" y1="${y(thresholds[g]).toFixed(1)}" y2="${y(thresholds[g]).toFixed(1)}"/>
+      <text class="ac-axis" x="${L - 4}" y="${(y(thresholds[g]) + 3).toFixed(1)}" text-anchor="end">${formatAverage(thresholds[g])}</text>`).join('');
+  const last = points[points.length - 1];
+  const delta = last.avg - points[0].avg;
+  return `<div class="card avg-chart">
+      <div class="ac-head"><div class="card-title">Как менялся средний</div>
+        <span class="ac-delta ${delta > 0.005 ? 'up' : delta < -0.005 ? 'down' : ''}">${Math.abs(delta) < 0.005 ? 'без изменений' : `${delta > 0 ? '↑' : '↓'} ${formatAverage(Math.abs(delta))} за период`}</span></div>
+      <div class="ac-wrap">
+        <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="График среднего балла: от ${formatAverage(points[0].avg)} до ${formatAverage(last.avg)}">
+          ${lines}
+          <path class="ac-area" d="${area}"/>
+          <path class="ac-line" d="${path}" pathLength="1"/>
+          ${points.map((p, i) => `<circle class="ac-dot d${p.mark}" cx="${x(i).toFixed(1)}" cy="${y(p.avg).toFixed(1)}" r="4"/>`).join('')}
+          ${points.map((p, i) => `<rect class="ac-hit" data-point="${i}" x="${(x(i) - (W - L - R) / points.length / 2).toFixed(1)}" y="0" width="${((W - L - R) / points.length).toFixed(1)}" height="${H}"/>`).join('')}
+          <text class="ac-axis" x="${L}" y="${H - 6}">${esc(shortDate(points[0].date))}</text>
+          <text class="ac-axis" x="${W - R}" y="${H - 6}" text-anchor="end">${esc(shortDate(last.date))}</text>
+        </svg>
+        <div class="ac-tip" hidden></div>
+      </div>
+    </div>`;
+}
+
+function bindAverageChart(body, marks) {
+  const wrap = body.querySelector('.ac-wrap');
+  if (!wrap) return;
+  const points = averagePoints(marks);
+  const tip = wrap.querySelector('.ac-tip');
+  const dots = wrap.querySelectorAll('.ac-dot');
+  const show = (index) => {
+    const point = points[index];
+    if (!point) return;
+    dots.forEach((dot, i) => dot.classList.toggle('on', i === index));
+    const dot = dots[index].getBoundingClientRect();
+    const box = wrap.getBoundingClientRect();
+    tip.innerHTML = `<b>${point.mark}</b>${point.weight !== 1 ? ` ×${String(point.weight).replace('.', ',')}` : ''} · ${esc(shortDate(point.date))}<br>средний ${formatAverage(point.avg)}`;
+    tip.hidden = false;
+    const left = Math.min(Math.max(dot.left - box.left, 50), box.width - 50);
+    tip.style.left = `${left}px`;
+    tip.style.top = `${dot.top - box.top}px`;
+  };
+  wrap.querySelectorAll('[data-point]').forEach((hit) => {
+    hit.addEventListener('pointerenter', () => show(Number(hit.dataset.point)));
+    hit.addEventListener('click', () => { select(); show(Number(hit.dataset.point)); });
+  });
+  wrap.addEventListener('pointerleave', (event) => {
+    if (event.pointerType !== 'mouse') return;
+    tip.hidden = true;
+    dots.forEach((dot) => dot.classList.remove('on'));
+  });
+}
+
 /** Доли оценок в среднем балле: полоса из отрезков по весу каждой оценки. */
 function distribution(marks) {
   const weights = { 5: 0, 4: 0, 3: 0, 2: 0 };
@@ -567,6 +656,7 @@ function openSubject(subject, key, existingBody = null, data = state.totals) {
       ${distribution(marks)}
       <div class="muted small">*доли оценок, образующих средний балл</div>
     </div>
+    ${averageChart(marks.filter((mark) => !isAttendance(mark)), thresholdsFor(subject.subject))}
     <div class="card">
       <div class="mark-results-head"><div class="card-title">Результаты учебного периода</div>
         <button class="mark-filter-reset" data-mark-reset hidden>Все оценки</button></div>
@@ -607,6 +697,7 @@ function openSubject(subject, key, existingBody = null, data = state.totals) {
   body.querySelectorAll('[data-mark]').forEach((tile) =>
     tile.addEventListener('click', () => openMark(marks[Number(tile.dataset.mark)], subject.subject))
   );
+  bindAverageChart(body, marks.filter((mark) => !isAttendance(mark)));
   let markFilter = null;
   let filterAnimation = null;
   const filterButtons = body.querySelectorAll('[data-mark-filter]');

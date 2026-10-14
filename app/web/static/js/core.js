@@ -29,6 +29,8 @@ export const state = {
   homeworkPast: null,
   // Ключи выполненных заданий (Set): общие с /dz в боте.
   hwDone: null,
+  // Свои задачи ученика (notes.js).
+  notes: null,
   mail: null,
   profile: null,
   calc: null,
@@ -247,6 +249,28 @@ async function request(path, options = {}) {
   if (notice === OFFLINE_TEXT) banner('');
   if (dismissedNotice === OFFLINE_TEXT) dismissedNotice = '';
   return payload;
+}
+
+/** Файл с сервера (например, выгрузка оценок) с тем же удостоверением, что у API. */
+export async function apiBlob(path) {
+  const headers = {};
+  if (initData) headers['X-Telegram-Init-Data'] = initData;
+  if (token) headers['X-Netschool-Token'] = token;
+  if (unlockToken) headers['X-Netschool-Unlock'] = unlockToken;
+  let response;
+  try {
+    response = await fetch(base + path, { headers, cache: 'no-store' });
+  } catch {
+    throw new Error('Нет связи с сервером. Проверьте интернет.');
+  }
+  if (!response.ok) {
+    let message = `Ошибка ${response.status}`;
+    try { message = (await response.json()).error || message; } catch { /* не JSON */ }
+    throw new Error(message);
+  }
+  const disposition = response.headers.get('Content-Disposition') || '';
+  const match = disposition.match(/filename\*=UTF-8''([^;]+)/);
+  return { data: await response.blob(), name: match ? decodeURIComponent(match[1]) : '' };
 }
 
 const withRefresh = (path) => `${path}${path.includes('?') ? '&' : '?'}refresh=1`;

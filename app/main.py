@@ -120,7 +120,7 @@ async def run(settings: Settings, args: argparse.Namespace) -> int:
     push = PushSender(settings.push, context.miniapp)
     if not push.configured:
         logger.info("VAPID-ключи не заданы — push в браузер отключён")
-    context.watchers.attach_notifier(TelegramNotifier(bot, context.users, push))
+    context.watchers.attach_notifier(TelegramNotifier(bot, context.users, push, context.family))
     if settings.telegram.admin_id:
         async def tell_admin(text: str) -> None:
             await bot.send_message(settings.telegram.admin_id, text)

@@ -1774,3 +1774,150 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
 .lock-reset { display: flex; gap: 6px; margin-top: 8px; }
 .lock-reset input { flex: 1; min-width: 0; padding: 9px 10px; border-radius: 10px; border: 1px solid var(--border, #ccd); background: var(--card, #fff); color: inherit; font: inherit; }
 .lock-reset button { padding: 9px 12px; border-radius: 10px; background: var(--accent, #4a6fae); color: #fff; font: inherit; }
+
+/* ───────────────────────── Таймер урока (timer.js) ───────────────────────── */
+
+/* Сворачивание — через высоту строки сетки: работает с любой высотой карточки. */
+.lesson-timer {
+  display: grid;
+  grid-template-rows: 1fr;
+  margin-bottom: 10px;
+  opacity: 1;
+  transform: none;
+  transition: grid-template-rows .52s var(--ease), opacity .4s ease, margin .52s var(--ease), transform .52s var(--ease);
+}
+.lesson-timer.collapsed { grid-template-rows: 0fr; margin-bottom: 0; opacity: 0; transform: scale(.96) translateY(-6px); }
+.lesson-timer[hidden] { display: none; }
+.lt-inner { min-height: 0; overflow: hidden; }
+.lt-card {
+  position: relative;
+  padding: 12px 14px 12px;
+  border-radius: var(--radius);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--primary) 16%, var(--card)), var(--card));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 28%, transparent);
+  overflow: hidden;
+}
+.lt-card.break { background: linear-gradient(135deg, color-mix(in srgb, var(--green) 18%, var(--card)), var(--card));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--green) 32%, transparent); }
+.lt-head { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text2); }
+.lt-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lt-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--primary); animation: lt-pulse 1.6s ease-in-out infinite; }
+.lt-card.break .lt-dot { background: var(--green); }
+@keyframes lt-pulse { 50% { transform: scale(1.5); opacity: .45; } }
+.lt-main { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-top: 4px; }
+.lt-label { font-size: 15px; color: var(--text); }
+.lt-clock {
+  display: inline-flex;
+  font-size: 30px;
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--primary);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .5px;
+}
+.lt-card.break .lt-clock { color: color-mix(in srgb, var(--green) 70%, var(--text)); }
+.lt-digit { display: inline-block; min-width: .62em; text-align: center; }
+.lt-colon { display: inline-block; padding: 0 1px; animation: lt-blink 1s steps(1) infinite; }
+@keyframes lt-blink { 50% { opacity: .35; } }
+.lt-digit.roll { animation: lt-roll .32s var(--ease); }
+@keyframes lt-roll { 0% { transform: translateY(-55%); opacity: 0; } 100% { transform: none; opacity: 1; } }
+.lt-card.urgent .lt-clock { color: var(--red); animation: lt-throb 1s ease-in-out infinite; }
+@keyframes lt-throb { 50% { transform: scale(1.06); } }
+.lt-bar { height: 5px; margin-top: 8px; border-radius: 5px; background: var(--border); overflow: hidden; }
+.lt-bar span { display: block; height: 100%; border-radius: inherit; background: var(--primary); transition: width 1s linear; }
+.lt-card.break .lt-bar span { background: var(--green); }
+.lt-next { margin-top: 7px; font-size: 13px; color: var(--text2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Время вышло: содержимое уходит, по центру — галочка. */
+.lt-done {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  font-size: 18px; font-weight: 600; color: var(--text);
+  opacity: 0; pointer-events: none;
+  transition: opacity .3s ease;
+}
+.lt-check {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 34px; height: 34px; border-radius: 50%;
+  background: var(--green); color: #fff; font-size: 20px;
+  transform: scale(0);
+}
+.lt-card.done .lt-done { opacity: 1; }
+.lt-card.done .lt-check { animation: lt-check .55s var(--ease) .05s forwards; }
+@keyframes lt-check { 0% { transform: scale(0) rotate(-30deg); } 70% { transform: scale(1.2) rotate(5deg); } 100% { transform: scale(1); } }
+.lt-card.done > :not(.lt-done) { opacity: 0; filter: blur(3px); transition: opacity .3s ease, filter .3s ease; }
+@media (prefers-reduced-motion: reduce) {
+  .lesson-timer, .lt-bar span { transition: none; }
+  .lt-digit.roll, .lt-dot, .lt-colon, .lt-card.urgent .lt-clock { animation: none; }
+}
+
+/* ───────────────────── График среднего на экране предмета ───────────────────── */
+
+.ac-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.ac-delta { font-size: 13px; color: var(--text2); white-space: nowrap; }
+.ac-delta.up { color: var(--g5); }
+.ac-delta.down { color: var(--g2); }
+.ac-wrap { position: relative; margin-top: 6px; }
+.ac-wrap svg { display: block; width: 100%; height: auto; overflow: visible; touch-action: pan-y; }
+.ac-thr { stroke: var(--border); stroke-width: 1; stroke-dasharray: 3 4; }
+.ac-axis { fill: var(--text2); font-size: 10px; font-variant-numeric: tabular-nums; }
+.ac-area { fill: color-mix(in srgb, var(--primary) 12%, transparent); }
+.ac-line { fill: none; stroke: var(--primary); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round;
+  stroke-dasharray: 1; stroke-dashoffset: 1; animation: ac-draw .9s var(--ease) .1s forwards; }
+@keyframes ac-draw { to { stroke-dashoffset: 0; } }
+.ac-dot { stroke: var(--card); stroke-width: 2; transition: r .15s ease; }
+.ac-dot.d5 { fill: var(--g5); } .ac-dot.d4 { fill: var(--g4); } .ac-dot.d3 { fill: var(--g3); }
+.ac-dot.d2, .ac-dot.d1 { fill: var(--g2); }
+.ac-dot.on { r: 6; }
+.ac-hit { fill: transparent; cursor: pointer; }
+.ac-tip {
+  position: absolute; transform: translate(-50%, calc(-100% - 10px));
+  padding: 5px 8px; border-radius: 8px; background: var(--text); color: var(--card);
+  font-size: 12px; line-height: 1.3; text-align: center; white-space: nowrap; pointer-events: none;
+}
+@media (prefers-reduced-motion: reduce) { .ac-line { animation: none; stroke-dashoffset: 0; } }
+.tt-trend { margin-left: 2px; font-size: 11px; font-weight: 700; }
+.tt-trend.up { color: var(--g5); }
+.tt-trend.down { color: var(--g2); }
+
+/* ───────────────────── Свои задачи, проверочные, серии ───────────────────── */
+
+.hw-add {
+  display: block; width: 100%; margin: 0 0 10px; padding: 11px 14px;
+  border: 1.5px dashed var(--border); border-radius: var(--radius);
+  background: transparent; color: var(--primary); font: inherit; font-size: 15px; text-align: left; cursor: pointer;
+}
+.hw-add:active { background: var(--card-2); }
+.hw-tag { display: inline-block; margin-left: 4px; padding: 1px 8px; border-radius: 8px; border: 1px solid;
+  font-size: 12px; font-weight: 500; vertical-align: middle; white-space: nowrap; }
+.hw-tag.own { color: var(--primary); }
+.hw-tag.test, .lc-test { color: var(--red); border-color: var(--red); }
+.note-delete { flex: none; align-self: center; border: 0; background: none; color: var(--text2); font-size: 15px; padding: 4px 8px; cursor: pointer; }
+.lc-test { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border: 1px solid; border-radius: 8px; font-size: 12px; }
+.note-form { display: flex; flex-direction: column; gap: 12px; }
+.note-form textarea { resize: vertical; min-height: 70px; font: inherit; }
+.streaks { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.streak {
+  display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px;
+  border-radius: 999px; background: var(--card); color: var(--text); font-size: 13px;
+  box-shadow: inset 0 0 0 1px var(--border); animation: pop .4s var(--ease) both; cursor: default;
+}
+.streak-icon { font-size: 15px; }
+.day-notes .card-title { margin-bottom: 6px; }
+.day-note { display: flex; align-items: flex-start; gap: 10px; width: 100%; padding: 7px 0; border: 0; background: none;
+  color: var(--text); font: inherit; font-size: 15px; text-align: left; cursor: pointer; }
+.dn-box { flex: none; width: 20px; height: 20px; margin-top: 1px; border-radius: 6px; box-shadow: inset 0 0 0 1.5px var(--border); }
+.day-note.done span:last-child { opacity: .55; text-decoration: line-through; }
+.day-note.done .dn-box { background: var(--g5); box-shadow: none; }
+.day-note.done .dn-box::after { content: '✓'; display: block; color: #fff; font-size: 14px; text-align: center; line-height: 20px; }
+.ai-quick { display: flex; gap: 8px; margin: 10px -12px 0; padding: 0 12px; overflow-x: auto; scrollbar-width: none; }
+.ai-quick::-webkit-scrollbar { display: none; }
+.ai-quick[hidden] { display: none; }
+.ai-quick .chip { flex: none; white-space: nowrap; background: var(--card); font-size: 13px; }
+.reminder-hour { width: auto; margin: 0; padding: 6px 10px; }
+.marks-filter { margin: 6px 0; }
+.export-choices, .family-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
+.family-link { margin-top: 12px; }
+.family-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 0; border-top: 1px solid var(--border); }
+.family-row:first-of-type { border-top: 0; }
+.btn.small { padding: 6px 12px; font-size: 13px; width: auto; }
+.hw-card.own .hw-subject { flex: 1; }

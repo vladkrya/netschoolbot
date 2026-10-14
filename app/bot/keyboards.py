@@ -8,7 +8,7 @@ from aiogram.types import (
     WebAppInfo,
 )
 
-from ..domain.models import TIMEZONES, ApiMode, User, timezone_label
+from ..domain.models import REMINDER_HOURS, TIMEZONES, ApiMode, User, timezone_label
 
 
 def settings_menu(user: User) -> InlineKeyboardMarkup:
@@ -28,12 +28,33 @@ def settings_menu(user: User) -> InlineKeyboardMarkup:
         [toggle("Сводка по понедельникам", user.notifications.weekly_summary, "weekly")],
         [toggle("Вечером — сводка на завтра", user.notifications.evening_summary, "evening")],
         [toggle("Замены и отмены уроков", user.notifications.schedule, "schedule")],
+        [toggle("Напоминать о несделанном д/з", user.notifications.homework_reminder, "reminder")],
+        [toggle("Контрольные — за день-два", user.notifications.test_reminder, "tests")],
+        [toggle("Итоговая оценка под угрозой", user.notifications.grade_risk, "risk")],
+        [toggle("Итоги месяца и четверти", user.notifications.monthly_summary, "monthly")],
+        *(
+            [[toggle("Следить за всеми детьми", user.notifications.all_children, "allkids")]]
+            if len(user.available_students) > 1
+            else []
+        ),
         # Отметки посещаемости есть только в мобильном API.
         *(
             [[toggle("Новые пропуски", user.notifications.absences, "absences")]]
             if user.effective_api_mode is ApiMode.MOBILE
             else []
         ),
+        [
+            InlineKeyboardButton(
+                text=f"⏰ Напоминание в {user.notifications.reminder_hour}:00",
+                callback_data="settings:reminder",
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text=f"🎯 Новые оценки: {marks_filter_label(user.notifications.marks_filter)}",
+                callback_data="settings:marks",
+            )
+        ],
         [
             InlineKeyboardButton(
                 text=f"⏱ Интервал: {user.check_interval // 60} мин", callback_data="settings:interval"
@@ -56,12 +77,71 @@ def settings_menu(user: User) -> InlineKeyboardMarkup:
         rows.append(
             [InlineKeyboardButton(text="👶 Переключить ребёнка", callback_data="settings:child")]
         )
+    rows.append([InlineKeyboardButton(text="👪 Второй родитель", callback_data="family:open")])
     rows.append(
         [InlineKeyboardButton(text=f"🔌 API: {user.effective_api_mode.title}", callback_data="settings:api")]
     )
     rows.append([InlineKeyboardButton(text="🚪 Выйти из школы", callback_data="settings:logout")])
     rows.append([InlineKeyboardButton(text="🗑 Удалить мои данные", callback_data="settings:delete")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def marks_filter_label(values: tuple[int, ...]) -> str:
+    if not values or set(values) >= {2, 3, 4, 5}:
+        return "все"
+    return "только " + ", ".join(str(v) for v in sorted(values))
+
+
+def reminder_choices(user: User) -> InlineKeyboardMarkup:
+    buttons = [
+        InlineKeyboardButton(
+            text=f"{'✅ ' if hour == user.notifications.reminder_hour else ''}{hour}:00",
+            callback_data=f"remind:{hour}",
+        )
+        for hour in REMINDER_HOURS
+    ]
+    rows = [buttons[i : i + 4] for i in range(0, len(buttons), 4)]
+    rows.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="settings:open")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def marks_filter_choices(user: User) -> InlineKeyboardMarkup:
+    chosen = set(user.notifications.marks_filter)
+    row = [
+        InlineKeyboardButton(
+            text=f"{'✅' if not chosen or value in chosen else '⬜'} {value}", callback_data=f"markf:{value}"
+        )
+        for value in (5, 4, 3, 2)
+    ]
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            row,
+            [InlineKeyboardButton(text="Все оценки", callback_data="markf:all")],
+            [InlineKeyboardButton(text="⬅️ Назад", callback_data="settings:open")],
+        ]
+    )
+
+
+def family(followers: list[dict], following: list[tuple[int, str]]) -> InlineKeyboardMarkup:
+    rows = [[InlineKeyboardButton(text="🔗 Пригласить второго родителя", callback_data="family:invite")]]
+    for follower in followers:
+        name = follower["name"] or f"ID {follower['id']}"
+        rows.append([InlineKeyboardButton(text=f"✖️ Убрать: {name}"[:60], callback_data=f"family:drop:{follower['id']}")])
+    for owner_id, label in following:
+        rows.append([InlineKeyboardButton(text=f"🚪 Не следить за: {label}"[:60], callback_data=f"family:leave:{owner_id}")])
+    rows.append([InlineKeyboardButton(text="⬅️ Настройки", callback_data="settings:open")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def export_periods() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="Текущий период", callback_data="export:period"),
+                InlineKeyboardButton(text="Весь год", callback_data="export:year"),
+            ]
+        ]
+    )
 
 
 def interval_choices() -> InlineKeyboardMarkup:
