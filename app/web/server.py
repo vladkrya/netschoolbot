@@ -22,6 +22,7 @@ import aiohttp_jinja2
 import jinja2
 from aiohttp import web
 
+from .. import __version__
 from ..context import AppContext
 from . import account, api, assistant, bugreport, caldav, captcha_proxy, chat, extras, lock
 from .api import BOT, CONTEXT
@@ -274,6 +275,7 @@ async def index(request: web.Request) -> web.Response:
         {
             "base": _base(request),
             "version": STATIC_VERSION,
+            "app_version": __version__,
             "modules": JS_MODULES,
             "boot_modules": BOOT_MODULES,
             "token": token,
@@ -303,7 +305,23 @@ async def attachment_page(request: web.Request) -> web.Response:
     прогресс, понятная ошибка и «Повторить». Файл качает сам скрипт страницы
     с тем же билетом; данных пользователя в странице нет."""
     response = aiohttp_jinja2.render_template(
-        "attachment.html", request, {"name": request.query.get("name", "")[:200]})
+        "attachment.html", request, {
+            "name": request.query.get("name", "")[:200],
+            "waiting": "Скачиваем файл из «Сетевого города»",
+        })
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@page_routes.get("/export/{scope:(period|year)}")
+async def export_page(request: web.Request) -> web.Response:
+    """Оценки в Excel — та же страница ожидания, что у вложений: книга за год
+    собирается до минуты, а потом открывается просмотром или скачивается."""
+    response = aiohttp_jinja2.render_template(
+        "attachment.html", request, {
+            "name": "Оценки за год" if request.match_info["scope"] == "year" else "Оценки за период",
+            "waiting": "Собираем оценки — за год это может занять до минуты",
+        })
     response.headers["Cache-Control"] = "no-store"
     return response
 
@@ -317,6 +335,7 @@ async def demo(request: web.Request) -> web.Response:
         {
             "base": _base(request),
             "version": STATIC_VERSION,
+            "app_version": __version__,
             "modules": JS_MODULES,
             "boot_modules": BOOT_MODULES,
             "token": "",

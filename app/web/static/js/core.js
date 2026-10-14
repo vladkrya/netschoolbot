@@ -364,23 +364,38 @@ export async function loadAttachmentTicket() {
   }
 }
 
+/** Билет есть или его удалось получить — внешний браузер откроет ссылку. */
+export async function ensureAttachmentTicket() {
+  if (!attachmentTicket) await loadAttachmentTicket();
+  return Boolean(attachmentTicket);
+}
+
 /** Ссылка на вложение: браузер качает её сам, заголовок туда не положить. */
 export function attachmentUrl(id, name = '') {
+  // Имя нужно серверу для заголовка: без него файл сохранялся как
+  // «attachment-123» без расширения и не открывался как docx или pdf.
+  const filename = name ? `&name=${encodeURIComponent(name)}` : '';
+  return fileUrl(`attachment/${id}`, filename);
+}
+
+/** Оценки в Excel: та же страница ожидания и тот же билет, что у вложений. */
+export function exportUrl(scope) {
+  return fileUrl(`export/${scope}`, '');
+}
+
+function fileUrl(path, extra) {
   if (demo) return '#';
   const credential = attachmentTicket
     ? `ticket=${encodeURIComponent(attachmentTicket)}`
     : initData
       ? `tgWebAppData=${encodeURIComponent(initData)}`
       : `token=${encodeURIComponent(token)}`;
-  // Имя нужно серверу для заголовка: без него файл сохранялся как
-  // «attachment-123» без расширения и не открывался как docx или pdf.
-  const filename = name ? `&name=${encodeURIComponent(name)}` : '';
   // Страница ожидания, а не сам файл: она показывает загрузку и ошибку,
   // пока перегруженный сервер школы отдаёт вложение.
   const host = attachmentHost();
   // via=pwa: страница вложения подскажет нажать компас «Открыть в Safari».
   const via = host ? '&via=pwa' : '';
-  return `${host}${base}/attachment/${id}?${credential}${filename}${via}`;
+  return `${host}${base}/${path}?${credential}${extra}${via}`;
 }
 
 // В установленном на iPhone приложении (PWA) ссылка на свой домен
@@ -603,7 +618,7 @@ document.addEventListener('click', async event => {
   }
 });
 
-function openExternal(url) {
+export function openExternal(url) {
   const absolute = new URL(url, location.href).href;
   if (initData && tg?.openLink) tg.openLink(absolute, { try_instant_view: false });
   else window.open(absolute, '_blank', 'noopener');

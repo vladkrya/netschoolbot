@@ -452,11 +452,6 @@ export async function openAccountSettings() {
           <div class="account-link-code"></div>
           <button class="btn outline" data-act="link">Привязать Telegram</button>
         </div>`}
-      <div class="card">
-        <div class="card-title">«Сетевой город»</div>
-        <p class="muted">${info.school ? esc(info.school) : 'Вход не выполнен'}</p>
-        <button class="btn outline" data-act="sgo">Войти в «Сетевой город» заново</button>
-      </div>
       ${info.email && !tg?.initData ? '<button class="btn outline danger account-logout" data-act="logout">Выйти на этом устройстве</button>' : ''}`;
     bind(info);
   };
@@ -522,7 +517,6 @@ export async function openAccountSettings() {
         }
       });
     });
-    body.querySelector('[data-act="sgo"]')?.addEventListener('click', () => showSgoLogin(info));
     body.querySelector('[data-act="logout"]')?.addEventListener('click', async () => {
       if (!window.confirm('Выйти на этом устройстве? Войти снова можно по почте и паролю.')) return;
       await post('/api/account/logout', {}).catch(() => {});

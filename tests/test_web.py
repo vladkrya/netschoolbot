@@ -513,6 +513,14 @@ class TestNewFeatures:
         assert data == {"accent": "#a8434f", "theme": "dark", "weights": [1, 2, 1.5]}
         assert (await (await client.get(url, params={"token": token})).json())["data"] == data
 
+    async def test_saved_accents(self, client, token):
+        url = f"{BASE}/api/prefs"
+        response = await client.post(url, params={"token": token}, json={"accents": ["#123ABC", "#123abc", "#00ff00"]})
+        assert (await response.json())["data"]["accents"] == ["#123abc", "#00ff00"]
+        for bad in (["red"], "#123abc", ["#000000"] * 9):
+            response = await client.post(url, params={"token": token}, json={"accents": bad})
+            assert response.status == 400, bad
+
     async def test_design_pref_is_validated(self, client, token):
         url = f"{BASE}/api/prefs"
         response = await client.post(url, params={"token": token}, json={"design": "new"})
@@ -1029,13 +1037,20 @@ class TestAttachmentWaitPage:
         assert "Мозг &lt;b&gt;.pptx" in text and "<b>.pptx" not in text
         assert "/api/attachment/$1" in text
 
+    async def test_export_page_uses_same_wait_page(self, client):
+        response = await client.get(f"{BASE}/export/year", params={"ticket": "x"})
+        assert response.status == 200
+        text = await response.text()
+        assert "Оценки за год" in text and "/api/export/$1.xlsx" in text
+        assert (await client.get(f"{BASE}/export/forever")).status == 404
+
     async def test_page_accepts_only_numeric_id(self, client):
         assert (await client.get(f"{BASE}/attachment/abc")).status == 404
 
     async def test_link_leads_to_wait_page(self):
         from pathlib import Path
         core = Path("app/web/static/js/core.js").read_text(encoding="utf-8")
-        assert "${base}/attachment/${id}?" in core
+        assert "fileUrl(`attachment/${id}`" in core and "${base}/${path}?" in core
 
     async def test_slow_school_server_gives_504(self, client, users, app_context, monkeypatch):
         import app.web.api as api_module
