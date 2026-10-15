@@ -565,17 +565,32 @@ class DiaryService:
                 for group in await client.address_book():
                     walk(group)
                 return list(result.values())
-            items = await client.mail_recipients()
-            return [
-                {
-                    "id": str(getattr(item, "id", "")),
-                    "name": str(getattr(item, "name", "") or ""),
-                    "organization": str(getattr(item, "organization_name", "") or ""),
-                    "category": str(getattr(item, "category", "") or "Другие"),
-                }
-                for item in items
-                if getattr(item, "id", "")
-            ]
+            # Веб-почта отдаёт адресную книгу по группам. Раньше бралась одна
+            # группа по умолчанию — администрация, и веб-пользователи не
+            # видели учителей. Какие группы доступны, сервер говорит сам.
+            result: dict[str, dict[str, str]] = {}
+            failure: Exception | None = None
+            for group, title in await _web_recipient_groups(client):
+                try:
+                    items = await client.mail_recipients(group)
+                except Exception as exc:
+                    logger.debug("Группа адресатов %s (%s) не получена: %s", group, title, exc)
+                    failure = exc
+                    continue
+                # Шторка получателей знает только свои пять категорий.
+                category = _WEB_RECIPIENT_CATEGORIES.get(title.strip().lower(), "Другие")
+                for item in items:
+                    identity = str(getattr(item, "id", "") or "")
+                    if identity:
+                        result.setdefault(identity, {
+                            "id": identity,
+                            "name": str(getattr(item, "name", "") or ""),
+                            "organization": str(getattr(item, "organization_name", "") or ""),
+                            "category": category,
+                        })
+            if not result and failure is not None:
+                raise failure
+            return list(result.values())
 
         return await self._with_session(user, call)
 
@@ -753,6 +768,41 @@ async def _collect_weeks(
         current += dt.timedelta(days=7)
 
     return days
+
+
+# Группы веб-адресной книги, если сервер не отдал свой список: как в
+# netschoolpy.RecipientGroup.
+WEB_RECIPIENT_GROUPS: tuple[tuple[int, str], ...] = (
+    (1, "Администраторы"), (2, "Завучи"), (3, "Классные руководители"), (4, "Учителя"), (7, "Одноклассники"),
+)
+# Названия групп сервера -> категории шторки получателей (как у мобильного API).
+_WEB_RECIPIENT_CATEGORIES = {
+    "администраторы": "Администрация", "администрация": "Администрация", "завучи": "Администрация",
+    "классные руководители": "Учителя", "учителя": "Учителя",
+    "родители": "Родители", "ученики": "Ученики", "одноклассники": "Ученики",
+}
+
+
+async def _web_recipient_groups(client: Any) -> list[tuple[int, str]]:
+    """Группы адресной книги, которые сайт показывает этому пользователю.
+
+    Список — в `mail/recipients/filterpanel` (фильтр «Группа пользователей»).
+    Нет ответа или фильтра — берём группы по умолчанию.
+    """
+    try:
+        response = await client._authed_get(
+            "mail/recipients/filterpanel",
+            params={"userId": client._student_id, "organizationId": client._school_id, "funcType": 2},
+        )
+        for source in response.json().get("filterSources") or []:
+            if source.get("filterId") == "group":
+                groups = [(int(item["value"]), str(item.get("title") or ""))
+                          for item in source.get("items") or [] if str(item.get("value", "")).isdigit()]
+                if groups:
+                    return groups
+    except Exception as exc:
+        logger.debug("Группы адресной книги не получены: %s", exc)
+    return list(WEB_RECIPIENT_GROUPS)
 
 
 async def _collect_weeks_weighted(

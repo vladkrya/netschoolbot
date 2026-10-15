@@ -394,3 +394,69 @@ def test_frozen_netschoolpy_models_get_weight():
     result = _with_weights(SimpleNamespace(day=dt.date(2026, 10, 15), lessons=[lesson]), {5: 3})
     assert result.lessons[0].assignments[0].weight == 3
     assert assignment.weight == 0
+
+
+class TestWebRecipients:
+    """Веб-почта отдаёт адресную книгу по группам; раньше бралась только администрация."""
+
+    def filterpanel(self, groups):
+        items = [{"title": title, "value": str(value)} for value, title in groups]
+        return {"filterPanel": {"filters": []},
+                "filterSources": [{"filterId": "org", "items": [{"title": "Школа", "value": "2"}]},
+                                  {"filterId": "group", "items": items}]}
+
+    async def setup(self, service, user, groups, people, failing=()):
+        async with service._pool.acquire(user) as client:
+            client._student_id, client._school_id = 450, 2
+            asked = []
+
+            async def authed_get(path, params=None):
+                assert path == "mail/recipients/filterpanel"
+                return SimpleNamespace(status_code=200, json=lambda: self.filterpanel(groups))
+
+            async def mail_recipients(group):
+                asked.append(group)
+                if group in failing:
+                    raise Exception("Server error '500 Internal Server Error'")
+                return [SimpleNamespace(id=i, name=n, organization_name="Школа") for i, n in people.get(group, [])]
+
+            original = client._authed_get
+            client._authed_get = lambda path, params=None: (
+                authed_get(path, params) if path.startswith("mail/") else original(path))
+            client.mail_recipients = mail_recipients
+        return asked
+
+    async def test_all_server_groups_are_collected(self, service, users):
+        user = make_user()
+        await users.save(user)
+        asked = await self.setup(
+            service, user,
+            [(1, "Администраторы"), (3, "Классные руководители"), (4, "Учителя"), (6, "Родители")],
+            {1: [("a", "Директор")], 3: [("t", "Классный")], 4: [("t", "Классный"), ("u", "Учитель")],
+             6: [("p", "Родитель")]})
+        recipients = await service.fetch_recipients(user)
+        assert asked == [1, 3, 4, 6]
+        assert {r["id"]: r["category"] for r in recipients} == {
+            "a": "Администрация", "t": "Учителя", "u": "Учителя", "p": "Родители"}
+
+    async def test_failed_group_is_skipped(self, service, users):
+        user = make_user()
+        await users.save(user)
+        await self.setup(service, user, [(1, "Администраторы"), (4, "Учителя")],
+                         {1: [("a", "Директор")]}, failing=(4,))
+        assert [r["id"] for r in await service.fetch_recipients(user)] == ["a"]
+
+    async def test_unknown_group_goes_to_other(self, service, users):
+        user = make_user()
+        await users.save(user)
+        await self.setup(service, user, [(9, "Кружки")], {9: [("k", "Руководитель")]})
+        assert (await service.fetch_recipients(user))[0]["category"] == "Другие"
+
+
+async def test_default_groups_without_filterpanel():
+    from app.netschool.service import WEB_RECIPIENT_GROUPS, _web_recipient_groups
+
+    async def broken(path, params=None):
+        raise Exception("HTTP 404")
+    client = SimpleNamespace(_student_id=1, _school_id=2, _authed_get=broken)
+    assert await _web_recipient_groups(client) == list(WEB_RECIPIENT_GROUPS)
