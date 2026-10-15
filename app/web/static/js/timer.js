@@ -7,7 +7,7 @@
 // перерисовывается по своему таймеру, и анимация не должна обрываться.
 'use strict';
 
-import { esc, lessonNo } from './core.js';
+import { esc, lessonNo, stillMotion } from './core.js';
 import { notify } from './haptics.js';
 
 // До начала урока отсчёт показывается не раньше чем за столько минут — и
@@ -155,29 +155,40 @@ function hideNow(box) {
   shownKey = '';
 }
 
-async function collapse(box, { finished }) {
-  busy = true;
-  try {
-    if (finished) {
-      const card = box.querySelector('.lt-card');
-      // «00:00» успевает постоять, и только потом — «Урок окончен»: иначе
-      // ноль мелькал на долю секунды и карточка менялась рывком.
-      paintClock(box, clockText(0));
-      const bar = box.querySelector('.lt-bar span');
-      if (bar) bar.style.width = '100%';
-      await wait(ZERO_HOLD_MS);
-      card?.classList.add('done');
-      notify('success');
-      await wait(DONE_HOLD_MS);
-    }
-    box.classList.add('collapsed');
-    await wait(COLLAPSE_MS);
-    box.hidden = true;
-    box.innerHTML = '';
-    shownKey = '';
-  } finally {
-    busy = false;
-  }
+/** «00:00» — постоять, затем «Урок окончен» и подержать. */
+async function celebrate(box) {
+  const card = box.querySelector('.lt-card');
+  // «00:00» успевает постоять, и только потом — «Урок окончен»: иначе
+  // ноль мелькал на долю секунды и карточка менялась рывком.
+  paintClock(box, clockText(0));
+  const bar = box.querySelector('.lt-bar span');
+  if (bar) bar.style.width = '100%';
+  await wait(ZERO_HOLD_MS);
+  card?.classList.add('done');
+  notify('success');
+  await wait(DONE_HOLD_MS);
+}
+
+async function collapse(box) {
+  box.classList.add('collapsed');
+  await wait(COLLAPSE_MS);
+  box.hidden = true;
+  box.innerHTML = '';
+  shownKey = '';
+}
+
+/** Карточка перетекает в следующий отсчёт на месте — без сворачивания и
+ *  раскрытия: иначе уроки под ней подпрыгивали вверх и съезжали обратно. */
+async function morph(box, phase) {
+  const fade = (el, from, to, ms) => (el?.animate && !stillMotion()
+    ? el.animate([{ opacity: from }, { opacity: to }], { duration: ms, easing: 'ease', fill: 'forwards' }).finished
+    : Promise.resolve());
+  await fade(box.querySelector('.lt-inner'), 1, 0, 260);
+  box.innerHTML = cardHtml(phase);
+  lastDigits = '';
+  paint(box, phase);
+  shownKey = phase.key;
+  await fade(box.querySelector('.lt-inner'), 0, 1, 320);
 }
 
 async function tick() {
@@ -197,11 +208,22 @@ async function tick() {
       hideNow(box);
       if (!active) return;
     } else {
-      // Отсчёт дошёл до нуля — праздничное сворачивание, пауза — и следующий.
-      await collapse(box, { finished: true });
       busy = true;
-      await wait(NEXT_PAUSE_MS);
-      busy = false;
+      try {
+        // Отсчёт дошёл до нуля: «Урок окончен», затем — следующий отсчёт
+        // на том же месте, а если дальше ничего — карточка сворачивается.
+        await celebrate(box);
+        const next = active ? timerPhase(lessons) : null;
+        if (next) {
+          await wait(NEXT_PAUSE_MS);
+          await morph(box, next);
+          return;
+        }
+        await collapse(box);
+      } finally {
+        busy = false;
+      }
+      return;
     }
   }
   const fresh = active ? timerPhase(lessons) : null;
