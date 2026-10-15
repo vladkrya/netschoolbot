@@ -105,7 +105,12 @@
       </div>
     </div>
     <!-- Неделя полосой: только в новом дизайне (new.css). -->
-    <div class="week-strip" id="weekStrip"></div>
+    <!-- Стрелки по бокам листают недели, как и свайп по самой полосе. -->
+    <div class="week-row">
+      <button class="week-arrow" id="weekPrev" aria-label="Предыдущая неделя" data-icon="left"></button>
+      <div class="week-clip"><div class="week-strip" id="weekStrip"></div></div>
+      <button class="week-arrow" id="weekNext" aria-label="Следующая неделя" data-icon="right"></button>
+    </div>
   </div>
 
   <div class="subbar" data-for="schedule" hidden>
