@@ -190,7 +190,7 @@ class TestHomework:
         # В дневнике вторник был пустым, а среда — с домашкой: фильтр
         # актуальности для списка «Д/З» срезал задания и у прошлых уроков.
         old = self.TODAY - dt.timedelta(days=2)
-        raw = day([lesson([assignment(content="Упр. 7", deadline=old)])], date=old)
+        raw = day([lesson([assignment(content="Упр. 7", deadline=old, mark=None)])], date=old)
         (item,) = lessons_from_day(raw, today=self.TODAY)
         assert [h.text for h in item.homework] == ["Упр. 7"]
         assert homework_from_day(raw, today=self.TODAY) == []
@@ -221,23 +221,23 @@ class TestHomework:
     def test_attachments_are_collected(self):
         att = SimpleNamespace(id=7, name="задание.pdf")
         records = homework_from_day(
-            day([lesson([assignment(content="", attachments=[att])])]), today=self.TODAY
+            day([lesson([assignment(content="", attachments=[att], mark=None)])]), today=self.TODAY
         )
         assert records[0].attachments[0].name == "задание.pdf"
 
     def test_attachment_without_name_gets_placeholder(self):
         att = SimpleNamespace(id=7, name=None)
         records = homework_from_day(
-            day([lesson([assignment(content="", attachments=[att])])]), today=self.TODAY
+            day([lesson([assignment(content="", attachments=[att], mark=None)])]), today=self.TODAY
         )
         assert records[0].attachments[0].name == "file_7"
 
     def test_identity_changes_with_attachments(self):
         plain = homework_from_day(
-            day([lesson([assignment(content="Упр. 1")])]), today=self.TODAY
+            day([lesson([assignment(content="Упр. 1", mark=None)])]), today=self.TODAY
         )[0]
         with_file = homework_from_day(
-            day([lesson([assignment(content="Упр. 1", attachments=[SimpleNamespace(id=1, name="a")])])]),
+            day([lesson([assignment(content="Упр. 1", mark=None, attachments=[SimpleNamespace(id=1, name="a")])])]),
             today=self.TODAY,
         )[0]
         # Появившийся файл — повод сообщить заново.
@@ -482,7 +482,9 @@ class TestHomeworkComment:
             "description": "https://edu.ismart.org/join/x\nвыполнить диагностику",
         }
         with_comment = mobile._assignment_from_mobile(raw, [])
-        without = mobile._assignment_from_mobile({**raw, "assignmentId": 2, "description": None}, [])
+        without = mobile._assignment_from_mobile(
+            {**raw, "assignmentId": 2, "assignmentName": "№273", "description": None}, []
+        )
         lesson = SimpleNamespace(subject="Алгебра", number=1, topic="", assignments=[with_comment, without])
         day = SimpleNamespace(day=dt.date(2026, 10, 12), lessons=[lesson])
         items = homework_from_day(day, today=dt.date(2026, 10, 12))
@@ -494,7 +496,9 @@ class TestHomeworkComment:
     def test_web_assignment_comment_is_unknown(self):
         from app.netschool.mapping import homework_from_day
 
-        task = SimpleNamespace(id=5, kind="ДЗ", content="Упр. 1", weight=1, deadline=None, attachments=[])
+        task = SimpleNamespace(
+            id=5, kind="ДЗ", content="Упр. 1", weight=1, deadline=None, attachments=[], mark=None
+        )
         day = SimpleNamespace(
             day=dt.date(2026, 10, 12),
             lessons=[SimpleNamespace(subject="Алгебра", number=1, topic="", assignments=[task])],
@@ -516,3 +520,40 @@ class TestNothingToDo:
         assert "✅ Физкультура" in homework_list([none, real], "Д/З")
         buttons = homework_done([none, real], set()).inline_keyboard
         assert [row[0].text for row in buttons] == ["⬜ Алгебра · 12.10"]
+
+    def test_no_task_wordings(self):
+        from app.domain.records import HomeworkRecord
+
+        for text in ("Нет.", "нет задания", "Задания нет!", "Д/З нет", "без задания"):
+            assert HomeworkRecord("Русский язык", dt.date(2026, 10, 13), "ДЗ", text).nothing_to_do, text
+        for text in ("Нет ошибок в упр. 5", "Выучить «нет»-слова"):
+            assert not HomeworkRecord("Русский язык", dt.date(2026, 10, 13), "ДЗ", text).nothing_to_do, text
+
+
+class TestClasswork:
+    TODAY = dt.date(2026, 10, 15)
+
+    def test_graded_classwork_is_not_homework(self):
+        # «Диктант» с оценкой — работа на уроке, её видно оценкой; заданием
+        # она висела невыполненной.
+        raw = day([lesson([
+            assignment(kind="Диктант", content="Контрольный диктант.", mark=4, weight=3),
+            assignment(kind="Диктант", content="Контрольный диктант.", mark=4, weight=3),
+            assignment(kind="Домашнее задание", content="Упр. 12", mark=None),
+        ])], date=self.TODAY)
+        (item,) = lessons_from_day(raw, today=self.TODAY)
+        assert [h.text for h in item.homework] == ["Упр. 12"]
+        assert len(item.marks) == 2
+
+    def test_ungraded_classwork_is_kept_once_and_flagged(self):
+        # Изложение на две оценки школа заводит двумя одинаковыми работами.
+        raw = day([lesson([
+            assignment(kind="Изложение", content="Сжатое изложение.", mark=None, weight=2),
+            assignment(kind="Изложение", content="Сжатое изложение.", mark=None, weight=2),
+            assignment(kind="Домашнее задание", content="Нет.", mark=None),
+        ])], date=self.TODAY)
+        records = homework_from_day(raw, today=self.TODAY)
+        assert [(r.text, r.classwork, r.nothing_to_do) for r in records] == [
+            ("Сжатое изложение.", True, False),
+            ("Нет.", False, True),
+        ]

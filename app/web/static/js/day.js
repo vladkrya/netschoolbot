@@ -1,7 +1,7 @@
 // «День»: уроки выбранного дня, как на главном экране официального приложения.
 //
 // Заголовок «Вчера / Сегодня / Завтра» со стрелками, календарь по нажатию на
-// дату, листание дней свайпом. Карточка урока: номер и предмет, оценка в
+// дату, листание дней свайпом, недель — свайпом по полосе недели. Карточка урока: номер и предмет, оценка в
 // рамке, бейдж «Д/З» (сразу открывает задание), время и статус урока.
 'use strict';
 
@@ -177,7 +177,7 @@ function renderWeekStrip() {
 function daySummary(lessons) {
   const first = lessons.find((lesson) => lesson.start)?.start;
   const last = [...lessons].reverse().find((lesson) => lesson.end)?.end;
-  const homework = lessons.filter((lesson) => lesson.homework.length).length;
+  const homework = lessons.filter((lesson) => lesson.homework.some((item) => !item.classwork)).length;
   const marks = lessons.flatMap((lesson) => realMarks(lesson.marks)).map((m) => markBox(m.mark)).join('');
   const parts = [`${lessons.length} ${plural(lessons.length, 'урок', 'урока', 'уроков')}`];
   if (first && last) parts.push(`${first}–${last}`);
@@ -471,6 +471,74 @@ function bindSwipe() {
   }, { passive: true });
 }
 
+/** Полоса недели листается неделями, как в календаре iPhone: ведёшь пальцем
+ *  по числам — полоса едет за ним; отпустил достаточно далеко или резко —
+ *  открывается тот же день недели соседней недели. */
+function bindWeekSwipe() {
+  const strip = $('weekStrip');
+  let gesture = null;
+  const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+  strip.addEventListener('touchstart', (event) => {
+    if (event.touches.length !== 1) return;
+    const touch = event.touches[0];
+    // От самого края — жест «назад», если есть куда.
+    if (touch.clientX <= EDGE_PX && canGoBack()) return;
+    strip.getAnimations().forEach((animation) => animation.cancel());
+    gesture = { x: touch.clientX, y: touch.clientY, t: performance.now(), dx: 0, horizontal: null };
+  }, { passive: true });
+  strip.addEventListener('touchmove', (event) => {
+    if (!gesture) return;
+    const touch = event.touches[0];
+    const dx = touch.clientX - gesture.x;
+    const dy = touch.clientY - gesture.y;
+    if (gesture.horizontal === null) {
+      if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+      gesture.horizontal = Math.abs(dx) > Math.abs(dy);
+    }
+    if (!gesture.horizontal) return;
+    if (event.cancelable) event.preventDefault();
+    gesture.dx = dx;
+    strip.style.transition = 'none';
+    strip.style.transform = `translateX(${dx}px)`;
+  }, { passive: false });
+  const finish = () => {
+    if (!gesture) return;
+    const { dx, t, horizontal } = gesture;
+    gesture = null;
+    if (!horizontal) return;
+    const width = strip.offsetWidth || 1;
+    const fast = Math.abs(dx) > 24 && Math.abs(dx) / (performance.now() - t) > 0.4;
+    strip.style.transform = '';
+    strip.style.transition = '';
+    if (Math.abs(dx) < width / 4 && !fast) {
+      // Не дотянул — полоса возвращается на место.
+      if (!reduced()) strip.animate([{ transform: `translateX(${dx}px)` }, { transform: 'none' }], { duration: 220, easing: 'ease-out' });
+      return;
+    }
+    const step = dx < 0 ? 1 : -1;
+    select();
+    // Сначала полоса досылается за край, потом новая неделя въезжает с другой стороны.
+    const out = reduced() ? null : strip.animate(
+      [{ transform: `translateX(${dx}px)` }, { transform: `translateX(${-step * width}px)`, opacity: 0 }],
+      { duration: 140, easing: 'ease-in' });
+    const go = () => {
+      slideTo(addDays(state.date, step * 7), true);
+      if (!reduced()) {
+        strip.animate([{ transform: `translateX(${step * width * 0.6}px)`, opacity: 0 }, { transform: 'none', opacity: 1 }],
+          { duration: 220, easing: 'cubic-bezier(.2,.8,.3,1)' });
+      }
+    };
+    if (out) out.finished.then(go, go);
+    else go();
+  };
+  strip.addEventListener('touchend', finish, { passive: true });
+  strip.addEventListener('touchcancel', () => {
+    gesture = null;
+    strip.style.transform = '';
+    strip.style.transition = '';
+  }, { passive: true });
+}
+
 export function initDay() {
   setInterval(() => { if (state.tab === 'day' && dayData(state.date)) renderDay(true); }, 30000);
   $('dayPrev').addEventListener('click', () => shiftDay(-1));
@@ -485,4 +553,5 @@ export function initDay() {
     if (button && button.dataset.weekDay !== state.date) slideTo(button.dataset.weekDay);
   });
   bindSwipe();
+  bindWeekSwipe();
 }

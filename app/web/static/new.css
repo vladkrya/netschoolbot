@@ -441,7 +441,11 @@
   display: flex;
   gap: 4px;
   margin: -2px 12px 10px;
+  /* Горизонтальный свайп по числам листает недели (day.js), вертикальный — прокрутка. */
+  touch-action: pan-y;
+  will-change: transform;
 }
+:root[data-design="new"] .subbar[data-for="day"] { overflow-x: clip; }
 :root[data-design="new"] .week-day {
   flex: 1;
   min-width: 0;

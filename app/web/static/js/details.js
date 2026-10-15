@@ -4,7 +4,7 @@
 
 import {
   absenceText, api, attachmentsHtml, banner, esc, escRich, forDate, fullDate, isAbsence,
-  markClass, refuseReadOnly, state,
+  isoToday, markClass, refuseReadOnly, state,
 } from './core.js';
 import { notify, tap } from './haptics.js';
 import { pushScreen } from './screens.js';
@@ -25,9 +25,20 @@ export async function loadDone() {
   }
 }
 
-/** Выполнено: отмечено человеком или учитель написал «Не предусмотрено». */
+/** Отмечать нечего: учитель написал «Не предусмотрено» («Нет», «нет
+ *  задания») или это работа на уроке, который уже прошёл. */
+export function isAutoDone(item) {
+  return Boolean(item.auto_done) || Boolean(item.classwork && item.date && item.date < isoToday());
+}
+
+/** Выполнено: отмечено человеком или отмечать нечего (isAutoDone). */
 export function isDoneItem(item, done = state.hwDone || new Set()) {
-  return Boolean(item.auto_done) || done.has(item.key);
+  return isAutoDone(item) || done.has(item.key);
+}
+
+/** Заголовок задания: у работы на уроке — её вид («Диктант»). */
+export function homeworkKind(item) {
+  return item.classwork ? (item.type || 'Работа на уроке') : 'Домашнее задание';
 }
 
 /** Отметить и сохранить. apply(value) рисует состояние — сразу, не дожидаясь
@@ -57,6 +68,7 @@ export async function saveDone(item, next, apply, source = '') {
 /** Кнопка «выполнено» под заданием на экранах урока и задания. */
 function doneToggle(item, index) {
   if (item.auto_done) return '<div class="hw-done-toggle on auto">✓ Не предусмотрено — отмечено само</div>';
+  if (isAutoDone(item)) return '<div class="hw-done-toggle on auto">✓ Работа на уроке — отмечено само</div>';
   if (!item.key) return '';
   return `<button class="hw-done-toggle" data-done-toggle="${index}" aria-pressed="false">Отметить выполненным</button>`;
 }
@@ -165,7 +177,7 @@ export function openLesson(lesson, iso) {
       <button class="task-block task-hw" data-hw="${index}">
         <div class="task-head">
           <span class="task-icon">${ICONS.homework}</span>
-          <span class="task-kind">Домашнее задание</span>
+          <span class="task-kind">${esc(homeworkKind(item))}</span>
           ${item.attachments?.length ? `<span class="clip">${ICONS.clip}</span>` : ''}
         </div>
         <span class="task-go">Перейти ›</span>
@@ -227,7 +239,7 @@ function homeworkBlock(item, index) {
   return `<div class="task-block task-hw hw-inline">
       <div class="task-head">
         <span class="task-icon">${ICONS.homework}</span>
-        <span class="task-kind">Домашнее задание</span>
+        <span class="task-kind">${esc(homeworkKind(item))}</span>
         ${Number(item.weight) > 1 ? `<span class="hw-weight">вес ${esc(item.weight)}</span>` : ''}
       </div>
       <div class="detail-text">${escRich(item.text) || '<span class="muted">—Не указано—</span>'}</div>
@@ -297,7 +309,7 @@ export function homeworkTimes(item, format = compactTime) {
 
 export function openHomework(item, topic = '') {
   topic = topic || item.topic || '';
-  const body = pushScreen('Домашнее задание', forDate(item.date));
+  const body = pushScreen(homeworkKind(item), forDate(item.date));
   const timestamps = homeworkTimes(item);
   body.innerHTML = `
     <div class="detail">

@@ -111,8 +111,21 @@ class MarkRecord:
         return mark_to_int(self.mark)
 
 
-# Тексты задания, которые означают «ничего не задано».
-NOTHING_TO_DO = frozenset({"не предусмотрено", "не предусмотрена", "не задано", "не задана"})
+# Тексты задания, которые означают «ничего не задано». Сравниваются после
+# `_plain_text`: без регистра, «ё», знаков препинания и лишних пробелов.
+NOTHING_TO_DO = frozenset({
+    "не предусмотрено", "не предусмотрена", "не задано", "не задана",
+    "нет", "нет задания", "задания нет", "задание не задано", "без задания",
+    "нет дз", "дз нет", "без дз", "нет домашнего задания", "домашнего задания нет",
+    "без домашнего задания", "домашнее задание не задано", "дз не задано",
+    "отсутствует", "задание отсутствует", "не задавалось", "ничего не задано",
+})
+
+
+def _plain_text(text: str) -> str:
+    """Текст задания для сравнения: «Нет задания!» → «нет задания»."""
+    text = text.lower().replace("ё", "е").replace("д/з", "дз")
+    return " ".join(re.sub(r"[^\w\s]", " ", text).split())
 
 
 @dataclass(frozen=True, slots=True)
@@ -137,6 +150,9 @@ class HomeworkRecord:
     # Комментарий учителя, если его отдал сам дневник (мобильное API);
     # None — неизвестно (веб-API), тогда экран задания спросит карточку.
     comment: str | None = None
+    # Работа на уроке («Диктант», «Изложение»), а не домашнее задание: тип
+    # задания не «Домашнее задание». В ключ не входит.
+    classwork: bool = False
 
     @property
     def identity(self) -> str:
@@ -157,8 +173,7 @@ class HomeworkRecord:
     def nothing_to_do(self) -> bool:
         """Учитель отметил, что задания нет («Не предусмотрено»): считаем
         выполненным сразу, отмечать вручную нечего."""
-        text = self.text.strip().rstrip(".!").strip().lower().replace("ё", "е")
-        return text in NOTHING_TO_DO and not self.attachments
+        return _plain_text(self.text) in NOTHING_TO_DO and not self.attachments
 
     @property
     def key(self) -> str:
