@@ -562,6 +562,8 @@ async function start() {
       applyDesign();
       renderNav();
       window.dispatchEvent(new CustomEvent('netschool:design'));
+      // Правки расписания могли прийти с другого устройства.
+      window.dispatchEvent(new CustomEvent('netschool:edits'));
     }
     // Флаг «видел» уже пришёл с сервера — окошко не повторится на другом устройстве.
     dropInstallHints();

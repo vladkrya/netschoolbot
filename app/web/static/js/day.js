@@ -20,16 +20,31 @@ import { select, tap } from './haptics.js';
 import { bindInstallCard, installCardHtml } from './install.js';
 import { updateTimer } from './timer.js';
 import { isTestWork, loadNotes, setNoteDone } from './notes.js';
+import { applyEdits, bindHidden, hiddenHtml, openAddLesson } from './edits.js';
 
 /** Загруженные дни по ISO-дате и недели, которые уже спрашивали. */
 const days = new Map();
+/** Те же дни, как их отдал дневник, — без своих правок (edits.js). */
+const schoolDays = new Map();
 const loadedWeeks = new Set();
 const pending = new Map();
 
 // Ответ фоновой сверки мог прийти до загрузки этого модуля или после неё.
 window.addEventListener('netschool:diaryfresh', event => {
-  for (const day of event.detail.data.days || []) days.set(day.date, day);
+  for (const day of event.detail.data.days || []) keepDay(day);
   if (state.date && state.tab === 'day') renderDay();
+});
+
+function keepDay(day) {
+  schoolDays.set(day.date, day);
+  days.set(day.date, applyEdits(day));
+}
+
+// Правки расписания поменялись (здесь или пришли с другого устройства).
+window.addEventListener('netschool:edits', () => {
+  for (const day of schoolDays.values()) days.set(day.date, applyEdits(day));
+  if (state.date && state.tab === 'day') renderDay();
+  window.dispatchEvent(new CustomEvent('netschool:daysedited'));
 });
 
 export function dayData(iso) {
@@ -43,7 +58,7 @@ export async function ensureWeek(iso, force = false) {
   if (pending.has(offset)) return pending.get(offset);
 
   const keep = ({ data }) => {
-    for (const day of data.days || []) days.set(day.date, day);
+    for (const day of data.days || []) keepDay(day);
   };
   const initial = !force && offset === 0 ? state.initialDiary : null;
   if (initial) state.initialDiary = null;
@@ -75,7 +90,7 @@ export async function prefetchAround() {
     if (weeks.every((offset) => loadedWeeks.has(offset))) continue;
     try {
       const { data } = await api(`/api/diary?week=${center}`);
-      for (const day of data.days || []) days.set(day.date, day);
+      for (const day of data.days || []) keepDay(day);
       weeks.forEach((offset) => loadedWeeks.add(offset));
     } catch {
       /* не вышло — неделя загрузится, когда до неё долистают */
@@ -228,21 +243,24 @@ function renderDay(quiet = false) {
   if (!lessons.length) {
     renderedKey = '';
     container.innerHTML = installCardHtml()
-      + `<div class="empty big">${weekdayIndex(state.date) >= 5 ? 'Выходной' : 'Уроков нет'}</div>`;
+      + `<div class="empty big">${weekdayIndex(state.date) >= 5 ? 'Выходной' : 'Уроков нет'}</div>`
+      + hiddenHtml(day) + addLessonButton();
     bindInstallCard(container);
+    bindDayEdits(container, day);
     return;
   }
 
   const progress = activeProgress(lessons);
   const notes = (state.notes || []).filter((note) => note.date === state.date);
-  const key = `${state.date}|${progress?.index}|${progress?.label}|${state.hwDone?.size ?? '-'}|${notes.map((n) => `${n.id}${n.done}`).join()}`;
+  const key = `${state.date}|${progress?.index}|${progress?.label}|${state.hwDone?.size ?? '-'}|${notes.map((n) => `${n.id}${n.done}`).join()}|${editsKey(day)}`;
   if (quiet && key === renderedKey && container.children.length) return;
   renderedKey = key;
   container.classList.toggle('quiet', quiet);
   container.innerHTML = installCardHtml() + daySummary(lessons)
     + lessons.map((lesson, index) => lessonCard(lesson, index, progress?.index === index ? progress : null)).join('')
-    + notesBlock(notes);
+    + notesBlock(notes) + hiddenHtml(day) + addLessonButton();
   bindInstallCard(container);
+  bindDayEdits(container, day);
   container.querySelectorAll('[data-note]').forEach((row) => row.addEventListener('click', async () => {
     const note = notes[Number(row.dataset.note)];
     const next = !note.done;
@@ -261,6 +279,30 @@ function renderDay(quiet = false) {
       openLesson(lesson, state.date);
     });
   });
+}
+
+/** Правки дня меняют разметку — тихая перерисовка не должна их пропустить. */
+function editsKey(day) {
+  return day.lessons.map((lesson) => `${lesson.subject}@${lesson.time}`).join() + (day.hidden?.length || 0);
+}
+
+function addLessonButton() {
+  return '<button class="btn outline add-lesson" data-add-lesson>+ Добавить урок</button>';
+}
+
+/** Предметы недели — подсказки в шторке «Добавить урок». */
+function knownSubjects() {
+  const monday = mondayOf(state.date);
+  const names = new Set();
+  for (let index = 0; index < 7; index += 1) {
+    for (const lesson of schoolDays.get(addDays(monday, index))?.lessons || []) names.add(lesson.subject);
+  }
+  return [...names].sort((a, b) => a.localeCompare(b, 'ru'));
+}
+
+function bindDayEdits(container, day) {
+  if (day) bindHidden(container, day);
+  container.querySelector('[data-add-lesson]')?.addEventListener('click', () => openAddLesson(state.date, knownSubjects()));
 }
 
 function activeProgress(lessons, now = new Date()) {
@@ -317,7 +359,11 @@ function lessonCard(lesson, index, progress) {
         <span class="lc-subject">${esc(lesson.subject)}</span>
         <span class="lc-marks">${marks}</span>
       </div>
-      ${lesson.is_elective ? '<div class="lc-badges"><span class="elective-badge">Факультатив</span></div>' : ''}
+      ${lesson.is_elective || lesson.addedBy || lesson.editedBy ? `<div class="lc-badges">
+        ${lesson.is_elective ? '<span class="elective-badge">Факультатив</span>' : ''}
+        ${lesson.addedBy ? '<span class="elective-badge edit-badge">Свой урок</span>' : ''}
+        ${lesson.editedBy ? '<span class="elective-badge edit-badge">Своё время</span>' : ''}
+      </div>` : ''}
       ${test ? `<div class="lc-badges"><span class="lc-test">📝 ${esc(test.type || 'Проверочная')}</span></div>` : ''}
       ${lesson.homework.length && !preview ? `<div class="lc-badges">
         <span class="hw-badge ${status}" data-hw-badge>Д/З</span>

@@ -7,7 +7,8 @@ import {
   isoToday, markClass, refuseReadOnly, state,
 } from './core.js';
 import { notify, tap } from './haptics.js';
-import { pushScreen } from './screens.js';
+import { popScreen, pushScreen } from './screens.js';
+import { openLessonEditor } from './edits.js';
 import { ICONS } from './icons.js';
 import { isNewDesign } from './appearance.js';
 import { answerSlot, bindDistance, distanceButton, loadAnswers } from './answer.js';
@@ -190,7 +191,9 @@ export function openLesson(lesson, iso) {
         <button class="link subject-link" data-subject-results>${esc(lesson.subject)}</button></div>
       ${lesson.is_elective ? '<div class="lc-badges"><span class="elective-badge">Факультатив</span></div>' : ''}
       <div class="lc-bottom"><span>${esc(timeRange(lesson))}</span><span>${esc(status)}</span></div>
+      ${lesson.schoolTime ? `<div class="muted small">В дневнике: ${esc(lesson.schoolTime)}</div>` : ''}
       ${distanceButton(lesson)}
+      <button class="link lesson-edit-link" data-lesson-edit>${lesson.addedBy ? 'Изменить свой урок' : 'Изменить время или скрыть'}</button>
     </div>
     ${info.length ? `<div class="info-strip">${info
       .map(([label, value]) => `<div class="info-card"><div class="info-label">${label}</div><div class="info-value">${esc(value)}</div></div>`)
@@ -201,6 +204,8 @@ export function openLesson(lesson, iso) {
 
   bindSubject(body, lesson.subject, iso);
   bindDistance(body);
+  // После правки карточка урока устарела — возвращаемся к дню.
+  body.querySelector('[data-lesson-edit]').addEventListener('click', () => openLessonEditor(lesson, iso, popScreen));
   if (isNewDesign()) {
     loadComments(body, lesson.homework || []);
     loadAnswers(body, lesson.homework || []);
