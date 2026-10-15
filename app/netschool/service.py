@@ -9,10 +9,12 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import datetime as dt
 import html
 import logging
 import re
+import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, replace
 from enum import Enum
@@ -54,6 +56,12 @@ RECENT_EVENTS_DAYS = 14
 # За сколько дней до конца мобильного токена его пора продлевать или
 # предупреждать пользователя. Токен живёт 60 дней.
 TOKEN_WARN_MARGIN = dt.timedelta(days=3)
+
+# Вес оценки из карточки задания (см. `_fill_weights`): сколько помнить
+# узнанный вес и неудачную попытку, и сколько карточек спрашивать разом.
+WEIGHT_TTL = 24 * 3600
+WEIGHT_FAILED_TTL = 3600
+WEIGHT_CONCURRENCY = 4
 
 RETRY_ATTEMPTS = 3
 RETRY_INITIAL_DELAY = 1.5
@@ -97,7 +105,7 @@ class DiaryService:
         """Дневник за произвольный период. Запрашивается по неделям."""
         today = today or msk_today()
         raw_days = await self._with_session(
-            user, lambda client: _collect_weeks(client, start, end, today=today)
+            user, lambda client: _collect_weeks_weighted(client, start, end, today=today)
         )
         return diary_days(raw_days, today=today)
 
@@ -384,7 +392,7 @@ class DiaryService:
         """
         monday = _monday_of(week_day)
         raw_days = await self._with_session(
-            user, lambda client: _collect_weeks(client, monday, monday, today=msk_today())
+            user, lambda client: _collect_weeks_weighted(client, monday, monday, today=msk_today())
         )
         present: set[str] = set()
         for day in diary_days(raw_days):
@@ -745,6 +753,93 @@ async def _collect_weeks(
         current += dt.timedelta(days=7)
 
     return days
+
+
+async def _collect_weeks_weighted(
+    client: Any, start: dt.date, end: dt.date, *, today: dt.date
+) -> list[Any]:
+    return await _fill_weights(client, await _collect_weeks(client, start, end, today=today))
+
+
+# (адрес школы, id задания) -> (вес или None после неудачи, когда узнали).
+_weights: dict[tuple[str, int], tuple[int | None, float]] = {}
+
+
+async def _fill_weights(client: Any, days: list[Any]) -> list[Any]:
+    """Подставить вес из карточки заданиям, у которых дневник его не отдал.
+
+    Часть серверов (net.mephi3.ru, 5.17) пишет в веб-дневнике `weight: 0` у
+    всех заданий, и бот показывал вес 1 и считал простое среднее вместо
+    взвешенного. Настоящий вес есть только в карточке задания, и он свой у
+    каждого задания (контрольная бывает и с весом 4, и с 1). Карточки
+    запоминаются: регулярная проверка спрашивает только новые задания.
+    Карточка не пришла — остаётся прежнее поведение (вес 1), дневник из-за
+    этого не ломаем.
+    """
+    if not hasattr(client, "assignment_details"):
+        return days
+    school = str(getattr(getattr(client, "_http", None), "base_url", "") or getattr(client, "url", ""))
+    now = time.monotonic()
+    known: dict[int, int] = {}
+    missing: set[int] = set()
+    for day in days:
+        for lesson in getattr(day, "lessons", None) or []:
+            for assignment in getattr(lesson, "assignments", None) or []:
+                assignment_id = getattr(assignment, "id", None)
+                if getattr(assignment, "weight", None) or not isinstance(assignment_id, int):
+                    continue
+                cached = _weights.get((school, assignment_id))
+                if cached is not None:
+                    weight, at = cached
+                    if weight is not None and now - at < WEIGHT_TTL:
+                        known[assignment_id] = weight
+                        continue
+                    if weight is None and now - at < WEIGHT_FAILED_TTL:
+                        continue
+                missing.add(assignment_id)
+    if not known and not missing:
+        return days
+
+    semaphore = asyncio.Semaphore(WEIGHT_CONCURRENCY)
+
+    async def fetch(assignment_id: int) -> None:
+        async with semaphore:
+            try:
+                details = await client.assignment_details(assignment_id)
+                weight = int(getattr(details, "weight", 0) or 0) or None
+            except Exception as exc:
+                logger.debug("Карточка задания %s не получена: %s", assignment_id, exc)
+                weight = None
+        _weights[(school, assignment_id)] = (weight, time.monotonic())
+        if weight is not None:
+            known[assignment_id] = weight
+
+    await asyncio.gather(*(fetch(assignment_id) for assignment_id in sorted(missing)))
+    if not known:
+        return days
+    return [_with_weights(day, known) for day in days]
+
+
+def _with_weights(day: Any, weights: dict[int, int]) -> Any:
+    lessons = []
+    for lesson in getattr(day, "lessons", None) or []:
+        assignments = [
+            _replaced(a, weight=weights[a.id])
+            if not getattr(a, "weight", None) and getattr(a, "id", None) in weights else a
+            for a in getattr(lesson, "assignments", None) or []
+        ]
+        lessons.append(_replaced(lesson, assignments=assignments))
+    return _replaced(day, lessons=lessons)
+
+
+def _replaced(obj: Any, **changes: Any) -> Any:
+    """Копия объекта с другими полями: модели netschoolpy неизменяемые."""
+    if hasattr(obj, "model_copy"):
+        return obj.model_copy(update=changes)
+    obj = copy.copy(obj)
+    for name, value in changes.items():
+        setattr(obj, name, value)
+    return obj
 
 
 async def _fetch_diary_init(client: Any) -> dict[str, Any]:

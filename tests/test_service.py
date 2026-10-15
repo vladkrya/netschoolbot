@@ -308,3 +308,89 @@ class TestStudents:
 
 async def _no_sleep(_seconds):
     return None
+
+
+class TestWeightsFromCards:
+    """net.mephi3.ru отдаёт в веб-дневнике weight 0, настоящий вес — в карточке."""
+
+    @pytest.fixture(autouse=True)
+    def clear_cache(self):
+        from app.netschool import service as service_module
+        service_module._weights.clear()
+        yield
+        service_module._weights.clear()
+
+    def zero_weight_day(self, date):
+        payload = day(date)
+        payload.lessons[0].assignments[0].weight = 0
+        payload.lessons[0].assignments[0].id = 18603
+        return payload
+
+    async def prepare(self, service, user, today, details):
+        async with service._pool.acquire(user) as client:
+            client.week_payloads[_monday_of(today)] = [self.zero_weight_day(today)]
+            client.assignment_details = details
+        return client
+
+    async def test_weight_comes_from_assignment_card(self, service, users):
+        user = make_user()
+        await users.save(user)
+        today = dt.date(2026, 10, 15)
+        asked = []
+
+        async def details(assignment_id):
+            asked.append(assignment_id)
+            return SimpleNamespace(weight=4)
+
+        await self.prepare(service, user, today, details)
+        marks = await service.fetch_marks(user, weeks_back=0, weeks_forward=0, today=today)
+        assert [m.weight for m in marks] == [4]
+        # Второй раз карточку не спрашиваем.
+        marks = await service.fetch_marks(user, weeks_back=0, weeks_forward=0, today=today)
+        assert [m.weight for m in marks] == [4]
+        assert asked == [18603]
+
+    async def test_failed_card_keeps_diary_working(self, service, users):
+        user = make_user()
+        await users.save(user)
+        today = dt.date(2026, 10, 15)
+        asked = []
+
+        async def details(assignment_id):
+            asked.append(assignment_id)
+            raise Exception("Server error '500 Internal Server Error'")
+
+        await self.prepare(service, user, today, details)
+        marks = await service.fetch_marks(user, weeks_back=0, weeks_forward=0, today=today)
+        assert [m.weight for m in marks] == [1]
+        await service.fetch_marks(user, weeks_back=0, weeks_forward=0, today=today)
+        assert asked == [18603]
+
+    async def test_diary_weight_is_trusted(self, service, users):
+        user = make_user()
+        await users.save(user)
+        today = dt.date(2026, 10, 15)
+
+        async def details(assignment_id):
+            raise AssertionError("вес из дневника не перепроверяем")
+
+        async with service._pool.acquire(user) as client:
+            payload = day(today)
+            payload.lessons[0].assignments[0].weight = 2
+            payload.lessons[0].assignments[0].id = 1
+            client.week_payloads[_monday_of(today)] = [payload]
+            client.assignment_details = details
+        marks = await service.fetch_marks(user, weeks_back=0, weeks_forward=0, today=today)
+        assert [m.weight for m in marks] == [2]
+
+
+def test_frozen_netschoolpy_models_get_weight():
+    from netschoolpy.models import Assignment
+    from app.netschool.service import _with_weights
+
+    assignment = Assignment(id=5, comment="", kind="К", content="", mark=4, weight=0,
+                            is_duty=False, deadline=dt.date(2026, 10, 15))
+    lesson = SimpleNamespace(assignments=[assignment])
+    result = _with_weights(SimpleNamespace(day=dt.date(2026, 10, 15), lessons=[lesson]), {5: 3})
+    assert result.lessons[0].assignments[0].weight == 3
+    assert assignment.weight == 0
