@@ -13,7 +13,7 @@ from typing import Any
 from xml.sax.saxutils import escape
 
 from . import insights
-from .records import MarkRecord
+from .records import DiaryDay, MarkRecord
 
 Cell = str | int | float | None
 
@@ -178,6 +178,85 @@ def grades_workbook(
     ])
 
 
-def export_filename(student: str, title: str) -> str:
-    safe = "".join(ch for ch in f"Оценки {student} {title}".strip() if ch.isalnum() or ch in " -_.").strip()
-    return f"{safe or 'Оценки'}.xlsx".replace(" ", "_")
+def _footer(student: str, title: str) -> list[list[Cell]]:
+    return [[], [f"{student} · {title}".strip(" ·")], [f"Выгружено {dt.date.today():%d.%m.%Y}"]]
+
+
+def _marks_text(marks) -> str:
+    return " ".join(m.mark for m in marks if m.mark)
+
+
+def absences_workbook(days: list[DiaryDay], *, title: str, student: str = "") -> bytes:
+    """Пропуски: сколько по каждому предмету (по видам отметок) и списком."""
+    rows: list[tuple[dt.date, int | None, str, str]] = [
+        (day.day, lesson.number, lesson.subject, lesson.absence.strip())
+        for day in sorted(days, key=lambda d: d.day)
+        for lesson in day.lessons if (lesson.absence or "").strip()
+    ]
+    codes = sorted({code for *_, code in rows})
+    by_subject: dict[str, list[str]] = {}
+    for _, _, subject, code in rows:
+        by_subject.setdefault(subject, []).append(code)
+    summary: list[list[Cell]] = [["Предмет", "Всего", *codes]]
+    for subject, items in sorted(by_subject.items(), key=lambda kv: (-len(kv[1]), kv[0])):
+        summary.append([subject, len(items), *[items.count(code) or None for code in codes]])
+    summary.append([])
+    summary.append(["Всего пропусков", len(rows), *[sum(1 for *_, c in rows if c == code) for code in codes]])
+    summary.append(["Дней с пропусками", len({d for d, *_ in rows})])
+    if not rows:
+        summary.append(["Пропусков нет — или школа не отмечает посещаемость в дневнике"])
+    summary += _footer(student, title)
+    listing: list[list[Cell]] = [["Дата", "Урок", "Предмет", "Отметка"]]
+    listing += [[d.strftime("%d.%m.%Y"), number, subject, code] for d, number, subject, code in rows]
+    return build_xlsx([
+        ("Итоги", summary, [28, 9] + [8] * len(codes)),
+        ("Пропуски", listing, [12, 7, 28, 10]),
+    ])
+
+
+def homework_workbook(days: list[DiaryDay], *, title: str, student: str = "") -> bytes:
+    """Все домашние задания за период: по дате сдачи и сколько по предметам."""
+    seen: set[str] = set()
+    items = []
+    for day in sorted(days, key=lambda d: d.day):
+        for record in day.homework:
+            if record.key in seen or record.nothing_to_do:
+                continue
+            seen.add(record.key)
+            items.append(record)
+    items.sort(key=lambda r: (r.due_date, r.lesson_number or 0, r.subject))
+    listing: list[list[Cell]] = [["Сдать к", "Предмет", "Тип", "Задание", "Вес", "Файлы"]]
+    for record in items:
+        listing.append([
+            record.due_date.strftime("%d.%m.%Y"), record.subject, record.assignment_type,
+            record.text, record.weight or 1, ", ".join(a.name for a in record.attachments),
+        ])
+    counts: dict[str, int] = {}
+    for record in items:
+        counts[record.subject] = counts.get(record.subject, 0) + 1
+    summary: list[list[Cell]] = [["Предмет", "Заданий"]]
+    summary += [[subject, n] for subject, n in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))]
+    summary.append([])
+    summary.append(["Всего", len(items)])
+    summary += _footer(student, title)
+    return build_xlsx([
+        ("Задания", listing, [12, 26, 16, 70, 6, 30]),
+        ("По предметам", summary, [28, 10]),
+    ])
+
+
+def lessons_workbook(days: list[DiaryDay], *, title: str, student: str = "") -> bytes:
+    """Журнал уроков: каждый урок с темой, учителем, оценками и пропуском."""
+    rows: list[list[Cell]] = [["Дата", "Урок", "Время", "Предмет", "Тема", "Учитель", "Кабинет", "Оценки", "Пропуск"]]
+    for day in sorted(days, key=lambda d: d.day):
+        for lesson in sorted(day.lessons, key=lambda item: item.number or 0):
+            rows.append([
+                day.day.strftime("%d.%m.%Y"), lesson.number, lesson.time_range, lesson.subject,
+                lesson.topic, lesson.teacher, lesson.room, _marks_text(lesson.marks), lesson.absence,
+            ])
+    return build_xlsx([("Уроки", rows, [12, 6, 13, 26, 50, 26, 9, 10, 9])])
+
+
+def export_filename(student: str, title: str, prefix: str = "Оценки") -> str:
+    safe = "".join(ch for ch in f"{prefix} {student} {title}".strip() if ch.isalnum() or ch in " -_.").strip()
+    return f"{safe or prefix}.xlsx".replace(" ", "_")

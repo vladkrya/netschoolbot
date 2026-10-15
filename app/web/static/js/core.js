@@ -391,9 +391,9 @@ export function attachmentUrl(id, name = '') {
   return fileUrl(`attachment/${id}`, filename);
 }
 
-/** Оценки в Excel: та же страница ожидания и тот же билет, что у вложений. */
-export function exportUrl(scope) {
-  return fileUrl(`export/${scope}`, '');
+/** Отчёты в Excel: та же страница ожидания и тот же билет, что у вложений. */
+export function exportUrl(scope, report = 'grades') {
+  return fileUrl(`export/${scope}`, `&report=${encodeURIComponent(report)}`);
 }
 
 function fileUrl(path, extra) {
