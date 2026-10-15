@@ -142,6 +142,19 @@ function bindSubject(body, subject, iso) {
   });
 }
 
+/** Статус на открытом экране урока («Идёт урок» → «Урок окончен») меняется
+ *  на границе минуты, пока экран открыт. */
+function keepStatusFresh(body, lesson, iso) {
+  const schedule = () => setTimeout(() => {
+    // Экран закрыли — отсчёт больше не нужен.
+    if (!body.isConnected) return;
+    const el = body.querySelector('[data-lesson-status]');
+    if (el) el.textContent = lessonStatus(lesson, iso);
+    schedule();
+  }, 60000 - Date.now() % 60000 + 50);
+  schedule();
+}
+
 function compactTime(value) {
   if (!value) return '';
   const date = new Date(value);
@@ -190,7 +203,7 @@ export function openLesson(lesson, iso) {
       <div class="lesson-title"><span class="lc-num">${esc(lesson.number ?? '')}</span>
         <button class="link subject-link" data-subject-results>${esc(lesson.subject)}</button></div>
       ${lesson.is_elective ? '<div class="lc-badges"><span class="elective-badge">Факультатив</span></div>' : ''}
-      <div class="lc-bottom"><span>${esc(timeRange(lesson))}</span><span>${esc(status)}</span></div>
+      <div class="lc-bottom"><span>${esc(timeRange(lesson))}</span><span data-lesson-status>${esc(status)}</span></div>
       ${lesson.schoolTime ? `<div class="muted small">В дневнике: ${esc(lesson.schoolTime)}</div>` : ''}
       ${distanceButton(lesson)}
       <button class="link lesson-edit-link" data-lesson-edit>${lesson.addedBy ? 'Изменить свой урок' : 'Изменить время или скрыть'}</button>
@@ -204,6 +217,7 @@ export function openLesson(lesson, iso) {
 
   bindSubject(body, lesson.subject, iso);
   bindDistance(body);
+  keepStatusFresh(body, lesson, iso);
   // После правки карточка урока устарела — возвращаемся к дню.
   body.querySelector('[data-lesson-edit]').addEventListener('click', () => openLessonEditor(lesson, iso, popScreen));
   if (isNewDesign()) {

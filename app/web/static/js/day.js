@@ -632,7 +632,16 @@ function bindWeekSwipe() {
 }
 
 export function initDay() {
-  setInterval(() => { if (state.tab === 'day' && dayData(state.date)) renderDay(true); }, 30000);
+  // Статусы уроков («Закончится через 3 мин», «Урок окончен») меняются ровно
+  // на границе минуты — тогда же, когда таймер над днём доходит до нуля.
+  // Раньше день перерисовывался раз в 30 секунд и отставал от таймера.
+  const refreshOnMinute = () => {
+    setTimeout(() => {
+      if (state.tab === 'day' && dayData(state.date)) renderDay(true);
+      refreshOnMinute();
+    }, 60000 - Date.now() % 60000 + 50);
+  };
+  refreshOnMinute();
   $('dayPrev').addEventListener('click', () => shiftDay(-1));
   $('dayNext').addEventListener('click', () => shiftDay(1));
   $('dayTitle').addEventListener('click', () => openCalendar());
