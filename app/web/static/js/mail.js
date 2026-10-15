@@ -65,6 +65,8 @@ function render() {
   // Непрочитанные — числом у значка «Почты» в нижней панели.
   setMailBadge('mail', messages.filter((message) => message.read === false).length);
   const container = $('mailContent');
+  // Чаты рисуются в этом же списке и могли оставить «тихий» режим.
+  container.classList.remove('quiet');
   $('mailFilters').querySelectorAll('[data-filter]').forEach((chip) =>
     chip.classList.toggle('active', chip.dataset.filter === filter));
   $('mailSort').textContent = newestFirst ? '↓ Новые' : '↑ Старые';

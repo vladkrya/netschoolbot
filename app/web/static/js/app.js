@@ -2,7 +2,7 @@
 'use strict';
 
 import {
-  $, api, assistantEnabled, forgetRevalidated, banner, base, demo, isReadOnly, loadAttachmentTicket, school, state, student, studentFirstName, syncFinished, syncStarted, tg, token,
+  $, api, assistantEnabled, forgetRevalidated, banner, base, demo, isReadOnly, keepTouch, loadAttachmentTicket, school, state, student, studentFirstName, syncFinished, syncStarted, tg, token,
 } from './core.js';
 import { initDay, loadDay } from './day.js';
 import { initSchedule, loadSchedule } from './schedule.js';
@@ -182,8 +182,9 @@ function bindPullToRefresh() {
     if (busy || hasScreens() || isDrawerOpen() || state.tab === 'assistant' || window.scrollY > 0 || event.touches.length !== 1) return;
     start = { x: event.touches[0].clientX, y: event.touches[0].clientY };
     pulled = 0;
+    keepTouch(event.target, { move: onPullMove, end: onPullEnd, cancel: onPullCancel });
   }, { passive: true });
-  document.addEventListener('touchmove', (event) => {
+  const onPullMove = (event) => {
     if (!start) return;
     const touch = event.touches[0];
     const dx = touch.clientX - start.x;
@@ -209,8 +210,9 @@ function bindPullToRefresh() {
       ring.style.transition = 'none';
     }
     paint(pulled);
-  }, { passive: true });
-  document.addEventListener('touchend', async () => {
+  };
+  document.addEventListener('touchmove', onPullMove, { passive: true });
+  const onPullEnd = async () => {
     if (!start) return;
     start = null;
     if (pulled <= PULL_ARM) {
@@ -252,12 +254,14 @@ function bindPullToRefresh() {
         busy = false;
       }, 260);
     }, 300);
-  }, { passive: true });
-  document.addEventListener('touchcancel', () => {
+  };
+  document.addEventListener('touchend', onPullEnd, { passive: true });
+  const onPullCancel = () => {
     if (!start) return;
     start = null;
     hide();
-  }, { passive: true });
+  };
+  document.addEventListener('touchcancel', onPullCancel, { passive: true });
 }
 
 // Панель вкладок как в iOS 26: палец на панели — линза раздувается в каплю

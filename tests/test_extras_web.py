@@ -28,6 +28,28 @@ class TestNotesApi:
         response = await client.post(f"{BASE}/api/notes/{note['id']}", headers=auth(token), json={"done": True})
         assert response.status == 404
 
+    async def test_time_reminder_and_edit(self, client, token):
+        response = await client.post(f"{BASE}/api/notes", headers=auth(token),
+                                     json={"date": "2026-10-15", "text": "Кружок", "time": "16:30", "remind": 15})
+        note = (await response.json())["data"]
+        assert (note["time"], note["remind"]) == ("16:30", 15)
+        response = await client.post(f"{BASE}/api/notes/{note['id']}", headers=auth(token),
+                                     json={"text": "Шахматы", "date": "2026-10-16", "subject": "Физкультура",
+                                           "time": "17:00", "remind": 60})
+        edited = (await response.json())["data"]
+        assert (edited["text"], edited["date"], edited["subject"], edited["time"], edited["remind"]) == (
+            "Шахматы", "2026-10-16", "Физкультура", "17:00", 60)
+        response = await client.post(f"{BASE}/api/notes/{note['id']}", headers=auth(token),
+                                     json={"time": "", "remind": None})
+        assert (await response.json())["data"]["time"] == ""
+        for body in ({"time": "25:00"}, {"time": "9:00"}, {"remind": 7}, {"remind": True},
+                     {"date": "вчера"}, {"text": " "}, {}):
+            response = await client.post(f"{BASE}/api/notes/{note['id']}", headers=auth(token), json=body)
+            assert response.status == 400, body
+        response = await client.post(f"{BASE}/api/notes", headers=auth(token),
+                                     json={"date": "2026-10-15", "text": "x", "remind": 3})
+        assert response.status == 400
+
     async def test_rejects_empty(self, client, token):
         response = await client.post(f"{BASE}/api/notes", headers=auth(token), json={"date": "2026-10-15", "text": " "})
         assert response.status == 400

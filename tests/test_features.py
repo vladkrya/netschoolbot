@@ -225,6 +225,46 @@ class TestNotesAndFamily:
         assert await notes.delete(1, note["id"])
         assert await notes.between(1, dt.date(2026, 10, 1), dt.date(2026, 10, 31)) == []
 
+    async def test_note_time_edit_and_reminder(self, db, users):
+        await users.save(make_user())
+        notes = NotesRepository(db)
+        msk = dt.timezone(dt.timedelta(hours=3))
+        note = await notes.add(1, dt.date(2026, 10, 15), "Кружок", at="16:30", remind=15, tz=msk)
+        assert (note["time"], note["remind"]) == ("16:30", 15)
+        due = dt.datetime(2026, 10, 15, 16, 15, tzinfo=msk).timestamp()
+        assert await notes.due_reminders(due - 1) == []
+        [(uid, found, when)] = await notes.due_reminders(due)
+        assert (uid, found["text"], when) == (1, "Кружок", due)
+        # Перенесли на час позже — напомнит к новому сроку.
+        edited = await notes.update(1, note["id"], at="17:30", text="Кружок рисования", tz=msk)
+        assert edited["time"] == "17:30" and edited["text"] == "Кружок рисования" and edited["remind"] == 15
+        assert await notes.due_reminders(due) == []
+        assert len(await notes.due_reminders(due + 3600)) == 1
+        await notes.reminded(note["id"])
+        assert await notes.due_reminders(due + 3600) == []
+        # Без времени напоминать не к чему.
+        cleared = await notes.update(1, note["id"], at="", tz=msk)
+        assert cleared["remind"] is None
+        # Выполненная задача не напоминает.
+        other = await notes.add(1, dt.date(2026, 10, 15), "Сменка", at="08:00", remind=0, tz=msk)
+        await notes.update(1, other["id"], done=True)
+        assert await notes.due_reminders(due + 86400) == []
+        assert await notes.update(2, other["id"], text="чужая") is None
+
+    async def test_note_reminder_sending(self, db, users):
+        from app.notifications.note_reminders import STALE_SECONDS, send_due
+
+        await users.save(make_user())
+        notes = NotesRepository(db)
+        await notes.add(1, dt.date(2026, 10, 15), "Принести <циркуль>", "Геометрия", at="10:00", remind=10)
+        await notes.add(1, dt.date(2026, 10, 14), "Давнее", at="10:00", remind=10)
+        notifier = FakeNotifier()
+        now = dt.datetime(2026, 10, 15, 9, 50, tzinfo=dt.timezone.utc).timestamp()
+        assert await send_due(notes, users, notifier, now) == 1
+        assert notifier.texts == ["⏰ Через 10 мин, в 10:00: Принести &lt;циркуль&gt; (Геометрия)"]
+        # Второй раз то же не шлётся, проспанное (давнее STALE_SECONDS) — тоже.
+        assert await send_due(notes, users, notifier, now + STALE_SECONDS) == 0
+
     async def test_invite_is_single_use(self, db, users):
         for uid in (1, 2, 3):
             await users.save(make_user(telegram_id=uid))

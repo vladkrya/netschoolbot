@@ -2030,7 +2030,10 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
   font-size: 12px; font-weight: 500; vertical-align: middle; white-space: nowrap; }
 .hw-tag.own { color: var(--primary); }
 .hw-tag.test, .lc-test { color: var(--red); border-color: var(--red); }
-.note-delete { flex: none; align-self: center; border: 0; background: none; color: var(--text2); font-size: 15px; padding: 4px 8px; cursor: pointer; }
+.note-edit { flex: none; align-self: center; display: grid; place-items: center; border: 0; background: none;
+  color: var(--text2); padding: 4px 8px; cursor: pointer; }
+.note-edit:active { color: var(--primary); }
+.note-when { font-variant-numeric: tabular-nums; }
 .lc-test { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border: 1px solid; border-radius: 8px; font-size: 12px; }
 .note-form { display: flex; flex-direction: column; gap: 12px; }
 .note-form textarea { resize: vertical; min-height: 70px; font: inherit; }
@@ -2053,6 +2056,9 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
 .dn-text { -webkit-box-decoration-break: clone; box-decoration-break: clone;
   background: linear-gradient(currentColor, currentColor) no-repeat 0 58% / 0 1.5px;
   transition: background-size .4s var(--ease) .15s, opacity .3s .15s; }
+.dn-body { flex: 1; min-width: 0; }
+.dn-when { display: block; margin-top: 2px; color: var(--text2); font-size: 13px; font-variant-numeric: tabular-nums; }
+.day-note .note-edit { align-self: flex-start; margin: -4px -8px -4px 0; }
 .day-note.done .dn-text { opacity: .55; background-size: 100% 1.5px; }
 .day-note.done .dn-box { background: var(--g5); box-shadow: none; }
 .day-note.done .dn-box path { stroke-dashoffset: 0; }
@@ -2102,7 +2108,7 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
 
 /* Просмотр дневника родным (viewing.py): только чтение — кнопки, которые
    что-то меняют, убраны; отметки остаются видны, но не нажимаются. */
-.view-mode .hw-add, .view-mode .note-delete, .view-mode #aiFab,
+.view-mode .hw-add, .view-mode .note-edit, .view-mode #aiFab,
 .view-mode .answer-actions, .view-mode .answer-attach, .view-mode .answer-text,
 .view-mode [data-answer-delete], .view-mode .distance-join { display: none !important; }
 .view-mode .hw-check, .view-mode .hw-done-toggle, .view-mode .day-note { pointer-events: none; }

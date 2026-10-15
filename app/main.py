@@ -206,6 +206,17 @@ async def run(settings: Settings, args: argparse.Namespace) -> int:
             may_finish=True,
         ),
     ]
+    # Напоминания о своих задачах ко времени («за 15 мин»).
+    from .notifications.note_reminders import run_note_reminders
+
+    tasks.append(
+        supervisor.watch(
+            asyncio.create_task(
+                run_note_reminders(context.notes, context.users, lambda: context.watchers.notifier),
+                name="note-reminders",
+            )
+        )
+    )
     if settings.telegram.admin_id:
         tasks.append(
             supervisor.watch(

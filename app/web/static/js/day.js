@@ -6,7 +6,7 @@
 'use strict';
 
 import {
-  $, addDays, api, dayMonth, errorCard, esc, fullDate, isoOf, isoToday, lessonNo, mondayOf,
+  $, addDays, api, dayMonth, errorCard, esc, fullDate, isoOf, isoToday, keepTouch, lessonNo, mondayOf,
   parseIso, plural, showFailure, showLoading, skeleton, state, WEEKDAYS, WEEKDAYS_FULL, weekdayIndex, weekOffsetOf, stillMotion,
 } from './core.js';
 import { ICONS } from './icons.js';
@@ -19,7 +19,7 @@ import { closeSheet, openSheet } from './sheet.js';
 import { select, tap } from './haptics.js';
 import { bindInstallCard, installCardHtml } from './install.js';
 import { updateTimer } from './timer.js';
-import { isTestWork, loadNotes, setNoteDone } from './notes.js';
+import { isTestWork, loadNotes, noteWhen, openNoteEditor, setNoteDone } from './notes.js';
 import { applyEdits, bindHidden, hiddenHtml, openAddLesson } from './edits.js';
 import { flyTo, markKey, playFresh, takeFresh } from './motion.js';
 
@@ -264,7 +264,7 @@ function renderDay(quiet = false) {
   // перерисовка по таймеру должна их подхватить.
   const statuses = lessons.map((lesson) => lessonStatus(lesson, state.date)).join();
   const notes = (state.notes || []).filter((note) => note.date === state.date);
-  const key = `${state.date}|${statuses}|${state.hwDone?.size ?? '-'}|${notes.map((n) => `${n.id}${n.done}`).join()}|${editsKey(day)}`;
+  const key = `${state.date}|${statuses}|${state.hwDone?.size ?? '-'}|${notes.map((n) => `${n.id}${n.done}${n.time}${n.remind}${n.text}${n.subject}`).join()}|${editsKey(day)}`;
   if (quiet && key === renderedKey && container.children.length) return;
   renderedKey = key;
   freshMarks = takeFresh(lessons.flatMap((lesson) => realMarks(lesson.marks)
@@ -276,8 +276,13 @@ function renderDay(quiet = false) {
   bindInstallCard(container);
   bindDayEdits(container, day);
   playFresh(container);
-  container.querySelectorAll('[data-note]').forEach((row) => row.addEventListener('click', async () => {
+  container.querySelectorAll('[data-note]').forEach((row) => row.addEventListener('click', async (event) => {
     const note = notes[Number(row.dataset.note)];
+    if (event.target.closest('[data-note-edit]')) {
+      const subjects = [...new Set(lessons.map((lesson) => lesson.subject).filter(Boolean))];
+      openNoteEditor(subjects, () => renderDay(true), { note });
+      return;
+    }
     const next = !note.done;
     row.classList.toggle('done', next);
     if (!await setNoteDone(note, next)) row.classList.toggle('done', !next);
@@ -340,8 +345,9 @@ function bindDayEdits(container, day) {
 function notesBlock(notes) {
   if (!notes.length) return '';
   return `<div class="card day-notes"><div class="card-title">Свои задачи</div>${notes.map((note, index) =>
-    `<button class="day-note ${note.done ? 'done' : ''}" data-note="${index}"><span class="dn-box"><svg viewBox="0 0 14 14" aria-hidden="true"><path d="M2.5 7.5l3 3 6-7"/></svg></span>
-      <span class="dn-text">${note.subject ? `<b>${esc(note.subject)}:</b> ` : ''}${esc(note.text)}</span></button>`).join('')}</div>`;
+    `<div class="day-note ${note.done ? 'done' : ''}" role="button" tabindex="0" data-note="${index}"><span class="dn-box"><svg viewBox="0 0 14 14" aria-hidden="true"><path d="M2.5 7.5l3 3 6-7"/></svg></span>
+      <span class="dn-body"><span class="dn-text">${note.subject ? `<b>${esc(note.subject)}:</b> ` : ''}${esc(note.text)}</span>${note.time ? `<span class="dn-when">${esc(noteWhen(note))}</span>` : ''}</span>
+      <button class="note-edit" data-note-edit aria-label="Изменить задачу">${ICONS.pencil}</button></div>`).join('')}</div>`;
 }
 
 /** Цвет Д/З на главной: hw-todo — не сделано, hw-done — всё сделано.
@@ -578,10 +584,12 @@ function bindSwipe() {
     // От самого края — жест «назад», если есть куда, а не листание дней.
     if (touch.clientX <= EDGE_PX && canGoBack()) return;
     gesture = { x: touch.clientX, y: touch.clientY, dx: 0, dy: 0, horizontal: null, armed: false, lastX: touch.clientX, lastT: performance.now(), speed: 0 };
+    // Список могут перерисовать посреди жеста (минутный таймер).
+    keepTouch(event.target, { move: onMove, end: finish });
   }, { passive: true });
   // День едет за пальцем; отклик — в момент, когда палец прошёл порог: как у
   // нативного листания, ещё до того, как его отпустили.
-  area.addEventListener('touchmove', (event) => {
+  const onMove = (event) => {
     if (!gesture) return;
     const touch = event.touches[0];
     const dx = touch.clientX - gesture.x;
@@ -611,7 +619,8 @@ function bindSwipe() {
         opacity: String(1 - Math.min(0.5, Math.abs(dx) / (area.offsetWidth || 1))),
       });
     }
-  }, { passive: false });
+  };
+  area.addEventListener('touchmove', onMove, { passive: false });
   const finish = () => {
     if (!gesture) return;
     const { dx, dy, speed, armed, horizontal } = gesture;

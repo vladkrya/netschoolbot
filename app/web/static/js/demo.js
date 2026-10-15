@@ -443,7 +443,8 @@ export async function demoApi(path, options = {}) {
   // Свои задачи в демо живут до перезагрузки страницы.
   if (route === '/api/notes') {
     if (options.method === 'POST') {
-      const note = { id: demoNotes.length + 1, date: body.date, subject: body.subject || '', text: body.text, done: false };
+      const note = { id: demoNotes.length + 1, date: body.date, subject: body.subject || '', text: body.text, done: false,
+        time: body.time || '', remind: body.time ? body.remind ?? null : null };
       demoNotes.push(note);
       return ok(note);
     }
@@ -453,8 +454,12 @@ export async function demoApi(path, options = {}) {
   if (noteMatch) {
     const note = demoNotes.find((item) => item.id === Number(noteMatch[1]));
     if (note && body.delete) note.deleted = true;
-    else if (note && 'done' in body) note.done = Boolean(body.done);
-    return ok({});
+    else if (note) {
+      if ('done' in body) note.done = Boolean(body.done);
+      for (const key of ['text', 'date', 'subject', 'time', 'remind']) if (key in body) note[key] = body[key];
+      if (!note.time) note.remind = null;
+    }
+    return ok(note ? { ...note } : {});
   }
 
   if (route === '/api/student') {

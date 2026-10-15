@@ -538,7 +538,8 @@ def reminder(
             lines.append(f"⬜ {esc(item.subject)}: {text or '—'}")
         for note in notes:
             subject = f"{esc(note.get('subject'))}: " if note.get("subject") else ""
-            lines.append(f"⬜ {subject}{esc(note.get('text'))} <i>(своя задача)</i>")
+            at = f"{note['time']} " if note.get("time") else ""
+            lines.append(f"⬜ {at}{subject}{esc(note.get('text'))} <i>(своя задача)</i>")
         lines.append("\nОтметить сделанное — /dz или в приложении.")
     if tests:
         if lines:
