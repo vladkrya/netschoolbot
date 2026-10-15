@@ -19,14 +19,14 @@ export const TAB_DEFS = {
   assistant: { icon: 'sparkles', old: 'Помощник', fresh: 'Помощник' },
   homework: { icon: 'checklist', old: 'Д/З', fresh: 'Задания' },
   totals: { icon: 'book', old: 'Итоги', fresh: 'Оценки' },
-  mail: { icon: 'mail', old: 'Сообщения', fresh: 'Почта' },
+  mail: { icon: 'chat', old: 'Сообщения', fresh: 'Сообщения' },
   settings: { icon: 'gear', old: 'Настройки', fresh: 'Настройки' },
 };
 
 /** Названия для списка в настройках — полные, без сокращений. */
 export const TAB_NAMES = {
   day: 'День', schedule: 'Звонки / неделя', assistant: 'ИИ-помощник', homework: 'Задания',
-  totals: 'Оценки', mail: 'Почта', settings: 'Настройки',
+  totals: 'Оценки', mail: 'Сообщения (почта и чаты)', settings: 'Настройки',
 };
 
 // Вкладок в новом дизайне пять (звонки и помощник переехали на «День»), и
@@ -78,6 +78,12 @@ const mailCounts = { mail: 0, chat: 0 };
 export function setMailBadge(source, count) {
   mailCounts[source] = Math.max(0, Number(count) || 0);
   setNavBadge('mail', mailCounts.mail + mailCounts.chat);
+  // Тот же счётчик — на самом разделе «Письма» или «Чаты» вкладки.
+  const seg = document.getElementById(source === 'chat' ? 'segChatBadge' : 'segMailBadge');
+  if (seg) {
+    seg.textContent = mailCounts[source] > 99 ? '99+' : String(mailCounts[source]);
+    seg.hidden = !mailCounts[source];
+  }
 }
 
 function badgeHtml(tab) {

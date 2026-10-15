@@ -119,6 +119,7 @@ def homework_from_day(
     latest = today + dt.timedelta(days=HOMEWORK_FUTURE_DAYS)
 
     records: list[HomeworkRecord] = []
+    seen: set[str] = set()
     for lesson in _attr(day, "lessons", []) or []:
         subject = str(_attr(lesson, "subject", "") or "—")
         lesson_number = _attr(lesson, "number")
@@ -137,28 +138,39 @@ def homework_from_day(
             )
             if not text and not attachments and not explicitly_empty:
                 continue
+            # Работа на уроке («Диктант», «Ответ на уроке») с уже выставленной
+            # оценкой — не домашнее задание: её видно оценкой, а заданием она
+            # висела невыполненной.
+            if not _is_homework_kind(assignment) and extract_mark(assignment):
+                continue
 
             due = _as_date(_attr(assignment, "deadline")) or day_date
             if only_current and not earliest <= due <= latest:
                 continue
 
-            records.append(
-                HomeworkRecord(
-                    subject=subject,
-                    due_date=due,
-                    assignment_type=str(
-                        _attr(assignment, "kind") or _attr(assignment, "type") or "Задание"
-                    ).strip(),
-                    text=text or ("Не указана" if explicitly_empty else ""),
-                    lesson_number=lesson_number or (index + 1),
-                    attachments=attachments,
-                    published_at=_as_datetime(_attr(assignment, "published_at")),
-                    weight=_safe_int(_attr(assignment, "weight")) or 1,
-                    topic=topic,
-                    assignment_id=_safe_int(_attr(assignment, "id")),
-                    comment=_comment(assignment),
-                )
+            record = HomeworkRecord(
+                subject=subject,
+                due_date=due,
+                assignment_type=str(
+                    _attr(assignment, "kind") or _attr(assignment, "type") or "Задание"
+                ).strip(),
+                text=text or ("Не указана" if explicitly_empty else ""),
+                lesson_number=lesson_number or (index + 1),
+                attachments=attachments,
+                published_at=_as_datetime(_attr(assignment, "published_at")),
+                weight=_safe_int(_attr(assignment, "weight")) or 1,
+                topic=topic,
+                assignment_id=_safe_int(_attr(assignment, "id")),
+                comment=_comment(assignment),
+                classwork=not _is_homework_kind(assignment),
             )
+            # Работу с двумя оценками («Изложение» за содержание и за
+            # грамотность) школа заводит двумя одинаковыми заданиями: у них
+            # один ключ, и задание из них одно.
+            if record.identity in seen:
+                continue
+            seen.add(record.identity)
+            records.append(record)
     return records
 
 
@@ -168,7 +180,7 @@ def _is_homework_kind(assignment: Any) -> bool:
     abbr = str(_attr(assignment, "kind_abbr") or "").strip().lower()
     if not kind and not abbr:
         return True
-    return abbr == "дз" or "домашн" in kind
+    return "дз" in (abbr, kind) or "домашн" in kind
 
 
 def _comment(assignment: Any) -> str | None:

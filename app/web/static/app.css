@@ -1626,6 +1626,16 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
   color: #fff; border: 1px solid rgba(255, 255, 255, .3);
 }
 .mail-seg button.on { background: rgba(255, 255, 255, .22); }
+.mail-seg button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-width: 0; }
+.mail-seg .seg-ico { display: inline-flex; flex: none; }
+.mail-seg .seg-ico svg { width: 15px; height: 15px; }
+.seg-badge {
+  flex: none; min-width: 17px; height: 17px; padding: 0 5px; border-radius: 9px;
+  background: #e5484d; color: #fff; font-size: 11px; font-weight: 700; line-height: 17px; text-align: center;
+}
+.seg-badge[hidden] { display: none; }
+/* На узком экране три раздела со значками не влезают — остаются подписи. */
+@media (max-width: 359px) { .mail-seg .seg-ico { display: none; } }
 
 .chat-consent .chat-rules { margin: 10px 0 12px; padding-left: 18px; line-height: 1.45; }
 .chat-consent .chat-rules li { margin-bottom: 6px; }

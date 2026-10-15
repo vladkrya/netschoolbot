@@ -504,7 +504,7 @@ async function showChatLaunchNotice() {
     }
     const body = openSheet('Появились чаты', `
       <p>Теперь в приложении можно общаться с другими участниками и написать админу.</p>
-      <p>Откройте <b>Почта → Чаты</b>. В старом дизайне: <b>Сообщения → Чаты</b>.</p>
+      <p>Откройте вкладку <b>Сообщения → Чаты</b>.</p>
       <div class="chat-actions">
         <button class="btn" id="chatLaunchOpen">Перейти в чаты</button>
         <button class="btn outline" id="chatLaunchClose">Понятно</button>

@@ -8,7 +8,7 @@ import {
   WEEKDAYS_FULL, weekdayIndex,
 } from './core.js';
 import { ICONS } from './icons.js';
-import { homeworkTimes, isDoneItem, loadDone, openHomework, saveDone } from './details.js';
+import { homeworkTimes, isAutoDone, isDoneItem, loadDone, openHomework, saveDone } from './details.js';
 import { select, tap } from './haptics.js';
 import {
   bindStreaks, deleteNote, isTestWork, loadNotes, notesAsItems, openNoteEditor, setNoteDone, streaks, streaksHtml,
@@ -116,14 +116,14 @@ function render() {
       return `${heading}<div class="card hw-card ${isDone ? 'done' : ''} ${test ? 'test' : ''}" data-hw="${index}">
           <div class="hw-top">
             <div class="hw-subject">${esc(item.subject)}${test ? ` <span class="hw-tag test">${esc(item.type || 'Проверочная')}${Number(item.weight) > 1 ? ` · вес ${esc(item.weight)}` : ''}</span>` : ''}</div>
-            ${item.auto_done ? '<span class="hw-check on auto" title="Задание не предусмотрено — отмечено само">✓</span>'
+            ${isAutoDone(item) ? `<span class="hw-check on auto" title="${item.auto_done ? 'Задание не предусмотрено' : 'Работа на уроке'} — отмечено само">✓</span>`
               : item.key ? `<button class="hw-check ${isDone ? 'on' : ''}" data-done="${index}" aria-pressed="${isDone}"
               aria-label="${isDone ? 'Снять отметку' : 'Отметить выполненным'}">${isDone ? '✓' : ''}</button>` : ''}
           </div>
           <div class="hw-text">${esc(item.text) || '—'}</div>
           ${homeworkTimes(item, observedTime).map((line) => `<div class="hw-observed">${esc(line)}</div>`).join('')}
           <div class="hw-foot">
-            <span><span class="hw-badge">Д/З</span>${item.attachments.length ? `<span class="hw-badge clip">${ICONS.clip}</span>` : ''}${item.comment ? `<span class="hw-badge clip" title="Есть комментарий к заданию">${ICONS.chat}</span>` : ''}</span>
+            <span><span class="hw-badge">${item.classwork ? 'Урок' : 'Д/З'}</span>${item.attachments.length ? `<span class="hw-badge clip">${ICONS.clip}</span>` : ''}${item.comment ? `<span class="hw-badge clip" title="Есть комментарий к заданию">${ICONS.chat}</span>` : ''}</span>
             <span class="muted small">${esc(dayMonth(item.date))}</span>
           </div>
         </div>`;
