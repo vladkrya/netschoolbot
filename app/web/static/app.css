@@ -342,8 +342,8 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
   *, *::before, *::after { animation-duration: .01ms !important; animation-delay: 0s !important; transition-duration: .01ms !important; }
 }
 
-.list.slide-left { animation: slide-left .22s ease; }
-.list.slide-right { animation: slide-right .22s ease; }
+.list.slide-left, .lesson-timer.slide-left { animation: slide-left .22s ease; }
+.list.slide-right, .lesson-timer.slide-right { animation: slide-right .22s ease; }
 @keyframes slide-left { from { transform: translateX(30%); opacity: 0; } }
 @keyframes slide-right { from { transform: translateX(-30%); opacity: 0; } }
 
@@ -1311,6 +1311,8 @@ main.leaving { transition: transform .22s var(--ease); box-shadow: -8px 0 24px r
   transition: opacity .15s, background-color .15s, color .15s;
 }
 .back-arrow.show { opacity: 1; }
+/* Отпустили — кружок уезжает обратно за край. */
+.back-arrow:not(.show) { transition: opacity .2s, transform .25s var(--ease), background-color .15s, color .15s; }
 .back-arrow.armed { background: var(--primary); color: #fff; }
 
 /* Статус проверки и история оценок (меню ☰). */
@@ -1364,13 +1366,34 @@ main.leaving { transition: transform .22s var(--ease); box-shadow: -8px 0 24px r
 .mail-sort { flex: none; white-space: nowrap; }
 .hw-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
 .hw-check {
+  position: relative; isolation: isolate; overflow: hidden;
   flex: none; width: 28px; height: 28px; border-radius: 50%;
   border: 2px solid var(--border); background: transparent; color: #fff;
   font-size: 16px; font-weight: 700; line-height: 1; display: grid; place-items: center;
+  transition: border-color .25s;
 }
-.hw-check.on { background: var(--g5); border-color: var(--g5); }
+/* Зелёная заливка — кругом от точки нажатия (--x, --y ставит homework.js),
+   затем штрихом рисуется галочка. */
+.hw-check::before {
+  content: ''; position: absolute; inset: 0; z-index: -1; background: var(--g5);
+  clip-path: circle(0 at var(--x, 50%) var(--y, 50%));
+}
+.hw-check.ripple::before { transition: clip-path .4s var(--ease); }
+.hw-check.on { border-color: var(--g5); }
+.hw-check.on::before { clip-path: circle(150% at var(--x, 50%) var(--y, 50%)); }
+.hw-check.auto.on { background: var(--g5); }
+.hw-check svg { width: 15px; height: 15px; }
+.hw-check path { fill: none; stroke: #fff; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round;
+  stroke-dasharray: 20; stroke-dashoffset: 20; }
+.hw-check.ripple path { transition: stroke-dashoffset .35s var(--ease) .15s; }
+.hw-check.on path { stroke-dashoffset: 0; }
+/* Выполненное зачёркивается слева направо. */
+.hw-strike { -webkit-box-decoration-break: clone; box-decoration-break: clone;
+  background: linear-gradient(currentColor, currentColor) no-repeat 0 58% / 0 1.5px; }
+.hw-card .hw-subject, .hw-card .hw-text { transition: opacity .3s .15s; }
+.hw-card:has(.hw-check.ripple) .hw-strike { transition: background-size .45s var(--ease) .15s; }
 .hw-card.done .hw-subject, .hw-card.done .hw-text { opacity: .55; }
-.hw-card.done .hw-text { text-decoration: line-through; }
+.hw-card.done .hw-strike { background-size: 100% 1.5px; }
 
 /* Отчёт об ошибке: капча в рамке; пока открыта головоломка — на весь экран. */
 .captcha-frame { display: block; width: 100%; height: 84px; border: 0; background: transparent; color-scheme: normal; }

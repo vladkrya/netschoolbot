@@ -12,6 +12,7 @@
 import { $, state } from './core.js';
 import { canGoBack, handleBack, topScreen } from './screens.js';
 import { pageWeek, shiftDay } from './day.js';
+import { hideBackHint, showBackHint } from './swipeback.js';
 
 // Пауза, после которой следующие события — уже новый жест.
 const QUIET_MS = 160;
@@ -91,6 +92,7 @@ export function initTrackpad() {
     quiet = setTimeout(() => {
       release(moved);
       moved = null;
+      hideBackHint();
     }, QUIET_MS);
     if (!gesture || now - gesture.last > QUIET_MS || startsAnew(gesture, event.deltaX, now)) {
       gesture = { x: 0, y: 0, last: now, done: false, vertical: false, prev: 0, peak: 0, decayed: false, firedAt: 0 };
@@ -122,8 +124,11 @@ export function initTrackpad() {
       if (moved && moved !== action.el) release(moved);
       moved = action.el;
       follow(moved, x);
+      // «Назад» — кружок со стрелкой выезжает у края, как при свайпе пальцем.
+      if (!action.el) showBackHint(Math.abs(x) / COMMIT_PX, event.clientY);
       return;
     }
+    hideBackHint();
     gesture.done = true;
     gesture.firedAt = now;
     const shift = moved ? Number.parseFloat((moved.style.transform || '').replace('translateX(', '')) || 0 : 0;

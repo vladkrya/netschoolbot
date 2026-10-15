@@ -63,6 +63,9 @@ function visibleItems() {
   return items.filter((item) => !needle || `${item.subject} ${item.text}`.toLowerCase().includes(needle));
 }
 
+// Галочка рисуется штрихом, когда отметку ставят (app.css, .hw-check path).
+const CHECK = '<svg viewBox="0 0 14 14" aria-hidden="true"><path d="M2.5 7.5l3 3 6-7"/></svg>';
+
 const itemDone = (item, done) => (item.own ? item.done : isDoneItem(item, done));
 
 /** Карточка своей задачи: та же форма, что у школьного задания, с пометкой «Своё». */
@@ -72,9 +75,9 @@ function ownCard(item, index) {
         <div class="hw-subject">${esc(item.subject)} <span class="hw-tag own">Своё</span></div>
         <button class="note-delete" data-delete="${index}" aria-label="Удалить задачу">✕</button>
         <button class="hw-check ${item.done ? 'on' : ''}" data-done="${index}" aria-pressed="${item.done}"
-          aria-label="${item.done ? 'Снять отметку' : 'Отметить выполненным'}">${item.done ? '✓' : ''}</button>
+          aria-label="${item.done ? 'Снять отметку' : 'Отметить выполненным'}">${CHECK}</button>
       </div>
-      <div class="hw-text">${esc(item.text)}</div>
+      <div class="hw-text"><span class="hw-strike">${esc(item.text)}</span></div>
       <div class="hw-foot"><span></span><span class="muted small">${esc(dayMonth(item.date))}</span></div>
     </div>`;
 }
@@ -118,9 +121,9 @@ function render() {
             <div class="hw-subject">${esc(item.subject)}${test ? ` <span class="hw-tag test">${esc(item.type || 'Проверочная')}${Number(item.weight) > 1 ? ` · вес ${esc(item.weight)}` : ''}</span>` : ''}</div>
             ${isAutoDone(item) ? `<span class="hw-check on auto" title="${item.auto_done ? 'Задание не предусмотрено' : 'Работа на уроке'} — отмечено само">✓</span>`
               : item.key ? `<button class="hw-check ${isDone ? 'on' : ''}" data-done="${index}" aria-pressed="${isDone}"
-              aria-label="${isDone ? 'Снять отметку' : 'Отметить выполненным'}">${isDone ? '✓' : ''}</button>` : ''}
+              aria-label="${isDone ? 'Снять отметку' : 'Отметить выполненным'}">${CHECK}</button>` : ''}
           </div>
-          <div class="hw-text">${esc(item.text) || '—'}</div>
+          <div class="hw-text"><span class="hw-strike">${esc(item.text) || '—'}</span></div>
           ${homeworkTimes(item, observedTime).map((line) => `<div class="hw-observed">${esc(line)}</div>`).join('')}
           <div class="hw-foot">
             <span><span class="hw-badge">${item.classwork ? 'Урок' : 'Д/З'}</span>${item.attachments.length ? `<span class="hw-badge clip">${ICONS.clip}</span>` : ''}${item.comment ? `<span class="hw-badge clip" title="Есть комментарий к заданию">${ICONS.chat}</span>` : ''}</span>
@@ -133,6 +136,9 @@ function render() {
     card.addEventListener('click', async (event) => {
       const item = items[Number(card.dataset.hw)];
       const check = event.target.closest('[data-done]');
+      // Свою задачу отмечает нажатие в любом месте — заливка тогда из центра.
+      const box = check || (item.own ? card.querySelector('[data-done]') : null);
+      if (box) fillFrom(box, check ? event : {});
       if (item.own) {
         if (event.target.closest('[data-delete]')) {
           tap();
@@ -164,10 +170,17 @@ function dayHeading(iso) {
   return `${near || WEEKDAYS_FULL[weekdayIndex(iso)]}, ${dayMonth(iso)}`;
 }
 
+/** Заливка галочки расходится от точки нажатия (app.css, .hw-check.ripple). */
+function fillFrom(button, event) {
+  const rect = button.getBoundingClientRect();
+  button.style.setProperty('--x', `${event.clientX ? event.clientX - rect.left : rect.width / 2}px`);
+  button.style.setProperty('--y', `${event.clientY ? event.clientY - rect.top : rect.height / 2}px`);
+  button.classList.add('ripple');
+}
+
 /** Галочка на месте, без перерисовки списка: иначе карточки заново «въезжают». */
 function paintCard(button, isDone) {
   button.classList.toggle('on', isDone);
-  button.textContent = isDone ? '✓' : '';
   button.setAttribute('aria-pressed', String(isDone));
   button.setAttribute('aria-label', isDone ? 'Снять отметку' : 'Отметить выполненным');
   button.closest('.hw-card')?.classList.toggle('done', isDone);

@@ -25,6 +25,9 @@ let shownKey = '';
 let busy = false;
 let timer = 0;
 let lastDigits = '';
+// День сменился (листание): карточка уезжает и въезжает вместе с уроками,
+// а не сворачивается и раскрывается — иначе уроки прыгали посреди листания.
+let instant = false;
 
 function at(time, base) {
   const [h, m] = String(time || '').split(':').map(Number);
@@ -125,15 +128,24 @@ function paint(box, phase, now = new Date()) {
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-async function show(box, phase) {
+async function show(box, phase, now = false) {
   box.innerHTML = cardHtml(phase);
   lastDigits = '';
   paint(box, phase);
   shownKey = phase.key;
   box.hidden = false;
+  box.classList.remove('collapsed');
+  if (now) return;
   box.classList.add('collapsed');
   void box.offsetWidth;
   box.classList.remove('collapsed');
+}
+
+function hideNow(box) {
+  box.hidden = true;
+  box.innerHTML = '';
+  box.classList.remove('collapsed');
+  shownKey = '';
 }
 
 async function collapse(box, { finished }) {
@@ -159,6 +171,8 @@ async function collapse(box, { finished }) {
 async function tick() {
   const box = document.getElementById('lessonTimer');
   if (!box || busy) return;
+  const daySwitch = instant;
+  instant = false;
   const phase = active ? timerPhase(lessons) : null;
   const key = phase?.key || '';
   if (key === shownKey) {
@@ -166,19 +180,27 @@ async function tick() {
     return;
   }
   if (shownKey) {
-    // Отсчёт дошёл до нуля — праздничное сворачивание; ушли на другой день — тихо.
-    await collapse(box, { finished: active });
-    if (!active) return;
+    // Ушли на другой день — карточка уезжает вместе с уроками, сразу.
+    if (!active || daySwitch) {
+      hideNow(box);
+      if (!active) return;
+    } else {
+      // Отсчёт дошёл до нуля — праздничное сворачивание.
+      await collapse(box, { finished: true });
+    }
   }
   const fresh = active ? timerPhase(lessons) : null;
-  if (fresh) await show(box, fresh);
+  if (fresh) await show(box, fresh, daySwitch);
 }
 
 /** День перерисован: уроки сегодняшнего дня или null (другой день, нет уроков). */
 export function updateTimer(list, isToday) {
   lessons = Array.isArray(list) ? list : [];
-  // Перешли на другой день — tick свернёт карточку тихо, без «Урок окончен».
-  active = Boolean(isToday && lessons.length);
+  // Перешли на другой день — карточка уходит или появляется сразу, без
+  // «Урок окончен» и без сворачивания.
+  const next = Boolean(isToday && lessons.length);
+  if (next !== active) instant = true;
+  active = next;
   if (!timer) {
     timer = setInterval(tick, 1000);
     document.addEventListener('visibilitychange', () => { if (!document.hidden) tick(); });
