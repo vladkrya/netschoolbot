@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import datetime as dt
 import logging
+import re
 from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, replace
@@ -233,10 +234,19 @@ class SessionPool:
             # Режим сменили, а в пуле остался клиент другого API.
             await _close_client(entry.client)
             entry.client = None
-        if entry.client is not None and await self._is_alive(entry.client):
-            return entry.client
-
+        relogin = user.credentials.can_relogin and not user.credentials.login_type.is_gosuslugi
         if entry.client is not None:
+            alive = await self._check(entry.client)
+            if alive or (alive is None and not relogin):
+                return entry.client
+            if alive is None:
+                # Сервер ответил 5xx. Старые серверы (net.mephi3.ru, 5.17) так
+                # отвечают на протухшую сессию — и клиент, которого раз в пять
+                # минут трогает слежение за почтой, считался живым вечно.
+                # Новый вход по паролю это различает: при настоящем сбое он
+                # тоже не пройдёт, и прежний клиент останется в пуле.
+                entry.client = await self._replace_by_login(user, entry.client)
+                return entry.client
             await _close_client(entry.client)
             entry.client = None
 
@@ -246,18 +256,21 @@ class SessionPool:
             try:
                 restored = await self._restore(user.telegram_id, client)
             except NetSchoolError as error:
-                relogin = user.credentials.can_relogin and not user.credentials.login_type.is_gosuslugi
-                if error.reason is not Reason.UNKNOWN or not relogin:
+                unclear = error.reason is Reason.UNKNOWN or _server_answered_5xx(error)
+                if not unclear or not relogin:
                     raise
-                # Непонятный ответ ещё не значит, что токен мёртв, но и вечно
-                # сидеть с ошибкой нельзя: пробуем войти по паролю новым клиентом.
-                # Сохранённая сессия заменится только после удачного входа.
+                # Непонятный ответ (или 5xx, см. выше) ещё не значит, что токен
+                # мёртв, но и вечно сидеть с ошибкой нельзя: пробуем войти по
+                # паролю новым клиентом. Сохранённая сессия заменится только
+                # после удачного входа.
                 logger.info("Сессия %s не проверилась (%s), входим по паролю", user.telegram_id, error)
                 await _close_client(client)
                 client = self._new_client(user, user.effective_api_mode)
                 restored = False
             if restored:
-                if await self._is_alive(client):
+                # import_session сам проверил сессию: 5xx сразу после него
+                # о токене ничего не говорит.
+                if await self._check(client) is not False:
                     _apply_student(client, user)
                     entry.client = client
                     return client
@@ -272,6 +285,23 @@ class SessionPool:
         except BaseException:
             await _close_client(client)
             raise
+
+    async def _replace_by_login(self, user: User, old: Any) -> Any:
+        """Войти по паролю новым клиентом и отдать его вместо `old`.
+
+        Если вход не удался, `old` не трогаем, а ошибка входа уходит наверх.
+        """
+        client = self._new_client(user, user.effective_api_mode)
+        try:
+            await self._login(user, client)
+        except BaseException:
+            await _close_client(client)
+            raise
+        logger.info("Сессия %s отвечала 5xx, а вход по паролю прошёл — сессия заменена", user.telegram_id)
+        await _close_client(old)
+        _apply_student(client, user)
+        await self._persist(user.telegram_id, client)
+        return client
 
     async def _restore(self, telegram_id: int, client: Any) -> bool:
         payload = await self._sessions.load(telegram_id)
@@ -348,14 +378,17 @@ class SessionPool:
         except Exception as exc:
             raise wrap(exc, context=f"вход {user.telegram_id}") from exc
 
-    async def _is_alive(self, client: Any) -> bool:
-        """Проверить, что сессия ещё принимается сервером.
+    async def _check(self, client: Any) -> bool | None:
+        """Принимает ли сервер сессию: True — да, False — нет, None — сервер
+        ответил 5xx, и по ответу не понять.
 
         Недоступность сервера не означает протухшую сессию — в этом случае
         считаем её живой, чтобы не устраивать бессмысленный повторный вход.
         """
+        # Веб-клиент netschoolpy.is_alive считает живой и сессию, на которую
+        # сервер ответил 500, поэтому веб проверяем сами.
         check = getattr(client, "is_alive", None)
-        if check is not None:
+        if check is not None and _client_mode(client) is ApiMode.MOBILE:
             try:
                 return bool(await check())
             except Exception as exc:
@@ -363,8 +396,32 @@ class SessionPool:
         try:
             response = await client._authed_get("student/diary/init")
         except Exception as exc:
-            return not wrap(exc).reason.needs_relogin
-        return getattr(response, "status_code", 200) not in (401, 403)
+            if wrap(exc).reason.needs_relogin:
+                return False
+            return None if _server_answered_5xx(exc) else True
+        status = getattr(response, "status_code", 200)
+        if status in (401, 403):
+            return False
+        return None if status >= 500 else True
+
+
+# «Server error '500 …» — httpx, «сервер ответил 500» — netschoolpy. Сервер
+# именно ответил, а не промолчал: таймауты и обрывы сюда не попадают.
+_ANSWERED_5XX = re.compile(r"server error '5\d\d|сервер ответил 5\d\d", re.IGNORECASE)
+
+
+def _server_answered_5xx(exc: BaseException) -> bool:
+    """Ответил ли сервер школы ошибкой 5xx (по исключению или его причине)."""
+    seen: set[int] = set()
+    while exc is not None and id(exc) not in seen:
+        seen.add(id(exc))
+        status = getattr(getattr(exc, "response", None), "status_code", None)
+        if isinstance(status, int) and status >= 500:
+            return True
+        if _ANSWERED_5XX.search(str(exc)):
+            return True
+        exc = getattr(exc, "cause", None) or exc.__cause__
+    return False
 
 
 def _default_client_factory(url: str, proxy: str | None) -> Any:

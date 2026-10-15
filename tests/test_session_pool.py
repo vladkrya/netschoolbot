@@ -392,7 +392,7 @@ class TestGosuslugiSession:
 @pytest.mark.parametrize('cause, expected', [
     ('Expecting value: line 1 column 1 (char 0)', Reason.SERVER_UNAVAILABLE),
     ('Технические работы', Reason.SERVER_UNAVAILABLE),
-    ('сервер ответил 503', Reason.SERVER_UNAVAILABLE),
+    ('ReadTimeout timed out', Reason.SERVER_UNAVAILABLE),
 ])
 async def test_uncertain_session_validation_does_not_drop_session(pool, users, sessions, cause, expected):
     from netschoolpy.exceptions import SessionExpired
@@ -493,3 +493,100 @@ async def test_server_error_with_auth_words_keeps_gosuslugi_token(pool, users, s
             pass
     assert info.value.reason is Reason.SERVER_UNAVAILABLE
     assert await sessions.load(1) == '{"cookies": "esia"}'
+
+
+MEPHI_500 = "Server error '500 Internal Server Error' for url 'https://net.mephi3.ru/webapi/student/diary/init'"
+
+
+async def test_saved_session_answering_500_relogs_with_password(pool, users, sessions):
+    """net.mephi3.ru (5.17) на протухшую сессию отвечает 500, а не 401."""
+    from netschoolpy.exceptions import SessionExpired
+    user = make_user()
+    await users.save(user)
+    await sessions.save(1, '{"cookies": "saved"}')
+    pool._client_factory = _failing_import(SessionExpired(f"Сессия истекла или невалидна: {MEPHI_500}"))
+    async with pool.acquire(user) as client:
+        assert client.logins == 1
+    assert await sessions.load(1) == '{"cookies": "abc"}'
+
+
+async def test_500_keeps_saved_session_when_relogin_fails(pool, users, sessions):
+    """Настоящий сбой: вход тоже не проходит — сохранённую сессию не трогаем."""
+    from netschoolpy.exceptions import SessionExpired
+    user = make_user()
+    await users.save(user)
+    await sessions.save(1, '{"cookies": "saved"}')
+    factory = _failing_import(SessionExpired("Сессия истекла или невалидна: сервер ответил 503"))
+
+    def failing_login(url, proxy):
+        client = factory(url, proxy)
+        client.login_error = Exception("503 Service Unavailable")
+        return client
+    pool._client_factory = failing_login
+    with pytest.raises(NetSchoolError) as info:
+        async with pool.acquire(user):
+            pass
+    assert info.value.reason is Reason.SERVER_UNAVAILABLE
+    assert await sessions.load(1) == '{"cookies": "saved"}'
+    assert all(client.closed for client in FakeClient.instances)
+
+
+class TestLiveClientAnswering500:
+    """Живой клиент в пуле: слежение за почтой трогает его каждые пять минут,
+    поэтому до вытеснения по простою дело не доходит."""
+
+    async def test_live_client_answering_500_is_replaced_by_login(self, pool, users, sessions):
+        user = make_user()
+        await users.save(user)
+        async with pool.acquire(user) as client:
+            pass
+        client.session_status = 500
+        async with pool.acquire(user) as again:
+            pass
+        assert again is not client
+        assert again.logins == 1
+        assert client.closed is True
+
+    async def test_http_500_exception_is_treated_the_same(self, pool, users):
+        user = make_user()
+        await users.save(user)
+        async with pool.acquire(user) as client:
+            pass
+
+        async def fail(path):
+            raise Exception(MEPHI_500)
+        client._authed_get = fail
+        async with pool.acquire(user) as again:
+            pass
+        assert again is not client
+
+    async def test_failed_relogin_keeps_live_client(self, pool, users):
+        user = make_user()
+        await users.save(user)
+        async with pool.acquire(user) as client:
+            pass
+        client.session_status = 503
+
+        def factory(url, proxy):
+            fresh = FakeClient(url, proxy)
+            fresh.login_error = Exception("503 Service Unavailable")
+            return fresh
+        pool._client_factory = factory
+        with pytest.raises(NetSchoolError) as info:
+            async with pool.acquire(user):
+                pass
+        assert info.value.reason is Reason.SERVER_UNAVAILABLE
+        assert pool._entries[1].client is client
+        assert client.closed is False
+        assert FakeClient.instances[-1].closed
+
+    async def test_gosuslugi_client_answering_500_is_kept(self, pool, users, sessions):
+        user = make_user(credentials=Credentials(login_type=LoginType.ESIA, login="", password=""))
+        await users.save(user)
+        await sessions.save(1, '{"cookies": "esia"}')
+        async with pool.acquire(user) as client:
+            pass
+        client.session_status = 500
+        async with pool.acquire(user) as again:
+            pass
+        assert again is client
