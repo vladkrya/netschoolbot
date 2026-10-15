@@ -222,7 +222,7 @@
     appVersion: {{ (app_version or '') | tojson }},
     token: {{ token | tojson }},
     pushEnabled: {{ push_enabled | tojson }},
-    assistant: {{ (assistant and not demo) | tojson }},
+    assistant: {{ (assistant or (demo is defined and demo)) | tojson }},
     student: {{ student | tojson }},
     school: {{ school | tojson }},
     attachmentHosts: {{ (attachment_hosts or []) | tojson }},

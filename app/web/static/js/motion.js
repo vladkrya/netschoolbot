@@ -186,6 +186,25 @@ export function playAverages(root, { entrance = false } = {}) {
   }
 }
 
+/** Число плавно переходит от from к to («4,08» → «4,14»), с лёгким толчком
+ *  в сторону изменения: вверх — зелёным, вниз — красным (app.css). */
+export function tweenNumber(el, from, to, { digits = 2, duration = 650 } = {}) {
+  if (!el || reducedMotion() || from == null || to == null || Math.abs(to - from) < 0.005) return;
+  const text = (value) => value.toFixed(digits).replace('.', ',');
+  const start = performance.now();
+  el.classList.remove('tween-up', 'tween-down');
+  void el.offsetWidth;
+  el.classList.add(to > from ? 'tween-up' : 'tween-down');
+  const frame = (now) => {
+    if (!el.isConnected) return;
+    const t = Math.min(1, (now - start) / duration);
+    el.textContent = text(from + (to - from) * (1 - (1 - t) ** 3));
+    if (t < 1) requestAnimationFrame(frame);
+  };
+  el.textContent = text(from);
+  requestAnimationFrame(frame);
+}
+
 /** Число досчитывает от нуля до text («4,57»): быстро в начале, плавно к концу. */
 function countUp(el, text) {
   const target = Number(text.replace(',', '.'));

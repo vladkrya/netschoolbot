@@ -2,11 +2,16 @@
 // восемь штук в разметке, каждая со своим идентификатором и обработчиком.
 'use strict';
 
-import { $ } from './core.js';
+import { $, stillMotion } from './core.js';
 
 let onClose = null;
+// Шторка уезжает вниз, а не пропадает разом; прячется по окончании.
+const CLOSE_MS = 220;
+let closing = 0;
 
 export function openSheet(title, body, options = {}) {
+  clearTimeout(closing);
+  $('sheet').classList.remove('closing');
   $('sheetTitle').textContent = title;
   $('sheetBody').innerHTML = body;
   $('sheet').hidden = false;
@@ -15,15 +20,35 @@ export function openSheet(title, body, options = {}) {
   return $('sheetBody');
 }
 
+/** Шторка открыта и не уезжает — для «назад» и жестов. */
+export function sheetOpen() {
+  const sheet = $('sheet');
+  return !sheet.hidden && !sheet.classList.contains('closing');
+}
+
 export function closeSheet() {
-  $('sheet').hidden = true;
+  const sheet = $('sheet');
+  if (!sheetOpen()) return;
   document.body.style.overflow = '';
   if (onClose) {
     const handler = onClose;
     onClose = null;
     handler();
   }
-  window.dispatchEvent(new Event('netschool:sheetclosed'));
+  // «Закрыта» — когда правда спрятана: кто ждёт этого события, тут же
+  // проверяет hidden и иначе ждал бы вечно.
+  const done = () => {
+    sheet.hidden = true;
+    sheet.classList.remove('closing');
+    window.dispatchEvent(new Event('netschool:sheetclosed'));
+  };
+  if (stillMotion()) {
+    done();
+    return;
+  }
+  sheet.classList.add('closing');
+  clearTimeout(closing);
+  closing = setTimeout(done, CLOSE_MS);
 }
 
 export function initSheet() {
@@ -34,6 +59,6 @@ export function initSheet() {
     if (event.target === $('sheet')) closeSheet();
   });
   document.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape' && !$('sheet').hidden) closeSheet();
+    if (event.key === 'Escape' && sheetOpen()) closeSheet();
   });
 }

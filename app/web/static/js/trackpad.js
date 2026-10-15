@@ -11,6 +11,7 @@
 
 import { $, state, stillMotion } from './core.js';
 import { canGoBack, handleBack, topScreen } from './screens.js';
+import { sheetOpen } from './sheet.js';
 import { pageWeek, shiftDay } from './day.js';
 import { hideBackHint, showBackHint } from './swipeback.js';
 
@@ -37,7 +38,7 @@ function scrollsSideways(target, dx) {
  *  до срабатывания: так видно, что жест пойман. */
 function actionFor(step, target) {
   if (document.documentElement.classList.contains('app-locked')) return null;
-  const overlay = topScreen() || !$('sheet').hidden || $('drawer').classList.contains('open');
+  const overlay = topScreen() || sheetOpen() || $('drawer').classList.contains('open');
   if (!overlay && state.tab === 'day') {
     if (target.closest('#weekStrip')) return { el: $('weekStrip'), run: (dx) => pageWeek(step, dx) };
     if (target.closest('#panel-day, #appHeader')) return { el: $('dayContent'), run: () => shiftDay(step) };

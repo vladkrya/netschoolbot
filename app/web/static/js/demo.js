@@ -233,6 +233,34 @@ function demoKey(text) {
 }
 
 const demoNotes = [];
+
+/** Ответ помощника в демо: о слабом предмете, о завтрашнем дне или общий. */
+async function demoAssistant(messages) {
+  const question = String(messages.at(-1)?.content || '').toLowerCase();
+  const { data: marks } = await demoApi('/api/marks');
+  const rated = marks.subjects.filter((s) => s.average != null).sort((a, b) => a.average - b.average);
+  const fmt = (value) => value.toFixed(2).replace('.', ',');
+  let reply;
+  if (/завтра|расписан|урок/.test(question)) {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const { data } = await demoApi(`/api/diary?week=0`);
+    const day = data.days.find((d) => d.date === iso(tomorrow));
+    const list = (day?.lessons || []).map((l, i) => `${i + 1}. ${l.subject}${l.homework.length ? ` — ${l.homework[0].text}` : ''}`);
+    reply = list.length ? `Завтра ${list.length} уроков:\n${list.join('\n')}` : 'Завтра уроков нет — выходной.';
+  } else {
+    const weak = rated[0];
+    // Сколько пятёрок подряд поднимут средний до порога (без учёта весов).
+    const fives = (target) => Math.max(1, Math.ceil((target - weak.average) * weak.count / (5 - target)));
+    const word = (n) => (n % 10 === 1 && n % 100 !== 11 ? 'пятёрка'
+      : [2, 3, 4].includes(n % 10) && ![12, 13, 14].includes(n % 100) ? 'пятёрки' : 'пятёрок');
+    const toFour = weak && weak.average < 3.6 ? fives(3.6) : 0;
+    reply = weak
+      ? `Слабее всего сейчас ${weak.subject}: средний ${fmt(weak.average)}.${toFour ? ` До «4» — ${toFour} ${word(toFour)} подряд.` : ''} До «5» — ${fives(4.6)} ${word(fives(4.6))}. Лучше всего идут ${rated.at(-1).subject} (${fmt(rated.at(-1).average)}) и ${rated.at(-2).subject} (${fmt(rated.at(-2).average)}).`
+      : 'Оценок пока нет — спросите позже.';
+  }
+  return ok({ reply, left: 20 });
+}
 const demoAnswers = {};
 
 export async function demoApi(path, options = {}) {
@@ -297,6 +325,20 @@ export async function demoApi(path, options = {}) {
       year: `${yearStart()}/${yearStart() + 1}`,
     });
   }
+
+  // Средний балл класса (в настоящем приложении — мобильное API): чуть ниже
+  // ученика-отличника, у каждого предмета свой.
+  if (route === '/api/subject') {
+    const subject = url.searchParams.get('subject') || '';
+    const { data } = await demoApi('/api/marks');
+    const mine = data.subjects.find((s) => s.subject === subject)?.average;
+    if (mine == null) return ok({ available: false });
+    const shift = (demoKey(subject).charCodeAt(0) % 5) / 10 + 0.15;
+    return ok({ available: true, class_average: Math.max(2, Math.round((mine - shift) * 100) / 100) });
+  }
+
+  // ИИ-помощник в демо отвечает заготовками по демо-оценкам и расписанию.
+  if (route === '/api/assistant') return demoAssistant(body.messages || []);
 
   if (route === '/api/homework/done') {
     if (options.method === 'POST') {
