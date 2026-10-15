@@ -554,6 +554,16 @@ MIGRATIONS: list[str] = [
         owner_id  INTEGER NOT NULL REFERENCES users(telegram_id) ON DELETE CASCADE
     );
     """,
+    # Ключ виджета на экране iPhone (Scriptable): открывает только расписание
+    # на ближайшие дни, отзывается отдельно. Хранится хэш случайного секрета.
+    """
+    CREATE TABLE widget_keys (
+        telegram_id INTEGER PRIMARY KEY REFERENCES users(telegram_id) ON DELETE CASCADE,
+        key_hash    TEXT NOT NULL UNIQUE,
+        created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+        used_at     TEXT
+    );
+    """,
 ]
 
 
