@@ -309,8 +309,20 @@ async function revalidateNow(path, shown, onFresh) {
     staleBanner(true);
     return;
   }
+  // Сервер ещё ждёт школу (refreshing): обновление идёт у него в фоне и
+  // скоро ляжет в кэш. Раньше на этом сдавались — новое появлялось только
+  // после ручного обновления жестом. Переспрашиваем без refresh=1: свежий
+  // кэш сервер отдаёт сразу, а новое обновление не запускает.
+  for (let attempt = 0; fresh.stale && fresh.refreshing && attempt < 4; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 3000 * (attempt + 1)));
+    try {
+      fresh = await request(path);
+    } catch {
+      break;
+    }
+  }
   // Школьный сервер не ответил — на экране остаются сохранённые данные.
-  if (fresh.stale) {
+  if (fresh.stale || fresh.offline) {
     revalidated.delete(path);
     staleBanner(true);
     return;
@@ -331,7 +343,10 @@ export async function api(path, options = {}) {
   }
   let payload = await request(path, options);
 
-  const outdated = payload.stale || (payload.age ?? 0) > REVALIDATE_AFTER_S;
+  // offline — копия из service worker: при запуске на iPhone сеть
+  // просыпается дольше его ожидания, и он отдаёт сохранённое. Такую копию
+  // тоже сверяем: refresh=1 он всегда отправляет в сеть.
+  const outdated = payload.stale || payload.offline || (payload.age ?? 0) > REVALIDATE_AFTER_S;
   const canRevalidate = !options.method && !path.includes('refresh=1') && !revalidated.has(path);
   if (outdated && canRevalidate) {
     if (options.onFresh) {
