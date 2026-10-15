@@ -589,6 +589,13 @@ class TestNewFeatures:
         response = await client.post(url, params={"token": token}, json={"hwStatus": "red"})
         assert (await response.json())["ok"] is False
 
+    async def test_motion_pref_is_validated(self, client, token):
+        url = f"{BASE}/api/prefs"
+        response = await client.post(url, params={"token": token}, json={"motion": "off"})
+        assert (await response.json())["data"]["motion"] == "off"
+        response = await client.post(url, params={"token": token}, json={"motion": "slow"})
+        assert (await response.json())["ok"] is False
+
     async def test_confetti_pref_is_validated(self, client, token):
         url = f"{BASE}/api/prefs"
         response = await client.post(url, params={"token": token}, json={"confetti": "hide"})

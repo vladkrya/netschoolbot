@@ -104,6 +104,21 @@ export function showHomeworkStatus() {
   return getPref('hwStatus') !== 'hide';
 }
 
+/** Анимации в приложении. По умолчанию включены; выключенные — класс
+ *  no-motion на <html> (его же ставит скрипт в <head> до отрисовки). */
+export function showMotion() {
+  return getPref('motion') !== 'off';
+}
+
+export function applyMotion() {
+  document.documentElement.classList.toggle('no-motion', !showMotion());
+}
+
+export function saveMotion(on) {
+  setPref('motion', on ? 'on' : 'off');
+  applyMotion();
+}
+
 /** Конфетти у новой пятёрки. По умолчанию включено. */
 export function showConfetti() {
   return getPref('confetti') !== 'hide';

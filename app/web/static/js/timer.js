@@ -7,13 +7,16 @@
 // перерисовывается по своему таймеру, и анимация не должна обрываться.
 'use strict';
 
-import { esc } from './core.js';
+import { esc, lessonNo } from './core.js';
 import { notify } from './haptics.js';
 
-// Перед первым уроком отсчёт показывается не раньше чем за столько минут.
+// До начала урока отсчёт показывается не раньше чем за столько минут — и
+// перед первым, и после длинного окна (свой урок ночью, а дальше уроки с утра).
 const BEFORE_FIRST_MIN = 60;
-// Сколько держится «Урок окончен», прежде чем карточка свернётся.
-const DONE_HOLD_MS = 1600;
+// Сколько держится «Урок окончен» или «Урок начался», прежде чем карточка
+// свернётся, и пауза перед следующим отсчётом.
+const DONE_HOLD_MS = 4000;
+const NEXT_PAUSE_MS = 500;
 // Длительность сворачивания и раскрытия (как в CSS).
 const COLLAPSE_MS = 520;
 // Последние секунды — заметнее.
@@ -50,9 +53,11 @@ export function timerPhase(list, now = new Date()) {
       return { kind: 'lesson', key: `lesson:${i}:${lesson.subject}`, lesson, next, from: start, until: end };
     }
     if (now < start) {
-      const prevEnd = i ? items[i - 1].end : new Date(start.getTime() - BEFORE_FIRST_MIN * 60000);
-      if (now < prevEnd) return null;
-      return { kind: 'break', key: `break:${i}:${lesson.subject}`, lesson, next: lesson, from: prevEnd, until: start, first: i === 0 };
+      const earliest = new Date(start.getTime() - BEFORE_FIRST_MIN * 60000);
+      const prevEnd = i ? items[i - 1].end : earliest;
+      const from = prevEnd > earliest ? prevEnd : earliest;
+      if (now < from) return null;
+      return { kind: 'break', key: `break:${i}:${lesson.subject}`, lesson, next: lesson, from, until: start, first: i === 0 || prevEnd < earliest };
     }
   }
   return null;
@@ -70,7 +75,7 @@ function clockText(seconds) {
 function nextText(phase) {
   if (phase.kind === 'break') {
     const room = phase.lesson.room ? ` · каб. ${phase.lesson.room}` : '';
-    return `${phase.lesson.number ? `${phase.lesson.number} урок — ` : ''}${phase.lesson.subject}${room}`;
+    return `${lessonNo(phase.lesson) ? `${lessonNo(phase.lesson)} урок — ` : ''}${phase.lesson.subject}${room}`;
   }
   if (!phase.next) return 'Последний урок на сегодня';
   const room = phase.next.room ? ` · каб. ${phase.next.room}` : '';
@@ -80,7 +85,7 @@ function nextText(phase) {
 function cardHtml(phase) {
   const isLesson = phase.kind === 'lesson';
   const title = isLesson
-    ? `Идёт ${phase.lesson.number ? `${phase.lesson.number} урок` : 'урок'} · ${phase.lesson.subject}`
+    ? `Идёт ${lessonNo(phase.lesson) ? `${lessonNo(phase.lesson)} урок` : 'урок'} · ${phase.lesson.subject}`
     : phase.first ? 'Скоро уроки' : 'Перемена';
   return `<div class="lt-inner"><div class="lt-card ${isLesson ? '' : 'break'}">
       <div class="lt-head"><span class="lt-dot"></span><span class="lt-title">${esc(title)}</span></div>
@@ -91,7 +96,7 @@ function cardHtml(phase) {
       <div class="lt-bar"><span></span></div>
       <div class="lt-next">${esc(nextText(phase))}</div>
       <div class="lt-done" aria-hidden="true"><span class="lt-check">✓</span>
-        <span>${isLesson ? 'Урок окончен' : 'Перемена окончена'}</span></div>
+        <span>${isLesson ? 'Урок окончен' : 'Урок начался'}</span></div>
     </div></div>`;
 }
 
@@ -185,8 +190,11 @@ async function tick() {
       hideNow(box);
       if (!active) return;
     } else {
-      // Отсчёт дошёл до нуля — праздничное сворачивание.
+      // Отсчёт дошёл до нуля — праздничное сворачивание, пауза — и следующий.
       await collapse(box, { finished: true });
+      busy = true;
+      await wait(NEXT_PAUSE_MS);
+      busy = false;
     }
   }
   const fresh = active ? timerPhase(lessons) : null;

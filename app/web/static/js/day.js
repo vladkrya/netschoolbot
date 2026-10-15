@@ -6,8 +6,8 @@
 'use strict';
 
 import {
-  $, addDays, api, dayMonth, errorCard, esc, fullDate, isoOf, isoToday, mondayOf,
-  parseIso, plural, showFailure, showLoading, skeleton, state, WEEKDAYS, WEEKDAYS_FULL, weekdayIndex, weekOffsetOf,
+  $, addDays, api, dayMonth, errorCard, esc, fullDate, isoOf, isoToday, lessonNo, mondayOf,
+  parseIso, plural, showFailure, showLoading, skeleton, state, WEEKDAYS, WEEKDAYS_FULL, weekdayIndex, weekOffsetOf, stillMotion,
 } from './core.js';
 import { ICONS } from './icons.js';
 import { isNewDesign, saveBells, showBells, showHomeworkStatus, showWeekends } from './appearance.js';
@@ -367,7 +367,7 @@ function lessonCard(lesson, index) {
     : '';
   return `<div class="lesson-card" data-lesson="${index}">
       <div class="lc-top">
-        <span class="lc-num">${esc(lesson.number ?? '')}</span>
+        <span class="lc-num">${esc(lessonNo(lesson))}</span>
         <span class="lc-subject">${esc(lesson.subject)}</span>
         <span class="lc-marks">${marks}</span>
       </div>
@@ -662,7 +662,7 @@ function bindSwipe() {
 /** Полоса недели листается неделями, как в календаре iPhone: ведёшь пальцем
  *  по числам — полоса едет за ним; отпустил достаточно далеко или резко —
  *  открывается тот же день недели соседней недели. */
-const reducedMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+const reducedMotion = stillMotion;
 
 /** Неделя вперёд (step = 1) или назад (−1), тот же день недели. Полоса
  *  уезжает за край — от dx, где её отпустил палец, — и новая неделя

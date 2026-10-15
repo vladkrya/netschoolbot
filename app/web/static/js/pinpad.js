@@ -1,3 +1,4 @@
+import { stillMotion } from './core.js';
 import { tap, notify } from './haptics.js';
 
 const LOCK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="5" y="10" width="14" height="11" rx="4"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/><circle cx="12" cy="15" r="1"/></svg>';
@@ -39,7 +40,7 @@ export function mountPinpad(root, complete, { hint = 'Введите 4 цифр�
     notify('error');
     const row = field.querySelector('.pin-dots');
     row.classList.add('wrong'); setTimeout(() => row.classList.remove('wrong'), 650);
-    if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    if (!stillMotion()) {
       field.querySelector('.pin-dots').animate([
         {transform: 'translateX(0)'}, {transform: 'translateX(-9px)'},
         {transform: 'translateX(9px)'}, {transform: 'translateX(-5px)'}, {transform: 'translateX(0)'},
@@ -49,7 +50,7 @@ export function mountPinpad(root, complete, { hint = 'Введите 4 цифр�
   const press = button => {
     if (!button) return;
     button.getAnimations().forEach(animation => animation.cancel());
-    const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const reduced = stillMotion();
     button.animate(reduced ? [{opacity: .65}, {opacity: 1}] : [
       {transform: 'translateY(0) scale(1)', offset: 0},
       {transform: 'translateY(4px) scale(.91)', offset: .25},
@@ -57,7 +58,7 @@ export function mountPinpad(root, complete, { hint = 'Введите 4 цифр�
       {transform: 'translateY(0) scale(1)', offset: 1},
     ], {duration: reduced ? 100 : 260, easing: 'cubic-bezier(.2,.8,.2,1)'});
   };
-  const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const reduced = stillMotion;
   /** Верный код: точки по очереди вспыхивают зелёным, замок открывается. */
   const success = async () => {
     if (disposed) return;

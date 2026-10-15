@@ -40,6 +40,16 @@ export const state = {
 
 export const $ = (id) => document.getElementById(id);
 
+/** Движение выключено: системное «Уменьшить движение» или тумблер
+ *  «Анимации» в настройках (класс no-motion на <html>, appearance.js). */
+export const stillMotion = () => document.documentElement.classList.contains('no-motion')
+  || matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/** Номер урока для показа. В день со своими уроками они нумеруются по
+ *  порядку вместе со школьными (place, edits.js); сам number не трогаем —
+ *  по нему правки находят школьный урок. */
+export const lessonNo = (lesson) => lesson?.place ?? lesson?.number ?? '';
+
 /** Текст для вставки в HTML — и в содержимое, и в значение атрибута.
  *  Кавычки тоже: иначе «МОУ "Школа № 24"» в data-атрибуте обрывался на
  *  кавычке, а чужой текст (имя вложения в письме) мог дописать свой атрибут. */

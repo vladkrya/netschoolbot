@@ -5,7 +5,7 @@
 // «Назад» Telegram — она закрывает верхний экран, а не всё приложение.
 'use strict';
 
-import { $, esc, tg } from './core.js';
+import { $, esc, tg, stillMotion } from './core.js';
 import { tap } from './haptics.js';
 import { ICONS } from './icons.js';
 
@@ -45,7 +45,7 @@ export function popScreen() {
  *  свайп (transform уже за краем), просто убираем. */
 function leave(screen) {
   const swiped = screen.style.transform.includes('100%');
-  const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const still = stillMotion();
   if (swiped || still || !screen.animate) {
     screen.remove();
     return;

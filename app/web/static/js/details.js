@@ -4,7 +4,7 @@
 
 import {
   absenceText, api, attachmentsHtml, banner, esc, escRich, forDate, fullDate, isAbsence,
-  isoToday, markClass, refuseReadOnly, state,
+  isoToday, lessonNo, markClass, refuseReadOnly, state,
 } from './core.js';
 import { notify, tap } from './haptics.js';
 import { popScreen, pushScreen } from './screens.js';
@@ -170,7 +170,7 @@ function compactTime(value) {
 }
 
 export function openLesson(lesson, iso) {
-  const body = pushScreen(`Урок ${lesson.number ?? ''}`.trim(), fullDate(iso));
+  const body = pushScreen(`Урок ${lessonNo(lesson)}`.trim(), fullDate(iso));
   const status = lessonStatus(lesson, iso);
 
   // Горизонтальная лента, как в приложении: кабинет, учитель, тема —
@@ -205,7 +205,7 @@ export function openLesson(lesson, iso) {
 
   body.innerHTML = `
     <div class="card lesson-head">
-      <div class="lesson-title"><span class="lc-num">${esc(lesson.number ?? '')}</span>
+      <div class="lesson-title"><span class="lc-num">${esc(lessonNo(lesson))}</span>
         <button class="link subject-link" data-subject-results>${esc(lesson.subject)}</button></div>
       ${lesson.is_elective ? '<div class="lc-badges"><span class="elective-badge">Факультатив</span></div>' : ''}
       <div class="lc-bottom"><span>${esc(timeRange(lesson))}</span><span data-lesson-status>${esc(status)}</span></div>

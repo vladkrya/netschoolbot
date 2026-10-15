@@ -1,5 +1,5 @@
 // Блокировка запрашивается до любых данных дневника; секрет сессии только в памяти.
-import { api, demo, onLocked, setUnlock, tg } from './core.js';
+import { api, demo, onLocked, setUnlock, tg, stillMotion } from './core.js';
 import { biometricLabel, nativeBiometricEnabled, webBiometricLabel } from './biometrics.js';
 import { mountPinpad } from './pinpad.js';
 
@@ -209,7 +209,7 @@ function panel(title) {
   return root;
 }
 
-const reducedMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+const reducedMotion = stillMotion;
 
 /** Экран защиты растворяется, открывая приложение под собой. */
 function closeAnimated(root, frames = [{ opacity: 1, transform: 'scale(1)' }, { opacity: 0, transform: 'scale(1.08)' }]) {

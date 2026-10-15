@@ -341,6 +341,10 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-delay: 0s !important; transition-duration: .01ms !important; }
 }
+/* Тумблер «Анимации» в настройках выключает их так же, как системная настройка. */
+.no-motion *, .no-motion *::before, .no-motion *::after {
+  animation-duration: .01ms !important; animation-delay: 0s !important; transition-duration: .01ms !important;
+}
 
 .list.slide-left, .lesson-timer.slide-left { animation: slide-left .22s ease; }
 .list.slide-right, .lesson-timer.slide-right { animation: slide-right .22s ease; }
@@ -1969,7 +1973,11 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
 .ac-line { fill: none; stroke: var(--primary); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round;
   stroke-dasharray: 1; stroke-dashoffset: 1; animation: ac-draw .9s var(--ease) .1s forwards; }
 @keyframes ac-draw { to { stroke-dashoffset: 0; } }
-.ac-dot { stroke: var(--card); stroke-width: 2; transition: r .15s ease; }
+.ac-dot { stroke: var(--card); stroke-width: 2; transition: r .15s ease;
+  /* Точки оценок появляются по очереди, следом за рисующейся линией. */
+  transform-box: fill-box; transform-origin: center;
+  animation: dot-pop .35s cubic-bezier(.34, 1.56, .64, 1) both; animation-delay: calc(.25s + var(--i, 0) * 45ms); }
+@keyframes dot-pop { from { transform: scale(0); opacity: 0; } }
 .ac-dot.d5 { fill: var(--g5); } .ac-dot.d4 { fill: var(--g4); } .ac-dot.d3 { fill: var(--g3); }
 .ac-dot.d2, .ac-dot.d1 { fill: var(--g2); }
 .ac-dot.on { r: 6; }

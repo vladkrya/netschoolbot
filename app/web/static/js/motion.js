@@ -3,10 +3,10 @@
 // включено «Уменьшить движение».
 'use strict';
 
-import { isoToday } from './core.js';
+import { isoToday, stillMotion } from './core.js';
 import { showConfetti } from './appearance.js';
 
-export const reducedMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+export const reducedMotion = stillMotion;
 
 /* ─────────────────────────── Новые оценки ─────────────────────────── */
 
@@ -148,27 +148,35 @@ function averages() {
   return shownAverages;
 }
 
-/** Числа с data-odo="ключ" внутри root: если с прошлого показа средний
- *  поменялся, цифры прокручиваются от старого к новому, рядом — стрелка. */
-export function playAverages(root) {
+/** Средние баллы внутри root.
+ *
+ *  data-odo="ключ" — цифры прокручиваются, как счётчик: от прошлого
+ *  значения, если оно поменялось, а при входе во вкладку (entrance) — и
+ *  без изменений, с нулей. data-count="ключ" (экран предмета) — число
+ *  досчитывает от нуля до своего значения. С data-odo-trend рядом
+ *  появляется стрелка, если средний сдвинулся с прошлого показа. */
+export function playAverages(root, { entrance = false } = {}) {
   const store = averages();
   let changed = false;
-  root.querySelectorAll('[data-odo]').forEach((el) => {
+  root.querySelectorAll('[data-odo], [data-count]').forEach((el) => {
     // Вкладку рисуют и заранее, в фоне: там прокрутку никто не увидит —
     // пусть отыграет, когда вкладку откроют.
     if (!el.getClientRects().length) return;
-    const key = el.dataset.odo;
+    const key = el.dataset.odo ?? el.dataset.count;
     const text = el.textContent.trim();
     const before = store[key];
-    if (before === text) return;
-    store[key] = text;
-    changed = true;
-    if (before == null || reducedMotion()) return;
-    const from = Number(before.replace(',', '.'));
+    if (before !== text) {
+      store[key] = text;
+      changed = true;
+    }
     const to = Number(text.replace(',', '.'));
-    if (!Number.isFinite(from) || !Number.isFinite(to)) return;
-    odometer(el, before, text);
-    if (el.dataset.odoTrend != null) trendChip(el, to - from);
+    if (reducedMotion() || !Number.isFinite(to)) return;
+    const from = before == null ? NaN : Number(before.replace(',', '.'));
+    const moved = Number.isFinite(from) && before !== text;
+    if (el.dataset.count != null) countUp(el, text);
+    else if (moved) odometer(el, before, text);
+    else if (entrance) odometer(el, text.replace(/\d/g, '0'), text);
+    if (moved && el.dataset.odoTrend != null) trendChip(el, to - from);
   });
   if (!changed) return;
   try {
@@ -176,6 +184,22 @@ export function playAverages(root) {
   } catch {
     /* без хранилища прокрутка просто не повторится */
   }
+}
+
+/** Число досчитывает от нуля до text («4,57»): быстро в начале, плавно к концу. */
+function countUp(el, text) {
+  const target = Number(text.replace(',', '.'));
+  const digits = (text.split(',')[1] || '').length;
+  const start = performance.now();
+  const duration = 900;
+  const frame = (now) => {
+    if (!el.isConnected) return;
+    const t = Math.min(1, (now - start) / duration);
+    el.textContent = t < 1 ? (target * (1 - (1 - t) ** 3)).toFixed(digits).replace('.', ',') : text;
+    if (t < 1) requestAnimationFrame(frame);
+  };
+  el.textContent = (0).toFixed(digits).replace('.', ',');
+  requestAnimationFrame(frame);
 }
 
 function odometer(el, from, to) {

@@ -9,7 +9,7 @@
 // остаётся обычной прокруткой.
 'use strict';
 
-import { $, state } from './core.js';
+import { $, state, stillMotion } from './core.js';
 import { canGoBack, handleBack, topScreen } from './screens.js';
 import { pageWeek, shiftDay } from './day.js';
 import { hideBackHint, showBackHint } from './swipeback.js';
@@ -46,7 +46,7 @@ function actionFor(step, target) {
   return null;
 }
 
-const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+const reduced = stillMotion;
 
 /** Сдвиг за пальцами: до порога с сопротивлением, чтобы день не «уезжал». */
 function follow(el, x) {

@@ -9,7 +9,7 @@ import {
 } from './core.js';
 import {
   ACCENTS, currentAccent, forgetAccent, isNewDesign, rememberAccent, saveAccent, savedAccents, saveAnswers, saveBells, saveDesign, saveHomeworkStatus, saveWeekends, showAnswers, showBells,
-  showConfetti, saveConfetti, showHomeworkStatus, showWeekends, syncChromeColor,
+  applyMotion, showConfetti, saveConfetti, showMotion, saveMotion, showHomeworkStatus, showWeekends, syncChromeColor,
 } from './appearance.js';
 import { ICONS } from './icons.js';
 import { markBox } from './details.js';
@@ -60,6 +60,8 @@ export function applyStoredTheme() {
   const theme = currentTheme();
   if (theme === 'auto') document.documentElement.removeAttribute('data-theme');
   else document.documentElement.setAttribute('data-theme', theme);
+  // «Анимации» могли выключить на другом устройстве — приходит с настройками.
+  applyMotion();
   syncChromeColor();
 }
 
@@ -769,6 +771,8 @@ function render() {
         <input type="checkbox" switch class="switch" id="hwStatusShow" ${showHomeworkStatus() ? 'checked' : ''}></label>
       ${data.api_mode === 'mobile' ? `<label class="switch-row"><span>Отправка ответа на задание<span class="muted small switch-note">блок «Мой ответ» на экране задания</span></span>
         <input type="checkbox" switch class="switch" id="answersShow" ${showAnswers() ? 'checked' : ''}></label>` : ''}
+      <label class="switch-row"><span>Анимации<span class="muted small switch-note">выключите, если телефон подтормаживает</span></span>
+        <input type="checkbox" switch class="switch" id="motionShow" ${showMotion() ? 'checked' : ''}></label>
       <label class="switch-row"><span>Конфетти за пятёрку<span class="muted small switch-note">когда приходит новая 5</span></span>
         <input type="checkbox" switch class="switch" id="confettiShow" ${showConfetti() ? 'checked' : ''}></label>
       <label class="switch-row"><span>Показывать выходные без уроков</span>
@@ -869,6 +873,10 @@ function bindDrawer() {
   $('answersShow')?.addEventListener('change', (event) => {
     select();
     saveAnswers(event.target.checked);
+  });
+  $('motionShow').addEventListener('change', (event) => {
+    select();
+    saveMotion(event.target.checked);
   });
   $('confettiShow').addEventListener('change', (event) => {
     select();
