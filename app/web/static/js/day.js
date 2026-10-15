@@ -287,8 +287,7 @@ function renderDay(quiet = false) {
     const from = button.querySelector('.mark-box')?.getBoundingClientRect();
     openLesson(lessons[Number(button.dataset.summaryLesson)], state.date);
     // Оценка перелетает из сводки в шапку открывшегося урока.
-    const screen = topScreen();
-    flyTo(from, screen?.querySelectorAll('.task-mark .mark-box')[Number(button.dataset.summaryMark)], screen);
+    flyTo(from, lessonMarks()[Number(button.dataset.summaryMark)]);
   }));
   container.querySelectorAll('[data-lesson]').forEach((card) => {
     card.addEventListener('click', (event) => {
@@ -299,9 +298,18 @@ function renderDay(quiet = false) {
         openHomework(lesson.homework[0], lesson.topic);
         return;
       }
+      // Оценки с карточки перелетают на открывшийся экран урока.
+      const from = [...card.querySelectorAll('.lc-marks .mark-box')].map((box) => box.getBoundingClientRect());
       openLesson(lesson, state.date);
+      const targets = lessonMarks();
+      from.forEach((rect, nth) => flyTo(rect, targets[nth]));
     });
   });
+}
+
+/** Оценки на только что открытом экране урока — в том же порядке, что на карточке. */
+function lessonMarks() {
+  return [...(topScreen()?.querySelectorAll('.task-mark .mark-box') || [])];
 }
 
 /** Правки дня меняют разметку — тихая перерисовка не должна их пропустить. */
@@ -430,11 +438,13 @@ export function shiftDay(delta, felt = false) {
 /** Перейти на день с листанием в его сторону. felt — отклик уже был (свайп). */
 function slideTo(iso, felt = false) {
   if (!felt) select();
-  const container = $('dayContent');
-  container.classList.remove('slide-left', 'slide-right');
-  // Перезапуск анимации: без чтения layout класс не срабатывает повторно.
-  void container.offsetWidth;
-  container.classList.add(iso > state.date ? 'slide-left' : 'slide-right');
+  // Таймер урока над днём едет вместе с уроками.
+  for (const container of [$('dayContent'), $('lessonTimer')]) {
+    container.classList.remove('slide-left', 'slide-right');
+    // Перезапуск анимации: без чтения layout класс не срабатывает повторно.
+    void container.offsetWidth;
+    container.classList.add(iso > state.date ? 'slide-left' : 'slide-right');
+  }
   goToDay(iso);
 }
 
@@ -556,6 +566,9 @@ const MONTHS_NOMINATIVE = [
 function bindSwipe() {
   const area = $('panel-day');
   const content = $('dayContent');
+  // Таймер урока над днём едет за пальцем вместе с уроками.
+  const moving = () => [content, $('lessonTimer')];
+  const setStyle = (props) => moving().forEach((el) => Object.assign(el.style, props));
   let gesture = null;
   // Горизонтальный жест заметно длиннее вертикального — иначе это прокрутка.
   const isSwipe = (dx, dy) => Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5;
@@ -592,9 +605,11 @@ function bindSwipe() {
     if (swipe && !gesture.armed) select();
     gesture.armed = swipe;
     if (!reducedMotion()) {
-      content.style.transition = 'none';
-      content.style.transform = `translateX(${dx}px)`;
-      content.style.opacity = String(1 - Math.min(0.5, Math.abs(dx) / (area.offsetWidth || 1)));
+      setStyle({
+        transition: 'none',
+        transform: `translateX(${dx}px)`,
+        opacity: String(1 - Math.min(0.5, Math.abs(dx) / (area.offsetWidth || 1))),
+      });
     }
   }, { passive: false });
   const finish = () => {
@@ -603,15 +618,11 @@ function bindSwipe() {
     gesture = null;
     if (!horizontal) return;
     const fast = Math.abs(dx) > 30 && Math.abs(speed) > 0.4 && Math.sign(speed) === Math.sign(dx);
-    const reset = () => {
-      content.style.transition = '';
-      content.style.transform = '';
-      content.style.opacity = '';
-    };
+    const reset = () => setStyle({ transition: '', transform: '', opacity: '' });
     if (!isSwipe(dx, dy) && !fast) {
       // Не дотянул — день пружинит на место.
       if (!reducedMotion() && dx) {
-        content.animate([{ transform: `translateX(${dx}px)` }, { transform: 'none' }], { duration: 260, easing: 'cubic-bezier(.2, .8, .3, 1)' });
+        moving().forEach((el) => el.animate([{ transform: `translateX(${dx}px)` }, { transform: 'none' }], { duration: 260, easing: 'cubic-bezier(.2, .8, .3, 1)' }));
       }
       reset();
       return;
@@ -625,13 +636,21 @@ function bindSwipe() {
     }
     // Доезжает за край, и с другой стороны въезжает соседний день.
     const width = area.offsetWidth || 1;
-    const out = content.animate([
+    const frames = [
       { transform: `translateX(${dx}px)`, opacity: content.style.opacity || 1 },
       { transform: `translateX(${-step * width * 0.6}px)`, opacity: 0 },
-    ], { duration: 140, easing: 'ease-in' });
+    ];
+    // fill: уехавшее не мигает обратно, пока не встал новый день.
+    const outs = moving().map((el) => el.animate(frames, { duration: 140, easing: 'ease-in', fill: 'forwards' }));
+    const out = outs[0];
+    let gone = false;
     const go = () => {
+      if (gone) return;
+      gone = true;
       reset();
       shiftDay(step, true);
+      // Новый день въезжает своей анимацией — уехавшее состояние больше не держим.
+      outs.forEach((animation) => animation.cancel());
     };
     out.onfinish = go;
     out.oncancel = go;

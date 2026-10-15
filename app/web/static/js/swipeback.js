@@ -1,9 +1,10 @@
 // Свайп «назад» от левого края экрана — везде, как жест «назад» в Android.
 //
 // Если открыт экран поверх вкладки, он едет за пальцем, как в iOS. На
-// вкладке, откуда «назад» ведёт на первую, за пальцем едет сама вкладка. Над
-// шторкой и меню — кружок со стрелкой у края. Отпустил достаточно далеко — то
-// же, что кнопка «Назад»: закрыть экран, шторку, меню или вернуться на «День».
+// вкладке, откуда «назад» ведёт на первую, за пальцем едет сама вкладка. И
+// всегда у края вылетает кружок со стрелкой — видно, что это жест «назад».
+// Отпустил достаточно далеко — то же, что кнопка «Назад»: закрыть экран,
+// шторку, меню или вернуться на «День».
 'use strict';
 
 import { $ } from './core.js';
@@ -27,6 +28,24 @@ function ensureArrow() {
   arrow.innerHTML = ICONS.back;
   document.body.append(arrow);
   return arrow;
+}
+
+/** Кружок «назад» у левого края: progress от 0 до 1 (1 — жест взведён),
+ *  y — высота пальца. Нужен и трекпаду (trackpad.js). */
+export function showBackHint(progress, y = innerHeight / 2) {
+  const el = ensureArrow();
+  const armed = progress >= 1;
+  el.classList.add('show');
+  el.classList.toggle('armed', armed);
+  const shift = Math.min(progress, 1) * ARROW_MAX * 0.95;
+  el.style.transform = `translate(${shift}px, -50%) scale(${armed ? 1 : 0.8})`;
+  el.style.top = `${y}px`;
+}
+
+export function hideBackHint() {
+  if (!arrow) return;
+  arrow.classList.remove('show', 'armed');
+  arrow.style.transform = '';
 }
 
 export function initSwipeBack() {
@@ -64,7 +83,6 @@ export function initSwipeBack() {
       gesture.decided = true;
       const moving = gesture.screen || gesture.page;
       if (moving) moving.classList.add('swiping');
-      else ensureArrow().classList.add('show');
     }
     if (event.cancelable) event.preventDefault();
     gesture.dx = dx;
@@ -74,12 +92,8 @@ export function initSwipeBack() {
     gesture.armed = armed;
     if (gesture.screen || gesture.page) {
       (gesture.screen || gesture.page).style.transform = `translateX(${dx}px)`;
-    } else {
-      const shift = Math.min(dx, ARROW_MAX * 1.6) * 0.6;
-      arrow.style.transform = `translate(${shift}px, -50%) scale(${armed ? 1 : 0.8})`;
-      arrow.style.top = `${touch.clientY}px`;
-      arrow.classList.toggle('armed', armed);
     }
+    showBackHint(dx / COMMIT_PX, touch.clientY);
   }, { passive: false });
 
   const finish = (commit) => {
@@ -88,6 +102,7 @@ export function initSwipeBack() {
     gesture = null;
     if (!decided) return;
     const go = commit && armed;
+    hideBackHint();
     if (screen) {
       screen.classList.remove('swiping');
       if (go) {
@@ -125,10 +140,8 @@ export function initSwipeBack() {
         page.style.transform = '';
         setTimeout(() => page.classList.remove('leaving'), 260);
       }
-    } else {
-      arrow.classList.remove('show', 'armed');
-      arrow.style.transform = '';
-      if (go) handleBack();
+    } else if (go) {
+      handleBack();
     }
   };
   document.addEventListener('touchend', () => finish(true), { passive: true });

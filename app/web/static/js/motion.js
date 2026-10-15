@@ -209,37 +209,38 @@ function trendChip(el, delta) {
 
 /* ─────────────────────────── Перелёт ─────────────────────────── */
 
-/** Где элемент окажется, когда его экран доедет: экран въезжает анимацией,
- *  и в первый кадр цель ещё сдвинута вместе с ним. */
-function settledRect(target, screen) {
-  const rect = target.getBoundingClientRect();
-  if (!screen) return rect;
-  const now = screen.getBoundingClientRect();
-  const dx = screen.offsetLeft - now.left;
-  const dy = screen.offsetTop - now.top;
-  return { left: rect.left + dx, top: rect.top + dy, width: rect.width, height: rect.height };
-}
+const easeOut = (t) => 1 - (1 - t) ** 3;
 
-/** Копия source перелетает из rect в место target на экране screen.
- *  Пока летит, сам target спрятан. */
-export function flyTo(rect, target, screen = null) {
+/** Копия target перелетает из прямоугольника rect на место target. Пока
+ *  летит, сам target спрятан. Цель всё это время сама движется (экран урока
+ *  въезжает, карточки поднимаются), поэтому её место берётся заново каждый
+ *  кадр — копия садится точно туда, где цель окажется, без рывка в конце. */
+export function flyTo(rect, target, duration = 460) {
   if (!target || reducedMotion() || !rect?.width) return;
-  const end = settledRect(target, screen);
-  if (!end.width) return;
+  const first = target.getBoundingClientRect();
+  if (!first.width) return;
   const flyer = target.cloneNode(true);
   flyer.classList.add('flyer');
-  Object.assign(flyer.style, { left: `${end.left}px`, top: `${end.top}px`, width: `${end.width}px`, height: `${end.height}px` });
   document.body.append(flyer);
   target.style.visibility = 'hidden';
-  const scale = rect.width / end.width;
-  const animation = flyer.animate([
-    { transform: `translate(${rect.left - end.left}px, ${rect.top - end.top}px) scale(${scale})` },
-    { transform: 'none' },
-  ], { duration: 460, easing: 'cubic-bezier(.2, .8, .3, 1)' });
-  const done = () => {
+  const start = performance.now();
+  const step = (now) => {
+    const t = Math.min(1, (now - start) / duration);
+    const k = easeOut(t);
+    const end = target.isConnected ? target.getBoundingClientRect() : first;
+    const left = rect.left + (end.left - rect.left) * k;
+    const top = rect.top + (end.top - rect.top) * k;
+    const scale = (rect.width + (end.width - rect.width) * k) / (end.width || 1);
+    Object.assign(flyer.style, {
+      left: `${end.left}px`, top: `${end.top}px`, width: `${end.width}px`, height: `${end.height}px`,
+      transform: `translate(${left - end.left}px, ${top - end.top}px) scale(${scale})`,
+    });
+    if (t < 1 && target.isConnected) {
+      requestAnimationFrame(step);
+      return;
+    }
     flyer.remove();
     target.style.visibility = '';
   };
-  animation.onfinish = done;
-  animation.oncancel = done;
+  step(start);
 }
