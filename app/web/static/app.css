@@ -113,6 +113,10 @@
 
 * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
 
+/* Сдвинутый пальцем день и полоса недели не расширяют страницу: иначе
+   телефон перестраивал всю раскладку — шапка уезжала, панель вкладок
+   пропадала. clip, а не hidden: не делает элемент прокручиваемым. */
+main, .app-header { overflow-x: clip; }
 /* Свайп вбок по трекпаду — наш жест (trackpad.js), а не история браузера. */
 html { background: var(--bg); overscroll-behavior-x: none; }
 
@@ -2112,7 +2116,9 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
 .confetti { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 100; pointer-events: none; }
 
 /* Средний балл: цифры прокручиваются от старого значения к новому. */
-.odo { display: inline-flex; align-items: center; line-height: 1; font-variant-numeric: tabular-nums; }
+/* Текст числа остаётся (прозрачный) и держит место; катушки — слоем поверх. */
+.odo { position: relative; color: transparent !important; font-variant-numeric: tabular-nums; }
+.odo-layer { position: absolute; inset: 0; display: flex; align-items: center; justify-content: flex-end; line-height: 1; pointer-events: none; }
 .odo-col { display: inline-block; height: 1em; overflow: hidden; }
 .odo-reel { display: flex; flex-direction: column; transition: transform .9s var(--ease); }
 .odo-reel > span { height: 1em; }
