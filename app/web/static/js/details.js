@@ -90,6 +90,11 @@ function bindDoneToggles(body, items) {
   else loadDone().then(paintAll);
   buttons.forEach((button) => button.addEventListener('click', (event) => {
     event.stopPropagation();
+    // Заливка расходится от точки нажатия (app.css, .hw-done-toggle.ripple).
+    const rect = button.getBoundingClientRect();
+    button.style.setProperty('--x', `${event.clientX ? event.clientX - rect.left : rect.width / 2}px`);
+    button.style.setProperty('--y', `${event.clientY ? event.clientY - rect.top : rect.height / 2}px`);
+    button.classList.add('ripple');
     const item = items[Number(button.dataset.doneToggle)];
     saveDone(item, !isDoneItem(item), (value) => paintToggle(button, value));
   }));

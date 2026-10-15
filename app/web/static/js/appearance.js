@@ -104,6 +104,15 @@ export function showHomeworkStatus() {
   return getPref('hwStatus') !== 'hide';
 }
 
+/** Конфетти у новой пятёрки. По умолчанию включено. */
+export function showConfetti() {
+  return getPref('confetti') !== 'hide';
+}
+
+export function saveConfetti(on) {
+  setPref('confetti', on ? 'show' : 'hide');
+}
+
 /** Блок «Мой ответ» на экранах задания и урока (мобильное API). */
 export function showAnswers() {
   return getPref('answers') !== 'hide';

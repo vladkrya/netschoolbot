@@ -198,13 +198,21 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .switch-note { display: block; margin-top: 2px; }
 /* «Выполнено» под заданием на экранах урока и задания. */
 .hw-done-toggle {
+  position: relative; isolation: isolate; overflow: hidden;
   display: flex; align-items: center; justify-content: center; width: 100%;
   margin: 10px 0 4px; padding: 11px; border-radius: 12px;
   border: 1.5px solid var(--border); background: transparent; color: var(--text);
-  font: inherit; font-weight: 600; transition: transform .15s, background .2s;
+  font: inherit; font-weight: 600; transition: transform .15s, color .25s, border-color .25s;
 }
+/* Зелёная заливка — кругом из точки нажатия (--x, --y ставит details.js). */
+.hw-done-toggle::before {
+  content: ''; position: absolute; inset: 0; z-index: -1; background: var(--g5);
+  clip-path: circle(0 at var(--x, 50%) var(--y, 50%));
+}
+.hw-done-toggle.ripple::before { transition: clip-path .5s var(--ease); }
 .hw-done-toggle:active { transform: scale(.97); }
-.hw-done-toggle.on { background: var(--g5); border-color: var(--g5); color: #fff; }
+.hw-done-toggle.on { border-color: var(--g5); color: #fff; }
+.hw-done-toggle.on::before { clip-path: circle(150% at var(--x, 50%) var(--y, 50%)); }
 .hw-done-toggle.auto { opacity: .7; cursor: default; }
 /* Д/З на главной: не сделано — красным, сделано — зелёным. */
 .hw-badge.hw-todo { color: var(--g2); border-color: var(--g2); }
@@ -232,25 +240,30 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .search input { flex: 1; padding: 9px 0; border: 0; background: none; color: #fff; font: inherit; outline: none; }
 .search input::placeholder { color: rgba(255, 255, 255, .6); }
 
+/* Кружок обновления свайпом вниз: висит поверх, контент не двигает и
+   нажатий не перехватывает. */
 .pull-indicator {
   position: fixed;
-  top: var(--header-h);
-  left: 0; right: 0;
+  top: calc(var(--header-h) - 34px);
+  left: 50%;
   z-index: 15;
-  text-align: center;
-  font-size: 12px;
-  color: var(--text2);
-  padding: 6px;
-  transform: translateY(-100%);
-  opacity: 0;
-  transition: .15s;
+  width: 36px;
+  height: 36px;
+  margin-left: -18px;
+  pointer-events: none;
 }
-.pull-indicator.show { transform: none; opacity: 1; }
-.pull-indicator.busy::before {
-  content: ''; display: inline-block; width: 11px; height: 11px; margin-right: 6px; vertical-align: -2px;
-  border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%;
-  animation: spin .7s linear infinite;
+.pull-ring {
+  display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%;
+  background: var(--card); box-shadow: 0 4px 14px rgba(0, 0, 0, .14);
+  opacity: 0; transition: opacity .2s, transform .25s var(--ease);
 }
+.pull-spin { display: grid; width: 26px; height: 26px; }
+.pull-spin.busy { animation: spin .8s linear infinite; }
+.pull-spin svg { width: 26px; height: 26px; transform: rotate(-90deg); }
+.pull-spin circle { fill: none; stroke-width: 3; }
+.pull-track { stroke: var(--border); }
+.pull-arc { stroke: var(--primary); stroke-linecap: round; }
+.pull-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 /* Обновление свайпом: новые данные встают на место без анимации появления. */
 .quiet-render .panel, .quiet-render .panel * { animation: none !important; }
 /* …а обновлённое мягко проявляется. */
@@ -369,15 +382,24 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 }
 .chip.active { background: var(--primary); border-color: var(--primary); color: #fff; }
 
+/* Заготовка при загрузке: по серой плашке пробегает блик. */
 .skeleton {
+  position: relative;
+  overflow: hidden;
   height: 14px;
   margin: 10px 0;
   border-radius: 6px;
-  background: linear-gradient(90deg, var(--card-2), var(--border), var(--card-2));
-  background-size: 200% 100%;
-  animation: shimmer 1.2s infinite;
+  background: var(--card-2);
 }
-@keyframes shimmer { to { background-position: -200% 0; } }
+.skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--card) 80%, transparent), transparent);
+  animation: shimmer 1.3s ease-in-out infinite;
+}
+@keyframes shimmer { to { transform: translateX(100%); } }
 
 /* ───────────────────────── Карточка урока ───────────────────────── */
 
@@ -414,9 +436,6 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .lc-subject { flex: 1; font-size: 17px; color: var(--text); }
 .lc-marks { display: flex; gap: 6px; }
 .lc-meta { display: flex; flex-direction: column; gap: 3px; margin: 6px 0 0 32px; color: var(--text2); font-size: 13px; }
-.lesson-progress-label { margin-top: 9px; font-size: 12px; color: var(--primary); }
-.lesson-progress { height: 4px; margin-top: 5px; background: var(--border); border-radius: 4px; overflow: hidden; }
-.lesson-progress span { display: block; height: 100%; background: var(--primary); border-radius: inherit; }
 .lc-badges { display: flex; gap: 6px; margin-top: 8px; }
 .lc-bottom {
   display: flex;
@@ -692,7 +711,16 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .mail-author { font-weight: 600; font-size: 16px; }
 .mail-subject { font-size: 14px; }
 .mail-date { flex: none; align-self: flex-start; font-size: 12px; color: var(--text2); }
-.unread-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--red); margin-right: 6px; vertical-align: middle; }
+.unread-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--red); margin-right: 6px; vertical-align: middle;
+  transition: transform .35s var(--ease), opacity .35s, width .35s var(--ease), margin .35s var(--ease); }
+.unread-dot.gone { transform: scale(0); opacity: 0; width: 0; margin-right: 0; }
+/* Непрочитанное — жирнее; прочитанное плавно теряет жирность. */
+.mail-author, .mail-subject { transition: font-weight .5s var(--ease), color .5s; }
+.mail-card.unread .mail-author { font-weight: 750; }
+.mail-card.unread .mail-subject { font-weight: 600; color: var(--text); }
+/* Новое письмо въезжает сверху. */
+.mail-card.arrive { animation: mail-arrive .55s cubic-bezier(.34, 1.4, .64, 1) both; }
+@keyframes mail-arrive { from { transform: translateY(-110%); opacity: 0; } }
 
 .ann-card { cursor: pointer; }
 .ann-title { font-weight: 600; font-size: 16px; margin-bottom: 6px; }
@@ -819,12 +847,16 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 }
 .nav-item .lbl-old { font-size: clamp(8.5px, 2.65vw, 10.5px); }
 .nav-item.active { color: var(--primary); opacity: 1; }
-.nav-item.active .ico { animation: bounce .45s var(--ease); }
+.nav-item.active .ico { animation: bounce .5s cubic-bezier(.34, 1.4, .64, 1); }
 /* Пункт под каплей «увеличен» линзой, прежняя вкладка гаснет. */
 .bottom-nav.dragging .nav-item.active:not(.hover) { color: var(--text); opacity: .72; }
 .nav-item.hover { color: var(--primary); opacity: 1; }
 .nav-item.hover .ico { transform: translateY(-1px) scale(1.18); }
-@keyframes bounce { 40% { transform: translateY(-4px) scale(1.12); } }
+/* Иконка выбранной вкладки подпрыгивает. */
+@keyframes bounce {
+  35% { transform: translateY(-6px) scale(1.14); }
+  70% { transform: translateY(1px) scale(.96); }
+}
 
 /* ──────────────────────────── Меню ☰ ──────────────────────────── */
 
@@ -1955,10 +1987,18 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
 .day-notes .card-title { margin-bottom: 6px; }
 .day-note { display: flex; align-items: flex-start; gap: 10px; width: 100%; padding: 7px 0; border: 0; background: none;
   color: var(--text); font: inherit; font-size: 15px; text-align: left; cursor: pointer; }
-.dn-box { flex: none; width: 20px; height: 20px; margin-top: 1px; border-radius: 6px; box-shadow: inset 0 0 0 1.5px var(--border); }
-.day-note.done span:last-child { opacity: .55; text-decoration: line-through; }
+.dn-box { flex: none; display: grid; place-items: center; width: 20px; height: 20px; margin-top: 1px; border-radius: 6px;
+  box-shadow: inset 0 0 0 1.5px var(--border); transition: background .25s, box-shadow .25s; }
+/* Галочка рисуется штрихом, текст зачёркивается слева направо. */
+.dn-box svg { width: 13px; height: 13px; }
+.dn-box path { fill: none; stroke: #fff; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round;
+  stroke-dasharray: 20; stroke-dashoffset: 20; transition: stroke-dashoffset .35s var(--ease) .1s; }
+.dn-text { -webkit-box-decoration-break: clone; box-decoration-break: clone;
+  background: linear-gradient(currentColor, currentColor) no-repeat 0 58% / 0 1.5px;
+  transition: background-size .4s var(--ease) .15s, opacity .3s .15s; }
+.day-note.done .dn-text { opacity: .55; background-size: 100% 1.5px; }
 .day-note.done .dn-box { background: var(--g5); box-shadow: none; }
-.day-note.done .dn-box::after { content: '✓'; display: block; color: #fff; font-size: 14px; text-align: center; line-height: 20px; }
+.day-note.done .dn-box path { stroke-dashoffset: 0; }
 .ai-quick { display: flex; gap: 8px; margin: 10px -12px 0; padding: 0 12px; overflow-x: auto; scrollbar-width: none; }
 .ai-quick::-webkit-scrollbar { display: none; }
 .ai-quick[hidden] { display: none; }
@@ -2018,3 +2058,38 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
 .family-row { flex-wrap: wrap; }
 .family-row .family-name { flex: 1 1 auto; }
 .invite-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
+
+/* ─────────────────────────── Анимации (motion.js) ─────────────────────────── */
+
+/* Новая оценка: вспыхивает и пружинит; двойка — мягко проявляется. */
+.mark-box.mark-flash { animation: mark-flash .9s cubic-bezier(.34, 1.56, .64, 1) both; }
+.mark-box.mark-soft { animation: mark-soft .6s var(--ease) both; }
+@keyframes mark-flash {
+  0% { transform: scale(.3); opacity: 0; box-shadow: 0 0 0 0 color-mix(in srgb, currentColor 55%, transparent); }
+  45% { transform: scale(1.18); opacity: 1; box-shadow: 0 0 0 10px transparent; }
+  70% { transform: scale(.95); }
+  100% { transform: none; box-shadow: none; }
+}
+@keyframes mark-soft { from { opacity: 0; transform: translateY(6px); } }
+.confetti { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 100; pointer-events: none; }
+
+/* Средний балл: цифры прокручиваются от старого значения к новому. */
+.odo { display: inline-flex; align-items: center; line-height: 1; font-variant-numeric: tabular-nums; }
+.odo-col { display: inline-block; height: 1em; overflow: hidden; }
+.odo-reel { display: flex; flex-direction: column; transition: transform .9s var(--ease); }
+.odo-reel > span { height: 1em; }
+.odo-trend {
+  display: inline-block; margin-left: 6px; padding: 1px 6px; border-radius: 7px; font-size: 12px; font-weight: 700;
+  vertical-align: middle; animation: mark-soft .3s var(--ease) both; transition: opacity .3s;
+}
+.odo-trend.up { color: var(--g5); background: color-mix(in srgb, var(--g5) 14%, transparent); }
+.odo-trend.down { color: var(--g2); background: color-mix(in srgb, var(--g2) 14%, transparent); }
+.odo-trend.hide { opacity: 0; }
+
+/* Оценка, перелетающая из сводки дня в шапку урока. */
+.flyer { position: fixed; z-index: 60; margin: 0; pointer-events: none; transform-origin: 0 0; box-sizing: border-box; }
+
+/* Кружок выбранной даты, перетекающий к новой (календарь в day.js). */
+.cal-grid { position: relative; }
+.cal-grid .cal-day { position: relative; z-index: 1; }
+.cal-dot { position: absolute; z-index: 0; border-radius: 50%; pointer-events: none; }

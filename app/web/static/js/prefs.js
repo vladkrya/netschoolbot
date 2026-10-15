@@ -7,7 +7,7 @@
 import { api, demo } from './core.js';
 
 const KEYS = {
-  theme: 'ns-theme', design: 'ns-design-v2', designNotice: 'ns-design-notice', weekends: 'ns-weekends', hwStatus: 'ns-hw-status', scheduleTab: 'ns-schedule-tab', answers: 'ns-answers', answerHint: 'ns-answer-hint', accent: 'ns-accent', accents: 'ns-accents', weights: 'ns-weights', thresholds: 'ns-thresholds', tabs: 'ns-tabs', pins: 'ns-pins', pwa: 'ns-pwa', lessonEdits: 'ns-lesson-edits',
+  theme: 'ns-theme', design: 'ns-design-v2', designNotice: 'ns-design-notice', weekends: 'ns-weekends', hwStatus: 'ns-hw-status', scheduleTab: 'ns-schedule-tab', answers: 'ns-answers', answerHint: 'ns-answer-hint', accent: 'ns-accent', accents: 'ns-accents', weights: 'ns-weights', thresholds: 'ns-thresholds', tabs: 'ns-tabs', pins: 'ns-pins', pwa: 'ns-pwa', lessonEdits: 'ns-lesson-edits', confetti: 'ns-confetti',
 };
 // Тема, дизайн и цвет лежат строкой (их читает скрипт в <head>), остальное — JSON.
 const JSON_PREFS = new Set(['weights', 'thresholds', 'tabs', 'pins', 'accents', 'lessonEdits']);

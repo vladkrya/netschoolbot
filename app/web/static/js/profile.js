@@ -9,7 +9,7 @@ import {
 } from './core.js';
 import {
   ACCENTS, currentAccent, forgetAccent, isNewDesign, rememberAccent, saveAccent, savedAccents, saveAnswers, saveBells, saveDesign, saveHomeworkStatus, saveWeekends, showAnswers, showBells,
-  showHomeworkStatus, showWeekends, syncChromeColor,
+  showConfetti, saveConfetti, showHomeworkStatus, showWeekends, syncChromeColor,
 } from './appearance.js';
 import { ICONS } from './icons.js';
 import { markBox } from './details.js';
@@ -769,6 +769,8 @@ function render() {
         <input type="checkbox" switch class="switch" id="hwStatusShow" ${showHomeworkStatus() ? 'checked' : ''}></label>
       ${data.api_mode === 'mobile' ? `<label class="switch-row"><span>Отправка ответа на задание<span class="muted small switch-note">блок «Мой ответ» на экране задания</span></span>
         <input type="checkbox" switch class="switch" id="answersShow" ${showAnswers() ? 'checked' : ''}></label>` : ''}
+      <label class="switch-row"><span>Конфетти за пятёрку<span class="muted small switch-note">когда приходит новая 5</span></span>
+        <input type="checkbox" switch class="switch" id="confettiShow" ${showConfetti() ? 'checked' : ''}></label>
       <label class="switch-row"><span>Показывать выходные без уроков</span>
         <input type="checkbox" switch class="switch" id="weekendsShow" ${showWeekends() ? 'checked' : ''}></label>
       ${isNewDesign() ? '' : `<label class="switch-row"><span>Звонки вместо расписания недели</span>
@@ -867,6 +869,10 @@ function bindDrawer() {
   $('answersShow')?.addEventListener('change', (event) => {
     select();
     saveAnswers(event.target.checked);
+  });
+  $('confettiShow').addEventListener('change', (event) => {
+    select();
+    saveConfetti(event.target.checked);
   });
   $('weekendsShow').addEventListener('change', (event) => {
     select();

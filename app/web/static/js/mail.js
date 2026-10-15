@@ -56,6 +56,10 @@ export async function loadMail(force = false) {
   render();
 }
 
+// Письма, которые уже были в списке: новое въезжает сверху, остальные
+// плавно сдвигаются вниз. При первом показе ничего не въезжает.
+let shownIds = null;
+
 function render() {
   const messages = state.mail.messages || [];
   // Непрочитанные — числом у значка «Почты» в нижней панели.
@@ -75,10 +79,45 @@ function render() {
     container.innerHTML = `<div class="empty big">${empty}</div>`;
     return;
   }
+  const before = new Map([...container.querySelectorAll('[data-mail]')]
+    .map((element) => [element.dataset.mail, element.getBoundingClientRect().top]));
   container.innerHTML = visible.map(card).join('');
   container.querySelectorAll('[data-mail]').forEach((element) =>
     element.addEventListener('click', () => openMessage(element.dataset.mail))
   );
+  const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (shownIds && !still) {
+    let arrived = 0;
+    container.querySelectorAll('[data-mail]').forEach((element) => {
+      const id = element.dataset.mail;
+      if (!shownIds.has(id)) {
+        element.classList.add('arrive');
+        element.style.animationDelay = `${arrived++ * 70}ms`;
+      } else if (before.has(id)) {
+        const shift = before.get(id) - element.getBoundingClientRect().top;
+        if (shift) element.animate([{ transform: `translateY(${shift}px)` }, { transform: 'none' }], { duration: 380, easing: 'cubic-bezier(.2, .8, .3, 1)' });
+      }
+    });
+  }
+  shownIds = new Set([...(shownIds || []), ...messages.map((message) => String(message.id))]);
+}
+
+/** Письмо прочитано: в списке оно плавно теряет жирный шрифт и точку, без
+ *  перерисовки. Под фильтром «Непрочитанные» оно уходит — там перерисовка. */
+function markRead(message) {
+  message.read = true;
+  const element = [...$('mailContent').querySelectorAll('[data-mail]')].find((item) => item.dataset.mail === String(message.id));
+  if (!element || filter === 'unread' || query.trim()) {
+    render();
+    return;
+  }
+  setMailBadge('mail', (state.mail.messages || []).filter((item) => item.read === false).length);
+  element.classList.remove('unread');
+  const dot = element.querySelector('.unread-dot');
+  if (dot) {
+    dot.classList.add('gone');
+    setTimeout(() => dot.remove(), 400);
+  }
 }
 
 function visibleMessages(messages) {
@@ -93,7 +132,7 @@ function visibleMessages(messages) {
 
 function card(message) {
   const author = message.author || 'Без отправителя';
-  return `<div class="card mail-card" data-mail="${esc(message.id)}">
+  return `<div class="card mail-card${message.read === false ? ' unread' : ''}" data-mail="${esc(message.id)}">
       <span class="avatar" style="background:${avatarColor(author)}">${esc(author.trim()[0] || '?')}</span>
       <div class="mail-main">
         <div class="mail-author">${message.read ? '' : '<span class="unread-dot"></span>'}${esc(author)}</div>
@@ -120,10 +159,7 @@ async function openMessage(id) {
       </div>`;
     // Письмо прочитано — отметка в списке без перезагрузки.
     const message = (state.mail?.messages || []).find((item) => String(item.id) === String(id));
-    if (message && !message.read) {
-      message.read = true;
-      render();
-    }
+    if (message && !message.read) markRead(message);
   } catch (error) {
     body.innerHTML = errorCard(error);
   }
