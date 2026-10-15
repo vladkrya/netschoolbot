@@ -467,6 +467,62 @@ async function openCalendar() {
   await load();
 }
 
+async function openWidget() {
+  closeDrawer();
+  const screen = pushScreen('Виджет на iPhone');
+  screen.innerHTML = '<div class="muted small">Загрузка…</div>';
+  let script = '';
+  const render = (data) => {
+    screen.innerHTML = `<div class="card">
+      <p>Таймер урока на экране «Домой» и на экране блокировки: «До конца урока 12:34», перемена
+      и следующий урок с кабинетом. Работает через бесплатное приложение Scriptable.</p>
+      <ol class="small">
+        <li>Установите <b>Scriptable</b> из App Store.</li>
+        <li>Нажмите «${data.connected ? 'Выпустить новый ключ' : 'Создать виджет'}» ниже и скопируйте скрипт.</li>
+        <li>В Scriptable нажмите «+», вставьте скрипт и назовите его, например, «Уроки».</li>
+        <li>Добавьте виджет Scriptable на экран «Домой» или блокировки, нажмите на него в режиме
+        редактирования и в поле Script выберите «Уроки».</li>
+      </ol>
+      ${script ? `<textarea class="field" readonly rows="6" spellcheck="false">${esc(script)}</textarea>
+        <button class="btn" id="widgetCopy">Скопировать скрипт</button>
+        <p class="muted small">Ключ в скрипте показывается один раз. Он открывает только расписание.</p>` : ''}
+      ${data.connected && !script ? `<p class="muted small">${data.used_at ? 'Виджет подключён.' : 'Ключ выпущен, виджет ещё не обращался.'}
+        Если скрипт потерян, выпустите новый ключ — старый перестанет работать.</p>` : ''}
+      <button class="btn${script ? ' outline' : ''}" id="widgetCreate">${data.connected ? 'Выпустить новый ключ' : 'Создать виджет'}</button>
+      ${data.connected ? '<button class="btn outline" id="widgetRevoke">Отключить виджет</button>' : ''}
+      <p class="muted small">Отсчёт идёт сам, а после звонка iOS перерисовывает виджет с небольшой
+      задержкой — иногда таймер пару минут стоит на нуле. Расписание виджет обновляет раз в полчаса.</p>
+      </div>`;
+    if ($('widgetCopy')) $('widgetCopy').onclick = async () => {
+      try {
+        await navigator.clipboard.writeText(script);
+        notify('success');
+        banner('Скрипт скопирован', false, 2500);
+      } catch { screen.querySelector('textarea')?.select(); }
+    };
+    $('widgetCreate').onclick = async () => {
+      if (data.connected && !confirm('Старый ключ перестанет работать. Выпустить новый?')) return;
+      const button = $('widgetCreate');
+      button.disabled = true;
+      try {
+        const result = await api('/api/widget-key', { method: 'POST' });
+        script = result.data.script;
+        render(result.data);
+      } catch (error) { banner(error.message, true); button.disabled = false; }
+    };
+    if ($('widgetRevoke')) $('widgetRevoke').onclick = async () => {
+      if (!confirm('Отключить виджет? Он перестанет обновляться.')) return;
+      try {
+        await api('/api/widget-key', { method: 'DELETE' });
+        script = '';
+        render({ connected: false });
+      } catch (error) { banner(error.message, true); }
+    };
+  };
+  try { render((await api('/api/widget-key')).data); }
+  catch (error) { screen.innerHTML = errorCard(error); }
+}
+
 const HISTORY_KINDS = { new: 'Новая', changed: 'Исправлена', deleted: 'Удалена' };
 const HISTORY_FILTERS = [['all', 'Все'], ['new', 'Новые'], ['changed', 'Исправленные'], ['deleted', 'Удалённые']];
 const dayFormat = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long' });
@@ -694,6 +750,7 @@ function render() {
       ${data.api_mode === 'mobile' && !demo && !readonly ? `<button class="drawer-link" id="drawerEvents">${ICONS.trophy} Олимпиады и конкурсы</button>
       <button class="drawer-link" id="drawerReferences">${ICONS.doc} Заказать справку</button>` : ''}
       ${demo || readonly ? '' : `<button class="drawer-link" id="drawerCalendar">${ICONS.calendar} Расписание в календаре</button>`}
+      ${demo || readonly ? '' : `<button class="drawer-link" id="drawerWidget">${ICONS.widget} Виджет на iPhone</button>`}
     </section>
     <section class="drawer-section">
       <div class="drawer-heading">Оформление</div>
@@ -914,6 +971,7 @@ function bindDrawer() {
   });
   $('drawerLock')?.addEventListener('click', () => { closeDrawer(); openLockSettings().catch(error => banner(error.message, true)); });
   $('drawerCalendar')?.addEventListener('click', () => { tap(); openCalendar(); });
+  $('drawerWidget')?.addEventListener('click', () => { tap(); openWidget(); });
   $('drawerAccount')?.addEventListener('click', async () => {
     tap();
     closeDrawer();
