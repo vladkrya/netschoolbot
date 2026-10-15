@@ -1362,7 +1362,7 @@ main.leaving { transition: transform .22s var(--ease); box-shadow: -8px 0 24px r
 }
 
 /* Полоса недели, сводка дня и короткие подписи вкладок — только в новом дизайне (new.css). */
-.week-strip, .day-summary, .lbl-new, .hw-day, .totals-cards { display: none; }
+.week-row, .day-summary, .lbl-new, .hw-day, .totals-cards { display: none; }
 
 .elective-badge {
   display: inline-block;

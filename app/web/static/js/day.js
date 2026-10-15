@@ -543,10 +543,34 @@ function bindSwipe() {
 /** Полоса недели листается неделями, как в календаре iPhone: ведёшь пальцем
  *  по числам — полоса едет за ним; отпустил достаточно далеко или резко —
  *  открывается тот же день недели соседней недели. */
+const reducedMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/** Неделя вперёд (step = 1) или назад (−1), тот же день недели. Полоса
+ *  уезжает за край — от dx, где её отпустил палец, — и новая неделя
+ *  въезжает с другой стороны. Общее для свайпа и стрелок. */
+function pageWeek(step, dx = 0) {
+  const strip = $('weekStrip');
+  const width = strip.offsetWidth || 1;
+  select();
+  strip.getAnimations().forEach((animation) => animation.cancel());
+  const out = reducedMotion() ? null : strip.animate(
+    [{ transform: `translateX(${dx}px)` }, { transform: `translateX(${-step * width}px)`, opacity: 0 }],
+    { duration: 140, easing: 'ease-in' });
+  const go = () => {
+    slideTo(addDays(state.date, step * 7), true);
+    if (!reducedMotion()) {
+      strip.animate([{ transform: `translateX(${step * width * 0.6}px)`, opacity: 0 }, { transform: 'none', opacity: 1 }],
+        { duration: 220, easing: 'cubic-bezier(.2,.8,.3,1)' });
+    }
+  };
+  if (out) out.finished.then(go, go);
+  else go();
+}
+
 function bindWeekSwipe() {
   const strip = $('weekStrip');
   let gesture = null;
-  const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const reduced = reducedMotion;
   strip.addEventListener('touchstart', (event) => {
     if (event.touches.length !== 1) return;
     const touch = event.touches[0];
@@ -599,21 +623,7 @@ function bindWeekSwipe() {
       if (!reduced()) strip.animate([{ transform: `translateX(${dx}px)` }, { transform: 'none' }], { duration: 220, easing: 'ease-out' });
       return;
     }
-    const step = dx < 0 ? 1 : -1;
-    select();
-    // Сначала полоса досылается за край, потом новая неделя въезжает с другой стороны.
-    const out = reduced() ? null : strip.animate(
-      [{ transform: `translateX(${dx}px)` }, { transform: `translateX(${-step * width}px)`, opacity: 0 }],
-      { duration: 140, easing: 'ease-in' });
-    const go = () => {
-      slideTo(addDays(state.date, step * 7), true);
-      if (!reduced()) {
-        strip.animate([{ transform: `translateX(${step * width * 0.6}px)`, opacity: 0 }, { transform: 'none', opacity: 1 }],
-          { duration: 220, easing: 'cubic-bezier(.2,.8,.3,1)' });
-      }
-    };
-    if (out) out.finished.then(go, go);
-    else go();
+    pageWeek(dx < 0 ? 1 : -1, dx);
   };
   strip.addEventListener('touchend', finish, { passive: true });
   // Жест отняла система (Telegram, прокрутка) — решаем по пройденному
@@ -636,4 +646,6 @@ export function initDay() {
   });
   bindSwipe();
   bindWeekSwipe();
+  $('weekPrev').addEventListener('click', () => pageWeek(-1));
+  $('weekNext').addEventListener('click', () => pageWeek(1));
 }

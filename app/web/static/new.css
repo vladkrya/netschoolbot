@@ -437,15 +437,33 @@
 
 /* ─────────────────── Полоса недели и сводка дня ─────────────────── */
 
+:root[data-design="new"] .week-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin: -2px 4px 10px;
+}
+/* Полоса уезжает за край при листании — обрезаем её между стрелками. */
+:root[data-design="new"] .week-clip { flex: 1; min-width: 0; overflow: hidden; border-radius: 14px; }
+:root[data-design="new"] .week-arrow {
+  flex: none;
+  width: 26px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  color: var(--text2);
+  transition: background-color .2s, transform .15s var(--ease);
+}
+:root[data-design="new"] .week-arrow svg { width: 18px; height: 18px; }
+:root[data-design="new"] .week-arrow:active { background: var(--soft); transform: scale(.9); }
 :root[data-design="new"] .week-strip {
   display: flex;
   gap: 4px;
-  margin: -2px 12px 10px;
   /* Горизонтальный свайп по числам листает недели (day.js), вертикальный — прокрутка. */
   touch-action: pan-y;
   will-change: transform;
 }
-:root[data-design="new"] .subbar[data-for="day"] { overflow-x: clip; }
 :root[data-design="new"] .week-day {
   flex: 1;
   min-width: 0;
