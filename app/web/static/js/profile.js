@@ -8,7 +8,7 @@ import {
   pushEnabled, skeleton, state, tg,
 } from './core.js';
 import {
-  ACCENTS, currentAccent, forgetAccent, isNewDesign, rememberAccent, saveAccent, savedAccents, saveBells, saveDesign, saveHomeworkStatus, saveWeekends, showBells,
+  ACCENTS, currentAccent, forgetAccent, isNewDesign, rememberAccent, saveAccent, savedAccents, saveAnswers, saveBells, saveDesign, saveHomeworkStatus, saveWeekends, showAnswers, showBells,
   showHomeworkStatus, showWeekends, syncChromeColor,
 } from './appearance.js';
 import { ICONS } from './icons.js';
@@ -662,6 +662,8 @@ function render() {
         <input type="checkbox" switch class="switch" id="designOld" ${isNewDesign() ? '' : 'checked'}></label>
       <label class="switch-row"><span>Подсвечивать Д/З на главной<span class="muted small switch-note">красным — не сделано, зелёным — сделано</span></span>
         <input type="checkbox" switch class="switch" id="hwStatusShow" ${showHomeworkStatus() ? 'checked' : ''}></label>
+      ${data.api_mode === 'mobile' ? `<label class="switch-row"><span>Отправка ответа на задание<span class="muted small switch-note">блок «Мой ответ» на экране задания</span></span>
+        <input type="checkbox" switch class="switch" id="answersShow" ${showAnswers() ? 'checked' : ''}></label>` : ''}
       <label class="switch-row"><span>Показывать выходные без уроков</span>
         <input type="checkbox" switch class="switch" id="weekendsShow" ${showWeekends() ? 'checked' : ''}></label>
       ${isNewDesign() ? '' : `<label class="switch-row"><span>Звонки вместо расписания недели</span>
@@ -737,6 +739,10 @@ function bindDrawer() {
   $('hwStatusShow').addEventListener('change', (event) => {
     select();
     saveHomeworkStatus(event.target.checked);
+  });
+  $('answersShow')?.addEventListener('change', (event) => {
+    select();
+    saveAnswers(event.target.checked);
   });
   $('weekendsShow').addEventListener('change', (event) => {
     select();

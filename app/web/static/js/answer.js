@@ -5,6 +5,8 @@
 
 import { api, banner, esc, escRich, openExternal } from './core.js';
 import { notify, tap } from './haptics.js';
+import { saveAnswers, showAnswers } from './appearance.js';
+import { getPref, setPref } from './prefs.js';
 
 const MAX_FILE_MB = 20;
 
@@ -13,15 +15,48 @@ export function answerSlot(item) {
   return item.id ? `<div class="hw-answer" data-answer-for="${esc(item.id)}" hidden></div>` : '';
 }
 
+// Подсказку «можно скрыть» показываем на первых трёх экранах с блоком ответа.
+const HINT_SHOWS = 3;
+
+function hintShown() {
+  return Number(getPref('answerHint')) || 0;
+}
+
 /** Подгрузить ответы для только что открытого экрана. */
 export function loadAnswers(body, items) {
+  if (!showAnswers()) return;
+  let hinted = false;
   for (const item of items) {
     const slot = item.id && body.querySelector(`[data-answer-for="${item.id}"]`);
     if (!slot) continue;
     api(`/api/homework/${encodeURIComponent(item.id)}/answer`)
-      .then(({ data }) => { if (data.available) paint(slot, item.id, data); })
+      .then(({ data }) => {
+        if (!data.available || !showAnswers()) return;
+        paint(slot, item.id, data);
+        // Одна подсказка на экран, а не под каждым заданием урока.
+        if (!hinted && hintShown() < HINT_SHOWS) {
+          hinted = true;
+          setPref('answerHint', String(hintShown() + 1));
+          addHint(body, slot);
+        }
+      })
       .catch(() => { /* без блока ответа экран всё равно полезен */ });
   }
+}
+
+function addHint(body, slot) {
+  const hint = document.createElement('div');
+  hint.className = 'answer-hint muted small';
+  hint.innerHTML = `Не отвечаете на задания через приложение?
+    <button class="link" type="button" data-answer-hide>Скрыть этот блок</button>`;
+  slot.after(hint);
+  hint.querySelector('[data-answer-hide]').addEventListener('click', () => {
+    tap();
+    saveAnswers(false);
+    setPref('answerHint', String(HINT_SHOWS));
+    body.querySelectorAll('.hw-answer, .answer-hint').forEach((el) => el.remove());
+    banner('Блок ответа скрыт. Вернуть — в настройках, раздел «Оформление».', false, 5000);
+  });
 }
 
 function paint(slot, id, answer, editing = false) {

@@ -1603,6 +1603,15 @@ async def save_prefs(request: web.Request) -> web.Response:
         if body["hwStatus"] not in ("show", "hide"):
             return json_error("Некорректная настройка подсветки заданий")
         changes["hwStatus"] = body["hwStatus"]
+    if "answers" in body:
+        if body["answers"] not in ("show", "hide"):
+            return json_error("Некорректная настройка ответа на задание")
+        changes["answers"] = body["answers"]
+    if "answerHint" in body:
+        # Сколько раз показали подсказку «можно скрыть блок ответа».
+        if body["answerHint"] not in ("1", "2", "3"):
+            return json_error("Некорректная настройка")
+        changes["answerHint"] = body["answerHint"]
     if "scheduleTab" in body:
         if body["scheduleTab"] not in ("bells", "week"):
             return json_error("Некорректная настройка вкладки")

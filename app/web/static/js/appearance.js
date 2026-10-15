@@ -104,6 +104,15 @@ export function showHomeworkStatus() {
   return getPref('hwStatus') !== 'hide';
 }
 
+/** Блок «Мой ответ» на экранах задания и урока (мобильное API). */
+export function showAnswers() {
+  return getPref('answers') !== 'hide';
+}
+
+export function saveAnswers(on) {
+  setPref('answers', on ? 'show' : 'hide');
+}
+
 export function saveHomeworkStatus(on) {
   setPref('hwStatus', on ? 'show' : 'hide');
   window.dispatchEvent(new CustomEvent('netschool:design'));

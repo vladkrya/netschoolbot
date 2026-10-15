@@ -156,3 +156,12 @@ class TestApi:
         app_context.diary.order_reference = order_reference
         response = await client.post(f"{BASE}/api/references", json={"type_id": 9}, headers={"X-Netschool-Token": token})
         assert response.status == 400
+
+    async def test_answer_block_prefs_are_validated(self, client, token):
+        headers = {"X-Netschool-Token": token}
+        response = await client.post(f"{BASE}/api/prefs", json={"answers": "hide", "answerHint": "2"}, headers=headers)
+        assert response.status == 200
+        data = (await (await client.get(f"{BASE}/api/prefs", headers=headers)).json())["data"]
+        assert (data["answers"], data["answerHint"]) == ("hide", "2")
+        response = await client.post(f"{BASE}/api/prefs", json={"answerHint": "9"}, headers=headers)
+        assert response.status == 400

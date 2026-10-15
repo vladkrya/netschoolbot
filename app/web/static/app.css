@@ -1943,6 +1943,8 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
 .answer-files { margin-top: 10px; display: grid; gap: 6px; }
 .answer-file { display: flex; justify-content: space-between; gap: 10px; align-items: center; overflow-wrap: anywhere; }
 .answer-attach { cursor: pointer; }
+.answer-hint { margin-top: 8px; }
+.answer-hint .link { font: inherit; }
 .distance-join { margin-top: 12px; }
 
 /* Мероприятия и справки (events.js). */
