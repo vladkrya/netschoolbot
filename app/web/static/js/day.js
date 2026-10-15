@@ -11,7 +11,7 @@ import {
 } from './core.js';
 import { ICONS } from './icons.js';
 import { isNewDesign, saveBells, showBells, showHomeworkStatus, showWeekends } from './appearance.js';
-import { bellsHtml, weekCardsHtml } from './schedule.js';
+import { bellsHtml, bellsNoteHtml, loadSchoolBells, weekCardsHtml } from './schedule.js';
 import { canGoBack } from './screens.js';
 import { EDGE_PX } from './swipeback.js';
 import { isDoneItem, lessonStatus, loadDone, markBox, openHomework, openLesson, realMarks } from './details.js';
@@ -321,7 +321,7 @@ function openWeekSheet() {
         <button class="${bells ? 'on' : ''}" data-mode="bells" role="tab" aria-selected="${bells}">Звонки</button>
         <button class="${bells ? '' : 'on'}" data-mode="week" role="tab" aria-selected="${!bells}">Неделя</button>
       </div>
-      ${bells ? `<div class="bells-note">Звонки пока в разработке: время собрано из расписания уроков и может быть неточным.</div>
+      ${bells ? `${bellsNoteHtml()}
         <div class="week-sheet">${bellsHtml(monday)}</div>`
         : `<div class="week-sheet">${weekCardsHtml(monday)}</div>`}`;
     body.querySelectorAll('[data-mode]').forEach((button) => button.addEventListener('click', () => {
@@ -337,6 +337,8 @@ function openWeekSheet() {
     }));
   };
   draw();
+  // Звонки школы приходят позже уроков — перерисовываем открытую шторку.
+  loadSchoolBells().then(() => { if (body.isConnected && showBells()) draw(); });
 }
 
 export async function goToDay(iso) {

@@ -10,6 +10,7 @@ import { notify, tap } from './haptics.js';
 import { pushScreen } from './screens.js';
 import { ICONS } from './icons.js';
 import { isNewDesign } from './appearance.js';
+import { answerSlot, bindDistance, distanceButton, loadAnswers } from './answer.js';
 
 /* ───────────────────── Отметка «выполнено» ───────────────────── */
 // Общая для «Д/З», экрана урока и экрана задания; хранится на сервере и
@@ -176,6 +177,7 @@ export function openLesson(lesson, iso) {
         <button class="link subject-link" data-subject-results>${esc(lesson.subject)}</button></div>
       ${lesson.is_elective ? '<div class="lc-badges"><span class="elective-badge">Факультатив</span></div>' : ''}
       <div class="lc-bottom"><span>${esc(timeRange(lesson))}</span><span>${esc(status)}</span></div>
+      ${distanceButton(lesson)}
     </div>
     ${info.length ? `<div class="info-strip">${info
       .map(([label, value]) => `<div class="info-card"><div class="info-label">${label}</div><div class="info-value">${esc(value)}</div></div>`)
@@ -185,7 +187,11 @@ export function openLesson(lesson, iso) {
     ${blocks.join('') || '<div class="empty">Заданий на этот урок нет</div>'}`;
 
   bindSubject(body, lesson.subject, iso);
-  if (isNewDesign()) loadComments(body, lesson.homework || []);
+  bindDistance(body);
+  if (isNewDesign()) {
+    loadComments(body, lesson.homework || []);
+    loadAnswers(body, lesson.homework || []);
+  }
   bindDoneToggles(body, lesson.homework || []);
 
   const marks = realMarks(lesson.marks);
@@ -227,6 +233,7 @@ function homeworkBlock(item, index) {
       ${commentSlot(item)}
       ${attachmentsHtml(item.attachments)}
       ${timestamps.length ? `<div class="hw-times">${timestamps.map(esc).join(' · ')}</div>` : ''}
+      ${answerSlot(item)}
       ${doneToggle(item, index)}
     </div>`;
 }
@@ -301,10 +308,12 @@ export function openHomework(item, topic = '') {
       <div class="detail-text">${escRich(item.text) || '<span class="muted">—Не указано—</span>'}</div>
       ${commentSlot(item)}
       ${attachmentsHtml(item.attachments)}
+      ${answerSlot(item)}
       ${doneToggle(item, 0)}
     </div>`;
   bindSubject(body, item.subject, item.date);
   loadComments(body, [item]);
+  loadAnswers(body, [item]);
   bindDoneToggles(body, [item]);
 }
 

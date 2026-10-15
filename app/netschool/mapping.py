@@ -222,6 +222,7 @@ def lessons_from_day(day: Any, *, today: dt.date | None = None) -> list[Lesson]:
                 topic=str(_attr(raw, "topic", "") or _attr(raw, "lessonTopic", "") or ""),
                 absence=str(_attr(raw, "absence", "") or _attr(raw, "absenceReason", "") or ""),
                 is_elective=_attr(raw, "is_elective", False) is True or is_elective(raw),
+                distance_meeting_id=_safe_int(_attr(raw, "distance_meeting_id")) or None,
                 assignment_ids=tuple(
                     int(a_id)
                     for a_id in (_attr(a, "id") for a in _attr(raw, "assignments", []) or [])
@@ -514,3 +515,91 @@ def _safe_int(value: Any) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+# ── мобильное API: ответ на задание, ВКС, мероприятия, справки ─────────────
+
+
+def answer_from_mobile(raw: Any) -> dict[str, Any]:
+    """``/assignments/{id}/answer``: ``{"text": None, "files": []}``."""
+    raw = raw if isinstance(raw, dict) else {}
+    files = []
+    for item in raw.get("files") or []:
+        if not isinstance(item, dict):
+            continue
+        file_id = _safe_int(item.get("attachmentId") or item.get("id"))
+        if file_id is None:
+            continue
+        files.append({
+            "id": file_id,
+            "name": str(item.get("fileName") or item.get("name") or f"Файл {file_id}"),
+            "description": str(item.get("description") or ""),
+        })
+    return {"text": str(raw.get("text") or ""), "files": files}
+
+
+def link_from_join(raw: Any) -> str:
+    """Ссылка из ответа ``/distancemeetings/{id}/join``.
+
+    Форма ответа на живом сервере не видна (шлюз ВКС отвечал ошибкой),
+    поэтому берём первую http-ссылку, где бы она ни лежала.
+    """
+    if isinstance(raw, str):
+        return raw.strip() if raw.strip().startswith(("http://", "https://")) else ""
+    if isinstance(raw, dict):
+        for key in ("url", "link", "joinUrl", "joinLink", "href"):
+            if (found := link_from_join(raw.get(key))):
+                return found
+        values = raw.values()
+    elif isinstance(raw, list):
+        values = raw
+    else:
+        return ""
+    for value in values:
+        if (found := link_from_join(value)):
+            return found
+    return ""
+
+
+_EVENT_LEVELS = {
+    "School": "Школьный", "Municipal": "Муниципальный", "Regional": "Региональный",
+    "Interregional": "Межрегиональный", "Federal": "Всероссийский", "International": "Международный",
+}
+_EVENT_KINDS = {"Olympiad": "Олимпиада", "Contest": "Конкурс", "Competition": "Соревнование", "Conference": "Конференция"}
+_EVENT_STATUSES = {
+    "Organizing": "Подготовка", "RegisteringMembers": "Идёт регистрация", "Running": "Идёт",
+    "InProgress": "Идёт", "Completed": "Завершено", "Finished": "Завершено", "Canceled": "Отменено",
+}
+
+
+def event_from_mobile(raw: dict[str, Any]) -> dict[str, Any]:
+    """Мероприятие из ``/v2/events``. Неизвестные коды показываем как есть."""
+
+    def label(table: dict[str, str], key: str) -> str:
+        value = str(raw.get(key) or "")
+        return table.get(value, value)
+
+    return {
+        "id": _safe_int(raw.get("eventId")),
+        "name": str(raw.get("name") or ""),
+        "description": str(raw.get("description") or ""),
+        "organization": str(raw.get("organization") or ""),
+        "location": str(raw.get("location") or raw.get("room") or ""),
+        "subject": str(raw.get("subject") or ""),
+        "kind": label(_EVENT_KINDS, "awardEventType"),
+        "level": label(_EVENT_LEVELS, "level"),
+        "status": label(_EVENT_STATUSES, "status"),
+        "start": str(raw.get("startTime") or "")[:10],
+        "end": str(raw.get("endTime") or "")[:10],
+        "files": [
+            {"id": _safe_int(f.get("fileId") or f.get("id")), "name": str(f.get("fileName") or f.get("name") or "Файл")}
+            for f in raw.get("files") or [] if isinstance(f, dict)
+        ],
+    }
+
+
+def reference_type_from_mobile(raw: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": _safe_int(raw.get("id") or raw.get("referenceTypeId")),
+        "name": str(raw.get("name") or raw.get("title") or ""),
+    }

@@ -264,6 +264,8 @@ class Lesson:
     # из карточки любого задания (student/diary/assigns/{id}).
     assignment_ids: tuple[int, ...] = ()
     is_elective: bool = False
+    # Дистанционный урок (мобильное API): по id экран урока берёт ссылку на ВКС.
+    distance_meeting_id: int | None = None
 
     @property
     def time_range(self) -> str:

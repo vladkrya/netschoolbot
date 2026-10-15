@@ -233,6 +233,7 @@ function demoKey(text) {
 }
 
 const demoNotes = [];
+const demoAnswers = {};
 
 export async function demoApi(path, options = {}) {
   // Небольшая задержка — чтобы в демо были видны анимации загрузки.
@@ -429,6 +430,24 @@ export async function demoApi(path, options = {}) {
         mark: m.mark ?? m.value ?? '', old: '3', new: m.mark ?? m.value ?? '', seen: `${m.date}T15:00:00Z`,
       }));
     return ok({ items });
+  }
+
+  if (route === '/api/bells') {
+    // Звонки школы: обычная сетка Пн–Пт и короткая суббота.
+    const times = [['08:30', '09:10'], ['09:20', '10:00'], ['10:15', '10:55'], ['11:10', '11:50'], ['12:00', '12:40'], ['12:50', '13:30']];
+    const items = [];
+    for (let weekday = 1; weekday <= 6; weekday += 1) {
+      times.slice(0, weekday === 6 ? 4 : 6).forEach(([start, end], index) =>
+        items.push({ weekday, shift: 1, number: index + 1, start, end, used: true }));
+    }
+    return ok({ items });
+  }
+
+  const answer = route.match(/^\/api\/homework\/(\d+)\/answer(\/text)?$/);
+  if (answer) {
+    demoAnswers[answer[1]] ||= { text: '', files: [] };
+    if (answer[2]) demoAnswers[answer[1]].text = String(body.text || '').trim();
+    return ok({ available: true, ...demoAnswers[answer[1]] });
   }
 
   if (route === '/api/pwa-link') {

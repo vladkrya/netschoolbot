@@ -23,7 +23,11 @@ from ..domain.models import ApiMode, Student, User
 from ..domain.records import DiaryDay, HomeworkRecord, MarkRecord, RecentEvents, clean_content
 from .errors import NetSchoolError, Reason, wrap
 from .mapping import (
+    answer_from_mobile,
     diary_days,
+    event_from_mobile,
+    link_from_join,
+    reference_type_from_mobile,
     find_by_name,
     quarter_key_of_term,
     recent_events_from,
@@ -226,6 +230,103 @@ class DiaryService:
 
         payload = await self._mobile_only(user, call, "Аналитика по предмету")
         return subject_stats_from(payload) if payload is not None else None
+
+    async def fetch_bells(self, user: User) -> list[dict[str, Any]] | None:
+        """Расписание звонков школы (веб-API ``schedule/times``).
+
+        В мобильном API звонков нет, поэтому в мобильном режиме — разовый
+        веб-вход по сохранённому паролю. `None` — звонков взять неоткуда
+        (вход через Госуслуги, сбой): приложение соберёт их из уроков недели.
+        """
+
+        async def call(client: Any) -> Any:
+            # У мобильного клиента bell_schedule собран из уроков — он не нужен.
+            if hasattr(client, "classmeetings") or not hasattr(client, "bell_schedule"):
+                return None
+            return await client.bell_schedule()
+
+        try:
+            if user.effective_api_mode is ApiMode.WEB:
+                bells = await self._with_session(user, call)
+            elif user.credentials.can_relogin:
+                bells = await self._pool.with_web_once(user, call)
+            else:
+                return None
+        except NetSchoolError as exc:
+            if exc.reason.needs_relogin and user.effective_api_mode is ApiMode.WEB:
+                raise
+            logger.info("Звонки недоступны для %s: %s", user.telegram_id, exc.reason)
+            return None
+        if not bells:
+            return None
+        return [
+            {
+                "weekday": bell.weekday,
+                "shift": bell.shift,
+                "number": bell.number,
+                "start": bell.start.strftime("%H:%M"),
+                "end": bell.end.strftime("%H:%M"),
+                "used": bell.used,
+            }
+            for bell in bells
+        ]
+
+    # ── только мобильное API: ответ на задание, ВКС, мероприятия, справки ──
+
+    async def _mobile_call(self, user: User, method: str, *args: Any, **kwargs: Any) -> Any:
+        """Метод мобильного клиента, которого нет у веб-клиента."""
+        if user.effective_api_mode is not ApiMode.MOBILE:
+            raise NetSchoolError(Reason.UNKNOWN, "Доступно только в мобильном режиме API")
+
+        async def call(client: Any) -> Any:
+            if not hasattr(client, method):
+                raise NetSchoolError(Reason.UNKNOWN, "Доступно только в мобильном режиме API")
+            try:
+                return await getattr(client, method)(*args, **kwargs)
+            except Exception as exc:
+                raise _refusal(exc) or exc
+
+        return await self._with_session(user, call)
+
+    async def fetch_answer(self, user: User, assignment_id: int) -> dict[str, Any]:
+        raw = await self._mobile_call(user, "assignment_answer", assignment_id)
+        return answer_from_mobile(raw)
+
+    async def set_answer_text(self, user: User, assignment_id: int, text: str) -> None:
+        await self._mobile_call(user, "set_answer_text", assignment_id, text)
+
+    async def upload_answer_file(self, user: User, assignment_id: int, name: str, data: bytes, description: str = "") -> None:
+        await self._mobile_call(user, "upload_answer_file", assignment_id, name, data, description=description)
+
+    async def delete_answer_file(self, user: User, assignment_id: int, attachment_id: int) -> None:
+        await self._mobile_call(user, "delete_answer_file", assignment_id, attachment_id)
+
+    async def fetch_distance_link(self, user: User, distance_meeting_id: int) -> str:
+        """Ссылка на дистанционный урок. Пустая строка — сервер её не дал."""
+        return link_from_join(await self._mobile_call(user, "distance_meeting_join", distance_meeting_id))
+
+    async def fetch_events(self, user: User) -> list[dict[str, Any]]:
+        """Олимпиады и конкурсы ученика (``/v2/events``)."""
+        items: list[dict[str, Any]] = []
+        page = 1
+        while page <= 5:
+            payload = await self._mobile_call(user, "events", page=page, page_size=50)
+            rows = payload.get("items") if isinstance(payload, dict) else None
+            if not rows:
+                break
+            items.extend(event_from_mobile(row) for row in rows if isinstance(row, dict))
+            if len(items) >= int(payload.get("totalItems") or 0):
+                break
+            page += 1
+        return sorted(items, key=lambda e: e["start"] or "", reverse=True)
+
+    async def fetch_reference_types(self, user: User) -> list[dict[str, Any]]:
+        """Виды справок, которые родитель может заказать в школе."""
+        rows = await self._mobile_call(user, "parent_reference_types")
+        return [reference_type_from_mobile(row) for row in rows or [] if isinstance(row, dict)]
+
+    async def order_reference(self, user: User, reference_type_id: int) -> None:
+        await self._mobile_call(user, "order_parent_reference", reference_type_id)
 
     async def _mobile_only(
         self, user: User, call: Callable[[Any], Awaitable[T]], what: str
@@ -576,6 +677,38 @@ class DiaryService:
 
         assert last is not None
         raise last
+
+
+_REFUSAL = re.compile(r"HTTP (40[03-9]|4[1-9]\d)\b")
+
+
+def _refusal(exc: Exception) -> NetSchoolError | None:
+    """Отказ сервера по смыслу — не сбой и не протухшая сессия.
+
+    На 403 сервер пишет «Attempted to perform an unauthorized operation», и
+    по слову «unauthorized» общий разбор принял бы его за истёкшую сессию:
+    пользователя отправили бы входить заново. Ответ 500 с текстом
+    («Ошибка обращения к шлюзу ВКС») тоже не временный сбой — повторять его
+    незачем, а текст сервера понятнее общего «попробуйте позже».
+    """
+    try:
+        from netschoolpy import exceptions as ns
+    except ImportError:
+        return None
+    text = str(exc)
+    if isinstance(exc, ns.SessionExpired):
+        return None
+    detail = text.split("сервер ответил 500: ", 1)[1] if "сервер ответил 500: " in text else ""
+    if isinstance(exc, ns.ServerUnavailable) and detail:
+        return NetSchoolError(Reason.UNKNOWN, detail, cause=exc)
+    if not isinstance(exc, ns.ServerUnavailable) and _REFUSAL.search(text):
+        if " 403 " in text or "HTTP 403" in text:
+            return NetSchoolError(Reason.UNKNOWN, "Школьный сервер не разрешает это действие для вашей учётной записи.", cause=exc)
+        if "HTTP 404" in text:
+            return NetSchoolError(Reason.UNKNOWN, "Школьный сервер этого не поддерживает.", cause=exc)
+        match = re.search(r'"message"\s*:\s*"([^"]+)"', text)
+        return NetSchoolError(Reason.UNKNOWN, match.group(1) if match else "Школьный сервер отклонил запрос.", cause=exc)
+    return None
 
 
 async def _collect_weeks(

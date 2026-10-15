@@ -171,6 +171,32 @@ class SessionPool:
                 await _close_client(client)
                 await self._sessions.drop(user.telegram_id)
 
+    async def with_web_once(self, user: User, call: Callable[[Any], Awaitable[Any]]) -> Any:
+        """Разовый вход в веб-API по сохранённому паролю — для данных, которых
+        нет в мобильном API (расписание звонков).
+
+        Клиент живёт только на время вызова и в пул не попадает: мобильная
+        сессия пользователя остаётся как была.
+        """
+        if not user.credentials.can_relogin:
+            raise NetSchoolError(Reason.AUTH, "Для веб-API нужен сохранённый пароль")
+        web_user = replace(user, api_mode=ApiMode.WEB)
+        client = self._new_client(web_user, ApiMode.WEB)
+        try:
+            await self._login(web_user, client)
+            _apply_student(client, user)
+            return await call(client)
+        except NetSchoolError:
+            raise
+        except Exception as exc:
+            raise wrap(exc, context=f"разовый веб-вход {user.telegram_id}") from exc
+        finally:
+            try:
+                await client.logout()
+            except Exception as exc:
+                logger.debug("Разовая веб-сессия %s не закрылась: %s", user.telegram_id, exc)
+            await _close_client(client)
+
     async def _mobile_from_web(self, user: User, web: Any) -> Any:
         secret = self._settings.mobile_client_secret
         try:

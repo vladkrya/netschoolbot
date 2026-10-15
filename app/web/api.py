@@ -360,6 +360,7 @@ def _day_to_json(
                 "topic": getattr(lesson, "topic", ""),
                 "absence": getattr(lesson, "absence", ""),
                 "is_elective": lesson.is_elective,
+                "distance_meeting_id": getattr(lesson, "distance_meeting_id", None),
                 "marks": [_mark_to_json(m) for m in lesson.marks],
                 "homework": [_homework_to_json(h, observed) for h in lesson.homework],
             }
@@ -370,7 +371,8 @@ def _day_to_json(
     }
 
 
-async def _cached(request: web.Request, section: str, producer, *, cacheable=lambda payload: True, fallback_section=None):
+async def _cached(request: web.Request, section: str, producer, *, cacheable=lambda payload: True, fallback_section=None,
+                  fresh_seconds: int | None = None):
     """Отдать сохранённые данные сразу, обновив устаревшие в фоне.
 
     Если школьный сервер недоступен, отдаётся устаревший кэш с пометкой —
@@ -383,7 +385,7 @@ async def _cached(request: web.Request, section: str, producer, *, cacheable=lam
     cached = await app.cache.get(user.telegram_id, section)
     if cached is None and fallback_section:
         cached = await app.cache.get(user.telegram_id, fallback_section)
-    fresh_for = dt.timedelta(seconds=app.settings.web.cache_fresh_seconds)
+    fresh_for = dt.timedelta(seconds=fresh_seconds or app.settings.web.cache_fresh_seconds)
 
     if cached is not None and not request.query.get("refresh"):
         payload, updated = cached
@@ -891,6 +893,161 @@ async def announcements(request: web.Request) -> web.Response:
         return {"items": await app.diary.fetch_announcements(user)}
 
     return await _cached(request, "announcements", produce)
+
+
+# Звонки меняются раз в год, а в мобильном режиме за ними нужен разовый
+# веб-вход — держим их сутки.
+BELLS_FRESH_SECONDS = 24 * 3600
+
+
+@routes.get("/api/bells")
+async def bells(request: web.Request) -> web.Response:
+    """Расписание звонков школы. `items: null` — звонков нет (вход через
+    Госуслуги в мобильном режиме, сбой): приложение соберёт их из уроков."""
+
+    async def produce(app: AppContext, user: User):
+        return {"items": await app.diary.fetch_bells(user)}
+
+    return await _cached(
+        request, "bells", produce,
+        cacheable=lambda payload: bool(payload.get("items")), fresh_seconds=BELLS_FRESH_SECONDS,
+    )
+
+
+@routes.get("/api/distance/{meeting_id}/join")
+async def distance_join(request: web.Request) -> web.Response:
+    """Ссылка на дистанционный урок. Не кэшируется: ссылка разовая."""
+    try:
+        meeting_id = int(request.match_info["meeting_id"])
+    except ValueError:
+        return json_error("Некорректный урок")
+    app, user = context(request), current_user(request)
+    url = await app.diary.fetch_distance_link(user, meeting_id)
+    if not url:
+        return json_error("Школьный сервер не дал ссылку на урок", status=503)
+    return web.json_response({"ok": True, "data": {"url": url}})
+
+
+@routes.get("/api/events")
+async def events(request: web.Request) -> web.Response:
+    """Олимпиады и конкурсы ученика — только мобильный режим."""
+    if current_user(request).effective_api_mode is not ApiMode.MOBILE:
+        return web.json_response({"ok": True, "data": {"available": False, "items": []}, "stale": False})
+
+    async def produce(app: AppContext, user: User):
+        return {"available": True, "items": await app.diary.fetch_events(user)}
+
+    return await _cached(request, "events", produce)
+
+
+@routes.get("/api/references/types")
+async def reference_types(request: web.Request) -> web.Response:
+    """Справки, которые можно заказать. Ученику сервер отказывает — `available: false`."""
+    app, user = context(request), current_user(request)
+    if user.effective_api_mode is not ApiMode.MOBILE:
+        return web.json_response({"ok": True, "data": {"available": False, "items": []}})
+    try:
+        items = await app.diary.fetch_reference_types(user)
+    except NetSchoolError as exc:
+        if exc.reason is not Reason.UNKNOWN:
+            raise
+        return web.json_response({"ok": True, "data": {"available": False, "items": [], "message": exc.user_message}})
+    return web.json_response({"ok": True, "data": {"available": True, "items": items}})
+
+
+@routes.post("/api/references")
+async def order_reference(request: web.Request) -> web.Response:
+    app, user = context(request), current_user(request)
+    try:
+        body = await request.json()
+        type_id = int(body.get("type_id"))
+    except (ValueError, TypeError):
+        return json_error("Выберите справку")
+    known = {item["id"] for item in await app.diary.fetch_reference_types(user)}
+    if type_id not in known:
+        return json_error("Такой справки нет")
+    await app.diary.order_reference(user, type_id)
+    return web.json_response({"ok": True})
+
+
+ANSWER_MAX_TEXT = 10000
+ANSWER_MAX_FILE_BYTES = 20 * 1024 * 1024
+
+
+def _assignment_id(request: web.Request) -> int | None:
+    try:
+        return int(request.match_info["assignment_id"])
+    except ValueError:
+        return None
+
+
+@routes.get("/api/homework/{assignment_id}/answer")
+async def homework_answer(request: web.Request) -> web.Response:
+    """Ответ ученика на задание. Не кэшируется: его только что могли изменить."""
+    assignment_id = _assignment_id(request)
+    if assignment_id is None:
+        return json_error("Некорректное задание")
+    app, user = context(request), current_user(request)
+    if user.effective_api_mode is not ApiMode.MOBILE:
+        return web.json_response({"ok": True, "data": {"available": False}})
+    answer = await app.diary.fetch_answer(user, assignment_id)
+    return web.json_response({"ok": True, "data": {"available": True, **answer}})
+
+
+@routes.post("/api/homework/{assignment_id}/answer/text")
+async def homework_answer_text(request: web.Request) -> web.Response:
+    assignment_id = _assignment_id(request)
+    if assignment_id is None:
+        return json_error("Некорректное задание")
+    try:
+        text = str((await request.json()).get("text") or "").strip()
+    except (ValueError, AttributeError):
+        return json_error("Некорректный запрос")
+    if len(text) > ANSWER_MAX_TEXT:
+        return json_error("Ответ слишком длинный")
+    app, user = context(request), current_user(request)
+    await app.diary.set_answer_text(user, assignment_id, text)
+    return web.json_response({"ok": True, "data": await app.diary.fetch_answer(user, assignment_id)})
+
+
+@routes.post("/api/homework/{assignment_id}/answer/files")
+async def homework_answer_file(request: web.Request) -> web.Response:
+    """Приложить файл к ответу: multipart с полем `file` (один файл за запрос)."""
+    assignment_id = _assignment_id(request)
+    if assignment_id is None or not request.content_type.startswith("multipart/"):
+        return json_error("Некорректный запрос")
+    name, data, description = "", bytearray(), ""
+    try:
+        async for part in await request.multipart():
+            if part.name == "file" and part.filename is not None and not name:
+                name = _safe_filename(part.filename)
+                while chunk := await part.read_chunk(64 * 1024):
+                    data += chunk
+                    if len(data) > ANSWER_MAX_FILE_BYTES:
+                        return json_error(f"Файл больше {ANSWER_MAX_FILE_BYTES // 1024 // 1024} МБ")
+            elif part.name == "description":
+                description = (await part.text()).strip()[:255]
+    except (ValueError, AssertionError):
+        return json_error("Некорректный запрос")
+    if not name or not data:
+        return json_error("Файл пустой")
+    app, user = context(request), current_user(request)
+    await app.diary.upload_answer_file(user, assignment_id, name, bytes(data), description)
+    return web.json_response({"ok": True, "data": await app.diary.fetch_answer(user, assignment_id)})
+
+
+@routes.delete("/api/homework/{assignment_id}/answer/files/{attachment_id}")
+async def homework_answer_file_delete(request: web.Request) -> web.Response:
+    assignment_id = _assignment_id(request)
+    try:
+        attachment_id = int(request.match_info["attachment_id"])
+    except ValueError:
+        attachment_id = None
+    if assignment_id is None or attachment_id is None:
+        return json_error("Некорректный запрос")
+    app, user = context(request), current_user(request)
+    await app.diary.delete_answer_file(user, assignment_id, attachment_id)
+    return web.json_response({"ok": True, "data": await app.diary.fetch_answer(user, assignment_id)})
 
 
 _HOMEWORK_KEY = re.compile(r"^[0-9a-f]{16}$")

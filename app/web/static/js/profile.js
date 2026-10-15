@@ -652,6 +652,8 @@ function render() {
       <button class="drawer-link" id="drawerHistory">${ICONS.clock} История оценок</button>
       ${demo ? '' : `<button class="drawer-link" id="drawerExport">${ICONS.table} Оценки в Excel</button>`}
       ${demo ? '' : `<button class="drawer-link" id="drawerFamily">${ICONS.users} Уведомления родным</button>`}
+      ${data.api_mode === 'mobile' && !demo ? `<button class="drawer-link" id="drawerEvents">${ICONS.trophy} Олимпиады и конкурсы</button>
+      <button class="drawer-link" id="drawerReferences">${ICONS.doc} Заказать справку</button>` : ''}
       ${demo ? '' : `<button class="drawer-link" id="drawerCalendar">${ICONS.calendar} Расписание в календаре</button>`}
     </section>
     <section class="drawer-section">
@@ -837,6 +839,16 @@ function bindDrawer() {
   });
   $('drawerAssistant')?.addEventListener('click', () => { closeDrawer(); openAssistant(); });
   $('drawerHistory').addEventListener('click', () => { tap(); openHistory(); });
+  $('drawerEvents')?.addEventListener('click', async () => {
+    closeDrawer();
+    const { openEvents } = await import('./events.js');
+    openEvents();
+  });
+  $('drawerReferences')?.addEventListener('click', async () => {
+    closeDrawer();
+    const { openReferences } = await import('./events.js');
+    openReferences();
+  });
   $('drawerLock')?.addEventListener('click', () => { closeDrawer(); openLockSettings().catch(error => banner(error.message, true)); });
   $('drawerCalendar')?.addEventListener('click', () => { tap(); openCalendar(); });
   $('drawerAccount')?.addEventListener('click', async () => {

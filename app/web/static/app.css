@@ -1928,3 +1928,25 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
 .family-row:first-of-type { border-top: 0; }
 .btn.small { padding: 6px 12px; font-size: 13px; width: auto; }
 .hw-card.own .hw-subject { flex: 1; }
+
+/* Ответ на задание и вход на дистанционный урок (answer.js). */
+.hw-answer { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--card-2); }
+.answer-text {
+  width: 100%; box-sizing: border-box; margin-top: 6px; padding: 10px 12px;
+  border: 1.5px solid var(--card-2); border-radius: 10px; background: var(--card-2);
+  color: inherit; font: inherit; resize: vertical;
+}
+.answer-text:focus { outline: none; border-color: var(--head); }
+.answer-actions { display: flex; gap: 8px; }
+.answer-actions .btn { flex: 1; }
+.btn.outline.danger, .link.danger { color: var(--g2); border-color: var(--g2); }
+.answer-files { margin-top: 10px; display: grid; gap: 6px; }
+.answer-file { display: flex; justify-content: space-between; gap: 10px; align-items: center; overflow-wrap: anywhere; }
+.answer-attach { cursor: pointer; }
+.distance-join { margin-top: 12px; }
+
+/* Мероприятия и справки (events.js). */
+.event-card .event-meta { display: flex; flex-wrap: wrap; gap: 4px 10px; margin-top: 6px; }
+.event-card .event-status { font-weight: 600; color: var(--primary); }
+.reference-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.reference-row .btn { width: auto; margin-top: 0; padding: 8px 14px; flex: none; }

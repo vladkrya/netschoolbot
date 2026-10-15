@@ -1,11 +1,12 @@
 // Вторая вкладка: расписание звонков (по умолчанию) или неделя карточками
 // дней — время занятий, число уроков, раскрывающийся список и переход на день.
-// Отдельного API звонков у «Сетевого города» нет в netschoolpy, но у каждого
-// урока недели есть номер и время — из них и собираем звонки.
+// Звонки берём у школы (/api/bells, веб-API schedule/times). Когда их нет —
+// вход через Госуслуги в мобильном режиме или сбой, — собираем звонки из
+// номеров и времени уроков недели, как раньше.
 'use strict';
 
 import {
-  $, addDays, dayMonth, errorCard, esc, isoToday, mondayOf, plural, showFailure, showLoading, skeleton, state,
+  $, addDays, api, dayMonth, errorCard, esc, isoToday, mondayOf, plural, showFailure, showLoading, skeleton, state,
   WEEKDAYS, WEEKDAYS_FULL, weekOffsetOf,
 } from './core.js';
 import { dayData, ensureWeek, goToDay, isHiddenWeekend, openCalendar } from './day.js';
@@ -36,10 +37,44 @@ function bellsOnly() {
   return isNewDesign() && showBells();
 }
 
+/* Звонки школы: null — ещё не знаем, [] — школа их не дала. */
+let schoolBells = null;
+let bellsRequest = null;
+
+export function loadSchoolBells() {
+  bellsRequest ||= api('/api/bells', {
+    onFresh: ({ data }) => { schoolBells = usedBells(data.items); rerenderBells(); },
+  })
+    .then(({ data }) => { schoolBells = usedBells(data.items); })
+    .catch(() => { schoolBells = []; bellsRequest = null; });
+  return bellsRequest;
+}
+
+function usedBells(items) {
+  return (items || []).filter((bell) => bell.used !== false
+    && minutesOf(bell.start) != null && minutesOf(bell.end) > minutesOf(bell.start));
+}
+
+function hasSchoolBells() {
+  return Boolean(schoolBells?.length);
+}
+
+/** Пометка над звонками: только когда они собраны из уроков. */
+export function bellsNoteHtml() {
+  return hasSchoolBells() ? ''
+    : '<div class="bells-note">Звонки собраны из расписания уроков и могут быть неточными.</div>';
+}
+
+function rerenderBells() {
+  if (state.tab === 'schedule' && showBells()) loadSchedule();
+  document.dispatchEvent(new CustomEvent('netschool:bells'));
+}
+
 export async function loadSchedule(force = false) {
   const plain = bellsOnly();
   $('schedPrev').closest('.date-bar').hidden = plain;
-  $('bellsNote').hidden = !plain;
+  if (showBells()) await loadSchoolBells();
+  $('bellsNote').hidden = !plain || hasSchoolBells();
   if (plain) state.scheduleWeek = 0;
   let monday = addDays(mondayOf(isoToday()), state.scheduleWeek * 7);
   $('schedLabel').textContent = weekTitle(state.scheduleWeek);
@@ -55,7 +90,7 @@ export async function loadSchedule(force = false) {
     return;
   }
   // Каникулы: на этой неделе уроков нет — звонки берём со следующей.
-  if (plain && !bellGroups(monday).length) {
+  if (plain && !hasSchoolBells() && !bellGroups(monday).length) {
     const next = addDays(monday, 7);
     try {
       await ensureWeek(next, force);
@@ -247,6 +282,44 @@ function bellGroups(monday) {
   }));
 }
 
+/** Звонки школы карточками: дни с одинаковым временем — вместе. Смену
+ *  угадываем по урокам недели (у кого больше совпадений начала урока);
+ *  если уроков нет или совпадений нет — показываем все смены. */
+function schoolGroups(monday) {
+  const starts = new Set();
+  for (let index = 0; index < 7; index += 1) {
+    for (const lesson of dayData(addDays(monday, index))?.lessons || []) {
+      const start = minutesOf(lesson.start);
+      if (start != null) starts.add(`${index + 1}@${start}`);
+    }
+  }
+  const shifts = [...new Set(schoolBells.map((bell) => bell.shift))].sort();
+  const score = (shift) => schoolBells
+    .filter((bell) => bell.shift === shift && starts.has(`${bell.weekday}@${minutesOf(bell.start)}`)).length;
+  const best = shifts.map((shift) => [shift, score(shift)]).sort((a, b) => b[1] - a[1])[0];
+  const chosen = best && best[1] > 0 ? [best[0]] : shifts;
+
+  const groups = new Map();
+  for (const shift of chosen) {
+    for (let weekday = 1; weekday <= 7; weekday += 1) {
+      const rows = schoolBells
+        .filter((bell) => bell.shift === shift && bell.weekday === weekday)
+        .map((bell) => ({
+          number: bell.number, start: minutesOf(bell.start), end: minutesOf(bell.end),
+          text: `${bell.start}–${bell.end}`,
+        }))
+        .sort((a, b) => a.start - b.start);
+      if (!rows.length) continue;
+      const key = `${shift}|${rows.map((row) => `${row.number}@${row.text}`).join('|')}`;
+      const group = groups.get(key) || { shift, days: [], rows, extras: [] };
+      group.days.push({ iso: addDays(monday, weekday - 1), index: weekday - 1 });
+      groups.set(key, group);
+    }
+  }
+  const showShift = chosen.length > 1;
+  return [...groups.values()].map((group) => ({ ...group, shiftLabel: showShift ? `${group.shift} смена` : '' }));
+}
+
 /** «Пн–Пт», «Пн, Ср, Чт», «Сб». */
 function daysTitle(days) {
   const parts = [];
@@ -273,7 +346,7 @@ export function bellsHtml(monday) {
   const today = isoToday();
   const now = new Date();
   const minute = now.getHours() * 60 + now.getMinutes();
-  const groups = bellGroups(monday);
+  const groups = hasSchoolBells() ? schoolGroups(monday) : bellGroups(monday);
   if (!groups.length) {
     return `<div class="card bells-card"><div class="muted">На этой неделе уроков нет — звонки появятся вместе с расписанием.</div></div>`;
   }
@@ -296,7 +369,7 @@ export function bellsHtml(monday) {
     });
     return `<div class="card bells-card${isToday ? ' current' : ''}">
         <div class="sched-top">
-          <div class="sched-day">${esc(daysTitle(group.days))}</div>
+          <div class="sched-day">${esc(daysTitle(group.days))}${group.shiftLabel ? ` <span class="muted small">· ${esc(group.shiftLabel)}</span>` : ''}</div>
           <div class="sched-range">${esc(`${group.rows[0].text.split('–')[0]}–${group.rows[group.rows.length - 1].text.split('–')[1]}`)}</div>
         </div>
         <div class="bells-list">${items.join('')}</div>
@@ -313,6 +386,7 @@ export function bellsHtml(monday) {
 }
 
 export function initSchedule() {
+  if (showBells()) loadSchoolBells();
   // Подсветка идущего урока или перемены.
   setInterval(() => {
     if (state.tab === 'schedule' && showBells() && state.scheduleWeek === 0) {
