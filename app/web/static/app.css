@@ -1315,6 +1315,8 @@ main.leaving { transition: transform .22s var(--ease); box-shadow: -8px 0 24px r
   transition: opacity .15s, background-color .15s, color .15s;
 }
 .back-arrow.show { opacity: 1; }
+/* Жест от правого края — кружок выезжает справа, стрелка та же. */
+.back-arrow.right { left: auto; right: -44px; }
 /* Отпустили — кружок уезжает обратно за край. */
 .back-arrow:not(.show) { transition: opacity .2s, transform .25s var(--ease), background-color .15s, color .15s; }
 .back-arrow.armed { background: var(--primary); color: #fff; }
