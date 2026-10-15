@@ -638,7 +638,9 @@ function bindSwipe() {
     const width = area.offsetWidth || 1;
     const frames = [
       { transform: `translateX(${dx}px)`, opacity: content.style.opacity || 1 },
-      { transform: `translateX(${-step * width * 0.6}px)`, opacity: 0 },
+      // Дальше по ходу пальца, а не к фиксированной точке: если палец увёл
+      // день дальше неё, день дёргался обратно к центру.
+      { transform: `translateX(${dx - step * width * 0.4}px)`, opacity: 0 },
     ];
     // fill: уехавшее не мигает обратно, пока не встал новый день.
     const outs = moving().map((el) => el.animate(frames, { duration: 140, easing: 'ease-in', fill: 'forwards' }));
