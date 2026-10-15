@@ -279,7 +279,9 @@ export async function demoApi(path, options = {}) {
         const key = quarterOf(day.date) || '';
         entry.lessons[key] = entry.lessons[key] || { total: 0, done: 0 };
         entry.lessons[key].total += 1;
-        if (day.date <= now) entry.lessons[key].done += 1;
+        // Сегодняшний урок засчитывается только после звонка с него.
+        const clock = new Date().toTimeString().slice(0, 5);
+        if (day.date < now || (day.date === now && lesson.end && lesson.end <= clock)) entry.lessons[key].done += 1;
         entry.marks.push(...lesson.marks);
         bySubject.set(lesson.subject, entry);
       }

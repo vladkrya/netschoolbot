@@ -551,7 +551,8 @@ async def marks(request: web.Request) -> web.Response:
         if selected and not selected["current"]:
             return await _archived_totals(app, user, selected, available_years)
         current = next((y for y in available_years or [] if y["current"]), None)
-        today = user.today()
+        now = user.now()
+        today = now.date()
         year, source = await _user_periods(app, user, today)
         now_quarter = next((q for q in year if q.covers(today)), None)
         if now_quarter is None:
@@ -589,7 +590,7 @@ async def marks(request: web.Request) -> web.Response:
                     key or "", {"total": 0, "done": 0}
                 )
                 counts["total"] += 1
-                if day.day <= today:
+                if _lesson_over(day.day, lesson, now):
                     counts["done"] += 1
                 code = (lesson.absence or "").strip()
                 if code:
@@ -813,6 +814,22 @@ def _attendance_to_json(lesson, day, key):
     return {"subject": lesson.subject, "date": day.isoformat(), "quarter": key,
             "mark": lesson.absence.strip(), "type": "Посещаемость", "title": "Посещаемость",
             "lesson_number": lesson.number, "lesson_topic": lesson.topic, "weight": None}
+
+
+def _lesson_over(day: dt.date, lesson, now: dt.datetime) -> bool:
+    """Прошёл ли урок к моменту `now` (местное время ученика).
+
+    Сегодняшний урок считается прошедшим только после звонка с него;
+    без времени в расписании — не раньше завтрашнего дня.
+    """
+    if day != now.date():
+        return day < now.date()
+    clock = lesson.end or lesson.start
+    try:
+        ends = dt.datetime.strptime(clock, "%H:%M").time()
+    except ValueError:
+        return False
+    return now.time() >= ends
 
 
 async def _user_periods(app: AppContext, user: User, today: dt.date) -> tuple[list[Quarter], str]:
