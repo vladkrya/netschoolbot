@@ -417,7 +417,7 @@ export async function goToDay(iso) {
   await loadDay();
 }
 
-function shiftDay(delta, felt = false) {
+export function shiftDay(delta, felt = false) {
   // Стрелки перешагивают спрятанные выходные.
   let iso = addDays(state.date, delta);
   for (let step = 0; step < 2 && isHiddenWeekend(iso); step += 1) iso = addDays(iso, delta);
@@ -548,7 +548,7 @@ const reducedMotion = () => matchMedia('(prefers-reduced-motion: reduce)').match
 /** Неделя вперёд (step = 1) или назад (−1), тот же день недели. Полоса
  *  уезжает за край — от dx, где её отпустил палец, — и новая неделя
  *  въезжает с другой стороны. Общее для свайпа и стрелок. */
-function pageWeek(step, dx = 0) {
+export function pageWeek(step, dx = 0) {
   const strip = $('weekStrip');
   const width = strip.offsetWidth || 1;
   select();

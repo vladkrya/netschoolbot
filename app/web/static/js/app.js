@@ -22,6 +22,7 @@ import { navTabs, renderNav } from './tabs.js';
 import { closeSheet, initSheet, openSheet } from './sheet.js';
 import { clearScreens, handleBack, hasScreens, setFallbackBack } from './screens.js';
 import { initSwipeBack } from './swipeback.js';
+import { initTrackpad } from './trackpad.js';
 import { initIosHaptics, notify, tap } from './haptics.js';
 import { getPref, setPref, syncPrefs } from './prefs.js';
 
@@ -584,6 +585,7 @@ async function start() {
   initChrome();
   bindPullToRefresh();
   initSwipeBack();
+  initTrackpad();
   setFallbackBack(fallbackBack);
 
   // С PIN сервер не кладёт имя в страницу, а профиль без сети приходит
