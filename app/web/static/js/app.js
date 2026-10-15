@@ -143,52 +143,120 @@ function syncHeaderHeight() {
   document.documentElement.style.setProperty('--header-h', `${Math.round(height)}px`);
 }
 
-/** Свайп вниз от верха вкладки — обновить её с сервера, минуя кэш. */
+/** Свайп вниз от верха вкладки — обновить её с сервера, минуя кэш.
+ *
+ *  Кружок висит поверх страницы и не сдвигает её: контент остаётся на
+ *  месте, нажатия и прокрутка проходят сквозь него. Заполняется по мере
+ *  натяжения — целиком ровно тогда, когда отпускание обновит, — и крутится
+ *  дальше с того же угла, пока идёт запрос. */
+const PULL_ARM = 80;
+const RING = 2 * Math.PI * 11;
+
 function bindPullToRefresh() {
   const indicator = $('pullIndicator');
-  let startY = null;
+  indicator.innerHTML = `<span class="pull-ring"><span class="pull-spin"><svg viewBox="0 0 30 30" aria-hidden="true">
+      <circle class="pull-track" cx="15" cy="15" r="11"/><circle class="pull-arc" cx="15" cy="15" r="11"/></svg></span></span>
+    <span class="pull-text" aria-live="polite"></span>`;
+  const ring = indicator.querySelector('.pull-ring');
+  const spin = indicator.querySelector('.pull-spin');
+  const arc = indicator.querySelector('.pull-arc');
+  const text = indicator.querySelector('.pull-text');
+  arc.style.strokeDasharray = String(RING);
+  let start = null;
   let pulled = 0;
+  let busy = false;
+  const paint = (px) => {
+    const progress = Math.min(1, px / PULL_ARM);
+    ring.style.transform = `translateY(${Math.min(px, PULL_ARM * 1.4) * 0.6}px) rotate(${progress * 270}deg)`;
+    ring.style.opacity = String(Math.min(1, px / 40));
+    arc.style.strokeDashoffset = String(RING * (1 - progress));
+  };
+  const hide = () => {
+    ring.style.transition = '';
+    ring.style.opacity = '0';
+    ring.style.transform = '';
+    indicator.classList.remove('show');
+  };
   document.addEventListener('touchstart', (event) => {
     // В чате помощника жест вниз — прокрутка переписки, обновлять нечего.
-    if (hasScreens() || isDrawerOpen() || state.tab === 'assistant' || window.scrollY > 0) return;
-    startY = event.touches[0].clientY;
+    if (busy || hasScreens() || isDrawerOpen() || state.tab === 'assistant' || window.scrollY > 0 || event.touches.length !== 1) return;
+    start = { x: event.touches[0].clientX, y: event.touches[0].clientY };
     pulled = 0;
   }, { passive: true });
   document.addEventListener('touchmove', (event) => {
-    if (startY == null) return;
+    if (!start) return;
+    const touch = event.touches[0];
+    const dx = touch.clientX - start.x;
+    const dy = touch.clientY - start.y;
+    // Вбок — это листание дней или недель, а не обновление.
+    if (pulled < 10 && Math.abs(dx) > Math.abs(dy)) {
+      if (Math.abs(dx) > 10) {
+        start = null;
+        hide();
+      }
+      return;
+    }
     const before = pulled;
-    pulled = event.touches[0].clientY - startY;
+    pulled = Math.max(0, dy);
     // Отклик в момент, когда жест «взвёлся» — как у нативного pull-to-refresh.
-    if (before <= 80 && pulled > 80) tap('medium');
-    // Страницу трогаем, только когда что-то правда меняется: правка DOM
-    // на каждое движение пальца мешала Safari засчитать касание тапом.
-    const show = pulled > 30;
-    if (indicator.classList.contains('show') !== show) indicator.classList.toggle('show', show);
-    const text = pulled > 80 ? 'Отпустите, чтобы обновить' : 'Потяните, чтобы обновить';
-    if (show && indicator.textContent !== text) indicator.textContent = text;
+    if (before <= PULL_ARM && pulled > PULL_ARM) tap('medium');
+    if (pulled < 12) {
+      if (indicator.classList.contains('show')) hide();
+      return;
+    }
+    if (!indicator.classList.contains('show')) {
+      indicator.classList.add('show');
+      ring.style.transition = 'none';
+    }
+    paint(pulled);
   }, { passive: true });
   document.addEventListener('touchend', async () => {
-    if (startY == null) return;
-    startY = null;
-    if (pulled > 80) {
-      // Данные остаются на экране, пока идёт запрос, и меняются на месте —
-      // без скелетона и без повторной анимации появления.
-      indicator.textContent = 'Обновляю…';
-      indicator.classList.add('busy');
-      state.refreshing = true;
-      state.refreshFailed = false;
-      syncStarted();
-      try {
-        await quietly(() => TABS[state.tab](true));
-      } finally {
-        state.refreshing = false;
-        syncFinished();
-        indicator.classList.remove('busy');
-      }
-      const failed = state.refreshFailed || document.querySelector('.panel.active .error-card');
-      notify(failed ? 'error' : 'success');
+    if (!start) return;
+    start = null;
+    if (pulled <= PULL_ARM) {
+      hide();
+      return;
     }
-    indicator.classList.remove('show');
+    // Данные остаются на экране, пока идёт запрос, и меняются на месте —
+    // без скелетона и без повторной анимации появления.
+    busy = true;
+    ring.style.transition = 'transform .25s var(--ease)';
+    ring.style.transform = `translateY(${PULL_ARM * 0.6}px) rotate(270deg)`;
+    arc.style.transition = 'stroke-dashoffset .4s var(--ease)';
+    arc.style.strokeDashoffset = String(RING * 0.25);
+    spin.classList.add('busy');
+    text.textContent = 'Обновляю…';
+    state.refreshing = true;
+    state.refreshFailed = false;
+    syncStarted();
+    try {
+      await quietly(() => TABS[state.tab](true));
+    } finally {
+      state.refreshing = false;
+      syncFinished();
+    }
+    const failed = state.refreshFailed || document.querySelector('.panel.active .error-card');
+    notify(failed ? 'error' : 'success');
+    // Кружок замыкается и тает — с того угла, где крутился.
+    arc.style.strokeDashoffset = '0';
+    text.textContent = failed ? 'Не удалось обновить' : 'Обновлено';
+    setTimeout(() => {
+      ring.style.transition = 'opacity .25s, transform .25s';
+      ring.style.opacity = '0';
+      ring.style.transform += ' scale(.6)';
+      setTimeout(() => {
+        spin.classList.remove('busy');
+        arc.style.transition = '';
+        text.textContent = '';
+        hide();
+        busy = false;
+      }, 260);
+    }, 300);
+  }, { passive: true });
+  document.addEventListener('touchcancel', () => {
+    if (!start) return;
+    start = null;
+    hide();
   }, { passive: true });
 }
 

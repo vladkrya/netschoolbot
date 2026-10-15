@@ -12,7 +12,7 @@ import {
 import { ICONS } from './icons.js';
 import { isNewDesign, saveBells, showBells, showHomeworkStatus, showWeekends } from './appearance.js';
 import { bellsHtml, bellsNoteHtml, loadSchoolBells, weekCardsHtml } from './schedule.js';
-import { canGoBack } from './screens.js';
+import { canGoBack, topScreen } from './screens.js';
 import { EDGE_PX } from './swipeback.js';
 import { isDoneItem, lessonStatus, loadDone, markBox, openHomework, openLesson, realMarks } from './details.js';
 import { closeSheet, openSheet } from './sheet.js';
@@ -21,6 +21,7 @@ import { bindInstallCard, installCardHtml } from './install.js';
 import { updateTimer } from './timer.js';
 import { isTestWork, loadNotes, setNoteDone } from './notes.js';
 import { applyEdits, bindHidden, hiddenHtml, openAddLesson } from './edits.js';
+import { flyTo, markKey, playFresh, takeFresh } from './motion.js';
 
 /** Загруженные дни по ISO-дате и недели, которые уже спрашивали. */
 const days = new Map();
@@ -212,13 +213,20 @@ function releaseStrip() {
 
 /** Сводка дня над уроками (новый дизайн): сколько уроков, с какого по какое
  *  время, сколько заданий и какие оценки. */
+/** Оценки дня, которые человек ещё не видел: вспыхнут при отрисовке. */
+let freshMarks = new Set();
+
+function freshClass(mark, subject) {
+  return freshMarks.has(markKey(mark, subject, state.date)) ? 'is-fresh' : '';
+}
+
 function daySummary(lessons) {
   const first = lessons.find((lesson) => lesson.start)?.start;
   const last = [...lessons].reverse().find((lesson) => lesson.end)?.end;
   const homework = lessons.filter((lesson) => lesson.homework.some((item) => !item.classwork)).length;
   // Оценка — с коэффициентом, как в карточке урока; нажатие открывает урок.
-  const marks = lessons.flatMap((lesson, index) => realMarks(lesson.marks).map((m) =>
-    `<button class="ds-mark" data-summary-lesson="${index}" aria-label="${esc(lesson.subject)}: ${esc(m.mark)}">${markBox(m.mark, '', m.weight || 1)}</button>`)).join('');
+  const marks = lessons.flatMap((lesson, index) => realMarks(lesson.marks).map((m, nth) =>
+    `<button class="ds-mark" data-summary-lesson="${index}" data-summary-mark="${nth}" aria-label="${esc(lesson.subject)}: ${esc(m.mark)}">${markBox(m.mark, freshClass(m, lesson.subject), m.weight || 1)}</button>`)).join('');
   const parts = [`${lessons.length} ${plural(lessons.length, 'урок', 'урока', 'уроков')}`];
   if (first && last) parts.push(`${first}–${last}`);
   return `<div class="day-summary">
@@ -233,8 +241,8 @@ function daySummary(lessons) {
 let renderedKey = '';
 
 /** quiet — перерисовка по таймеру: без анимации появления и только если
- *  что-то поменялось (полоска текущего урока), иначе экран «перезагружался»
- *  каждые 30 секунд. */
+ *  что-то поменялось (статус урока), иначе экран «перезагружался» каждую
+ *  минуту. */
 function renderDay(quiet = false) {
   renderHeader();
   const day = days.get(state.date);
@@ -252,17 +260,22 @@ function renderDay(quiet = false) {
     return;
   }
 
-  const progress = activeProgress(lessons);
+  // Статусы («Идёт урок», «Урок окончен») меняются по времени — тихая
+  // перерисовка по таймеру должна их подхватить.
+  const statuses = lessons.map((lesson) => lessonStatus(lesson, state.date)).join();
   const notes = (state.notes || []).filter((note) => note.date === state.date);
-  const key = `${state.date}|${progress?.index}|${progress?.label}|${state.hwDone?.size ?? '-'}|${notes.map((n) => `${n.id}${n.done}`).join()}|${editsKey(day)}`;
+  const key = `${state.date}|${statuses}|${state.hwDone?.size ?? '-'}|${notes.map((n) => `${n.id}${n.done}`).join()}|${editsKey(day)}`;
   if (quiet && key === renderedKey && container.children.length) return;
   renderedKey = key;
+  freshMarks = takeFresh(lessons.flatMap((lesson) => realMarks(lesson.marks)
+    .map((m) => ({ key: markKey(m, lesson.subject, state.date), date: m.date || state.date }))));
   container.classList.toggle('quiet', quiet);
   container.innerHTML = installCardHtml() + daySummary(lessons)
-    + lessons.map((lesson, index) => lessonCard(lesson, index, progress?.index === index ? progress : null)).join('')
+    + lessons.map((lesson, index) => lessonCard(lesson, index)).join('')
     + notesBlock(notes) + hiddenHtml(day) + addLessonButton();
   bindInstallCard(container);
   bindDayEdits(container, day);
+  playFresh(container);
   container.querySelectorAll('[data-note]').forEach((row) => row.addEventListener('click', async () => {
     const note = notes[Number(row.dataset.note)];
     const next = !note.done;
@@ -271,7 +284,11 @@ function renderDay(quiet = false) {
   }));
   container.querySelectorAll('[data-summary-lesson]').forEach((button) => button.addEventListener('click', () => {
     tap();
+    const from = button.querySelector('.mark-box')?.getBoundingClientRect();
     openLesson(lessons[Number(button.dataset.summaryLesson)], state.date);
+    // Оценка перелетает из сводки в шапку открывшегося урока.
+    const screen = topScreen();
+    flyTo(from, screen?.querySelectorAll('.task-mark .mark-box')[Number(button.dataset.summaryMark)], screen);
   }));
   container.querySelectorAll('[data-lesson]').forEach((card) => {
     card.addEventListener('click', (event) => {
@@ -311,31 +328,12 @@ function bindDayEdits(container, day) {
   container.querySelector('[data-add-lesson]')?.addEventListener('click', () => openAddLesson(state.date, knownSubjects()));
 }
 
-function activeProgress(lessons, now = new Date()) {
-  if (state.date !== isoToday()) return null;
-  const minute = now.getHours() * 60 + now.getMinutes();
-  for (let index = 0; index < lessons.length; index += 1) {
-    const [sh, sm] = String(lessons[index].start || '').split(':').map(Number);
-    const [eh, em] = String(lessons[index].end || '').split(':').map(Number);
-    if (![sh, sm, eh, em].every(Number.isFinite)) continue;
-    const start = sh * 60 + sm;
-    const end = eh * 60 + em;
-    if (end <= start || minute >= end) continue;
-    if (minute < start) {
-      if (start - minute > 60) return null;
-      return { index, label: `Начнётся через ${start - minute} мин`, percent: (60 - start + minute) / 60 * 100 };
-    }
-    return { index, label: `Закончится через ${end - minute} мин`, percent: (minute - start) / (end - start) * 100 };
-  }
-  return null;
-}
-
 /** Свои задачи на этот день — под уроками; нажатие отмечает сделанной. */
 function notesBlock(notes) {
   if (!notes.length) return '';
   return `<div class="card day-notes"><div class="card-title">Свои задачи</div>${notes.map((note, index) =>
-    `<button class="day-note ${note.done ? 'done' : ''}" data-note="${index}"><span class="dn-box"></span>
-      <span>${note.subject ? `<b>${esc(note.subject)}:</b> ` : ''}${esc(note.text)}</span></button>`).join('')}</div>`;
+    `<button class="day-note ${note.done ? 'done' : ''}" data-note="${index}"><span class="dn-box"><svg viewBox="0 0 14 14" aria-hidden="true"><path d="M2.5 7.5l3 3 6-7"/></svg></span>
+      <span class="dn-text">${note.subject ? `<b>${esc(note.subject)}:</b> ` : ''}${esc(note.text)}</span></button>`).join('')}</div>`;
 }
 
 /** Цвет Д/З на главной: hw-todo — не сделано, hw-done — всё сделано.
@@ -347,9 +345,9 @@ function homeworkStatus(homework) {
   return items.every((item) => isDoneItem(item, state.hwDone)) ? 'hw-done' : 'hw-todo';
 }
 
-function lessonCard(lesson, index, progress) {
+function lessonCard(lesson, index) {
   // Новый дизайн: коэффициент маленькой цифрой у оценки, как в «Оценках».
-  const marks = realMarks(lesson.marks).map((m) => markBox(m.mark, '', isNewDesign() ? m.weight || 1 : null)).join('');
+  const marks = realMarks(lesson.marks).map((m) => markBox(m.mark, freshClass(m, lesson.subject), isNewDesign() ? m.weight || 1 : null)).join('');
   const hasFiles = lesson.homework.some((h) => (h.attachments || []).length);
   const hasComment = lesson.homework.some((h) => h.comment);
   const status = homeworkStatus(lesson.homework);
@@ -377,7 +375,6 @@ function lessonCard(lesson, index, progress) {
         ${hasComment ? `<span class="hw-badge clip" title="Есть комментарий к заданию">${ICONS.chat}</span>` : ''}
       </div>` : ''}
       ${preview ? `<div class="lc-hw ${status}">${hasFiles ? ICONS.clip : ''}${hasComment ? ICONS.chat : ''}<span>${esc(preview)}</span></div>` : ''}
-      ${progress ? `<div class="lesson-progress-label">${esc(progress.label)}</div><div class="lesson-progress"><span style="width:${Math.max(0, Math.min(100, progress.percent))}%"></span></div>` : ''}
       <div class="lc-bottom"><span>${esc(time)}</span><span>${esc(lessonStatus(lesson, state.date))}</span></div>
     </div>`;
 }
@@ -449,6 +446,54 @@ export function openCalendar(selectedDate = state.date, onSelect = goToDay, { we
   month.setDate(1);
 
   const body = openSheet('', '');
+  let busy = false;
+  // Месяц листается со сдвигом: старая сетка уезжает, новая въезжает.
+  const shift = (step) => {
+    const grid = body.querySelector('.cal-grid');
+    month.setMonth(month.getMonth() + step);
+    if (reducedMotion() || !grid?.animate || busy) {
+      render();
+      return;
+    }
+    busy = true;
+    const out = grid.animate([{ transform: 'none', opacity: 1 }, { transform: `translateX(${-step * 40}%)`, opacity: 0 }],
+      { duration: 140, easing: 'ease-in' });
+    out.onfinish = out.oncancel = () => {
+      busy = false;
+      render();
+      body.querySelector('.cal-grid')?.animate([{ transform: `translateX(${step * 40}%)`, opacity: 0 }, { transform: 'none', opacity: 1 }],
+        { duration: 240, easing: 'cubic-bezier(.2, .8, .3, 1)' });
+    };
+  };
+  // Выбранная дата «перетекает» кружком к новой, потом шторка закрывается.
+  const choose = (button) => {
+    const old = body.querySelector('.cal-day.selected');
+    const done = () => {
+      closeSheet();
+      onSelect(button.dataset.date);
+    };
+    if (week || !old || old === button || reducedMotion()) {
+      done();
+      return;
+    }
+    // Кружок — под числами сетки, чтобы не закрывал даты на пути.
+    const grid = button.parentElement;
+    const from = { left: old.offsetLeft, top: old.offsetTop };
+    const to = { left: button.offsetLeft, top: button.offsetTop };
+    const dot = document.createElement('span');
+    dot.className = 'cal-dot';
+    Object.assign(dot.style, { left: `${to.left}px`, top: `${to.top}px`, width: `${button.offsetWidth}px`, height: `${button.offsetHeight}px`,
+      background: getComputedStyle(old).backgroundColor });
+    grid.append(dot);
+    old.classList.remove('selected');
+    const move = dot.animate([{ transform: `translate(${from.left - to.left}px, ${from.top - to.top}px)` }, { transform: 'none' }],
+      { duration: 260, easing: 'cubic-bezier(.34, 1.4, .64, 1)' });
+    move.onfinish = move.oncancel = () => {
+      button.classList.add('selected');
+      dot.remove();
+      setTimeout(done, 90);
+    };
+  };
   const render = () => {
     const today = isoToday();
     const selectedWeek = mondayOf(selectedDate);
@@ -488,15 +533,13 @@ export function openCalendar(selectedDate = state.date, onSelect = goToDay, { we
     body.querySelectorAll('[data-shift]').forEach((button) =>
       button.addEventListener('click', () => {
         select();
-        month.setMonth(month.getMonth() + Number(button.dataset.shift));
-        render();
+        shift(Number(button.dataset.shift));
       })
     );
     body.querySelectorAll('[data-date]').forEach((button) =>
       button.addEventListener('click', () => {
         select();
-        closeSheet();
-        onSelect(button.dataset.date);
+        choose(button);
       })
     );
   };
@@ -512,38 +555,89 @@ const MONTHS_NOMINATIVE = [
 
 function bindSwipe() {
   const area = $('panel-day');
-  let startX = 0;
-  let startY = 0;
-  let tracking = false;
-  let armed = false;
+  const content = $('dayContent');
+  let gesture = null;
   // Горизонтальный жест заметно длиннее вертикального — иначе это прокрутка.
   const isSwipe = (dx, dy) => Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5;
   area.addEventListener('touchstart', (event) => {
+    if (event.touches.length !== 1) return;
     const touch = event.touches[0];
-    startX = touch.clientX;
-    startY = touch.clientY;
-    armed = false;
     // От самого края — жест «назад», если есть куда, а не листание дней.
-    tracking = startX > EDGE_PX || !canGoBack();
+    if (touch.clientX <= EDGE_PX && canGoBack()) return;
+    gesture = { x: touch.clientX, y: touch.clientY, dx: 0, dy: 0, horizontal: null, armed: false, lastX: touch.clientX, lastT: performance.now(), speed: 0 };
   }, { passive: true });
-  // Отклик — в момент, когда палец прошёл порог: как у нативного листания,
-  // ещё до того, как его отпустили. Вернул палец назад — щёлкнет снова.
+  // День едет за пальцем; отклик — в момент, когда палец прошёл порог: как у
+  // нативного листания, ещё до того, как его отпустили.
   area.addEventListener('touchmove', (event) => {
-    if (!tracking) return;
+    if (!gesture) return;
     const touch = event.touches[0];
-    const swipe = isSwipe(touch.clientX - startX, touch.clientY - startY);
-    if (swipe && !armed) select();
-    armed = swipe;
-  }, { passive: true });
-  area.addEventListener('touchend', (event) => {
-    if (!tracking) return;
-    tracking = false;
-    const touch = event.changedTouches[0];
-    const dx = touch.clientX - startX;
-    if (!isSwipe(dx, touch.clientY - startY)) return;
+    const dx = touch.clientX - gesture.x;
+    const dy = touch.clientY - gesture.y;
+    if (gesture.horizontal === null) {
+      if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return;
+      gesture.horizontal = Math.abs(dx) > Math.abs(dy) * 1.2;
+      if (!gesture.horizontal) {
+        gesture = null;
+        return;
+      }
+    }
+    if (event.cancelable) event.preventDefault();
+    const now = performance.now();
+    if (now > gesture.lastT) gesture.speed = 0.6 * gesture.speed + 0.4 * ((touch.clientX - gesture.lastX) / (now - gesture.lastT));
+    gesture.lastX = touch.clientX;
+    gesture.lastT = now;
+    gesture.dx = dx;
+    gesture.dy = dy;
+    const swipe = isSwipe(dx, dy);
+    if (swipe && !gesture.armed) select();
+    gesture.armed = swipe;
+    if (!reducedMotion()) {
+      content.style.transition = 'none';
+      content.style.transform = `translateX(${dx}px)`;
+      content.style.opacity = String(1 - Math.min(0.5, Math.abs(dx) / (area.offsetWidth || 1)));
+    }
+  }, { passive: false });
+  const finish = () => {
+    if (!gesture) return;
+    const { dx, dy, speed, armed, horizontal } = gesture;
+    gesture = null;
+    if (!horizontal) return;
+    const fast = Math.abs(dx) > 30 && Math.abs(speed) > 0.4 && Math.sign(speed) === Math.sign(dx);
+    const reset = () => {
+      content.style.transition = '';
+      content.style.transform = '';
+      content.style.opacity = '';
+    };
+    if (!isSwipe(dx, dy) && !fast) {
+      // Не дотянул — день пружинит на место.
+      if (!reducedMotion() && dx) {
+        content.animate([{ transform: `translateX(${dx}px)` }, { transform: 'none' }], { duration: 260, easing: 'cubic-bezier(.2, .8, .3, 1)' });
+      }
+      reset();
+      return;
+    }
     if (!armed) select();
-    shiftDay(dx < 0 ? 1 : -1, true);
-  }, { passive: true });
+    const step = dx < 0 ? 1 : -1;
+    if (reducedMotion()) {
+      reset();
+      shiftDay(step, true);
+      return;
+    }
+    // Доезжает за край, и с другой стороны въезжает соседний день.
+    const width = area.offsetWidth || 1;
+    const out = content.animate([
+      { transform: `translateX(${dx}px)`, opacity: content.style.opacity || 1 },
+      { transform: `translateX(${-step * width * 0.6}px)`, opacity: 0 },
+    ], { duration: 140, easing: 'ease-in' });
+    const go = () => {
+      reset();
+      shiftDay(step, true);
+    };
+    out.onfinish = go;
+    out.oncancel = go;
+  };
+  area.addEventListener('touchend', finish, { passive: true });
+  area.addEventListener('touchcancel', finish, { passive: true });
 }
 
 /** Полоса недели листается неделями, как в календаре iPhone: ведёшь пальцем

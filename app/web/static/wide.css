@@ -90,7 +90,9 @@
   }
 
   body { padding-left: var(--rail); padding-bottom: 24px; }
-  .app-header, .pull-indicator { left: var(--rail); }
+  .app-header { left: var(--rail); }
+  /* Кружок обновления — посередине области справа от панели. */
+  .pull-indicator { left: calc(50% + var(--rail) / 2); }
   .screen { left: var(--rail); padding-bottom: 24px; }
   /* Размытие под нижней панелью — не нужно. */
   body::after { display: none; }

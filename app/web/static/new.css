@@ -224,10 +224,8 @@
 :root[data-design="new"] .lc-subject { font-size: 16px; font-weight: 600; line-height: 1.25; }
 /* Всё под названием выровнено по его левому краю, а не по номеру. */
 :root[data-design="new"] .lc-badges,
-:root[data-design="new"] .lesson-progress-label,
-:root[data-design="new"] .lesson-progress,
 :root[data-design="new"] .lc-bottom { margin-left: 46px; }
-:root[data-design="new"] .lesson-card:has(.lc-num:empty) :is(.lc-badges, .lesson-progress-label, .lesson-progress, .lc-bottom) { margin-left: 0; }
+:root[data-design="new"] .lesson-card:has(.lc-num:empty) :is(.lc-badges, .lc-bottom) { margin-left: 0; }
 :root[data-design="new"] .lc-bottom {
   margin-top: 6px;
   padding-top: 0;
@@ -248,7 +246,6 @@
   color: var(--primary);
 }
 :root[data-design="new"] .hw-badge.clip { padding: 3px 6px; }
-:root[data-design="new"] .lesson-progress-label { font-weight: 600; }
 /* Начало задания вместо бейджа «Д/З»: одна строка, нажатие открывает его. */
 :root[data-design="new"] .lc-hw {
   position: relative;
@@ -264,12 +261,6 @@
 :root[data-design="new"] .lc-hw span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 :root[data-design="new"] .lc-hw .icon { flex: none; width: 15px; height: 15px; color: var(--primary); }
 :root[data-design="new"] .lesson-card:has(.lc-num:empty) .lc-hw { margin-left: 0; }
-:root[data-design="new"] .lesson-progress { height: 6px; background: var(--card-2); }
-
-/* Идущий или ближайший урок — подсвечен рамкой акцента. */
-:root[data-design="new"] .lesson-card:has(.lesson-progress) {
-  box-shadow: 0 0 0 2px var(--primary), 0 10px 28px color-mix(in srgb, var(--primary) 18%, transparent);
-}
 
 /* ─────────────────────────── Оценки ─────────────────────────── */
 

@@ -12,6 +12,7 @@ import { openSheet, closeSheet } from './sheet.js';
 import { select, tap } from './haptics.js';
 import { getPref, setPref } from './prefs.js';
 import { isNewDesign } from './appearance.js';
+import { playAverages } from './motion.js';
 import {
   formatThreshold, neededMarks, thresholdPrefs, thresholdsFor, validThresholds,
 } from './grading.js';
@@ -297,7 +298,7 @@ function cardsHtml(rows) {
             aria-label="${isPinned ? 'Открепить' : 'Закрепить сверху'}">${ICONS.pin}</span>
           <div class="sc-name">${esc(row.subject.subject)}</div>
           ${trend}
-          <div class="sc-avg ${grade}">${row.official ? esc(row.official) : formatAverage(row.avg)}</div>
+          <div class="sc-avg ${grade}"${row.official || row.avg == null ? '' : ` data-odo="${esc(`${row.subject.subject}|${period}`)}"`}>${row.official ? esc(row.official) : formatAverage(row.avg)}</div>
         </div>
         <div class="sc-bar ${grade}"><span style="width:${fill}%"></span></div>
         <div class="sc-marks">${recent || '<span class="muted small">Оценок пока нет</span>'}</div>
@@ -338,6 +339,8 @@ function renderCards(data, quarters) {
     const rows = periodRows(data);
     hero.innerHTML = heroHtml(rows, quarters.find((q) => q.key === period));
     list.innerHTML = cardsHtml(rows);
+    // Средний сдвинулся с прошлого показа — цифры прокручиваются.
+    playAverages(list);
     // Лесенка появления — только при открытии вкладки, не при смене периода.
     list.classList.toggle('rise', animate);
     if (data.archived && !data.loadedPeriods?.has(period)) {
@@ -645,7 +648,7 @@ function openSubject(subject, key, existingBody = null, data = state.totals) {
       ${subject.teacher ? `<div class="muted small" style="margin-top:8px">Учитель: <span class="link">${esc(subject.teacher)}</span></div>` : ''}
     </div>
     <div class="card">
-      <div class="avg-line"><span>Средний балл ученика:</span><strong data-avg class="${avg == null ? '' : avgClass(avg, thresholdsFor(subject.subject))}">${formatAverage(avg)}</strong></div>
+      <div class="avg-line"><span>Средний балл ученика:</span><strong data-avg ${avg == null ? '' : `data-odo="${esc(`${subject.subject}|${key}`)}" data-odo-trend`} class="${avg == null ? '' : avgClass(avg, thresholdsFor(subject.subject))}">${formatAverage(avg)}</strong></div>
       <div class="muted small class-avg" data-class-avg hidden></div>
       ${official || yearMark || finalMark ? `<div class="muted small">${[
         official ? `Оценка за ${esc((quarter?.label || 'период').replace(/^\d+\s*/, ''))}: <strong>${esc(official)}</strong>` : '',
@@ -693,6 +696,7 @@ function openSubject(subject, key, existingBody = null, data = state.totals) {
         </div>
       </div>
     </div>`;
+  playAverages(body);
 
   body.querySelectorAll('[data-mark]').forEach((tile) =>
     tile.addEventListener('click', () => openMark(marks[Number(tile.dataset.mark)], subject.subject))
