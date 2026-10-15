@@ -1,4 +1,6 @@
 // Свайп «назад» от левого края экрана — везде, как жест «назад» в Android.
+// Поверх экрана и на вкладках, кроме «Дня», — вправо с любого места. И
+// зеркально: от правого края влево, удобно правой рукой.
 //
 // Если открыт экран поверх вкладки, он едет за пальцем, как в iOS. На
 // вкладке, откуда «назад» ведёт на первую, за пальцем едет сама вкладка. И
@@ -7,7 +9,7 @@
 // шторку, меню или вернуться на «День».
 'use strict';
 
-import { $ } from './core.js';
+import { $, state } from './core.js';
 import { ICONS } from './icons.js';
 import { canGoBack, handleBack, topScreen } from './screens.js';
 import { tap } from './haptics.js';
@@ -30,14 +32,16 @@ function ensureArrow() {
   return arrow;
 }
 
-/** Кружок «назад» у левого края: progress от 0 до 1 (1 — жест взведён),
- *  y — высота пальца. Нужен и трекпаду (trackpad.js). */
-export function showBackHint(progress, y = innerHeight / 2) {
+/** Кружок «назад» у края: progress от 0 до 1 (1 — жест взведён), y —
+ *  высота пальца, side — у какого края (жест от правого края — справа).
+ *  Нужен и трекпаду (trackpad.js). */
+export function showBackHint(progress, y = innerHeight / 2, side = 'left') {
   const el = ensureArrow();
   const armed = progress >= 1;
   el.classList.add('show');
   el.classList.toggle('armed', armed);
-  const shift = Math.min(progress, 1) * ARROW_MAX * 0.95;
+  el.classList.toggle('right', side === 'right');
+  const shift = Math.min(progress, 1) * ARROW_MAX * 0.95 * (side === 'right' ? -1 : 1);
   el.style.transform = `translate(${shift}px, -50%) scale(${armed ? 1 : 0.8})`;
   el.style.top = `${y}px`;
 }
@@ -48,10 +52,16 @@ export function hideBackHint() {
   arrow.style.transform = '';
 }
 
-/** Палец на ленте, которая сама листается вбок (кабинет и учитель, фильтры). */
+/** Палец на ленте, которая сама листается вбок (кабинет и учитель, фильтры).
+ *  Экран урока и вкладка сюда не входят: они листаются вниз, а браузер,
+ *  раз прокрутка вниз включена, считает их прокручиваемыми и вбок — из-за
+ *  этого свайп с середины экрана не срабатывал. */
 function scrollsSideways(target) {
   for (let el = target; el && el !== document.body; el = el.parentElement) {
-    if (el.scrollWidth > el.clientWidth + 1 && /auto|scroll/.test(getComputedStyle(el).overflowX)) return true;
+    if (el.matches('.screen, main, .panel, .sheet, .drawer')) return false;
+    const style = getComputedStyle(el);
+    // Лента вбок — это overflow-x без вертикальной прокрутки у того же элемента.
+    if (el.scrollWidth > el.clientWidth + 1 && /auto|scroll/.test(style.overflowX) && !/auto|scroll/.test(style.overflowY)) return true;
   }
   return false;
 }
@@ -63,13 +73,20 @@ export function initSwipeBack() {
     if (gesture || event.touches.length !== 1) return;
     const touch = event.touches[0];
     if (!canGoBack()) return;
-    // Поверх открытого экрана (урок, задание, письмо) свайп вправо — «назад»
-    // с любого места, хоть от правого края: там нет своих жестов вбок. На
-    // вкладках — только от левого края, иначе спутается с листанием дней.
-    const anywhere = topScreen() && !scrollsSideways(event.target);
-    if (touch.clientX > EDGE_PX && !anywhere) return;
+    const overlay = topScreen() || !$('sheet').hidden || $('drawer').classList.contains('open');
+    // От правого края влево — тоже «назад»: удобно правой рукой.
+    const fromRight = touch.clientX >= innerWidth - EDGE_PX;
+    // Вправо — с любого места поверх экрана и на вкладках: своих жестов вбок
+    // там нет. На «Дне» — только от края, иначе спутается с листанием дней.
+    // Панель вкладок тянут пальцем, в полях выделяют текст — там жест свой.
+    const ownGesture = event.target.closest?.('#bottomNav, input, textarea, select, [contenteditable]');
+    const anywhere = (overlay || state.tab !== 'day') && !ownGesture && !scrollsSideways(event.target);
+    if (touch.clientX > EDGE_PX && !anywhere && !(fromRight && !ownGesture)) return;
     gesture = {
       x: touch.clientX, y: touch.clientY, dx: 0,
+      // Направление жеста «назад»: вправо (1) или от правого края влево (−1).
+      // С правого края годится и то и другое — решает первое движение.
+      fromRight, dir: 0,
       // Направление ещё не ясно: вертикальное движение — обычная прокрутка.
       decided: false, armed: false,
       screen: topScreen(),
@@ -85,18 +102,35 @@ export function initSwipeBack() {
   document.addEventListener('touchmove', (event) => {
     if (!gesture) return;
     const touch = event.touches[0];
-    const dx = Math.max(0, touch.clientX - gesture.x);
+    const raw = touch.clientX - gesture.x;
     const dy = touch.clientY - gesture.y;
     if (!gesture.decided) {
-      if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
-      if (Math.abs(dy) > Math.abs(dx)) {
+      if (Math.abs(raw) < 8 && Math.abs(dy) < 8) return;
+      if (Math.abs(dy) > Math.abs(raw)) {
+        gesture = null;
+        return;
+      }
+      gesture.dir = raw > 0 ? 1 : -1;
+      // Влево — только от правого края; вправо от правого края на «Дне» не
+      // начинали (см. touchstart), так что на «Дне» влево — листание дня.
+      if (gesture.dir < 0 && !gesture.fromRight) {
+        gesture = null;
+        return;
+      }
+      if (gesture.dir > 0 && gesture.fromRight && state.tab === 'day' && !gesture.screen && $('sheet').hidden && !$('drawer').classList.contains('open')) {
         gesture = null;
         return;
       }
       gesture.decided = true;
+      // От правого края экран не едет за пальцем — только кружок справа.
+      if (gesture.dir < 0) {
+        gesture.screen = null;
+        gesture.page = null;
+      }
       const moving = gesture.screen || gesture.page;
       if (moving) moving.classList.add('swiping');
     }
+    const dx = Math.max(0, raw * gesture.dir);
     if (event.cancelable) event.preventDefault();
     gesture.dx = dx;
     const armed = dx > COMMIT_PX;
@@ -106,7 +140,7 @@ export function initSwipeBack() {
     if (gesture.screen || gesture.page) {
       (gesture.screen || gesture.page).style.transform = `translateX(${dx}px)`;
     }
-    showBackHint(dx / COMMIT_PX, touch.clientY);
+    showBackHint(dx / COMMIT_PX, touch.clientY, gesture.dir < 0 ? 'right' : 'left');
   }, { passive: false });
 
   const finish = (commit) => {
