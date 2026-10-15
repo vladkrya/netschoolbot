@@ -568,6 +568,14 @@ MIGRATIONS: list[str] = [
     """
     DROP TABLE IF EXISTS widget_keys;
     """,
+    # Свои задачи — ещё и ко времени, с напоминанием за N минут. remind_at —
+    # момент напоминания (UTC, секунды); после отправки обнуляется.
+    """
+    ALTER TABLE user_notes ADD COLUMN at TEXT NOT NULL DEFAULT '';
+    ALTER TABLE user_notes ADD COLUMN remind INTEGER;
+    ALTER TABLE user_notes ADD COLUMN remind_at REAL;
+    CREATE INDEX user_notes_remind ON user_notes(remind_at) WHERE remind_at IS NOT NULL;
+    """,
 ]
 
 

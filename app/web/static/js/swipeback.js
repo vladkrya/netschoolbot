@@ -9,7 +9,7 @@
 // шторку, меню или вернуться на «День».
 'use strict';
 
-import { $, state } from './core.js';
+import { $, keepTouch, state } from './core.js';
 import { ICONS } from './icons.js';
 import { canGoBack, handleBack, topScreen } from './screens.js';
 import { sheetOpen } from './sheet.js';
@@ -98,9 +98,10 @@ export function initSwipeBack() {
     if (!gesture.screen && !sheetOpen() && !$('drawer').classList.contains('open')) {
       gesture.page = document.querySelector('main');
     }
+    keepTouch(event.target, { move: onMove, end: () => finish(true), cancel: () => finish(false) });
   }, { passive: true });
 
-  document.addEventListener('touchmove', (event) => {
+  function onMove(event) {
     if (!gesture) return;
     const touch = event.touches[0];
     const raw = touch.clientX - gesture.x;
@@ -142,9 +143,10 @@ export function initSwipeBack() {
       (gesture.screen || gesture.page).style.transform = `translateX(${dx}px)`;
     }
     showBackHint(dx / COMMIT_PX, touch.clientY, gesture.dir < 0 ? 'right' : 'left');
-  }, { passive: false });
+  }
+  document.addEventListener('touchmove', onMove, { passive: false });
 
-  const finish = (commit) => {
+  function finish(commit) {
     if (!gesture) return;
     const { screen, page, decided, armed } = gesture;
     gesture = null;
@@ -191,7 +193,7 @@ export function initSwipeBack() {
     } else if (go) {
       handleBack();
     }
-  };
+  }
   document.addEventListener('touchend', () => finish(true), { passive: true });
   document.addEventListener('touchcancel', () => finish(false), { passive: true });
 }

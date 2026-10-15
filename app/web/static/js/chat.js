@@ -20,8 +20,12 @@ chatEvents.addEventListener('change', async ({ detail }) => {
   if (!roomsContainer?.isConnected || roomsContainer.dataset.chatView !== '1' || !['msg', 'upd', 'unread', 'connected', 'snapshot'].includes(detail.t) || refreshingRooms) return;
   refreshingRooms = true;
   try {
-    overview = (await api('/api/chat')).data;
-    if (roomsContainer.isConnected && roomsContainer.dataset.chatView === '1' && !roomsContainer.querySelector('.chat-consent') && !roomsContainer.querySelector('.chat-nick-form')) renderRooms(roomsContainer);
+    const fresh = (await api('/api/chat')).data;
+    // Ничего не поменялось — не трогаем список: иначе он заново «проявлялся»
+    // после каждого фонового обновления (сразу после вступления — дважды).
+    const same = JSON.stringify(fresh) === JSON.stringify(overview);
+    overview = fresh;
+    if (!same && roomsContainer.isConnected && roomsContainer.dataset.chatView === '1' && !roomsContainer.querySelector('.chat-consent') && !roomsContainer.querySelector('.chat-nick-form')) renderRooms(roomsContainer, true);
   } catch { /* повторим при следующем событии */ }
   finally { refreshingRooms = false; }
 });
@@ -124,8 +128,10 @@ function timeLabel(at) {
   return date.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' });
 }
 
-function renderRooms(container) {
+/** quiet — фоновое обновление: список меняется на месте, без анимации появления. */
+function renderRooms(container, quiet = false) {
   roomsContainer = container;
+  container.classList.toggle('quiet', quiet);
   const identity = overview.admin && overview.joined ? `
     <div class="card chat-identity">
       <span>Аккаунт</span>

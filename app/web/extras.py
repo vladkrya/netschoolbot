@@ -26,6 +26,8 @@ routes = web.RouteTableDef()
 
 # Заметки дальше этого окна в обе стороны не запрашиваются.
 NOTES_MAX_RANGE = dt.timedelta(days=400)
+# За сколько минут до задачи можно попросить напоминание (сутки — накануне).
+NOTE_REMINDERS = (0, 5, 10, 15, 30, 60, 120, 1440)
 
 
 async def _body(request: web.Request) -> dict[str, Any] | None:
@@ -83,6 +85,26 @@ async def list_notes(request: web.Request) -> web.Response:
     return web.json_response({"ok": True, "data": {"items": items}}, headers={"Cache-Control": "no-store"})
 
 
+def _note_time(value: Any) -> str | None:
+    """Время задачи «ЧЧ:ММ», пустая строка — без времени, None — ошибка."""
+    value = str(value or "").strip()
+    if not value:
+        return ""
+    try:
+        return dt.time.fromisoformat(value).strftime("%H:%M") if len(value) == 5 else None
+    except ValueError:
+        return None
+
+
+def _note_remind(value: Any) -> int | None | bool:
+    """Напоминание за N минут: None — без него, False — ошибка."""
+    if value is None or value == "":
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, str)) or str(value) not in map(str, NOTE_REMINDERS):
+        return False
+    return int(value)
+
+
 @routes.post("/api/notes")
 async def add_note(request: web.Request) -> web.Response:
     app, user = context(request), current_user(request)
@@ -90,9 +112,12 @@ async def add_note(request: web.Request) -> web.Response:
     day = _date(body.get("date", ""))
     text = str(body.get("text") or "")
     subject = str(body.get("subject") or "")
+    at, remind = _note_time(body.get("time")), _note_remind(body.get("remind"))
     if day is None or not text.strip():
         return json_error("Нужны дата и текст")
-    note = await app.notes.add(user.telegram_id, day, text, subject)
+    if at is None or remind is False:
+        return json_error("Некорректное время или напоминание")
+    note = await app.notes.add(user.telegram_id, day, text, subject, at=at, remind=remind, tz=user.tz)
     if note is None:
         return json_error("Пустая заметка")
     return web.json_response({"ok": True, "data": note})
@@ -104,18 +129,36 @@ async def update_note(request: web.Request) -> web.Response:
     body = await _body(request) or {}
     note_id = int(request.match_info["note_id"])
     if body.get("delete"):
-        ok = await app.notes.delete(user.telegram_id, note_id)
-    else:
-        done = body.get("done")
-        text = body.get("text")
-        ok = await app.notes.update(
-            user.telegram_id, note_id,
-            done=bool(done) if done is not None else None,
-            text=str(text) if text is not None else None,
-        )
-    if not ok:
+        if not await app.notes.delete(user.telegram_id, note_id):
+            return json_error("Заметка не найдена", status=404)
+        return web.json_response({"ok": True})
+    changes: dict[str, Any] = {}
+    if body.get("done") is not None:
+        changes["done"] = bool(body["done"])
+    if body.get("text") is not None:
+        if not str(body["text"]).strip():
+            return json_error("Пустая заметка")
+        changes["text"] = str(body["text"])
+    if "date" in body:
+        if (day := _date(body.get("date", ""))) is None:
+            return json_error("Некорректная дата")
+        changes["day"] = day
+    if "subject" in body:
+        changes["subject"] = str(body.get("subject") or "")
+    if "time" in body:
+        if (at := _note_time(body.get("time"))) is None:
+            return json_error("Некорректное время")
+        changes["at"] = at
+    if "remind" in body:
+        if (remind := _note_remind(body.get("remind"))) is False:
+            return json_error("Некорректное напоминание")
+        changes["remind"] = remind
+    if not changes:
+        return json_error("Нечего менять")
+    note = await app.notes.update(user.telegram_id, note_id, tz=user.tz, **changes)
+    if note is None:
         return json_error("Заметка не найдена", status=404)
-    return web.json_response({"ok": True})
+    return web.json_response({"ok": True, "data": note})
 
 
 async def _bot_username(request: web.Request) -> str:

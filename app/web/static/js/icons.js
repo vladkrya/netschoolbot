@@ -28,6 +28,7 @@ export const ICONS = {
   chat: svg('<path d="M20 12a8 8 0 0 1-11.6 7.1L4 20l1-4.2A8 8 0 1 1 20 12z"/>', 20),
   homework: svg('<path d="m4 7 1.8 1.8L9 5.5M4 16l1.8 1.8L9 14.5M12.5 7.5H20M12.5 16.5H20"/>', 20),
   plus: svg('<path d="M12 5v14M5 12h14"/>'),
+  pencil: svg('<path d="M15.5 4.5l4 4L8 20H4v-4z"/><path d="M13 7l4 4"/>', 18),
   // Для подсказки об установке: кнопки Safari и Chrome как они выглядят.
   share: svg('<path d="M12 3v12M8 7l4-4 4 4"/><path d="M8 10H6.5A1.5 1.5 0 0 0 5 11.5v8A1.5 1.5 0 0 0 6.5 21h11a1.5 1.5 0 0 0 1.5-1.5v-8a1.5 1.5 0 0 0-1.5-1.5H16"/>', 18),
   dots: svg('<circle cx="6" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="18" cy="12" r="1.3"/>', 18),

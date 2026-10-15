@@ -121,6 +121,7 @@ async def test_run_exits_nonzero_when_web_crashes(monkeypatch, tmp_path):
 
     class FakeWatchers:
         outages = types.SimpleNamespace(attach=lambda *_: None, track_versions=lambda *_: None)
+        notifier = None
 
         def attach_notifier(self, _):
             pass
@@ -130,7 +131,7 @@ async def test_run_exits_nonzero_when_web_crashes(monkeypatch, tmp_path):
 
     class FakeContext:
         watchers = FakeWatchers()
-        miniapp = users = db = family = None
+        miniapp = users = db = family = notes = None
 
         async def shutdown(self):
             stopped.append("context")

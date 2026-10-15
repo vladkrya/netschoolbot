@@ -40,7 +40,7 @@ export async function loadNotes(force = false) {
 export function notesAsItems(notes = state.notes || []) {
   return notes.map((note) => ({
     own: true, id: note.id, date: note.date, subject: note.subject || 'Своя задача',
-    text: note.text, done: note.done, attachments: [],
+    text: note.text, done: note.done, attachments: [], time: note.time || '', remind: note.remind ?? null,
   }));
 }
 
@@ -76,43 +76,98 @@ export async function deleteNote(item) {
   }
 }
 
-/** Шторка «Своя задача»: текст, день и (по желанию) предмет. */
-export function openNoteEditor(subjects, onSaved, { date = null, subject = '' } = {}) {
+// За сколько минут до задачи напомнить (те же значения принимает сервер).
+// Подпись в списке и короткая — под задачей.
+const REMIND_OPTIONS = [[5, 'За 5 минут', 'за 5 мин'], [10, 'За 10 минут', 'за 10 мин'],
+  [15, 'За 15 минут', 'за 15 мин'], [30, 'За 30 минут', 'за 30 мин'], [60, 'За час', 'за час'],
+  [120, 'За 2 часа', 'за 2 ч'], [1440, 'За сутки', 'за сутки'], [0, 'В момент задачи', 'вовремя']];
+
+/** Подпись под задачей: «16:30 · 🔔 за 15 мин». */
+export function noteWhen(note) {
+  if (!note.time) return '';
+  const remind = REMIND_OPTIONS.find(([minutes]) => minutes === note.remind);
+  return remind ? `${note.time} · 🔔 ${remind[2]}` : note.time;
+}
+
+const sortNotes = (notes) => notes.sort((a, b) => a.date.localeCompare(b.date)
+  || Number(!a.time) - Number(!b.time) || (a.time || '').localeCompare(b.time || '') || a.id - b.id);
+
+/** Шторка «Своя задача»: текст, день, время, напоминание и предмет. С note —
+ *  правка уже созданной задачи (и кнопка «Удалить»). */
+export function openNoteEditor(subjects, onSaved, { date = null, subject = '', note = null } = {}) {
   if (refuseReadOnly()) return;
   tap();
   const today = isoToday();
-  let day = date || addDays(today, weekdayIndex(today) >= 4 ? 7 - weekdayIndex(today) : 1);
-  const body = openSheet('Своя задача', `
+  let day = note?.date || date || addDays(today, weekdayIndex(today) >= 4 ? 7 - weekdayIndex(today) : 1);
+  const chosen = note ? note.subject : subject;
+  const names = chosen && !subjects.includes(chosen) ? [chosen, ...subjects] : subjects;
+  const remind = note ? note.remind : 15;
+  const body = openSheet(note ? 'Своя задача' : 'Новая задача', `
     <div class="note-form">
-      <textarea class="field note-text" maxlength="500" rows="3" placeholder="Например: принести циркуль"></textarea>
-      <label class="field-label">К какому дню
-        <input class="field note-date" type="date" value="${day}" min="${addDays(today, -7)}"></label>
+      <textarea class="field note-text" maxlength="500" rows="3" placeholder="Например: принести циркуль">${esc(note?.text || '')}</textarea>
+      <div class="edit-times">
+        <label class="field-label">День
+          <input class="field note-date" type="date" value="${day}" min="${addDays(today, -7)}"></label>
+        <label class="field-label">Время
+          <input class="field note-time" type="time" value="${esc(note?.time || '')}"></label>
+      </div>
+      <label class="field-label note-remind-row">Напомнить
+        <select class="field note-remind">
+          <option value="">Не напоминать</option>
+          ${REMIND_OPTIONS.map(([minutes, label]) => `<option value="${minutes}" ${minutes === remind ? 'selected' : ''}>${label}</option>`).join('')}
+        </select></label>
       <label class="field-label">Предмет
         <select class="field note-subject">
           <option value="">Без предмета</option>
-          ${subjects.map((name) => `<option ${name === subject ? 'selected' : ''}>${esc(name)}</option>`).join('')}
+          ${names.map((name) => `<option ${name === chosen ? 'selected' : ''}>${esc(name)}</option>`).join('')}
         </select></label>
-      <button class="btn note-save">Добавить</button>
-      <div class="muted small">Вечером накануне бот напомнит, если задача не отмечена.</div>
+      <button class="btn note-save">${note ? 'Сохранить' : 'Добавить'}</button>
+      ${note ? '<button class="btn outline note-remove">Удалить задачу</button>' : ''}
+      <div class="muted small note-hint"></div>
     </div>`);
   const text = body.querySelector('.note-text');
-  setTimeout(() => text.focus(), 50);
+  const timeInput = body.querySelector('.note-time');
+  const remindRow = body.querySelector('.note-remind-row');
+  const hint = body.querySelector('.note-hint');
+  // Без времени напоминать не к чему: строка «Напомнить» прячется.
+  const sync = () => {
+    remindRow.hidden = !timeInput.value;
+    hint.textContent = timeInput.value
+      ? 'Напоминание придёт в Telegram и push-уведомлением.'
+      : 'Вечером накануне бот напомнит, если задача не отмечена. Укажите время — напомнит и перед ним.';
+  };
+  timeInput.addEventListener('input', sync);
+  sync();
+  if (!note) setTimeout(() => text.focus(), 50);
+  body.querySelector('.note-remove')?.addEventListener('click', async () => {
+    tap();
+    if (!confirm('Удалить свою задачу?')) return;
+    if (await deleteNote(note)) {
+      closeSheet();
+      onSaved?.(null);
+    }
+  });
   body.querySelector('.note-save').addEventListener('click', async (event) => {
+    const button = event.currentTarget;
     const value = text.value.trim();
     day = body.querySelector('.note-date').value || day;
     if (!value) { text.focus(); notify('error'); return; }
-    event.currentTarget.disabled = true;
+    const time = timeInput.value;
+    const remindValue = body.querySelector('.note-remind').value;
+    const payload = {
+      date: day, text: value, subject: body.querySelector('.note-subject').value,
+      time, remind: time && remindValue !== '' ? Number(remindValue) : null,
+    };
+    button.disabled = true;
     try {
-      const { data } = await api('/api/notes', {
-        method: 'POST',
-        body: JSON.stringify({ date: day, text: value, subject: body.querySelector('.note-subject').value }),
-      });
-      state.notes = [...(state.notes || []), data].sort((a, b) => a.date.localeCompare(b.date) || a.id - b.id);
+      const { data } = await api(note ? `/api/notes/${note.id}` : '/api/notes', { method: 'POST', body: JSON.stringify(payload) });
+      const others = (state.notes || []).filter((n) => n.id !== data.id);
+      state.notes = sortNotes([...others, data]);
       notify('success');
       closeSheet();
       onSaved?.(data);
     } catch (error) {
-      event.currentTarget.disabled = false;
+      button.disabled = false;
       notify('error');
       banner(error.message, true);
     }

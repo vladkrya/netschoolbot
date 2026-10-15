@@ -957,7 +957,10 @@ MAX_NOTE_TEXT = 500
 
 
 class NotesRepository:
-    """Свои заметки и задачи ученика: к дате и, если нужно, к предмету."""
+    """Свои заметки и задачи ученика: к дате (и, если нужно, ко времени) и
+    к предмету. Ко времени можно попросить напоминание за N минут."""
+
+    _COLUMNS = "id, day, subject, text, done, at, remind"
 
     def __init__(self, db: Database) -> None:
         self._db = db
@@ -965,20 +968,32 @@ class NotesRepository:
     @staticmethod
     def _row(row: aiosqlite.Row) -> dict[str, Any]:
         return {"id": int(row["id"]), "date": row["day"], "subject": row["subject"],
-                "text": row["text"], "done": bool(row["done"])}
+                "text": row["text"], "done": bool(row["done"]), "time": row["at"] or "",
+                "remind": row["remind"]}
+
+    @staticmethod
+    def remind_moment(day: str, at: str, remind: int | None, tz: dt.tzinfo) -> float | None:
+        """Когда напомнить (UTC, секунды): за remind минут до day at."""
+        if not at or remind is None:
+            return None
+        moment = dt.datetime.combine(dt.date.fromisoformat(day), dt.time.fromisoformat(at), tzinfo=tz)
+        return (moment - dt.timedelta(minutes=remind)).timestamp()
 
     async def between(self, telegram_id: int, start: dt.date, end: dt.date) -> list[dict[str, Any]]:
         rows = await self._db.fetch_all(
-            """SELECT id, day, subject, text, done FROM user_notes
-               WHERE telegram_id = ? AND day >= ? AND day <= ? ORDER BY day, id""",
+            f"""SELECT {self._COLUMNS} FROM user_notes
+               WHERE telegram_id = ? AND day >= ? AND day <= ? ORDER BY day, at = '', at, id""",
             (telegram_id, start.isoformat(), end.isoformat()),
         )
         return [self._row(r) for r in rows]
 
-    async def add(self, telegram_id: int, day: dt.date, text: str, subject: str = "") -> dict[str, Any] | None:
+    async def add(self, telegram_id: int, day: dt.date, text: str, subject: str = "", *,
+                  at: str = "", remind: int | None = None, tz: dt.tzinfo = dt.timezone.utc) -> dict[str, Any] | None:
         text = " ".join(text.split())[:MAX_NOTE_TEXT]
         if not text:
             return None
+        remind = remind if at else None
+        remind_at = self.remind_moment(day.isoformat(), at, remind, tz)
         async with self._db.transaction() as db:
             cursor = await db.execute("SELECT COUNT(*) FROM user_notes WHERE telegram_id = ?", (telegram_id,))
             if (await cursor.fetchone())[0] >= MAX_NOTES:
@@ -989,32 +1004,70 @@ class NotesRepository:
                     (telegram_id,),
                 )
             cursor = await db.execute(
-                "INSERT INTO user_notes (telegram_id, day, subject, text, created_at) VALUES (?, ?, ?, ?, ?)",
-                (telegram_id, day.isoformat(), subject.strip()[:120], text, time.time()),
+                """INSERT INTO user_notes (telegram_id, day, subject, text, created_at, at, remind, remind_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (telegram_id, day.isoformat(), subject.strip()[:120], text, time.time(), at, remind, remind_at),
             )
             note_id = cursor.lastrowid
-        return {"id": note_id, "date": day.isoformat(), "subject": subject.strip()[:120], "text": text, "done": False}
+        return {"id": note_id, "date": day.isoformat(), "subject": subject.strip()[:120], "text": text,
+                "done": False, "time": at, "remind": remind}
 
     async def update(self, telegram_id: int, note_id: int, *, done: bool | None = None,
-                     text: str | None = None) -> bool:
-        sets, params = [], []
-        if done is not None:
-            sets.append("done = ?")
-            params.append(int(done))
+                     text: str | None = None, day: dt.date | None = None, subject: str | None = None,
+                     at: str | None = None, remind: Any = ...,
+                     tz: dt.tzinfo = dt.timezone.utc) -> dict[str, Any] | None:
+        """Изменить задачу. Возвращает её новый вид или None, если её нет.
+        remind=None — без напоминания; не передан (...) — как было."""
         if text is not None:
             text = " ".join(text.split())[:MAX_NOTE_TEXT]
             if not text:
-                return False
-            sets.append("text = ?")
-            params.append(text)
-        if not sets:
-            return False
+                return None
         async with self._db.transaction() as db:
             cursor = await db.execute(
-                f"UPDATE user_notes SET {', '.join(sets)} WHERE id = ? AND telegram_id = ?",
-                (*params, note_id, telegram_id),
+                f"SELECT {self._COLUMNS}, remind_at FROM user_notes WHERE id = ? AND telegram_id = ?",
+                (note_id, telegram_id),
             )
-            return cursor.rowcount > 0
+            row = await cursor.fetchone()
+            if row is None:
+                return None
+            note = self._row(row)
+            if done is not None:
+                note["done"] = bool(done)
+            if text is not None:
+                note["text"] = text
+            if day is not None:
+                note["date"] = day.isoformat()
+            if subject is not None:
+                note["subject"] = subject.strip()[:120]
+            if at is not None:
+                note["time"] = at
+            if remind is not ...:
+                note["remind"] = remind
+            if not note["time"]:
+                note["remind"] = None
+            remind_at = row["remind_at"]
+            # Сдвинули время или напоминание — напомнить заново, к новому сроку.
+            if (day, at, remind) != (None, None, ...):
+                remind_at = self.remind_moment(note["date"], note["time"], note["remind"], tz)
+            await db.execute(
+                """UPDATE user_notes SET done = ?, text = ?, day = ?, subject = ?, at = ?, remind = ?,
+                   remind_at = ? WHERE id = ? AND telegram_id = ?""",
+                (int(note["done"]), note["text"], note["date"], note["subject"], note["time"],
+                 note["remind"], remind_at, note_id, telegram_id),
+            )
+        return note
+
+    async def due_reminders(self, now: float) -> list[tuple[int, dict[str, Any], float]]:
+        """Напоминания, время которых пришло: (ученик, задача, когда надо было)."""
+        rows = await self._db.fetch_all(
+            f"""SELECT telegram_id, remind_at, {self._COLUMNS} FROM user_notes
+               WHERE remind_at IS NOT NULL AND remind_at <= ? AND done = 0 ORDER BY remind_at""",
+            (now,),
+        )
+        return [(int(r["telegram_id"]), self._row(r), float(r["remind_at"])) for r in rows]
+
+    async def reminded(self, note_id: int) -> None:
+        await self._db.execute("UPDATE user_notes SET remind_at = NULL WHERE id = ?", (note_id,))
 
     async def delete(self, telegram_id: int, note_id: int) -> bool:
         async with self._db.transaction() as db:

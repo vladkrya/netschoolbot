@@ -40,6 +40,31 @@ export const state = {
 
 export const $ = (id) => document.getElementById(id);
 
+/** Касание, начатое на элементе, который потом перерисовали (переписка
+ *  чата, список уроков): его движения и отпускание браузер шлёт этому, уже
+ *  убранному, элементу — до document они не всплывают, и жест застревал на
+ *  середине. Ловим их на самом элементе, но только пока он откреплён:
+ *  иначе событие пришло бы дважды. */
+export function keepTouch(target, { move, end, cancel = end }) {
+  if (!target?.addEventListener) return;
+  const detached = (handler) => (event) => { if (!target.isConnected) handler(event); };
+  const onMove = detached(move);
+  const onEnd = detached(end);
+  const onCancel = detached(cancel);
+  const off = () => {
+    target.removeEventListener('touchmove', onMove);
+    target.removeEventListener('touchend', onEnd);
+    target.removeEventListener('touchcancel', onCancel);
+    target.removeEventListener('touchend', off);
+    target.removeEventListener('touchcancel', off);
+  };
+  target.addEventListener('touchmove', onMove, { passive: false });
+  target.addEventListener('touchend', onEnd);
+  target.addEventListener('touchcancel', onCancel);
+  target.addEventListener('touchend', off);
+  target.addEventListener('touchcancel', off);
+}
+
 /** Движение выключено: системное «Уменьшить движение» или тумблер
  *  «Анимации» в настройках (класс no-motion на <html>, appearance.js). */
 export const stillMotion = () => document.documentElement.classList.contains('no-motion')

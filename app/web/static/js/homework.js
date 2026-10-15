@@ -11,7 +11,7 @@ import { ICONS } from './icons.js';
 import { homeworkTimes, isAutoDone, isDoneItem, loadDone, openHomework, saveDone } from './details.js';
 import { select, tap } from './haptics.js';
 import {
-  bindStreaks, deleteNote, isTestWork, loadNotes, notesAsItems, openNoteEditor, setNoteDone, streaks, streaksHtml,
+  bindStreaks, isTestWork, loadNotes, noteWhen, notesAsItems, openNoteEditor, setNoteDone, streaks, streaksHtml,
 } from './notes.js';
 
 let query = '';
@@ -73,11 +73,12 @@ function ownCard(item, index) {
   return `<div class="card hw-card own ${item.done ? 'done' : ''}" data-hw="${index}">
       <div class="hw-top">
         <div class="hw-subject">${esc(item.subject)} <span class="hw-tag own">Своё</span></div>
-        <button class="note-delete" data-delete="${index}" aria-label="Удалить задачу">✕</button>
+        <button class="note-edit" data-edit="${index}" aria-label="Изменить задачу">${ICONS.pencil}</button>
         <button class="hw-check ${item.done ? 'on' : ''}" data-done="${index}" aria-pressed="${item.done}"
           aria-label="${item.done ? 'Снять отметку' : 'Отметить выполненным'}">${CHECK}</button>
       </div>
       <div class="hw-text"><span class="hw-strike">${esc(item.text)}</span></div>
+      ${item.time ? `<div class="hw-observed note-when">${esc(noteWhen(item))}</div>` : ''}
       <div class="hw-foot"><span></span><span class="muted small">${esc(dayMonth(item.date))}</span></div>
     </div>`;
 }
@@ -136,15 +137,15 @@ function render() {
     card.addEventListener('click', async (event) => {
       const item = items[Number(card.dataset.hw)];
       const check = event.target.closest('[data-done]');
+      if (item.own && event.target.closest('[data-edit]')) {
+        const note = (state.notes || []).find((n) => n.id === item.id);
+        if (note) openNoteEditor(subjectNames(), () => render(), { note });
+        return;
+      }
       // Свою задачу отмечает нажатие в любом месте — заливка тогда из центра.
       const box = check || (item.own ? card.querySelector('[data-done]') : null);
       if (box) fillFrom(box, check ? event : {});
       if (item.own) {
-        if (event.target.closest('[data-delete]')) {
-          tap();
-          if (confirm('Удалить свою задачу?') && await deleteNote(item)) render();
-          return;
-        }
         // Своя задача не открывается отдельным экраном: нажатие — отметка.
         const next = !item.done;
         paintCard(card.querySelector('[data-done]'), next);
