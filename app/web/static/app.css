@@ -2150,6 +2150,10 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
 /* Оценка, перелетающая из сводки дня в шапку урока. */
 .flyer { position: fixed; z-index: 60; margin: 0; pointer-events: none; transform-origin: 0 0; box-sizing: border-box; will-change: transform; }
 
+/* Смена темы и акцента — одно перетекание всей страницы (smoothRepaint). */
+::view-transition-old(root), ::view-transition-new(root) { animation-duration: .35s; }
+.no-motion::view-transition-old(root), .no-motion::view-transition-new(root) { animation: none; }
+
 /* Кружок выбранной даты, перетекающий к новой (календарь в day.js). */
 .cal-grid { position: relative; }
 .cal-grid .cal-day { position: relative; z-index: 1; }

@@ -12,6 +12,7 @@ import {
   applyMotion, showConfetti, saveConfetti, showMotion, saveMotion, showHomeworkStatus, showWeekends, syncChromeColor,
 } from './appearance.js';
 import { ICONS } from './icons.js';
+import { smoothRepaint } from './motion.js';
 import { markBox } from './details.js';
 import { loadCalc } from './calc.js';
 import { openAssistant } from './assistant.js';
@@ -849,7 +850,7 @@ function bindDrawer() {
     input.addEventListener('change', () => {
       select();
       setPref('theme', input.value);
-      applyStoredTheme();
+      smoothRepaint(applyStoredTheme);
     })
   );
   const themeSeg = body.querySelector('.theme-seg');
@@ -864,7 +865,7 @@ function bindDrawer() {
     });
     themeSeg.style.setProperty('--i', buttons.indexOf(button));
     setPref('theme', button.dataset.themeSet);
-    applyStoredTheme();
+    smoothRepaint(applyStoredTheme);
   });
   $('hwStatusShow').addEventListener('change', (event) => {
     select();
@@ -897,8 +898,10 @@ function bindDrawer() {
   body.querySelectorAll('[data-accent]').forEach((button) =>
     button.addEventListener('click', () => {
       select();
-      saveAccent(button.dataset.accent);
-      render();
+      smoothRepaint(() => {
+        saveAccent(button.dataset.accent);
+        render();
+      });
     })
   );
   $('accentCustom').addEventListener('change', (event) => {

@@ -8,6 +8,17 @@ import { showConfetti } from './appearance.js';
 
 export const reducedMotion = stillMotion;
 
+/** Перекрасить страницу одним плавным перетеканием (тема, цвет акцента):
+ *  без него шапка, панель и карточки менялись в разное время, и на миг
+ *  светлая шапка висела над тёмной страницей. */
+export function smoothRepaint(change) {
+  if (!document.startViewTransition || reducedMotion()) {
+    change();
+    return;
+  }
+  document.startViewTransition(change);
+}
+
 /* ─────────────────────────── Новые оценки ─────────────────────────── */
 
 // Какие оценки человек уже видел — чтобы вспыхивали только свежие. since —
