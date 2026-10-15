@@ -89,6 +89,9 @@ export function applyEdits(day, edits = lessonEdits()) {
     .map((lesson, index) => ({ lesson, index, start: minutes(lesson.start) ?? 24 * 60 }))
     .sort((a, b) => a.start - b.start || a.index - b.index)
     .map(({ lesson }) => lesson);
+  // Свой урок без номера выбивался из списка — в такой день все уроки
+  // нумеруются по порядку (lessonNo в core.js).
+  if (lessons.some((lesson) => lesson.addedBy)) lessons.forEach((lesson, index) => { lesson.place = index + 1; });
   return { ...day, lessons, hidden };
 }
 

@@ -48,13 +48,26 @@ export function hideBackHint() {
   arrow.style.transform = '';
 }
 
+/** Палец на ленте, которая сама листается вбок (кабинет и учитель, фильтры). */
+function scrollsSideways(target) {
+  for (let el = target; el && el !== document.body; el = el.parentElement) {
+    if (el.scrollWidth > el.clientWidth + 1 && /auto|scroll/.test(getComputedStyle(el).overflowX)) return true;
+  }
+  return false;
+}
+
 export function initSwipeBack() {
   let gesture = null;
 
   document.addEventListener('touchstart', (event) => {
     if (gesture || event.touches.length !== 1) return;
     const touch = event.touches[0];
-    if (touch.clientX > EDGE_PX || !canGoBack()) return;
+    if (!canGoBack()) return;
+    // Поверх открытого экрана (урок, задание, письмо) свайп вправо — «назад»
+    // с любого места, хоть от правого края: там нет своих жестов вбок. На
+    // вкладках — только от левого края, иначе спутается с листанием дней.
+    const anywhere = topScreen() && !scrollsSideways(event.target);
+    if (touch.clientX > EDGE_PX && !anywhere) return;
     gesture = {
       x: touch.clientX, y: touch.clientY, dx: 0,
       // Направление ещё не ясно: вертикальное движение — обычная прокрутка.

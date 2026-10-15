@@ -1689,6 +1689,10 @@ async def save_prefs(request: web.Request) -> web.Response:
         if body["hwStatus"] not in ("show", "hide"):
             return json_error("Некорректная настройка подсветки заданий")
         changes["hwStatus"] = body["hwStatus"]
+    if "motion" in body:
+        if body["motion"] not in ("on", "off"):
+            return json_error("Некорректная настройка анимаций")
+        changes["motion"] = body["motion"]
     if "confetti" in body:
         if body["confetti"] not in ("show", "hide"):
             return json_error("Некорректная настройка конфетти")

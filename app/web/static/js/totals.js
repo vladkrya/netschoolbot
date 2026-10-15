@@ -3,7 +3,7 @@
 
 import {
   $, ABSENCES, DEFAULT_THRESHOLDS, api, avgClass, errorCard, esc, formatAverage, isAbsence, isoToday, dayMonth,
-  plural, shortDate, showFailure, showLoading, skeleton, state, weightedAverage,
+  plural, shortDate, showFailure, showLoading, skeleton, state, weightedAverage, stillMotion,
 } from './core.js';
 import { markBox, openMark } from './details.js';
 import { pushScreen } from './screens.js';
@@ -310,6 +310,8 @@ function cardsHtml(rows) {
   }).join('');
 }
 
+let lastEntrance = 0;
+
 function renderCards(data, quarters) {
   period = pickPeriod(data, quarters);
   const index = Math.max(0, quarters.findIndex((q) => q.key === period));
@@ -340,7 +342,11 @@ function renderCards(data, quarters) {
     hero.innerHTML = heroHtml(rows, quarters.find((q) => q.key === period));
     list.innerHTML = cardsHtml(rows);
     // Средний сдвинулся с прошлого показа — цифры прокручиваются.
-    playAverages(list);
+    // При входе во вкладку цифры прокручиваются всегда, при смене периода и
+    // повторной отрисовке свежими данными — только если средний сдвинулся.
+    const entrance = animate && Date.now() - lastEntrance > 4000;
+    if (entrance) lastEntrance = Date.now();
+    playAverages(list, { entrance });
     // Лесенка появления — только при открытии вкладки, не при смене периода.
     list.classList.toggle('rise', animate);
     if (data.archived && !data.loadedPeriods?.has(period)) {
@@ -548,7 +554,7 @@ function averageChart(marks, thresholds) {
           ${lines}
           <path class="ac-area" d="${area}"/>
           <path class="ac-line" d="${path}" pathLength="1"/>
-          ${points.map((p, i) => `<circle class="ac-dot d${p.mark}" cx="${x(i).toFixed(1)}" cy="${y(p.avg).toFixed(1)}" r="4"/>`).join('')}
+          ${points.map((p, i) => `<circle class="ac-dot d${p.mark}" style="--i:${i}" cx="${x(i).toFixed(1)}" cy="${y(p.avg).toFixed(1)}" r="4"/>`).join('')}
           ${points.map((p, i) => `<rect class="ac-hit" data-point="${i}" x="${(x(i) - (W - L - R) / points.length / 2).toFixed(1)}" y="0" width="${((W - L - R) / points.length).toFixed(1)}" height="${H}"/>`).join('')}
           <text class="ac-axis" x="${L}" y="${H - 6}">${esc(shortDate(points[0].date))}</text>
           <text class="ac-axis" x="${W - R}" y="${H - 6}" text-anchor="end">${esc(shortDate(last.date))}</text>
@@ -648,7 +654,7 @@ function openSubject(subject, key, existingBody = null, data = state.totals) {
       ${subject.teacher ? `<div class="muted small" style="margin-top:8px">Учитель: <span class="link">${esc(subject.teacher)}</span></div>` : ''}
     </div>
     <div class="card">
-      <div class="avg-line"><span>Средний балл ученика:</span><strong data-avg ${avg == null ? '' : `data-odo="${esc(`${subject.subject}|${key}`)}" data-odo-trend`} class="${avg == null ? '' : avgClass(avg, thresholdsFor(subject.subject))}">${formatAverage(avg)}</strong></div>
+      <div class="avg-line"><span>Средний балл ученика:</span><strong data-avg ${avg == null ? '' : `data-count="${esc(`${subject.subject}|${key}`)}" data-odo-trend`} class="${avg == null ? '' : avgClass(avg, thresholdsFor(subject.subject))}">${formatAverage(avg)}</strong></div>
       <div class="muted small class-avg" data-class-avg hidden></div>
       ${official || yearMark || finalMark ? `<div class="muted small">${[
         official ? `Оценка за ${esc((quarter?.label || 'период').replace(/^\d+\s*/, ''))}: <strong>${esc(official)}</strong>` : '',
@@ -721,7 +727,7 @@ function openSubject(subject, key, existingBody = null, data = state.totals) {
       tile.hidden = value != null && !isAttendance(mark) && Number(mark.mark) !== value;
     });
     body.querySelector('[data-mark-reset]').hidden = value == null;
-    if (tiles && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    if (tiles && !stillMotion()) {
       const height = tiles.getBoundingClientRect().height;
       filterAnimation = tiles.animate([{ height: `${oldHeight}px` }, { height: `${height}px` }], {
         duration: 220, easing: 'cubic-bezier(.2,.8,.3,1)',

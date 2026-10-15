@@ -226,6 +226,11 @@
 :root[data-design="new"] .lc-badges,
 :root[data-design="new"] .lc-bottom { margin-left: 46px; }
 :root[data-design="new"] .lesson-card:has(.lc-num:empty) :is(.lc-badges, .lc-bottom) { margin-left: 0; }
+/* Шапка экрана урока: всё под названием — по его левому краю, как в
+   карточке (номер 34px + зазор 12px). Без номера — от края карточки. */
+:root[data-design="new"] .lesson-head .lesson-title { gap: 12px; }
+:root[data-design="new"] .lesson-head > :not(.lesson-title) { margin-left: 46px; }
+:root[data-design="new"] .lesson-head:has(.lc-num:empty) > :not(.lesson-title) { margin-left: 0; }
 :root[data-design="new"] .lc-bottom {
   margin-top: 6px;
   padding-top: 0;

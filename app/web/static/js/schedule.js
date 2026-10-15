@@ -6,8 +6,8 @@
 'use strict';
 
 import {
-  $, addDays, api, dayMonth, errorCard, esc, isoToday, mondayOf, plural, showFailure, showLoading, skeleton, state,
-  WEEKDAYS, WEEKDAYS_FULL, weekOffsetOf,
+  $, addDays, api, dayMonth, errorCard, esc, isoToday, lessonNo, mondayOf, plural, showFailure, showLoading, skeleton, state,
+  WEEKDAYS, WEEKDAYS_FULL, weekOffsetOf, stillMotion,
 } from './core.js';
 import { dayData, ensureWeek, goToDay, isHiddenWeekend, openCalendar } from './day.js';
 import { isNewDesign, showBells } from './appearance.js';
@@ -133,7 +133,7 @@ function render(monday) {
           ? `<button class="sched-toggle" data-toggle="${iso}" aria-expanded="${open}" aria-controls="sched-${iso}">${lessons.length} ${lessonsWord(lessons.length)} <span class="sched-chevron" aria-hidden="true">▾</span></button>`
           : '<div class="muted small sched-toggle">Уроков нет</div>'}
         ${lessons.length ? `<div id="sched-${iso}" class="sched-collapse${open ? ' open' : ''}"${open ? '' : ' inert'}><div class="sched-collapse-inner"><div class="sched-list">
-            ${lessons.map((l) => `<div class="sched-lesson"><span class="lc-num">${esc(l.number ?? '')}</span><span>${esc(l.subject)}${l.is_elective ? '<span class="elective-badge">Факультатив</span>' : ''}</span></div>`).join('')}
+            ${lessons.map((l) => `<div class="sched-lesson"><span class="lc-num">${esc(lessonNo(l))}</span><span>${esc(l.subject)}${l.is_elective ? '<span class="elective-badge">Факультатив</span>' : ''}</span></div>`).join('')}
             <button class="btn outline" data-goto="${iso}">Перейти ко дню</button>
           </div></div></div>` : ''}
       </div>`);
@@ -155,7 +155,7 @@ function render(monday) {
       panel.inert = !open;
       panel.classList.toggle('open', open);
       panel.style.height = open ? 'auto' : '0px';
-      if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      if (!stillMotion()) {
         const to = open ? panel.scrollHeight : 0;
         const animation = panel.animate([{ height: `${from}px` }, { height: `${to}px` }], {
           duration: 240, easing: 'cubic-bezier(.2,.8,.3,1)',
@@ -199,7 +199,7 @@ function weekCard(iso, index, lessons, range, isToday) {
         <div class="sched-range">${esc(range.replace(' — ', '–'))}</div>
       </div>
       ${lessons.length ? `<div class="sched-list">${lessons.map((l) => `<div class="sched-lesson">
-          <span class="lc-num">${esc(l.number ?? '')}</span>
+          <span class="lc-num">${esc(lessonNo(l))}</span>
           <span class="sl-subject">${esc(l.subject)}${l.is_elective ? '<span class="elective-badge">Факультатив</span>' : ''}</span>
           <span class="sl-time">${esc(l.start || '')}</span>
         </div>`).join('')}</div>` : '<div class="muted small sched-empty">Уроков нет</div>'}

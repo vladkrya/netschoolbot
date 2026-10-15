@@ -2,7 +2,7 @@
 'use strict';
 
 import {
-  $, api, attachmentsHtml, banner, errorCard, esc, escRich, observedTime, shortDate, showFailure, showLoading, skeleton, state,
+  $, api, attachmentsHtml, banner, errorCard, esc, escRich, observedTime, shortDate, showFailure, showLoading, skeleton, state, stillMotion,
 } from './core.js';
 import { notify, select } from './haptics.js';
 import { ICONS } from './icons.js';
@@ -85,7 +85,7 @@ function render() {
   container.querySelectorAll('[data-mail]').forEach((element) =>
     element.addEventListener('click', () => openMessage(element.dataset.mail))
   );
-  const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const still = stillMotion();
   if (shownIds && !still) {
     let arrived = 0;
     container.querySelectorAll('[data-mail]').forEach((element) => {

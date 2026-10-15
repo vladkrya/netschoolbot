@@ -3,10 +3,10 @@
 // включено «Уменьшить движение».
 'use strict';
 
-import { isoToday } from './core.js';
+import { isoToday, stillMotion } from './core.js';
 import { showConfetti } from './appearance.js';
 
-export const reducedMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+export const reducedMotion = stillMotion;
 
 /* ─────────────────────────── Новые оценки ─────────────────────────── */
 
@@ -87,7 +87,9 @@ function confetti(origin) {
     canvas.ariaHidden = 'true';
     document.body.append(canvas);
   }
-  const ratio = devicePixelRatio || 1;
+  // Плотность не выше 1.5: на телефоне холст на весь экран в 3x тяжело
+  // перерисовывать каждый кадр, а конфетти мелкие — разницы не видно.
+  const ratio = Math.min(devicePixelRatio || 1, 1.5);
   canvas.width = innerWidth * ratio;
   canvas.height = innerHeight * ratio;
   const styles = getComputedStyle(document.documentElement);
@@ -107,7 +109,7 @@ function confetti(origin) {
 
 function drawConfetti() {
   const ctx = canvas.getContext('2d');
-  const ratio = devicePixelRatio || 1;
+  const ratio = Math.min(devicePixelRatio || 1, 1.5);
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   parts = parts.filter((p) => p.life > 0);
   for (const p of parts) {
@@ -146,27 +148,35 @@ function averages() {
   return shownAverages;
 }
 
-/** Числа с data-odo="ключ" внутри root: если с прошлого показа средний
- *  поменялся, цифры прокручиваются от старого к новому, рядом — стрелка. */
-export function playAverages(root) {
+/** Средние баллы внутри root.
+ *
+ *  data-odo="ключ" — цифры прокручиваются, как счётчик: от прошлого
+ *  значения, если оно поменялось, а при входе во вкладку (entrance) — и
+ *  без изменений, с нулей. data-count="ключ" (экран предмета) — число
+ *  досчитывает от нуля до своего значения. С data-odo-trend рядом
+ *  появляется стрелка, если средний сдвинулся с прошлого показа. */
+export function playAverages(root, { entrance = false } = {}) {
   const store = averages();
   let changed = false;
-  root.querySelectorAll('[data-odo]').forEach((el) => {
+  root.querySelectorAll('[data-odo], [data-count]').forEach((el) => {
     // Вкладку рисуют и заранее, в фоне: там прокрутку никто не увидит —
     // пусть отыграет, когда вкладку откроют.
     if (!el.getClientRects().length) return;
-    const key = el.dataset.odo;
+    const key = el.dataset.odo ?? el.dataset.count;
     const text = el.textContent.trim();
     const before = store[key];
-    if (before === text) return;
-    store[key] = text;
-    changed = true;
-    if (before == null || reducedMotion()) return;
-    const from = Number(before.replace(',', '.'));
+    if (before !== text) {
+      store[key] = text;
+      changed = true;
+    }
     const to = Number(text.replace(',', '.'));
-    if (!Number.isFinite(from) || !Number.isFinite(to)) return;
-    odometer(el, before, text);
-    if (el.dataset.odoTrend != null) trendChip(el, to - from);
+    if (reducedMotion() || !Number.isFinite(to)) return;
+    const from = before == null ? NaN : Number(before.replace(',', '.'));
+    const moved = Number.isFinite(from) && before !== text;
+    if (el.dataset.count != null) countUp(el, text);
+    else if (moved) odometer(el, before, text);
+    else if (entrance) odometer(el, text.replace(/\d/g, '0'), text);
+    if (moved && el.dataset.odoTrend != null) trendChip(el, to - from);
   });
   if (!changed) return;
   try {
@@ -174,6 +184,22 @@ export function playAverages(root) {
   } catch {
     /* без хранилища прокрутка просто не повторится */
   }
+}
+
+/** Число досчитывает от нуля до text («4,57»): быстро в начале, плавно к концу. */
+function countUp(el, text) {
+  const target = Number(text.replace(',', '.'));
+  const digits = (text.split(',')[1] || '').length;
+  const start = performance.now();
+  const duration = 900;
+  const frame = (now) => {
+    if (!el.isConnected) return;
+    const t = Math.min(1, (now - start) / duration);
+    el.textContent = t < 1 ? (target * (1 - (1 - t) ** 3)).toFixed(digits).replace('.', ',') : text;
+    if (t < 1) requestAnimationFrame(frame);
+  };
+  el.textContent = (0).toFixed(digits).replace('.', ',');
+  requestAnimationFrame(frame);
 }
 
 function odometer(el, from, to) {
@@ -209,38 +235,45 @@ function trendChip(el, delta) {
 
 /* ─────────────────────────── Перелёт ─────────────────────────── */
 
-const easeOut = (t) => 1 - (1 - t) ** 3;
+/** Где target окажется, когда доиграют анимации появления вокруг него
+ *  (экран урока въезжает, карточки поднимаются). Анимации на миг
+ *  перематываются в конец, место замеряется один раз и время
+ *  возвращается — так копии не нужно гнаться за целью каждый кадр:
+ *  замер на каждом кадре заставлял телефон заново раскладывать страницу,
+ *  и полёт подлагивал. */
+function settledRect(target) {
+  const moving = document.getAnimations().filter((animation) => {
+    const element = animation.effect?.target;
+    const end = animation.effect?.getComputedTiming().endTime;
+    return element?.contains(target) && Number.isFinite(end) && animation.playState !== 'finished';
+  });
+  const saved = moving.map((animation) => animation.currentTime);
+  moving.forEach((animation) => { animation.currentTime = animation.effect.getComputedTiming().endTime; });
+  const rect = target.getBoundingClientRect();
+  moving.forEach((animation, index) => { animation.currentTime = saved[index]; });
+  return rect;
+}
 
 /** Копия target перелетает из прямоугольника rect на место target. Пока
- *  летит, сам target спрятан. Цель всё это время сама движется (экран урока
- *  въезжает, карточки поднимаются), поэтому её место берётся заново каждый
- *  кадр — копия садится точно туда, где цель окажется, без рывка в конце. */
+ *  летит, сам target спрятан. Летит одна анимация transform — её ведёт
+ *  видеокарта, без пересчёта страницы. */
 export function flyTo(rect, target, duration = 460) {
   if (!target || reducedMotion() || !rect?.width) return;
-  const first = target.getBoundingClientRect();
-  if (!first.width) return;
+  const end = settledRect(target);
+  if (!end.width) return;
   const flyer = target.cloneNode(true);
   flyer.classList.add('flyer');
+  Object.assign(flyer.style, { left: `${end.left}px`, top: `${end.top}px`, width: `${end.width}px`, height: `${end.height}px` });
   document.body.append(flyer);
   target.style.visibility = 'hidden';
-  const start = performance.now();
-  const step = (now) => {
-    const t = Math.min(1, (now - start) / duration);
-    const k = easeOut(t);
-    const end = target.isConnected ? target.getBoundingClientRect() : first;
-    const left = rect.left + (end.left - rect.left) * k;
-    const top = rect.top + (end.top - rect.top) * k;
-    const scale = (rect.width + (end.width - rect.width) * k) / (end.width || 1);
-    Object.assign(flyer.style, {
-      left: `${end.left}px`, top: `${end.top}px`, width: `${end.width}px`, height: `${end.height}px`,
-      transform: `translate(${left - end.left}px, ${top - end.top}px) scale(${scale})`,
-    });
-    if (t < 1 && target.isConnected) {
-      requestAnimationFrame(step);
-      return;
-    }
+  const animation = flyer.animate([
+    { transform: `translate(${rect.left - end.left}px, ${rect.top - end.top}px) scale(${rect.width / end.width})` },
+    { transform: 'none' },
+  ], { duration, easing: 'cubic-bezier(.2, .8, .3, 1)' });
+  const done = () => {
     flyer.remove();
     target.style.visibility = '';
   };
-  step(start);
+  animation.onfinish = done;
+  animation.oncancel = done;
 }

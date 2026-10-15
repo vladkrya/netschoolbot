@@ -22,6 +22,8 @@
     // Новый дизайн — по умолчанию; старый — только если его выбрали.
     var fresh = localStorage.getItem('ns-design-v2') !== 'classic';
     if (fresh) document.documentElement.setAttribute('data-design', 'new');
+    // «Анимации» выключены в настройках — до первой отрисовки, без мигания.
+    if (localStorage.getItem('ns-motion') === 'off') document.documentElement.classList.add('no-motion');
     var bg = fresh ? (dark ? '#0f1217' : '#f3f4f8') : (dark ? '#141a22' : '#eef1f6');
     var glass = CSS.supports('background', 'color-mix(in srgb, red 50%, transparent)')
       && (CSS.supports('backdrop-filter', 'blur(1px)') || CSS.supports('-webkit-backdrop-filter', 'blur(1px)'));

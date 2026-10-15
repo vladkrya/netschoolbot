@@ -202,14 +202,14 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
   display: flex; align-items: center; justify-content: center; width: 100%;
   margin: 10px 0 4px; padding: 11px; border-radius: 12px;
   border: 1.5px solid var(--border); background: transparent; color: var(--text);
-  font: inherit; font-weight: 600; transition: transform .15s, color .25s, border-color .25s;
+  font: inherit; font-weight: 600; transition: transform .15s, color .4s .15s, border-color .4s;
 }
 /* Зелёная заливка — кругом из точки нажатия (--x, --y ставит details.js). */
 .hw-done-toggle::before {
   content: ''; position: absolute; inset: 0; z-index: -1; background: var(--g5);
   clip-path: circle(0 at var(--x, 50%) var(--y, 50%));
 }
-.hw-done-toggle.ripple::before { transition: clip-path .5s var(--ease); }
+.hw-done-toggle.ripple::before { transition: clip-path .85s cubic-bezier(.3, .7, .3, 1); }
 .hw-done-toggle:active { transform: scale(.97); }
 .hw-done-toggle.on { border-color: var(--g5); color: #fff; }
 .hw-done-toggle.on::before { clip-path: circle(150% at var(--x, 50%) var(--y, 50%)); }
@@ -340,6 +340,10 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-delay: 0s !important; transition-duration: .01ms !important; }
+}
+/* Тумблер «Анимации» в настройках выключает их так же, как системная настройка. */
+.no-motion *, .no-motion *::before, .no-motion *::after {
+  animation-duration: .01ms !important; animation-delay: 0s !important; transition-duration: .01ms !important;
 }
 
 .list.slide-left, .lesson-timer.slide-left { animation: slide-left .22s ease; }
@@ -1378,20 +1382,20 @@ main.leaving { transition: transform .22s var(--ease); box-shadow: -8px 0 24px r
   content: ''; position: absolute; inset: 0; z-index: -1; background: var(--g5);
   clip-path: circle(0 at var(--x, 50%) var(--y, 50%));
 }
-.hw-check.ripple::before { transition: clip-path .4s var(--ease); }
+.hw-check.ripple::before { transition: clip-path .6s cubic-bezier(.3, .7, .3, 1); }
 .hw-check.on { border-color: var(--g5); }
 .hw-check.on::before { clip-path: circle(150% at var(--x, 50%) var(--y, 50%)); }
 .hw-check.auto.on { background: var(--g5); }
 .hw-check svg { width: 15px; height: 15px; }
 .hw-check path { fill: none; stroke: #fff; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round;
   stroke-dasharray: 20; stroke-dashoffset: 20; }
-.hw-check.ripple path { transition: stroke-dashoffset .35s var(--ease) .15s; }
+.hw-check.ripple path { transition: stroke-dashoffset .45s var(--ease) .3s; }
 .hw-check.on path { stroke-dashoffset: 0; }
 /* Выполненное зачёркивается слева направо. */
 .hw-strike { -webkit-box-decoration-break: clone; box-decoration-break: clone;
   background: linear-gradient(currentColor, currentColor) no-repeat 0 58% / 0 1.5px; }
 .hw-card .hw-subject, .hw-card .hw-text { transition: opacity .3s .15s; }
-.hw-card:has(.hw-check.ripple) .hw-strike { transition: background-size .45s var(--ease) .15s; }
+.hw-card:has(.hw-check.ripple) .hw-strike { transition: background-size .6s var(--ease) .3s; }
 .hw-card.done .hw-subject, .hw-card.done .hw-text { opacity: .55; }
 .hw-card.done .hw-strike { background-size: 100% 1.5px; }
 
@@ -1969,7 +1973,11 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
 .ac-line { fill: none; stroke: var(--primary); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round;
   stroke-dasharray: 1; stroke-dashoffset: 1; animation: ac-draw .9s var(--ease) .1s forwards; }
 @keyframes ac-draw { to { stroke-dashoffset: 0; } }
-.ac-dot { stroke: var(--card); stroke-width: 2; transition: r .15s ease; }
+.ac-dot { stroke: var(--card); stroke-width: 2; transition: r .15s ease;
+  /* Точки оценок появляются по очереди, следом за рисующейся линией. */
+  transform-box: fill-box; transform-origin: center;
+  animation: dot-pop .35s cubic-bezier(.34, 1.56, .64, 1) both; animation-delay: calc(.25s + var(--i, 0) * 45ms); }
+@keyframes dot-pop { from { transform: scale(0); opacity: 0; } }
 .ac-dot.d5 { fill: var(--g5); } .ac-dot.d4 { fill: var(--g4); } .ac-dot.d3 { fill: var(--g3); }
 .ac-dot.d2, .ac-dot.d1 { fill: var(--g2); }
 .ac-dot.on { r: 6; }
@@ -2087,11 +2095,13 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
 /* Новая оценка: вспыхивает и пружинит; двойка — мягко проявляется. */
 .mark-box.mark-flash { animation: mark-flash .9s cubic-bezier(.34, 1.56, .64, 1) both; }
 .mark-box.mark-soft { animation: mark-soft .6s var(--ease) both; }
+/* Только transform и opacity: их ведёт видеокарта. Тень в кадрах
+   перерисовывалась каждый кадр и на телефоне подтормаживала. */
 @keyframes mark-flash {
-  0% { transform: scale(.3); opacity: 0; box-shadow: 0 0 0 0 color-mix(in srgb, currentColor 55%, transparent); }
-  45% { transform: scale(1.18); opacity: 1; box-shadow: 0 0 0 10px transparent; }
+  0% { transform: scale(.3); opacity: 0; }
+  45% { transform: scale(1.18); opacity: 1; }
   70% { transform: scale(.95); }
-  100% { transform: none; box-shadow: none; }
+  100% { transform: none; }
 }
 @keyframes mark-soft { from { opacity: 0; transform: translateY(6px); } }
 .confetti { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 100; pointer-events: none; }
@@ -2110,7 +2120,7 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
 .odo-trend.hide { opacity: 0; }
 
 /* Оценка, перелетающая из сводки дня в шапку урока. */
-.flyer { position: fixed; z-index: 60; margin: 0; pointer-events: none; transform-origin: 0 0; box-sizing: border-box; }
+.flyer { position: fixed; z-index: 60; margin: 0; pointer-events: none; transform-origin: 0 0; box-sizing: border-box; will-change: transform; }
 
 /* Кружок выбранной даты, перетекающий к новой (календарь в day.js). */
 .cal-grid { position: relative; }
