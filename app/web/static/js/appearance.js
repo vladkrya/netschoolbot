@@ -143,6 +143,23 @@ export function saveAccent(color) {
   applyAccent(color);
 }
 
+// Свои цвета, сохранённые рядом с готовыми: выбрал готовый — свой не пропал.
+const MAX_SAVED_ACCENTS = 8;
+
+export function savedAccents() {
+  const list = getPref('accents');
+  return Array.isArray(list) ? list.filter((color) => /^#[0-9a-f]{6}$/i.test(color)) : [];
+}
+
+export function rememberAccent(color) {
+  const list = [...savedAccents().filter((c) => c !== color), color].slice(-MAX_SAVED_ACCENTS);
+  setPref('accents', list);
+}
+
+export function forgetAccent(color) {
+  setPref('accents', savedAccents().filter((c) => c !== color));
+}
+
 /**
  * Во весь экран внутри Telegram (Bot API 8.0+).
  * Сверху Telegram оставляет свои кнопки «закрыть» и «…» — их отступ

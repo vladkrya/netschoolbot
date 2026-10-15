@@ -40,7 +40,7 @@
 <div class="card">
   <div class="spinner" id="spinner"></div>
   <h1>{{ name or "Вложение" }}</h1>
-  <p id="state">Скачиваем файл из «Сетевого города»…</p>
+  <p id="state">{{ waiting }}…</p>
   <p id="slow" hidden>Сервер школы отвечает медленно — подождите, загрузка не остановилась.</p>
   <button class="btn" id="retry" hidden type="button">Повторить</button>
   <p class="hint" id="safari" hidden>Нажмите <svg class="compass" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M15.5 8.5l-2 5-5 2 2-5z" fill="currentColor" stroke-linejoin="round"/></svg> компас справа внизу — файл откроется в Safari, и там его можно посмотреть или сохранить.</p>
@@ -62,7 +62,11 @@
   }
   // Тот же адрес, только /api/attachment/ вместо /attachment/: билет и имя
   // файла уже в строке запроса.
-  var file = location.pathname.replace(/\/attachment\/(\d+)\/?$/, '/api/attachment/$1') + location.search;
+  // Выгрузка оценок открывается так же: /export/year → /api/export/year.xlsx.
+  var file = location.pathname
+    .replace(/\/attachment\/(\d+)\/?$/, '/api/attachment/$1')
+    .replace(/\/export\/(period|year)\/?$/, '/api/export/$1.xlsx') + location.search;
+  var waiting = {{ waiting|tojson }};
   var prepare = file + (location.search ? '&' : '?') + 'prepare=1';
   var $ = function (id) { return document.getElementById(id); };
   var slowTimer, tick;
@@ -84,7 +88,7 @@
     var started = Date.now();
     clearInterval(tick);
     tick = setInterval(function () {
-      $('state').textContent = 'Скачиваем файл из «Сетевого города»… ' + Math.round((Date.now() - started) / 1000) + ' с';
+      $('state').textContent = waiting + '… ' + Math.round((Date.now() - started) / 1000) + ' с';
     }, 1000);
   }
 
@@ -97,7 +101,7 @@
 
   async function load() {
     show(['spinner']);
-    $('state').className = ''; $('state').textContent = 'Скачиваем файл из «Сетевого города»…';
+    $('state').className = ''; $('state').textContent = waiting + '…';
     slowTimer = setTimeout(function () { $('slow').hidden = false; }, 12000);
     startClock();
     var response;

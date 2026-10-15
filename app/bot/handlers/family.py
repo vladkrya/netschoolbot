@@ -33,11 +33,11 @@ async def _family_text(app: AppContext, user: User) -> tuple[str, InlineKeyboard
         owner = await app.users.get(owner_id)
         following.append((owner_id, owner.label if owner else f"ID {owner_id}"))
     lines = [
-        "👪 <b>Второй родитель</b>",
+        "👪 <b>Уведомления родным</b>",
         "",
-        "Пригласите второго родителя — он будет получать в Telegram те же уведомления "
-        "об оценках, заданиях и сводки. Пароль от «Сетевого города» ему не нужен, "
-        "менять что-либо в дневнике он не сможет.",
+        "Пригласите маму, папу, бабушку — они будут получать в Telegram те же уведомления "
+        "об оценках, заданиях и сводки. Это только уведомления: дневник им не открывается, "
+        "пароль от «Сетевого города» не нужен, менять они ничего не смогут.",
     ]
     if followers:
         lines += ["", "<b>Получают копии:</b>"]
@@ -74,8 +74,8 @@ async def family_invite(callback: CallbackQuery, user: User, app: AppContext) ->
     link = f"https://t.me/{username}?start={INVITE_PREFIX}{code}"
     await reply(
         callback,
-        "🔗 <b>Приглашение для второго родителя</b>\n\n"
-        "Перешлите ему эту ссылку. Она одноразовая и действует сутки:\n"
+        "🔗 <b>Приглашение получать уведомления</b>\n\n"
+        "Перешлите эту ссылку тому, кого приглашаете. Она одноразовая и действует сутки:\n"
         f"{link}\n\n"
         "Убрать доступ можно в любой момент: /family.",
     )
@@ -90,7 +90,7 @@ async def start_follow(message: Message, command: CommandObject, user: User, app
                              "Попросите прислать новое.")
         return
     if owner_id == user.telegram_id:
-        await reply(message, "Это ваше собственное приглашение — перешлите его второму родителю.")
+        await reply(message, "Это ваше собственное приглашение — перешлите его тому, кого приглашаете.")
         return
     owner = await app.users.get(owner_id)
     label = owner.label if owner else "ученик"
@@ -124,7 +124,7 @@ async def family_accept(callback: CallbackQuery, user: User, app: AppContext) ->
         )
     try:
         await callback.bot.send_message(
-            owner_id, f"👪 {formatting.esc(name or 'Второй родитель')} теперь получает копии уведомлений. "
+            owner_id, f"👪 {formatting.esc(name or 'Приглашённый')} теперь получает копии уведомлений. "
                       "Управлять — /family.", parse_mode="HTML",
         )
     except Exception as exc:  # noqa: BLE001 — сообщение владельцу необязательно

@@ -207,7 +207,7 @@ async def auth_middleware(request: web.Request, handler):
     # Вложение по билету: билет выдан уже опознанному и разблокированному
     # приложению, поэтому ни входа, ни PIN здесь не спрашиваем.
     ticket = request.query.get("ticket", "")
-    if ticket and "/api/attachment/" in request.path:
+    if ticket and ("/api/attachment/" in request.path or "/api/export/" in request.path):
         telegram_id = verify_attachment_ticket(context(request), ticket)
         user = await context(request).users.get(telegram_id) if telegram_id else None
         if user is None:
@@ -1289,6 +1289,8 @@ NAV_TABS = ("day", "schedule", "assistant", "homework", "totals", "mail", "setti
 MAX_NAV_TABS = 7
 # Закреплённые предметы в «Оценках» — с запасом на все предметы года.
 MAX_PINS = 40
+# Свои цвета акцента, сохранённые рядом с готовыми.
+MAX_SAVED_ACCENTS = 8
 DESIGNS = ("classic", "new")
 ACCENT_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 
@@ -1456,6 +1458,15 @@ async def save_prefs(request: web.Request) -> web.Response:
         if not isinstance(body["accent"], str) or not ACCENT_RE.match(body["accent"]):
             return json_error("Некорректный цвет")
         changes["accent"] = body["accent"].lower()
+    if "accents" in body:
+        accents = body["accents"]
+        if (
+            not isinstance(accents, list)
+            or len(accents) > MAX_SAVED_ACCENTS
+            or not all(isinstance(color, str) and ACCENT_RE.match(color) for color in accents)
+        ):
+            return json_error("Некорректные сохранённые цвета")
+        changes["accents"] = list(dict.fromkeys(color.lower() for color in accents))
     if "weights" in body:
         weights = _clean_weights(body["weights"])
         if weights is None:

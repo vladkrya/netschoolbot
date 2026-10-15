@@ -77,7 +77,7 @@ def settings_menu(user: User) -> InlineKeyboardMarkup:
         rows.append(
             [InlineKeyboardButton(text="👶 Переключить ребёнка", callback_data="settings:child")]
         )
-    rows.append([InlineKeyboardButton(text="👪 Второй родитель", callback_data="family:open")])
+    rows.append([InlineKeyboardButton(text="👪 Уведомления родным", callback_data="family:open")])
     rows.append(
         [InlineKeyboardButton(text=f"🔌 API: {user.effective_api_mode.title}", callback_data="settings:api")]
     )

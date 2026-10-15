@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import datetime as dt
 import logging
+import time
 from dataclasses import asdict, replace
 from typing import Any
 
@@ -169,15 +170,45 @@ async def family_remove(request: web.Request) -> web.Response:
 
 @routes.get("/api/export.xlsx")
 async def export_download(request: web.Request) -> web.Response:
-    """Оценки файлом — для браузера и установленного приложения."""
+    """Прежний адрес выгрузки — для приложений, открытых до обновления."""
+    return await _export_file(request, request.query.get("scope", "period"))
+
+
+@routes.get("/api/export/{scope}.xlsx")
+async def export_file(request: web.Request) -> web.Response:
+    """Оценки файлом — как вложение из ДЗ: страница ожидания сперва собирает
+    книгу (prepare), затем браузер открывает прямую ссылку и сам решает,
+    показать файл просмотром или сохранить."""
+    return await _export_file(request, request.match_info["scope"])
+
+
+# Собранная книга лежит недолго: только чтобы страница ожидания после
+# prepare получила тот же файл, а не собирала его заново ещё минуту.
+EXPORT_CACHE_S = 600
+
+
+async def _export_file(request: web.Request, scope: str) -> web.Response:
     app, user = context(request), current_user(request)
-    scope = request.query.get("scope", "period")
     if scope not in SCOPES:
         return json_error("Некорректный период")
-    data, name = await export_grades(app, user, scope)
+    cached = app.settings.attachments_dir / f"export-{user.telegram_id}-{scope}"
+    name_file = cached.with_suffix(".name")
+    if (cached.exists() and name_file.exists()
+            and time.time() - cached.stat().st_mtime < EXPORT_CACHE_S and not request.query.get("prepare")):
+        data, name = cached.read_bytes(), name_file.read_text(encoding="utf-8")
+    else:
+        data, name = await export_grades(app, user, scope)
+        try:
+            cached.parent.mkdir(parents=True, exist_ok=True)
+            cached.write_bytes(data)
+            name_file.write_text(name, encoding="utf-8")
+        except OSError as exc:
+            logger.debug("Выгрузка не сохранена в кэш: %s", exc)
+    if request.query.get("prepare"):
+        return web.json_response({"ok": True, "data": {"size": len(data)}})
     return web.Response(body=data, headers={
         "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        "Content-Disposition": _content_disposition(name).replace("inline;", "attachment;", 1),
+        "Content-Disposition": _content_disposition(name),
         "Cache-Control": "no-store",
     })
 

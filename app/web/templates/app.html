@@ -211,6 +211,7 @@
   window.NETSCHOOL = {
     modules: [{% for module in modules %}{{ (base ~ '/static/v' ~ version ~ '/js/' ~ module) | tojson }}{{ ',' if not loop.last else '' }}{% endfor %}],
     base: {{ base | tojson }},
+    appVersion: {{ (app_version or '') | tojson }},
     token: {{ token | tojson }},
     pushEnabled: {{ push_enabled | tojson }},
     assistant: {{ (assistant and not demo) | tojson }},

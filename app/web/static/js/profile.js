@@ -3,9 +3,12 @@
 // вкладка «Настройки» с ещё одним разделом: какие вкладки в нижней панели.
 'use strict';
 
-import { $, api, apiBlob, banner, demo, errorCard, esc, initData, pushEnabled, skeleton, state, tg } from './core.js';
 import {
-  ACCENTS, currentAccent, isNewDesign, saveAccent, saveBells, saveDesign, saveHomeworkStatus, saveWeekends, showBells,
+  $, api, banner, demo, ensureAttachmentTicket, errorCard, esc, exportUrl, initData, openExternal,
+  pushEnabled, skeleton, state, tg,
+} from './core.js';
+import {
+  ACCENTS, currentAccent, forgetAccent, isNewDesign, rememberAccent, saveAccent, savedAccents, saveBells, saveDesign, saveHomeworkStatus, saveWeekends, showBells,
   showHomeworkStatus, showWeekends, syncChromeColor,
 } from './appearance.js';
 import { ICONS } from './icons.js';
@@ -226,7 +229,9 @@ function statusLine(status) {
   return `<div class="muted small sync-status ${failing ? 'failing' : ''}">${rows.join('<br>')}</div>`;
 }
 
-/** Оценки в Excel: в Telegram — файлом в чат с ботом, в браузере — скачиванием. */
+/** Оценки в Excel: открываются как вложение из ДЗ — страницей ожидания во
+ * внешнем браузере, где файл можно посмотреть или сохранить. В Telegram
+ * можно ещё прислать его файлом в чат с ботом. */
 function openExport() {
   tap();
   const body = openSheet('Оценки в Excel', `
@@ -235,27 +240,28 @@ function openExport() {
       <button class="btn" data-export="period">Текущий период</button>
       <button class="btn outline" data-export="year">Весь учебный год</button>
     </div>
+    ${initData ? `<label class="switch-row"><span>Прислать файлом в чат с ботом</span>
+      <input type="checkbox" switch class="switch" id="exportToChat"></label>` : ''}
     <div class="muted small export-status"></div>`);
   const status = body.querySelector('.export-status');
   body.querySelectorAll('[data-export]').forEach((button) => button.addEventListener('click', async () => {
     select();
     const scope = button.dataset.export;
+    if (!body.querySelector('#exportToChat')?.checked) {
+      if (!(await ensureAttachmentTicket()) && initData) {
+        notify('error');
+        status.textContent = 'Не удалось открыть файл — попробуйте ещё раз.';
+        return;
+      }
+      openExternal(exportUrl(scope));
+      status.textContent = 'Файл открывается в браузере — там его можно посмотреть или сохранить.';
+      return;
+    }
     body.querySelectorAll('[data-export]').forEach((b) => { b.disabled = true; });
     status.textContent = 'Собираю оценки — за год это может занять до минуты…';
     try {
-      if (initData) {
-        await api('/api/export/send', { method: 'POST', body: JSON.stringify({ scope }) });
-        status.textContent = 'Готово: файл в чате с ботом.';
-      } else {
-        const blob = await apiBlob(`/api/export.xlsx?scope=${scope}`);
-        const link = document.createElement('a');
-        link.href = URL.createObjectURL(blob.data);
-        link.download = blob.name || 'Оценки.xlsx';
-        document.body.appendChild(link);
-        link.click();
-        setTimeout(() => { URL.revokeObjectURL(link.href); link.remove(); }, 1000);
-        status.textContent = 'Файл скачан.';
-      }
+      await api('/api/export/send', { method: 'POST', body: JSON.stringify({ scope }) });
+      status.textContent = 'Готово: файл в чате с ботом.';
       notify('success');
     } catch (error) {
       notify('error');
@@ -266,20 +272,25 @@ function openExport() {
   }));
 }
 
-/** Второй родитель: ссылка-приглашение и кто получает копии уведомлений. */
+/** Уведомления родным: ссылка-приглашение и кто получает копии уведомлений.
+ * Это не вход в дневник — приглашённый только получает сообщения в Telegram. */
 async function openFamily() {
   tap();
-  const screen = pushScreen('Второй родитель');
+  const screen = pushScreen('Уведомления родным');
   screen.innerHTML = skeleton(3);
   const draw = (data) => {
     screen.innerHTML = `<div class="card">
-        <p>Второй родитель будет получать в Telegram те же уведомления: оценки, задания и сводки.
-        Пароль от «Сетевого города» ему не нужен, менять что-либо в дневнике он не сможет.</p>
+        <p>Пригласите маму, папу, бабушку — любого, кому важно знать об успехах ученика.
+        По ссылке он подключится к боту и будет получать в Telegram те же уведомления:
+        новые оценки, задания и сводки.</p>
+        <p class="muted small">Это только уведомления: дневник ему не открывается, пароль от «Сетевого города» не нужен,
+        менять он ничего не может. Убрать его можно здесь в любой момент.</p>
         <button class="btn" id="familyInvite">Пригласить по ссылке</button>
         <div class="family-link" id="familyLink" hidden></div>
       </div>
-      ${data.followers.length ? `<div class="card"><div class="card-title">Получают копии</div>${data.followers.map((f) =>
-        `<div class="family-row"><span>${esc(f.name || `ID ${f.id}`)}</span><button class="btn outline small" data-drop="${f.id}">Убрать</button></div>`).join('')}</div>` : ''}
+      <div class="card"><div class="card-title">Получают уведомления</div>${data.followers.length ? data.followers.map((f) =>
+        `<div class="family-row"><span>${esc(f.name || `ID ${f.id}`)}</span><button class="btn outline small" data-drop="${f.id}">Убрать</button></div>`).join('')
+        : '<p class="muted small">Пока никого. Здесь появится тот, кто перейдёт по ссылке и подтвердит.</p>'}</div>
       ${data.following.length ? `<div class="card"><div class="card-title">Вы получаете уведомления об</div>${data.following.map((f) =>
         `<div class="family-row"><span>${esc(f.name)}</span><button class="btn outline small" data-leave="${f.id}">Не получать</button></div>`).join('')}</div>` : ''}`;
     $('familyInvite').addEventListener('click', async (event) => {
@@ -289,7 +300,7 @@ async function openFamily() {
         const { data: invite } = await api('/api/family/invite', { method: 'POST', body: '{}' });
         const box = $('familyLink');
         box.hidden = false;
-        box.innerHTML = `<p class="muted small">Перешлите ссылку второму родителю. Она одноразовая и действует сутки.</p>
+        box.innerHTML = `<p class="muted small">Перешлите ссылку тому, кого приглашаете. Она одноразовая и действует сутки.</p>
           <input class="field" readonly value="${esc(invite.url)}">
           <div class="family-actions"><button class="btn" id="familyShare">Поделиться</button>
           <button class="btn outline" id="familyCopy">Скопировать</button></div>`;
@@ -600,6 +611,9 @@ function render() {
   const studentClass = classLabels.get(currentStudent) || '';
   const theme = currentTheme();
   const accent = currentAccent();
+  const saved = savedAccents().filter((color) => !ACCENTS.some(([c]) => c === color));
+  // Свой цвет, ещё не сохранённый: его можно оставить кружком рядом с готовыми.
+  const customAccent = !ACCENTS.some(([c]) => c === accent) && !saved.includes(accent);
   const radio = (value, label) =>
     `<label class="drawer-option"><input type="radio" name="theme" value="${value}" ${theme === value ? 'checked' : ''}><span>${label}</span></label>`;
   // Новый дизайн: тема — капсулой с линзой, как переключатель периода в «Оценках».
@@ -626,6 +640,7 @@ function render() {
       ${data.students.length > 1 ? `<div class="drawer-children">${data.students
         .map((s) => `<button class="chip ${s.current ? 'active' : ''}" data-student="${s.id}">${esc(s.name)}</button>`)
         .join('')}</div>` : ''}
+      ${demo ? '' : '<button class="link small drawer-relogin" id="drawerSgo">Сменили пароль от «Сетевого города» или школу? Войти заново</button>'}
     </section>
     <section class="drawer-section">
       <div class="drawer-heading">Дополнительно</div>
@@ -636,7 +651,7 @@ function render() {
       <button class="drawer-link" id="drawerCalc">${ICONS.calc} Калькулятор баллов</button>
       <button class="drawer-link" id="drawerHistory">${ICONS.clock} История оценок</button>
       ${demo ? '' : `<button class="drawer-link" id="drawerExport">${ICONS.table} Оценки в Excel</button>`}
-      ${demo ? '' : `<button class="drawer-link" id="drawerFamily">${ICONS.users} Второй родитель</button>`}
+      ${demo ? '' : `<button class="drawer-link" id="drawerFamily">${ICONS.users} Уведомления родным</button>`}
       ${demo ? '' : `<button class="drawer-link" id="drawerCalendar">${ICONS.calendar} Расписание в календаре</button>`}
     </section>
     <section class="drawer-section">
@@ -655,9 +670,12 @@ function render() {
       <div class="drawer-sub">${ICONS.palette} ${isNewDesign() ? 'Цвет акцента' : 'Цвет меню'}</div>
       <div class="swatches">
         ${ACCENTS.map(([color, name]) => `<button class="swatch ${color === accent ? 'on' : ''}" data-accent="${color}" style="background:${color}" aria-label="${name}" title="${name}"></button>`).join('')}
-        <label class="swatch custom ${ACCENTS.some(([c]) => c === accent) ? '' : 'on'}" title="Свой цвет" style="background:${accent}">
+        ${saved.map((color) => `<button class="swatch saved ${color === accent ? 'on' : ''}" data-accent="${color}" style="background:${color}" aria-label="Сохранённый цвет ${color}" title="Сохранённый цвет"></button>`).join('')}
+        <label class="swatch custom ${customAccent ? 'on' : ''}" title="Свой цвет" style="background:${accent}">
           <input type="color" id="accentCustom" value="${accent}">＋</label>
       </div>
+      ${customAccent ? '<button class="link accent-action" id="accentRemember">Сохранить этот цвет</button>'
+        : saved.includes(accent) ? '<button class="link accent-action" id="accentForget">Убрать из сохранённых</button>' : ''}
     </section>
     ${isNewDesign() ? tabsSection() : ''}
     <section class="drawer-section">
@@ -685,7 +703,7 @@ function render() {
       ${statusLine(data.status)}
     </section>
     ${demoSection()}
-    <div class="drawer-foot muted small">Дневник «Сетевого города»</div>`;
+    <div class="drawer-foot muted small">Дневник «Сетевого города»${window.NETSCHOOL.appVersion ? ` · v. ${esc(window.NETSCHOOL.appVersion)}` : ''}</div>`;
 
   bindDrawer();
   loadStudentClass(currentStudent);
@@ -740,6 +758,17 @@ function bindDrawer() {
   $('accentCustom').addEventListener('change', (event) => {
     saveAccent(event.target.value);
     select();
+    render();
+  });
+  $('accentRemember')?.addEventListener('click', () => {
+    select();
+    rememberAccent(currentAccent());
+    notify('success');
+    render();
+  });
+  $('accentForget')?.addEventListener('click', () => {
+    select();
+    forgetAccent(currentAccent());
     render();
   });
   body.querySelectorAll('[data-notify]').forEach((input) =>
@@ -815,6 +844,16 @@ function bindDrawer() {
     closeDrawer();
     const { openAccountSettings } = await import('./account.js');
     openAccountSettings();
+  });
+  // Повторный вход — для смены пароля или школы, а не часть «Входа по почте»:
+  // там он путал, будто почта требует входить в «Сетевой город» ещё раз.
+  $('drawerSgo')?.addEventListener('click', async () => {
+    tap();
+    closeDrawer();
+    const [{ showSgoLogin }, info] = await Promise.all([
+      import('./account.js'), api('/api/account').then((r) => r.data).catch(() => ({})),
+    ]);
+    showSgoLogin(info);
   });
   $('drawerBug')?.addEventListener('click', () => { tap(); closeDrawer(); openBugReport(); });
   bindTabs();
