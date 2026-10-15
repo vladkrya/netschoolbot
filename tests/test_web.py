@@ -71,6 +71,31 @@ class TestChatLaunchNotice:
         assert response.status == 401
 
 
+class TestSurvey:
+    async def test_existing_user_gets_survey_once_and_answers_once(self, client, token, db):
+        await db.execute("INSERT INTO app_survey (telegram_id) VALUES (?)", (1,))
+        headers = {"X-Netschool-Token": token}
+        early = await client.post(f"{BASE}/api/survey", headers=headers, json={"score": 7})
+        assert early.status == 409  # до показа ответ не принимается
+        responses = await asyncio.gather(*(
+            client.post(f"{BASE}/api/notices/survey", headers=headers) for _ in range(2)
+        ))
+        assert sorted([(await r.json())["data"]["show"] for r in responses]) == [False, True]
+        for bad in (0, 11, "7", 7.5, None):
+            response = await client.post(f"{BASE}/api/survey", headers=headers, json={"score": bad})
+            assert response.status == 400
+        assert (await client.post(f"{BASE}/api/survey", headers=headers, json={"score": 8})).status == 200
+        assert (await client.post(f"{BASE}/api/survey", headers=headers, json={"score": 2})).status == 409
+        row = await db.fetch_one("SELECT score FROM app_survey WHERE telegram_id=1")
+        assert row["score"] == 8
+        response = await client.post(f"{BASE}/api/notices/survey", headers=headers)
+        assert (await response.json())["data"]["show"] is False
+
+    async def test_new_user_never_gets_survey(self, client, token):
+        response = await client.post(f"{BASE}/api/notices/survey", headers={"X-Netschool-Token": token})
+        assert (await response.json())["data"]["show"] is False
+
+
 class TestAuth:
     async def test_api_without_token_is_rejected(self, client):
         response = await client.get(f"{BASE}/api/profile")

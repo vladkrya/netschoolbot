@@ -1259,6 +1259,40 @@ class MiniappRepository:
             )
             return cursor.rowcount > 0
 
+    async def claim_survey(self, telegram_id: int) -> bool:
+        """Выдать опрос один раз на аккаунт — только тем, кто был до него."""
+        async with self._db.transaction() as db:
+            cursor = await db.execute(
+                "UPDATE app_survey SET shown_at = ? WHERE telegram_id = ? AND shown_at IS NULL",
+                (time.time(), telegram_id),
+            )
+            return cursor.rowcount > 0
+
+    async def answer_survey(self, telegram_id: int, score: int) -> bool:
+        """Записать оценку 1–10. Только после показа и только один раз."""
+        async with self._db.transaction() as db:
+            cursor = await db.execute(
+                "UPDATE app_survey SET score = ?, answered_at = ? "
+                "WHERE telegram_id = ? AND shown_at IS NOT NULL AND score IS NULL",
+                (score, time.time(), telegram_id),
+            )
+            return cursor.rowcount > 0
+
+    async def survey_stats(self) -> dict[str, Any]:
+        """Итоги опроса для админа: сколько показали, ответили, средняя и разброс."""
+        totals = await self._db.fetch_one(
+            "SELECT COUNT(shown_at) AS shown, COUNT(score) AS answered, AVG(score) AS average FROM app_survey"
+        )
+        rows = await self._db.fetch_all(
+            "SELECT score, COUNT(*) AS n FROM app_survey WHERE score IS NOT NULL GROUP BY score"
+        )
+        return {
+            "shown": totals["shown"],
+            "answered": totals["answered"],
+            "average": totals["average"],
+            "scores": {row["score"]: row["n"] for row in rows},
+        }
+
     async def prefs(self, telegram_id: int) -> dict[str, Any]:
         """Настройки мини-приложения: одни и те же в Telegram и на сайте."""
         row = await self._db.fetch_one(

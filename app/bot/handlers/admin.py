@@ -32,7 +32,7 @@ def _split(counts: dict[str, int], names: dict[str, str]) -> str:
 
 @router.message(Command("adminstats"))
 async def admin_stats(message: Message, app: AppContext) -> None:
-    """Сводка: пользователи, открытия приложения, дизайн, чаты."""
+    """Сводка: пользователи, открытия приложения, дизайн, чаты, опрос."""
     if not _is_admin(message, app):
         return
     db = app.db
@@ -54,6 +54,14 @@ async def admin_stats(message: Message, app: AppContext) -> None:
         if days == 30 and total:
             lines.append(f"• дизайн: {_split(stats['design'], DESIGNS)}")
             lines.append(f"• где: {_split(stats['client'], CLIENTS)}")
+    survey = await app.miniapp.survey_stats()
+    if survey["shown"]:
+        lines.append("")
+        lines.append("<b>Опрос «нравится ли приложение»</b>")
+        lines.append(f"Показан: {survey['shown']}, ответили: {survey['answered']}")
+        if survey["answered"]:
+            lines.append(f"• средняя оценка: {survey['average']:.1f} из 10")
+            lines.append("• " + ", ".join(f"{score}: {n}" for score, n in sorted(survey["scores"].items())))
     lines.append("")
     lines.append("<i>Считаются открытия после обновления, в котором появилась статистика.</i>")
     await reply(message, "\n".join(lines))

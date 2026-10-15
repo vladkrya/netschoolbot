@@ -618,6 +618,55 @@ async function showChatLaunchNotice() {
   } catch { /* Без связи окно дождётся следующего открытия приложения. */ }
 }
 
+/** Ждать, пока закроется уже открытая панель (объявление, другой опрос). */
+async function sheetFree() {
+  while (!$('sheet').hidden) {
+    await new Promise(resolve => window.addEventListener('netschool:sheetclosed', resolve, { once: true }));
+  }
+}
+
+/** Разовый опрос «нравится ли приложение» — только тем, кто был до него. */
+async function showSurvey() {
+  if (demo) return;
+  await sheetFree();
+  try {
+    const { data } = await api('/api/notices/survey', { method: 'POST' });
+    if (!data.show) return;
+    await sheetFree();
+    const scores = Array.from({ length: 10 }, (_, i) => i + 1)
+      .map(n => `<button class="survey-score" data-score="${n}">${n}</button>`).join('');
+    const body = openSheet('Нравится приложение?', `
+      <p>Оцените от 1 до 10 — это поможет сделать его лучше. Спросим один раз.</p>
+      <div class="survey-scores">${scores}</div>
+      <div class="survey-ends"><span>совсем нет</span><span>очень</span></div>
+      <div class="chat-actions">
+        <button class="btn" id="surveySend" disabled>Отправить</button>
+        <button class="btn outline" id="surveySkip">Не сейчас</button>
+      </div>`);
+    let score = 0;
+    body.querySelectorAll('.survey-score').forEach(button => button.addEventListener('click', () => {
+      score = Number(button.dataset.score);
+      body.querySelectorAll('.survey-score').forEach(other => other.classList.toggle('on', other === button));
+      body.querySelector('#surveySend').disabled = false;
+      tap('light');
+    }));
+    body.querySelector('#surveySkip').addEventListener('click', closeSheet);
+    const send = body.querySelector('#surveySend');
+    send.addEventListener('click', async () => {
+      send.disabled = true;
+      try {
+        await api('/api/survey', { method: 'POST', body: JSON.stringify({ score }) });
+        notify('success');
+        body.innerHTML = '<p>Спасибо за оценку!</p>';
+        setTimeout(closeSheet, 1200);
+      } catch {
+        notify('error');
+        send.disabled = false;
+      }
+    });
+  } catch { /* Без связи опрос дождётся следующего открытия приложения. */ }
+}
+
 async function start() {
   // Билет на вложения — заранее: внешний браузер открывается только прямо
   // из нажатия, ждать сети в этот момент нельзя.
@@ -641,7 +690,7 @@ async function start() {
     // Флаг «видел» уже пришёл с сервера — окошко не повторится на другом устройстве.
     dropInstallHints();
     showDesignNotice();
-    if (!isReadOnly()) showChatLaunchNotice();
+    if (!isReadOnly()) showChatLaunchNotice().then(showSurvey);
     reportVisit();
   });
   offerPushOnFirstLaunch();

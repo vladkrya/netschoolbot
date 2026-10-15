@@ -1830,6 +1830,14 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
 }
 .chat-send:disabled { opacity: .5; }
 .chat-actions { display: flex; flex-direction: column; gap: 8px; }
+.survey-scores { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin: 14px 0 6px; }
+.survey-score {
+  min-height: 44px; border-radius: 12px; background: var(--card-2); color: var(--text);
+  font: inherit; font-size: 17px; font-weight: 600;
+}
+.survey-score.on { background: var(--primary); color: #fff; }
+#surveySend:disabled { opacity: .5; }
+.survey-ends { display: flex; justify-content: space-between; margin-bottom: 14px; font-size: 12px; color: var(--text2); }
 .chat-react-row { display: flex; justify-content: space-between; gap: 6px; margin-bottom: 12px; }
 .chat-react-pick {
   flex: 1 1 0; min-width: 0; min-height: 44px; display: grid; place-items: center;

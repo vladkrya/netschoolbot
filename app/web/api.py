@@ -1659,6 +1659,29 @@ async def chat_launch_notice(request: web.Request) -> web.Response:
     return web.json_response({"ok": True, "data": {"show": show}}, headers={"Cache-Control": "no-store"})
 
 
+@routes.post("/api/notices/survey")
+async def survey_notice(request: web.Request) -> web.Response:
+    """Показать ли опрос «нравится ли приложение» — ответ «да» бывает один раз."""
+    app, user = context(request), current_user(request)
+    show = await app.miniapp.claim_survey(user.telegram_id)
+    return web.json_response({"ok": True, "data": {"show": show}}, headers={"Cache-Control": "no-store"})
+
+
+@routes.post("/api/survey")
+async def survey_answer(request: web.Request) -> web.Response:
+    try:
+        body = await request.json()
+    except ValueError:
+        body = {}
+    score = body.get("score") if isinstance(body, dict) else None
+    if type(score) is not int or not 1 <= score <= 10:
+        return json_error("Оценка — число от 1 до 10")
+    app, user = context(request), current_user(request)
+    if not await app.miniapp.answer_survey(user.telegram_id, score):
+        return json_error("Опрос недоступен", status=409)
+    return web.json_response({"ok": True})
+
+
 @routes.post("/api/prefs")
 async def save_prefs(request: web.Request) -> web.Response:
     app, user = context(request), current_user(request)
