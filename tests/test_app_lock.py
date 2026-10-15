@@ -105,6 +105,11 @@ async def test_valid_passkey_unlock_and_replay_rejected(client, token):
                   'response': {'clientDataJSON': b64(client_data), 'attestationObject': b64(attestation)}}
     response = await client.post(f'{BASE}/api/lock/register/verify', headers=headers, json={'id': data['id'], 'credential': credential})
     assert response.status == 200, await response.text()
+    # Список ключей сайта нужен приложению для входа без сети.
+    status = await client.get(f'{BASE}/api/lock/status', headers=headers, params={'origin': headers['Origin']})
+    assert (await status.json())['data']['passkey_ids'] == [b64(cid)]
+    status = await client.get(f'{BASE}/api/lock/status', headers=headers, params={'origin': 'https://evil.example'})
+    assert (await status.json())['data']['passkey_ids'] == []
     await client.post(f'{BASE}/api/lock/logout', headers=headers)
     headers.pop('X-Netschool-Unlock')
     response = await client.post(f'{BASE}/api/lock/authenticate/options', headers=headers, json={})

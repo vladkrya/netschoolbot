@@ -100,6 +100,12 @@ function rememberPasskey(id) {
   try { localStorage.setItem(PASSKEYS_KEY, JSON.stringify([id, ...savedPasskeys().filter(item => item !== id)].slice(0, 5))); }
   catch { /* без этого ключ без сети просто недоступен */ }
 }
+function savePasskeys(ids) {
+  try {
+    if (ids.length) localStorage.setItem(PASSKEYS_KEY, JSON.stringify(ids.slice(0, 5)));
+    else localStorage.removeItem(PASSKEYS_KEY);
+  } catch { /* без этого ключ без сети просто недоступен */ }
+}
 function forgetPasskeys() {
   try { localStorage.removeItem(PASSKEYS_KEY); } catch { /* приватный режим */ }
 }
@@ -384,6 +390,9 @@ export async function unlockApp() {
     }
     setActive(status.required);
     if (!active) { forgetPin(); root.close(); return; }
+    // Список ключей с сервера: вход без сети по ключу доступа не зависит от
+    // того, входили ли по нему здесь после очистки офлайн-данных.
+    if (Array.isArray(status.passkey_ids)) savePasskeys(status.passkey_ids);
     root.querySelector('.lock-error').textContent = '';
     root.querySelector('.lock-actions').innerHTML = '';
     const biometricReady = (async () => {

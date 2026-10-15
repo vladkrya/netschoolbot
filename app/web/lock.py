@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+from base64 import urlsafe_b64encode
 import hashlib
 import hmac
 import json
@@ -91,13 +92,18 @@ async def status(request):
     rp = urlsplit(origin).hostname if origin and origin in [url.rstrip('/') for url in allowed if url] else None
     keys = await db.fetch_one('SELECT COUNT(*) AS n FROM app_passkeys WHERE telegram_id = ?' +
                              (' AND rp_id = ?' if rp else ''), (uid, rp) if rp else (uid,))
+    # Ключи этого сайта: без сети приложение пускает только по ним, а список
+    # на устройстве стирается вместе с офлайн-данными. Онлайн-проверка
+    # защиты каждый раз его восстанавливает.
+    ids = [urlsafe_b64encode(row['credential_id']).rstrip(b'=').decode() for row in await db.fetch_all(
+        'SELECT credential_id FROM app_passkeys WHERE telegram_id=? AND rp_id=?', (uid, rp))] if rp else []
     row = await enabled(db, uid)
     device = request.query.get('device', '')
     biometric = await db.fetch_one('SELECT 1 FROM app_biometrics WHERE telegram_id=? AND device_id=?', (uid, device)) if device else None
     return web.json_response({'ok': True, 'data': {
         'enabled': bool(row), 'required': bool(row and (not request.get('verified_telegram') or row['require_telegram'])),
         'require_telegram': bool(row and row['require_telegram']),
-        'pin': bool(row and row['is_pin']), 'passkeys': keys['n'], 'biometric': bool(biometric),
+        'pin': bool(row and row['is_pin']), 'passkeys': keys['n'], 'passkey_ids': ids, 'biometric': bool(biometric),
         # Забытый PIN можно сбросить паролем, только если аккаунт с паролем есть.
         'password_reset': bool(await context(request).accounts.by_user(uid))}})
 
