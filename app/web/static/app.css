@@ -113,6 +113,10 @@
 
 * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
 
+/* Сдвинутый пальцем день и полоса недели не расширяют страницу: иначе
+   телефон перестраивал всю раскладку — шапка уезжала, панель вкладок
+   пропадала. clip, а не hidden: не делает элемент прокручиваемым. */
+main, .app-header { overflow-x: clip; }
 /* Свайп вбок по трекпаду — наш жест (trackpad.js), а не история браузера. */
 html { background: var(--bg); overscroll-behavior-x: none; }
 
@@ -254,7 +258,7 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 }
 .pull-ring {
   display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%;
-  background: var(--card); box-shadow: 0 4px 14px rgba(0, 0, 0, .14);
+  background: var(--card); box-shadow: 0 0 0 1px var(--border), 0 6px 18px rgba(0, 0, 0, .28);
   opacity: 0; transition: opacity .2s, transform .25s var(--ease);
 }
 .pull-spin { display: grid; width: 26px; height: 26px; }
@@ -348,6 +352,9 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 
 .list.slide-left, .lesson-timer.slide-left { animation: slide-left .22s ease; }
 .list.slide-right, .lesson-timer.slide-right { animation: slide-right .22s ease; }
+/* Новый день въезжает целиком: карточки не проявляются по одной с задержкой —
+   иначе после свайпа экран полсекунды стоял почти пустым. */
+.list.slide-left > *, .list.slide-right > * { animation: none; }
 @keyframes slide-left { from { transform: translateX(30%); opacity: 0; } }
 @keyframes slide-right { from { transform: translateX(-30%); opacity: 0; } }
 
@@ -2109,7 +2116,9 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
 .confetti { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 100; pointer-events: none; }
 
 /* Средний балл: цифры прокручиваются от старого значения к новому. */
-.odo { display: inline-flex; align-items: center; line-height: 1; font-variant-numeric: tabular-nums; }
+/* Текст числа остаётся (прозрачный) и держит место; катушки — слоем поверх. */
+.odo { position: relative; color: transparent !important; font-variant-numeric: tabular-nums; }
+.odo-layer { position: absolute; inset: 0; display: flex; align-items: center; justify-content: flex-end; line-height: 1; pointer-events: none; }
 .odo-col { display: inline-block; height: 1em; overflow: hidden; }
 .odo-reel { display: flex; flex-direction: column; transition: transform .9s var(--ease); }
 .odo-reel > span { height: 1em; }

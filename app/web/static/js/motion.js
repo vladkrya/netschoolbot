@@ -202,24 +202,31 @@ function countUp(el, text) {
   requestAnimationFrame(frame);
 }
 
+/** Цифры прокручиваются от from к to. Сам текст остаётся на месте, только
+ *  прозрачный, а катушки лежат слоем поверх: раскладка не меняется ни в
+ *  начале, ни в конце — раньше карточки прыгали на пару пикселей. */
 function odometer(el, from, to) {
   if (from.length !== to.length) return;
   const reel = (digit) => `<span class="odo-col"><span class="odo-reel" style="transform:translateY(${-digit}em)">${
     '0123456789'.split('').map((n) => `<span>${n}</span>`).join('')}</span></span>`;
+  el.querySelector(':scope > .odo-layer')?.remove();
+  const layer = document.createElement('span');
+  layer.className = 'odo-layer';
+  layer.ariaHidden = 'true';
+  layer.style.color = getComputedStyle(el).color;
+  layer.innerHTML = [...from].map((ch) => (/\d/.test(ch) ? reel(Number(ch)) : `<span>${ch}</span>`)).join('');
   el.classList.add('odo');
-  el.innerHTML = [...from].map((ch) => (/\d/.test(ch) ? reel(Number(ch)) : `<span>${ch}</span>`)).join('');
+  el.append(layer);
   // Кадр на то, чтобы старые цифры встали, — потом едут к новым.
   requestAnimationFrame(() => requestAnimationFrame(() => {
     [...to].forEach((ch, index) => {
-      const strip = el.children[index]?.querySelector('.odo-reel');
+      const strip = layer.children[index]?.querySelector('.odo-reel');
       if (strip) strip.style.transform = `translateY(${-Number(ch)}em)`;
     });
   }));
   setTimeout(() => {
-    // Дальше это снова обычный текст: его читают и перекрашивают другие места.
-    if (!el.isConnected) return;
+    layer.remove();
     el.classList.remove('odo');
-    el.textContent = to;
   }, 1100);
 }
 
