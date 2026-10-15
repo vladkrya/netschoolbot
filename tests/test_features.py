@@ -11,7 +11,8 @@ import pytest
 from app.db.repositories import FamilyRepository, NotesRepository
 from app.domain import formatting, insights
 from app.domain.export import (
-    absences_workbook, build_xlsx, export_filename, grades_workbook, homework_workbook, lessons_workbook,
+    absences_workbook, build_xlsx, dynamics_workbook, export_filename, grades_workbook, homework_workbook,
+    lessons_workbook, schedule_workbook, subjects_workbook, control_works_workbook,
 )
 from app.domain.models import NotificationPrefs, Student, parse_marks_filter
 from app.domain.periods import periods
@@ -162,6 +163,35 @@ class TestExport:
         (lessons,) = sheets(lessons_workbook(days, title="1 четверть"))
         assert "Кислоты" in lessons and "08:30–09:15" in lessons
         assert export_filename("Иванов", "1 четверть", "Пропуски") == "Пропуски_Иванов_1_четверть.xlsx"
+
+    def test_more_reports(self):
+        sep, octo = dt.date(2026, 9, 3), dt.date(2026, 10, 1)
+        test = MarkRecord(subject="Химия", date=octo, assignment_type="Контрольная работа", content="Кислоты",
+                          mark="3", weight=3, lesson_number=1)
+        days = [
+            DiaryDay(day=sep, lessons=[Lesson(1, "Химия", start="08:30", end="09:15", room="12",
+                                              teacher="Иванова А. А.", marks=(mark(5, day=sep),))],
+                     marks=[mark(5, day=sep)]),
+            DiaryDay(day=octo, lessons=[Lesson(1, "Химия", start="08:30", end="09:15", room="12",
+                                               absence="Н", marks=(test,))], marks=[test]),
+        ]
+
+        def sheets(data):
+            with zipfile.ZipFile(io.BytesIO(data)) as book:
+                for name in book.namelist():
+                    if name.endswith((".xml", ".rels")):
+                        ElementTree.fromstring(book.read(name))
+                return [book.read(n).decode() for n in sorted(book.namelist()) if n.startswith("xl/worksheets/")]
+
+        (subjects,) = sheets(subjects_workbook(days, title="Год"))
+        assert "Иванова А. А." in subjects and "<v>2</v>" in subjects and "5 3" in subjects
+        (dynamics,) = sheets(dynamics_workbook(days, title="Год"))
+        # Сентябрь 5, октябрь 3 — проседание на два балла.
+        assert "сен 2026" in dynamics and "окт 2026" in dynamics and "<v>-2.0</v>" in dynamics
+        summary, works = sheets(control_works_workbook(days, title="Год"))
+        assert "Кислоты" in works and "Контрольная работа" in works and "Химия" in summary
+        (schedule,) = sheets(schedule_workbook(days, title="Год"))
+        assert "Химия (12)" in schedule and "08:30–09:15" in schedule and "Чт" in schedule and "Ср" not in schedule
 
     def test_escapes_text(self):
         data = build_xlsx([("Лист", [["<&>"]], [10])])

@@ -1,12 +1,14 @@
 """Отчёты файлом Excel — общие для бота (/export) и приложения: оценки,
-пропуски, домашние задания и журнал уроков."""
+сводка по предметам, динамика, контрольные, пропуски, домашние задания,
+журнал уроков и обычное расписание недели."""
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
 from .domain.export import (
-    absences_workbook, export_filename, grades_workbook, homework_workbook, lessons_workbook,
+    absences_workbook, dynamics_workbook, export_filename, grades_workbook, homework_workbook,
+    lessons_workbook, schedule_workbook, subjects_workbook, control_works_workbook,
 )
 from .domain.models import User
 from .domain.periods import current_period, resolve_periods
@@ -17,7 +19,10 @@ if TYPE_CHECKING:
 
 SCOPES = ("period", "year")
 # Отчёт → начало имени файла.
-REPORTS = {"grades": "Оценки", "absences": "Пропуски", "homework": "Задания", "lessons": "Уроки"}
+REPORTS = {
+    "grades": "Оценки", "subjects": "Предметы", "dynamics": "Динамика", "tests": "Контрольные",
+    "absences": "Пропуски", "homework": "Задания", "lessons": "Уроки", "schedule": "Расписание",
+}
 
 
 async def export_grades(app: "AppContext", user: User, scope: str = "period") -> tuple[bytes, str]:
@@ -54,6 +59,14 @@ async def export_report(app: "AppContext", user: User, scope: str = "period",
         data = homework_workbook(days, title=title, student=student)
     elif report == "lessons":
         data = lessons_workbook(days, title=title, student=student)
+    elif report == "subjects":
+        data = subjects_workbook(days, title=title, student=student, prefs=prefs)
+    elif report == "dynamics":
+        data = dynamics_workbook(days, title=title, student=student)
+    elif report == "tests":
+        data = control_works_workbook(days, title=title, student=student)
+    elif report == "schedule":
+        data = schedule_workbook(days, title=title, student=student)
     else:
         records = [r for d in days for r in d.marks if start <= r.date <= end]
         data = grades_workbook(records, title=title, student=student, prefs=prefs, periods=year)

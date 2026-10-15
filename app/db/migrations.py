@@ -564,6 +564,10 @@ MIGRATIONS: list[str] = [
         used_at     TEXT
     );
     """,
+    # Виджет на iPhone убран: ключи больше не нужны.
+    """
+    DROP TABLE IF EXISTS widget_keys;
+    """,
 ]
 
 

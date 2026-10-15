@@ -64,10 +64,6 @@ export function applyStoredTheme() {
 }
 
 /** Куда рисовать настройки: вкладка в новом дизайне, меню ☰ в классическом. */
-// Виджет — через Scriptable, а он есть только на iPhone и iPad.
-const IS_IOS = /iPhone|iPad|iPod/.test(navigator.userAgent)
-  || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
-
 const settingsRoot = () => $(isNewDesign() ? 'settingsContent' : 'drawerBody');
 
 export function isDrawerOpen() {
@@ -119,9 +115,19 @@ function tabRows() {
 function tabsSection() {
   return `<section class="drawer-section">
       <div class="drawer-heading">Нижняя панель</div>
+      ${more('tabs', 'Какие вкладки и в каком порядке', `
       <div class="tab-list" id="tabList">${tabRows()}</div>
-      <div class="muted small">Первая открывается при входе. <button class="link" id="tabsReset">Как было</button></div>
+      <div class="muted small">Первая открывается при входе. <button class="link" id="tabsReset">Как было</button></div>`)}
     </section>`;
+}
+
+// Редкие настройки свёрнуты, чтобы экран не был стеной переключателей.
+// Раскрытое остаётся раскрытым при перерисовке (смена цвета, вкладок).
+const openMore = new Set();
+
+function more(key, title, body) {
+  return `<details class="drawer-more" data-more="${key}"${openMore.has(key) ? ' open' : ''}>
+      <summary>${title}</summary>${body}</details>`;
 }
 
 function bindTabs() {
@@ -237,9 +243,13 @@ function statusLine(status) {
 // в мобильном API — в веб-режиме этот отчёт был бы пустым.
 const REPORTS = [
   ['grades', 'Оценки', 'Средние и выходящие по предметам, все работы с датами и весом'],
+  ['subjects', 'Сводка по предметам', 'Учитель, уроки, пропуски, задания, средний и что выходит — строкой'],
+  ['dynamics', 'Динамика по месяцам', 'Средний по каждому предмету помесячно: где растёт, где проседает'],
+  ['tests', 'Контрольные и проверочные', 'Все крупные работы с оценками и средний по ним'],
   ['absences', 'Пропуски', 'Сколько пропущено по каждому предмету и список по датам', 'mobile'],
   ['homework', 'Домашние задания', 'Все задания периода с текстом и файлами'],
   ['lessons', 'Журнал уроков', 'Каждый урок: тема, учитель, оценки и пропуск'],
+  ['schedule', 'Расписание недели', 'Обычная неделя таблицей: уроки, время и кабинеты — для печати'],
 ];
 
 /** Отчёты в Excel: открываются как вложение из ДЗ — страницей ожидания во
@@ -507,62 +517,6 @@ async function openCalendar() {
   await load();
 }
 
-async function openWidget() {
-  closeDrawer();
-  const screen = pushScreen('Виджет на iPhone');
-  screen.innerHTML = '<div class="muted small">Загрузка…</div>';
-  let script = '';
-  const render = (data) => {
-    screen.innerHTML = `<div class="card">
-      <p>Таймер урока на экране «Домой» и на экране блокировки: «До конца урока 12:34», перемена
-      и следующий урок с кабинетом. Работает через бесплатное приложение Scriptable.</p>
-      <ol class="small">
-        <li>Установите <b>Scriptable</b> из App Store.</li>
-        <li>Нажмите «${data.connected ? 'Выпустить новый ключ' : 'Создать виджет'}» ниже и скопируйте скрипт.</li>
-        <li>В Scriptable нажмите «+», вставьте скрипт и назовите его, например, «Уроки».</li>
-        <li>Добавьте виджет Scriptable на экран «Домой» или блокировки, нажмите на него в режиме
-        редактирования и в поле Script выберите «Уроки».</li>
-      </ol>
-      ${script ? `<textarea class="field" readonly rows="6" spellcheck="false">${esc(script)}</textarea>
-        <button class="btn" id="widgetCopy">Скопировать скрипт</button>
-        <p class="muted small">Ключ в скрипте показывается один раз. Он открывает только расписание.</p>` : ''}
-      ${data.connected && !script ? `<p class="muted small">${data.used_at ? 'Виджет подключён.' : 'Ключ выпущен, виджет ещё не обращался.'}
-        Если скрипт потерян, выпустите новый ключ — старый перестанет работать.</p>` : ''}
-      <button class="btn${script ? ' outline' : ''}" id="widgetCreate">${data.connected ? 'Выпустить новый ключ' : 'Создать виджет'}</button>
-      ${data.connected ? '<button class="btn outline" id="widgetRevoke">Отключить виджет</button>' : ''}
-      <p class="muted small">Отсчёт идёт сам, а после звонка iOS перерисовывает виджет с небольшой
-      задержкой — иногда таймер пару минут стоит на нуле. Расписание виджет обновляет раз в полчаса.</p>
-      </div>`;
-    if ($('widgetCopy')) $('widgetCopy').onclick = async () => {
-      try {
-        await navigator.clipboard.writeText(script);
-        notify('success');
-        banner('Скрипт скопирован', false, 2500);
-      } catch { screen.querySelector('textarea')?.select(); }
-    };
-    $('widgetCreate').onclick = async () => {
-      if (data.connected && !confirm('Старый ключ перестанет работать. Выпустить новый?')) return;
-      const button = $('widgetCreate');
-      button.disabled = true;
-      try {
-        const result = await api('/api/widget-key', { method: 'POST' });
-        script = result.data.script;
-        render(result.data);
-      } catch (error) { banner(error.message, true); button.disabled = false; }
-    };
-    if ($('widgetRevoke')) $('widgetRevoke').onclick = async () => {
-      if (!confirm('Отключить виджет? Он перестанет обновляться.')) return;
-      try {
-        await api('/api/widget-key', { method: 'DELETE' });
-        script = '';
-        render({ connected: false });
-      } catch (error) { banner(error.message, true); }
-    };
-  };
-  try { render((await api('/api/widget-key')).data); }
-  catch (error) { screen.innerHTML = errorCard(error); }
-}
-
 const HISTORY_KINDS = { new: 'Новая', changed: 'Исправлена', deleted: 'Удалена' };
 const HISTORY_FILTERS = [['all', 'Все'], ['new', 'Новые'], ['changed', 'Исправленные'], ['deleted', 'Удалённые']];
 const dayFormat = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long' });
@@ -775,35 +729,27 @@ function render() {
       ${!readonly && data.students.length > 1 ? `<div class="drawer-children">${data.students
         .map((s) => `<button class="chip ${s.current ? 'active' : ''}" data-student="${s.id}">${esc(s.name)}</button>`)
         .join('')}</div>` : ''}
+      ${demo ? '' : `<div class="account-links">
+        <button class="drawer-link" id="drawerLock">${ICONS.shield} Защита входа</button>
+        <button class="drawer-link" id="drawerAccount">${ICONS.mail} Вход по почте</button>
+      </div>`}
       ${demo || readonly ? '' : '<button class="link small drawer-relogin" id="drawerSgo">Сменили пароль от «Сетевого города» или школу? Войти заново</button>'}
     </section>
     <section class="drawer-section">
-      <div class="drawer-heading">Дополнительно</div>
-      ${data.assistant && !demo && !readonly && !navTabs().includes('assistant') ? `<button class="drawer-link" id="drawerAssistant">${ICONS.sparkles} ИИ-помощник</button>` : ''}
-      ${demo ? '' : `<button class="drawer-link" id="drawerLock">${ICONS.shield} Защита входа</button>`}
-      ${demo ? '' : `<button class="drawer-link" id="drawerAccount">${ICONS.mail} Вход по почте</button>`}
-      ${demo || !data.bug_report ? '' : `<button class="drawer-link" id="drawerBug">${ICONS.chat} Сообщить об ошибке</button>`}
-      <button class="drawer-link" id="drawerCalc">${ICONS.calc} Калькулятор баллов</button>
-      <button class="drawer-link" id="drawerHistory">${ICONS.clock} История оценок</button>
-      ${demo ? '' : `<button class="drawer-link" id="drawerExport">${ICONS.table} Отчёты в Excel</button>`}
-      ${demo ? '' : `<button class="drawer-link" id="drawerFamily">${ICONS.users} Родные</button>`}
-      ${data.api_mode === 'mobile' && !demo && !readonly ? `<button class="drawer-link" id="drawerEvents">${ICONS.trophy} Олимпиады и конкурсы</button>
-      <button class="drawer-link" id="drawerReferences">${ICONS.doc} Заказать справку</button>` : ''}
-      ${demo || readonly ? '' : `<button class="drawer-link" id="drawerCalendar">${ICONS.calendar} Расписание в календаре</button>`}
-      ${demo || readonly || !IS_IOS ? '' : `<button class="drawer-link" id="drawerWidget">${ICONS.widget} Виджет на iPhone</button>`}
+      <div class="drawer-heading">Инструменты</div>
+      <div class="tool-grid">
+      ${data.assistant && !demo && !readonly && !navTabs().includes('assistant') ? toolTile('drawerAssistant', 'sparkles', 'ИИ-помощник') : ''}
+      ${toolTile('drawerCalc', 'calc', 'Калькулятор баллов')}
+      ${toolTile('drawerHistory', 'clock', 'История оценок')}
+      ${demo ? '' : toolTile('drawerExport', 'table', 'Отчёты в Excel')}
+      ${demo ? '' : toolTile('drawerFamily', 'users', 'Родные')}
+      ${demo || readonly ? '' : toolTile('drawerCalendar', 'calendar', 'Расписание в календарь')}
+      ${data.api_mode === 'mobile' && !demo && !readonly ? `${toolTile('drawerEvents', 'trophy', 'Олимпиады')}
+      ${toolTile('drawerReferences', 'doc', 'Заказать справку', referencesAllowed !== true)}` : ''}
+      </div>
     </section>
     <section class="drawer-section">
       <div class="drawer-heading">Оформление</div>
-      <label class="switch-row design-row"><span>Старый дизайн</span>
-        <input type="checkbox" switch class="switch" id="designOld" ${isNewDesign() ? '' : 'checked'}></label>
-      <label class="switch-row"><span>Подсвечивать Д/З на главной<span class="muted small switch-note">красным — не сделано, зелёным — сделано</span></span>
-        <input type="checkbox" switch class="switch" id="hwStatusShow" ${showHomeworkStatus() ? 'checked' : ''}></label>
-      ${data.api_mode === 'mobile' ? `<label class="switch-row"><span>Отправка ответа на задание<span class="muted small switch-note">блок «Мой ответ» на экране задания</span></span>
-        <input type="checkbox" switch class="switch" id="answersShow" ${showAnswers() ? 'checked' : ''}></label>` : ''}
-      <label class="switch-row"><span>Показывать выходные без уроков</span>
-        <input type="checkbox" switch class="switch" id="weekendsShow" ${showWeekends() ? 'checked' : ''}></label>
-      ${isNewDesign() ? '' : `<label class="switch-row"><span>Звонки вместо расписания недели</span>
-        <input type="checkbox" switch class="switch" id="bellsTab" ${showBells() ? 'checked' : ''}></label>`}
       ${isNewDesign() ? themeSegment : `${radio('light', 'Светлая тема')}
       ${radio('auto', 'Как в системе')}
       ${radio('dark', 'Тёмная тема')}`}
@@ -816,6 +762,17 @@ function render() {
       </div>
       ${customAccent ? '<button class="link accent-action" id="accentRemember">Сохранить этот цвет</button>'
         : saved.includes(accent) ? '<button class="link accent-action" id="accentForget">Убрать из сохранённых</button>' : ''}
+      ${more('look', 'Ещё настройки вида', `
+      <label class="switch-row design-row"><span>Старый дизайн</span>
+        <input type="checkbox" switch class="switch" id="designOld" ${isNewDesign() ? '' : 'checked'}></label>
+      <label class="switch-row"><span>Подсвечивать Д/З на главной<span class="muted small switch-note">красным — не сделано, зелёным — сделано</span></span>
+        <input type="checkbox" switch class="switch" id="hwStatusShow" ${showHomeworkStatus() ? 'checked' : ''}></label>
+      ${data.api_mode === 'mobile' ? `<label class="switch-row"><span>Отправка ответа на задание<span class="muted small switch-note">блок «Мой ответ» на экране задания</span></span>
+        <input type="checkbox" switch class="switch" id="answersShow" ${showAnswers() ? 'checked' : ''}></label>` : ''}
+      <label class="switch-row"><span>Показывать выходные без уроков</span>
+        <input type="checkbox" switch class="switch" id="weekendsShow" ${showWeekends() ? 'checked' : ''}></label>
+      ${isNewDesign() ? '' : `<label class="switch-row"><span>Звонки вместо расписания недели</span>
+        <input type="checkbox" switch class="switch" id="bellsTab" ${showBells() ? 'checked' : ''}></label>`}`)}
     </section>
     ${isNewDesign() ? tabsSection() : ''}
     ${readonly ? `<section class="drawer-section">
@@ -826,7 +783,7 @@ function render() {
       ${toggle('telegram', 'В Telegram', data.notifications.telegram !== false)}
       ${pushRow()}
       <div class="muted small" id="notifyNowhere" hidden>Сейчас уведомления никуда не приходят.</div>
-      <div class="drawer-sub">О чём сообщать</div>
+      ${more('notify', 'О чём сообщать', `
       ${Object.entries(NOTIFY_LABELS)
         .filter(([key]) => !MOBILE_ONLY.has(key) || data.api_mode === 'mobile')
         .filter(([key]) => key !== 'all_children' || data.students.length > 1)
@@ -841,19 +798,47 @@ function render() {
         const on = !chosen.length || chosen.includes(value);
         return `<button class="chip ${on ? 'active' : ''}" data-mark-value="${value}" aria-pressed="${on}">${value}</button>`;
       }).join('')}</div>
-      <div class="muted small">Изменения и удаления оценок приходят всегда.</div>
+      <div class="muted small">Изменения и удаления оценок приходят всегда.</div>`)}
       <div class="muted small">Проверка каждые ${data.interval_minutes} мин</div>
       ${statusLine(data.status)}
     </section>`}
     ${demoSection()}
-    <div class="drawer-foot muted small">Дневник «Сетевого города»${window.NETSCHOOL.appVersion ? ` · v. ${esc(window.NETSCHOOL.appVersion)}` : ''}</div>`;
+    <div class="drawer-foot muted small">Дневник «Сетевого города»${window.NETSCHOOL.appVersion ? ` · v. ${esc(window.NETSCHOOL.appVersion)}` : ''}
+      ${demo || !data.bug_report ? '' : `<button class="link small" id="drawerBug">Сообщить об ошибке</button>`}</div>`;
 
   bindDrawer();
   loadStudentClass(currentStudent);
+  checkReferences();
+}
+
+/** Плитка инструмента: значок над подписью — восемь пунктов помещаются в
+ *  три ряда, а не в восемь строк. */
+function toolTile(id, icon, label, hidden = false) {
+  return `<button class="tool-tile" id="${id}"${hidden ? ' hidden' : ''}><span class="tool-ico">${ICONS[icon]}</span><span>${label}</span></button>`;
+}
+
+// Заказ справок школьный сервер разрешает не всем учётным записям (ученику
+// обычно отказывает). Кнопка показывается, только когда он ответил списком
+// справок; ответ помнится до перезапуска.
+let referencesAllowed = null;
+let referencesCheck = null;
+function checkReferences() {
+  if (!$('drawerReferences') || referencesAllowed !== null) return;
+  referencesCheck ||= api('/api/references/types')
+    .then(({ data }) => { referencesAllowed = Boolean(data.available && data.items?.length); })
+    .catch(() => { referencesCheck = null; });
+  referencesCheck.then(() => {
+    const button = $('drawerReferences');
+    if (button) button.hidden = referencesAllowed !== true;
+  });
 }
 
 function bindDrawer() {
   const body = settingsRoot();
+  body.querySelectorAll('[data-more]').forEach((details) => details.addEventListener('toggle', () => {
+    if (details.open) openMore.add(details.dataset.more);
+    else openMore.delete(details.dataset.more);
+  }));
   body.querySelectorAll('input[name="theme"]').forEach((input) =>
     input.addEventListener('change', () => {
       select();
@@ -1011,7 +996,6 @@ function bindDrawer() {
   });
   $('drawerLock')?.addEventListener('click', () => { closeDrawer(); openLockSettings().catch(error => banner(error.message, true)); });
   $('drawerCalendar')?.addEventListener('click', () => { tap(); openCalendar(); });
-  $('drawerWidget')?.addEventListener('click', () => { tap(); openWidget(); });
   $('drawerAccount')?.addEventListener('click', async () => {
     tap();
     closeDrawer();
