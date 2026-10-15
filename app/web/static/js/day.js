@@ -216,7 +216,9 @@ function daySummary(lessons) {
   const first = lessons.find((lesson) => lesson.start)?.start;
   const last = [...lessons].reverse().find((lesson) => lesson.end)?.end;
   const homework = lessons.filter((lesson) => lesson.homework.some((item) => !item.classwork)).length;
-  const marks = lessons.flatMap((lesson) => realMarks(lesson.marks)).map((m) => markBox(m.mark)).join('');
+  // Оценка — с коэффициентом, как в карточке урока; нажатие открывает урок.
+  const marks = lessons.flatMap((lesson, index) => realMarks(lesson.marks).map((m) =>
+    `<button class="ds-mark" data-summary-lesson="${index}" aria-label="${esc(lesson.subject)}: ${esc(m.mark)}">${markBox(m.mark, '', m.weight || 1)}</button>`)).join('');
   const parts = [`${lessons.length} ${plural(lessons.length, 'урок', 'урока', 'уроков')}`];
   if (first && last) parts.push(`${first}–${last}`);
   return `<div class="day-summary">
@@ -266,6 +268,10 @@ function renderDay(quiet = false) {
     const next = !note.done;
     row.classList.toggle('done', next);
     if (!await setNoteDone(note, next)) row.classList.toggle('done', !next);
+  }));
+  container.querySelectorAll('[data-summary-lesson]').forEach((button) => button.addEventListener('click', () => {
+    tap();
+    openLesson(lessons[Number(button.dataset.summaryLesson)], state.date);
   }));
   container.querySelectorAll('[data-lesson]').forEach((card) => {
     card.addEventListener('click', (event) => {
