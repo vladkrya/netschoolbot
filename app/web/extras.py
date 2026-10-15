@@ -128,29 +128,111 @@ async def _bot_username(request: web.Request) -> str:
         return ""
 
 
+async def _rights(body: dict[str, Any]) -> tuple[bool, bool] | None:
+    notify, view = body.get("notify", True), body.get("view", True)
+    if not isinstance(notify, bool) or not isinstance(view, bool) or not (notify or view):
+        return None
+    return notify, view
+
+
 @routes.get("/api/family")
 async def family_info(request: web.Request) -> web.Response:
     app, user = context(request), current_user(request)
     following = []
-    for owner_id in await app.family.following(user.telegram_id):
-        owner = await app.users.get(owner_id)
-        following.append({"id": owner_id, "name": owner.label if owner else f"ID {owner_id}"})
+    for item in await app.family.access(user.telegram_id):
+        owner = await app.users.get(item["owner_id"])
+        following.append({"id": item["owner_id"], "name": owner.label if owner else f"ID {item['owner_id']}",
+                          "notify": item["notify"], "view": item["view"]})
     return web.json_response({"ok": True, "data": {
-        "followers": [{"id": f["id"], "name": f["name"]} for f in await app.family.followers(user.telegram_id)],
+        "followers": [{"id": f["id"], "name": f["name"], "notify": f["notify"], "view": f["view"]}
+                      for f in await app.family.followers(user.telegram_id)],
         "following": following,
+        "can_invite": user.school.configured,
     }}, headers={"Cache-Control": "no-store"})
 
 
 @routes.post("/api/family/invite")
 async def family_invite(request: web.Request) -> web.Response:
+    """Ссылка-приглашение на сайт: там родной заходит через Telegram или
+    регистрируется по почте. Ссылка прямо в бота — для тех, у кого Telegram."""
     app, user = context(request), current_user(request)
     if not user.school.configured:
         return json_error("Сначала войдите в «Сетевой город»")
+    rights = await _rights(await _body(request) or {})
+    if rights is None:
+        return json_error("Выберите, что будет доступно")
+    code = await app.family.issue_invite(user.telegram_id, notify=rights[0], view=rights[1])
     username = await _bot_username(request)
-    if not username:
-        return json_error("Бот сейчас недоступен — попробуйте позже", status=503)
-    code = await app.family.issue_invite(user.telegram_id)
-    return web.json_response({"ok": True, "data": {"url": f"https://t.me/{username}?start=f_{code}"}})
+    return web.json_response({"ok": True, "data": {
+        "url": f"{app.settings.web.miniapp_url}/?invite={code}",
+        "telegram": f"https://t.me/{username}?start=f_{code}" if username else "",
+    }})
+
+
+@routes.get("/api/family/invite-info")
+async def family_invite_info(request: web.Request) -> web.Response:
+    """Чьё приглашение и что оно даёт — до входа: страница показывает его
+    и предлагает войти через Telegram или по почте."""
+    app = context(request)
+    code = request.query.get("code", "")[:64]
+    invite = await app.family.invite(code) if code else None
+    owner = await app.users.get(invite["owner_id"]) if invite else None
+    if invite is None or owner is None:
+        return json_error("Приглашение недействительно: истекло или уже использовано. "
+                          "Попросите прислать новое.", status=404)
+    username = await _bot_username(request)
+    return web.json_response({"ok": True, "data": {
+        "name": owner.label, "school": owner.school.name,
+        "notify": invite["notify"], "view": invite["view"],
+        "telegram": f"https://t.me/{username}?start=f_{code}" if username else "",
+    }}, headers={"Cache-Control": "no-store"})
+
+
+@routes.post("/api/family/accept")
+async def family_accept(request: web.Request) -> web.Response:
+    app, user = context(request), current_user(request)
+    code = str((await _body(request) or {}).get("code") or "")[:64]
+    invite = await app.family.invite(code) if code else None
+    if invite and invite["owner_id"] == user.telegram_id:
+        return json_error("Это ваше собственное приглашение — перешлите его тому, кого приглашаете.")
+    account = await app.accounts.by_user(user.telegram_id) if app.accounts else None
+    name = user.display_name or (account["email"].split("@")[0] if account else "")
+    owner_id = await app.family.accept(code, user.telegram_id, name)
+    if owner_id is None:
+        return json_error("Приглашение недействительно: истекло, уже использовано "
+                          "или у ученика уже много приглашённых.")
+    if invite and invite["view"]:
+        # Только что принятый дневник — сразу его и показываем.
+        await app.family.set_viewing(user.telegram_id, owner_id)
+    await _tell_owner(request, owner_id, name)
+    return await family_info(request)
+
+
+async def _tell_owner(request: web.Request, owner_id: int, name: str) -> None:
+    bot = request.config_dict.get(BOT)
+    if bot is None or not has_telegram(owner_id):
+        return
+    try:
+        await bot.send_message(owner_id, f"👪 {name or 'Приглашённый'} принял приглашение. "
+                                         "Изменить его доступ или убрать: Настройки → Родные.")
+    except Exception as exc:  # noqa: BLE001 — уведомление вторично
+        logger.info("Владельцу %s не сообщили о приглашённом: %s", owner_id, exc)
+
+
+@routes.post("/api/family/rights")
+async def family_rights(request: web.Request) -> web.Response:
+    """Ученик меняет, что доступно приглашённому."""
+    app, user = context(request), current_user(request)
+    body = await _body(request) or {}
+    try:
+        other = int(body.get("id"))
+    except (TypeError, ValueError):
+        return json_error("Некорректный запрос")
+    notify, view = body.get("notify"), body.get("view")
+    if not isinstance(notify, bool) or not isinstance(view, bool):
+        return json_error("Некорректный запрос")
+    await app.family.set_rights(user.telegram_id, other, notify=notify, view=view)
+    return await family_info(request)
 
 
 @routes.post("/api/family/remove")
@@ -166,6 +248,28 @@ async def family_remove(request: web.Request) -> web.Response:
     else:
         await app.family.remove(user.telegram_id, other)
     return await family_info(request)
+
+
+@routes.post("/api/view")
+async def switch_view(request: web.Request) -> web.Response:
+    """Свой дневник или дневник ученика, пригласившего на просмотр."""
+    from . import viewing
+
+    app, user = context(request), current_user(request)
+    raw = (await _body(request) or {}).get("id")
+    if raw is None:
+        if not user.school.configured:
+            return json_error("Своего дневника нет — войдите в «Сетевой город»")
+        await app.family.set_viewing(user.telegram_id, None)
+        return web.json_response({"ok": True})
+    try:
+        owner_id = int(raw)
+    except (TypeError, ValueError):
+        return json_error("Некорректный запрос")
+    if owner_id not in {owner.telegram_id for owner in await viewing.choices(app, user)}:
+        return json_error("Нет доступа к этому дневнику", status=403)
+    await app.family.set_viewing(user.telegram_id, owner_id)
+    return web.json_response({"ok": True})
 
 
 @routes.get("/api/export.xlsx")

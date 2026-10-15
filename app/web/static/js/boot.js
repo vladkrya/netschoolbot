@@ -3,20 +3,49 @@ import { api, demo, state, tg, token } from './core.js';
 import { unlockApp } from './lock.js';
 import { initIosHaptics } from './haptics.js';
 
+const INVITE_KEY = 'ns-invite';
+
+/** Код из ссылки-приглашения (/?invite=…) — до входа и после него: после
+ * регистрации по почте страница перезагружается уже без кода в адресе. */
+function rememberInvite() {
+  const params = new URLSearchParams(location.search);
+  const code = params.get('invite');
+  if (!code) return;
+  try { localStorage.setItem(INVITE_KEY, code); } catch { /* приватный режим */ }
+  window.netschoolInvite = code;
+  params.delete('invite');
+  const query = params.toString() ? `?${params}` : '';
+  history.replaceState(null, '', location.pathname + query + location.hash);
+}
+
+function pendingInvite() {
+  try { return localStorage.getItem(INVITE_KEY) || window.netschoolInvite || ''; } catch { return window.netschoolInvite || ''; }
+}
+
 async function boot() {
   tg?.ready();
   tg?.expand();
   initIosHaptics();
+  rememberInvite();
   // Ни Telegram, ни ссылки с токеном — вход по почте.
   if (!demo && !token && !tg?.initData) {
-    const { showAuth } = await import('./account.js');
-    await showAuth();
+    const { showAuth, showInvite } = await import('./account.js');
+    if (pendingInvite()) await showInvite(pendingInvite(), false);
+    else await showAuth();
     return;
   }
   await unlockApp();
+  // Пришли по ссылке-приглашению от ученика — сначала её.
+  if (!demo && pendingInvite()) {
+    const { showInvite } = await import('./account.js');
+    await showInvite(pendingInvite(), true);
+    return;
+  }
   // Ещё не вошли в «Сетевой город» — сначала вход, потом дневник.
   if (!demo) {
     const info = await api('/api/account').then(({ data }) => data, () => null);
+    // Дневник ученика, пригласившего на просмотр: только чтение, без почты и чатов.
+    document.documentElement.classList.toggle('view-mode', Boolean(info?.viewing));
     if (info?.needs_sgo) {
       const { showSgoLogin } = await import('./account.js');
       await showSgoLogin(info);

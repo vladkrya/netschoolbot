@@ -6,7 +6,7 @@
 // загруженных оценок и заданий, отдельных запросов не делают.
 'use strict';
 
-import { addDays, api, banner, esc, isoToday, mondayOf, plural, state, weekdayIndex } from './core.js';
+import { addDays, api, banner, esc, isoToday, mondayOf, plural, refuseReadOnly, state, weekdayIndex } from './core.js';
 import { closeSheet, openSheet } from './sheet.js';
 import { notify, select, tap } from './haptics.js';
 
@@ -45,6 +45,7 @@ export function notesAsItems(notes = state.notes || []) {
 }
 
 export async function setNoteDone(item, done) {
+  if (refuseReadOnly()) return false;
   const note = (state.notes || []).find((n) => n.id === item.id);
   if (note) note.done = done;
   item.done = done;
@@ -62,6 +63,7 @@ export async function setNoteDone(item, done) {
 }
 
 export async function deleteNote(item) {
+  if (refuseReadOnly()) return false;
   try {
     await api(`/api/notes/${item.id}`, { method: 'POST', body: JSON.stringify({ delete: true }) });
     state.notes = (state.notes || []).filter((n) => n.id !== item.id);
@@ -76,6 +78,7 @@ export async function deleteNote(item) {
 
 /** Шторка «Своя задача»: текст, день и (по желанию) предмет. */
 export function openNoteEditor(subjects, onSaved, { date = null, subject = '' } = {}) {
+  if (refuseReadOnly()) return;
   tap();
   const today = isoToday();
   let day = date || addDays(today, weekdayIndex(today) >= 4 ? 7 - weekdayIndex(today) : 1);

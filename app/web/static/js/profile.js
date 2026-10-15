@@ -4,7 +4,7 @@
 'use strict';
 
 import {
-  $, api, banner, demo, ensureAttachmentTicket, errorCard, esc, exportUrl, initData, openExternal,
+  $, api, banner, demo, ensureAttachmentTicket, errorCard, esc, exportUrl, initData, isReadOnly, openExternal,
   pushEnabled, skeleton, state, tg,
 } from './core.js';
 import {
@@ -272,40 +272,70 @@ function openExport() {
   }));
 }
 
-/** Уведомления родным: ссылка-приглашение и кто получает копии уведомлений.
- * Это не вход в дневник — приглашённый только получает сообщения в Telegram. */
+function rightsLabel(item) {
+  if (item.notify && item.view) return 'Уведомления и дневник';
+  return item.notify ? 'Только уведомления' : 'Только просмотр дневника';
+}
+
+/** Родные: приглашение с выбором, что доступно (уведомления, просмотр
+ * дневника или оба), их права и отзыв; и к кому есть доступ у вас самих. */
 async function openFamily() {
   tap();
-  const screen = pushScreen('Уведомления родным');
+  const screen = pushScreen('Родные');
   screen.innerHTML = skeleton(3);
+  const send = async (path, body) => {
+    try {
+      const { data: fresh } = await api(path, { method: 'POST', body: JSON.stringify(body) });
+      notify('success');
+      draw(fresh);
+    } catch (error) {
+      notify('error');
+      banner(error.message, true);
+    }
+  };
   const draw = (data) => {
-    screen.innerHTML = `<div class="card">
+    screen.innerHTML = `${data.can_invite ? `<div class="card">
         <p>Пригласите маму, папу, бабушку — любого, кому важно знать об успехах ученика.
-        По ссылке он подключится к боту и будет получать в Telegram те же уведомления:
-        новые оценки, задания и сводки.</p>
-        <p class="muted small">Это только уведомления: дневник ему не открывается, пароль от «Сетевого города» не нужен,
-        менять он ничего не может. Убрать его можно здесь в любой момент.</p>
+        Ссылка ведёт на сайт: там можно войти через Telegram или зарегистрироваться по почте.</p>
+        <div class="family-rights" role="radiogroup" aria-label="Что будет доступно">
+          <label><input type="radio" name="familyRights" value="both" checked> Уведомления и просмотр дневника</label>
+          <label><input type="radio" name="familyRights" value="notify"> Только уведомления</label>
+          <label><input type="radio" name="familyRights" value="view"> Только просмотр дневника</label>
+        </div>
+        <p class="muted small">Просмотр — оценки, расписание и задания в приложении. Менять ничего нельзя,
+        почта и чаты не видны, пароль от «Сетевого города» не нужен. Доступ можно изменить или отозвать в любой момент.</p>
         <button class="btn" id="familyInvite">Пригласить по ссылке</button>
         <div class="family-link" id="familyLink" hidden></div>
       </div>
-      <div class="card"><div class="card-title">Получают уведомления</div>${data.followers.length ? data.followers.map((f) =>
-        `<div class="family-row"><span>${esc(f.name || `ID ${f.id}`)}</span><button class="btn outline small" data-drop="${f.id}">Убрать</button></div>`).join('')
-        : '<p class="muted small">Пока никого. Здесь появится тот, кто перейдёт по ссылке и подтвердит.</p>'}</div>
-      ${data.following.length ? `<div class="card"><div class="card-title">Вы получаете уведомления об</div>${data.following.map((f) =>
-        `<div class="family-row"><span>${esc(f.name)}</span><button class="btn outline small" data-leave="${f.id}">Не получать</button></div>`).join('')}</div>` : ''}`;
-    $('familyInvite').addEventListener('click', async (event) => {
+      <div class="card"><div class="card-title">Приглашённые</div>${data.followers.length ? data.followers.map((f) =>
+        `<div class="family-row"><span class="family-name">${esc(f.name || `ID ${f.id}`)}<br><span class="muted small">${rightsLabel(f)}</span></span>
+          <button class="btn outline small" data-drop="${f.id}">Убрать</button>
+          <div class="family-row-rights">
+            <button class="chip ${f.notify ? 'active' : ''}" data-right="notify" data-id="${f.id}" aria-pressed="${f.notify}">Уведомления</button>
+            <button class="chip ${f.view ? 'active' : ''}" data-right="view" data-id="${f.id}" aria-pressed="${f.view}">Дневник</button>
+          </div></div>`).join('')
+        : '<p class="muted small">Пока никого. Здесь появится тот, кто перейдёт по ссылке и примет приглашение.</p>'}</div>` : ''}
+      ${data.following.length ? `<div class="card"><div class="card-title">Вас пригласили</div>${data.following.map((f) =>
+        `<div class="family-row"><span class="family-name">${esc(f.name)}<br><span class="muted small">${rightsLabel(f)}</span></span>
+          <button class="btn outline small" data-leave="${f.id}">Отказаться</button></div>`).join('')}</div>` : ''}
+      ${!data.can_invite && !data.following.length ? '<div class="card"><p class="muted">Пригласить родных можно после входа в «Сетевой город».</p></div>' : ''}`;
+    $('familyInvite')?.addEventListener('click', async (event) => {
       select();
-      event.currentTarget.disabled = true;
+      const button = event.currentTarget;
+      const choice = screen.querySelector('[name="familyRights"]:checked')?.value || 'both';
+      button.disabled = true;
       try {
-        const { data: invite } = await api('/api/family/invite', { method: 'POST', body: '{}' });
+        const { data: invite } = await api('/api/family/invite', {
+          method: 'POST', body: JSON.stringify({ notify: choice !== 'view', view: choice !== 'notify' }),
+        });
         const box = $('familyLink');
         box.hidden = false;
         box.innerHTML = `<p class="muted small">Перешлите ссылку тому, кого приглашаете. Она одноразовая и действует сутки.</p>
           <input class="field" readonly value="${esc(invite.url)}">
           <div class="family-actions"><button class="btn" id="familyShare">Поделиться</button>
           <button class="btn outline" id="familyCopy">Скопировать</button></div>`;
+        const text = 'Приглашение в школьный дневник';
         $('familyShare').addEventListener('click', () => {
-          const text = 'Ссылка, чтобы получать уведомления из школьного дневника';
           if (tg?.openTelegramLink) tg.openTelegramLink(`https://t.me/share/url?url=${encodeURIComponent(invite.url)}&text=${encodeURIComponent(text)}`);
           else if (navigator.share) navigator.share({ url: invite.url, text }).catch(() => {});
           else window.open(invite.url, '_blank');
@@ -318,22 +348,24 @@ async function openFamily() {
         notify('error');
         banner(error.message, true);
       } finally {
-        event.currentTarget.disabled = false;
+        button.disabled = false;
       }
     });
-    screen.querySelectorAll('[data-drop], [data-leave]').forEach((button) => button.addEventListener('click', async () => {
+    screen.querySelectorAll('[data-right]').forEach((chip) => chip.addEventListener('click', () => {
+      tap();
+      const follower = data.followers.find((f) => f.id === Number(chip.dataset.id));
+      if (!follower) return;
+      const next = { notify: follower.notify, view: follower.view, [chip.dataset.right]: !follower[chip.dataset.right] };
+      if (!next.notify && !next.view && !confirm(`Убрать ${follower.name || 'приглашённого'}? Без уведомлений и дневника доступа не останется.`)) return;
+      send('/api/family/rights', { id: follower.id, ...next });
+    }));
+    screen.querySelectorAll('[data-drop], [data-leave]').forEach((button) => button.addEventListener('click', () => {
       tap();
       const leave = 'leave' in button.dataset;
-      try {
-        const { data: fresh } = await api('/api/family/remove', {
-          method: 'POST', body: JSON.stringify({ id: Number(button.dataset.drop || button.dataset.leave), leave }),
-        });
-        notify('success');
-        draw(fresh);
-      } catch (error) {
-        notify('error');
-        banner(error.message, true);
-      }
+      if (leave && !confirm('Отказаться от доступа? Снова получить его можно только по новому приглашению.')) return;
+      send('/api/family/remove', { id: Number(button.dataset.drop || button.dataset.leave), leave })
+        // Отказались от дневника, который сейчас открыт, — назад к своему.
+        .then(() => { if (leave && isReadOnly()) location.reload(); });
     }));
   };
   try {
@@ -611,6 +643,9 @@ function render() {
   const studentClass = classLabels.get(currentStudent) || '';
   const theme = currentTheme();
   const accent = currentAccent();
+  // Дневник ученика по приглашению: его уведомления и почту не трогаем.
+  const readonly = Boolean(data.readonly);
+  const views = data.views || [];
   const saved = savedAccents().filter((color) => !ACCENTS.some(([c]) => c === color));
   // Свой цвет, ещё не сохранённый: его можно оставить кружком рядом с готовыми.
   const customAccent = !ACCENTS.some(([c]) => c === accent) && !saved.includes(accent);
@@ -634,27 +669,31 @@ function render() {
     ${pushHowto()}
     <section class="drawer-section">
       <div class="drawer-heading">Аккаунт ученика</div>
+      ${readonly ? '<div class="view-badge">Просмотр дневника по приглашению · только чтение</div>' : ''}
       <div class="drawer-name">${esc(data.name)}</div>
       <div class="muted small" id="studentClass"${studentClass ? '' : ' hidden'}>${esc(studentClass)}</div>
       <div class="muted small">${esc(data.school)}</div>
-      ${data.students.length > 1 ? `<div class="drawer-children">${data.students
+      ${views.length > 1 ? `<div class="drawer-sub">Чей дневник открыть</div><div class="view-switch">${views
+        .map((v) => `<button class="chip ${v.current ? 'active' : ''}" data-view="${v.id ?? ''}" aria-pressed="${v.current}">${esc(v.name)}</button>`)
+        .join('')}</div>` : ''}
+      ${!readonly && data.students.length > 1 ? `<div class="drawer-children">${data.students
         .map((s) => `<button class="chip ${s.current ? 'active' : ''}" data-student="${s.id}">${esc(s.name)}</button>`)
         .join('')}</div>` : ''}
-      ${demo ? '' : '<button class="link small drawer-relogin" id="drawerSgo">Сменили пароль от «Сетевого города» или школу? Войти заново</button>'}
+      ${demo || readonly ? '' : '<button class="link small drawer-relogin" id="drawerSgo">Сменили пароль от «Сетевого города» или школу? Войти заново</button>'}
     </section>
     <section class="drawer-section">
       <div class="drawer-heading">Дополнительно</div>
-      ${data.assistant && !demo && !navTabs().includes('assistant') ? `<button class="drawer-link" id="drawerAssistant">${ICONS.sparkles} ИИ-помощник</button>` : ''}
+      ${data.assistant && !demo && !readonly && !navTabs().includes('assistant') ? `<button class="drawer-link" id="drawerAssistant">${ICONS.sparkles} ИИ-помощник</button>` : ''}
       ${demo ? '' : `<button class="drawer-link" id="drawerLock">${ICONS.shield} Защита входа</button>`}
       ${demo ? '' : `<button class="drawer-link" id="drawerAccount">${ICONS.mail} Вход по почте</button>`}
       ${demo ? '' : `<button class="drawer-link" id="drawerBug">${ICONS.chat} Сообщить об ошибке</button>`}
       <button class="drawer-link" id="drawerCalc">${ICONS.calc} Калькулятор баллов</button>
       <button class="drawer-link" id="drawerHistory">${ICONS.clock} История оценок</button>
       ${demo ? '' : `<button class="drawer-link" id="drawerExport">${ICONS.table} Оценки в Excel</button>`}
-      ${demo ? '' : `<button class="drawer-link" id="drawerFamily">${ICONS.users} Уведомления родным</button>`}
-      ${data.api_mode === 'mobile' && !demo ? `<button class="drawer-link" id="drawerEvents">${ICONS.trophy} Олимпиады и конкурсы</button>
+      ${demo ? '' : `<button class="drawer-link" id="drawerFamily">${ICONS.users} Родные</button>`}
+      ${data.api_mode === 'mobile' && !demo && !readonly ? `<button class="drawer-link" id="drawerEvents">${ICONS.trophy} Олимпиады и конкурсы</button>
       <button class="drawer-link" id="drawerReferences">${ICONS.doc} Заказать справку</button>` : ''}
-      ${demo ? '' : `<button class="drawer-link" id="drawerCalendar">${ICONS.calendar} Расписание в календаре</button>`}
+      ${demo || readonly ? '' : `<button class="drawer-link" id="drawerCalendar">${ICONS.calendar} Расписание в календаре</button>`}
     </section>
     <section class="drawer-section">
       <div class="drawer-heading">Оформление</div>
@@ -682,7 +721,10 @@ function render() {
         : saved.includes(accent) ? '<button class="link accent-action" id="accentForget">Убрать из сохранённых</button>' : ''}
     </section>
     ${isNewDesign() ? tabsSection() : ''}
-    <section class="drawer-section">
+    ${readonly ? `<section class="drawer-section">
+      <div class="drawer-heading">Уведомления</div>
+      <div class="muted small">Уведомления об этом ученике приходят, если он разрешил их в приглашении. Отказаться — «Родные».</div>
+    </section>` : `<section class="drawer-section">
       <div class="drawer-heading">Уведомления</div>
       ${toggle('telegram', 'В Telegram', data.notifications.telegram !== false)}
       ${pushRow()}
@@ -705,7 +747,7 @@ function render() {
       <div class="muted small">Изменения и удаления оценок приходят всегда.</div>
       <div class="muted small">Проверка каждые ${data.interval_minutes} мин</div>
       ${statusLine(data.status)}
-    </section>
+    </section>`}
     ${demoSection()}
     <div class="drawer-foot muted small">Дневник «Сетевого города»${window.NETSCHOOL.appVersion ? ` · v. ${esc(window.NETSCHOOL.appVersion)}` : ''}</div>`;
 
@@ -834,6 +876,21 @@ function bindDrawer() {
   });
   $('drawerExport')?.addEventListener('click', () => { closeDrawer(); openExport(); });
   $('drawerFamily')?.addEventListener('click', () => { closeDrawer(); openFamily(); });
+  body.querySelectorAll('[data-view]').forEach((chip) => chip.addEventListener('click', async () => {
+    if (chip.classList.contains('active')) return;
+    tap();
+    chip.disabled = true;
+    try {
+      await api('/api/view', { method: 'POST', body: JSON.stringify({ id: chip.dataset.view ? Number(chip.dataset.view) : null }) });
+      notify('success');
+      // Другой дневник — совсем другие данные, как при смене ребёнка.
+      location.reload();
+    } catch (error) {
+      notify('error');
+      banner(error.message, true);
+      chip.disabled = false;
+    }
+  }));
   body.querySelectorAll('[data-student]').forEach((button) =>
     button.addEventListener('click', () => switchStudent(button))
   );
@@ -919,11 +976,18 @@ async function bindDemo() {
   });
 }
 
-/** Стрелка у имени в шапке — если детей несколько: шторка со списком,
- *  нажатие переключает ребёнка (как чипы в меню ☰). */
+/** Стрелка у имени в шапке — если есть между кем переключаться: дети
+ *  аккаунта и дневники учеников, пригласивших на просмотр. Шторка со
+ *  списком, нажатие переключает (как чипы в меню ☰). */
 export function initStudentSwitch(profile) {
-  const students = profile?.students || [];
-  if (students.length < 2) return;
+  const readonly = Boolean(profile?.readonly);
+  const views = profile?.views || [];
+  const options = [
+    ...(readonly ? [] : (profile?.students || []).map((s) => ({ ...s, kind: 'student' }))),
+    // Свой дневник при просмотре — пункт «Мой дневник»; без просмотра он уже в списке детей.
+    ...views.filter((v) => readonly || v.id !== null).map((v) => ({ ...v, kind: 'view' })),
+  ];
+  if (options.length < 2) return;
   const title = $('topTitle');
   // Не disabled для одного ребёнка: выключенную кнопку iOS рисует бледной,
   // и имя в шапке выглядело размытым. Вместо этого — класс.
@@ -931,19 +995,33 @@ export function initStudentSwitch(profile) {
   $('titleSwitch').hidden = false;
   title.addEventListener('click', () => {
     tap();
-    const body = openSheet('Чей дневник', `<div class="student-list">${students.map((s) =>
-      `<button class="student-option ${s.current ? 'on' : ''}" data-student="${s.id}">
+    const body = openSheet('Чей дневник', `<div class="student-list">${options.map((s, index) =>
+      `<button class="student-option ${s.current ? 'on' : ''}" data-option="${index}">
         <span class="avatar small" style="background:${studentColor(s.name)}">${esc(initial(s.name))}</span>
-        <span class="student-name">${esc(s.name)}</span>
+        <span class="student-name">${esc(s.name)}${s.kind === 'view' && s.id !== null ? '<br><span class="muted small">просмотр</span>' : ''}</span>
         ${s.current ? '<span class="check">✓</span>' : ''}
       </button>`).join('')}</div>`);
-    body.querySelectorAll('[data-student]').forEach((button) => button.addEventListener('click', () => {
+    body.querySelectorAll('[data-option]').forEach((button) => button.addEventListener('click', async () => {
+      const option = options[Number(button.dataset.option)];
       if (button.classList.contains('on')) {
         closeSheet();
         return;
       }
       select();
-      switchStudent(button);
+      if (option.kind === 'student') {
+        button.dataset.student = option.id;
+        switchStudent(button);
+        return;
+      }
+      button.disabled = true;
+      try {
+        await api('/api/view', { method: 'POST', body: JSON.stringify({ id: option.id }) });
+        location.reload();
+      } catch (error) {
+        notify('error');
+        banner(error.message, true);
+        button.disabled = false;
+      }
     }));
   });
 }

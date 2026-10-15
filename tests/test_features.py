@@ -306,3 +306,30 @@ class TestBotFeatures:
         await notifier.send_text(replace(owner, student_name="Боря"), "📚 Новое задание")
         assert [chat for chat, _ in bot.sent] == [1, 2]
         assert all(text.startswith("👤 <b>Боря</b>") for _, text in bot.sent)
+
+    async def test_followers_get_only_what_owner_allowed(self, app, users):
+        from app.accounts import WEB_ID_BASE
+        from app.bot.notifier import TelegramNotifier
+        from tests.test_bot_handlers import TestTelegramNotifier
+
+        class Push:
+            def __init__(self):
+                self.sent = []
+
+            async def send(self, telegram_id, title, body, kind=""):
+                self.sent.append((telegram_id, body))
+                return True
+
+        bot, push = TestTelegramNotifier.Bot(), Push()
+        owner = await users.save(make_user(student_name="Аня"))
+        web_id = WEB_ID_BASE + 5
+        for follower, notify in ((2, True), (3, False), (web_id, True)):
+            await users.save(make_user(telegram_id=follower))
+            code = await app.family.issue_invite(1, notify=notify, view=True)
+            await app.family.accept(code, follower, "Родной")
+        notifier = TelegramNotifier(bot, users, push=push, family=app.family)
+        await notifier.send_text(owner, "📚 Новое задание", push=("Новые задания", "Алгебра"))
+        # Только просмотр (3) копий не получает; без Telegram — только push.
+        assert [chat for chat, _ in bot.sent] == [1, 2]
+        assert [chat for chat, _ in push.sent] == [1, 2, web_id]
+        assert push.sent[1][1] == "Аня: Алгебра"

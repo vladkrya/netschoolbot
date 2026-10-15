@@ -35,7 +35,7 @@ COMMANDS = [
     BotCommand(command="status", description="Состояние проверки"),
     BotCommand(command="history", description="История изменений оценок"),
     BotCommand(command="export", description="Оценки в Excel"),
-    BotCommand(command="family", description="Уведомления родным"),
+    BotCommand(command="family", description="Родные: уведомления и просмотр"),
     BotCommand(command="timezone", description="Часовой пояс"),
     BotCommand(command="child", description="Переключить ребёнка"),
     BotCommand(command="changeapi", description="Сменить API: веб или мобильное"),

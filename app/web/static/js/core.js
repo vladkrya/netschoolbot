@@ -352,6 +352,19 @@ export async function api(path, options = {}) {
   return payload;
 }
 
+/** Открыт дневник ученика, пригласившего на просмотр (viewing.py): только
+ * чтение. Класс ставит boot.js по /api/account ещё до загрузки экранов. */
+export function isReadOnly() {
+  return document.documentElement.classList.contains('view-mode');
+}
+
+/** Попытка что-то изменить при просмотре: подсказка вместо запроса. */
+export function refuseReadOnly() {
+  if (!isReadOnly()) return false;
+  banner('Это просмотр дневника ученика — менять в нём ничего нельзя', true);
+  return true;
+}
+
 // Билет на вложения (см. attachment_ticket в api.py): ссылка открывается во
 // внешнем браузере, куда не передать ни initData, ни заголовок разблокировки.
 let attachmentTicket = '';

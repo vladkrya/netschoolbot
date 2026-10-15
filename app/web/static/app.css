@@ -1952,3 +1952,19 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
 .event-card .event-status { font-weight: 600; color: var(--primary); }
 .reference-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 .reference-row .btn { width: auto; margin-top: 0; padding: 8px 14px; flex: none; }
+
+/* Просмотр дневника родным (viewing.py): только чтение — кнопки, которые
+   что-то меняют, убраны; отметки остаются видны, но не нажимаются. */
+.view-mode .hw-add, .view-mode .note-delete, .view-mode #aiFab,
+.view-mode .answer-actions, .view-mode .answer-attach, .view-mode .answer-text,
+.view-mode [data-answer-delete], .view-mode .distance-join { display: none !important; }
+.view-mode .hw-check, .view-mode .hw-done-toggle, .view-mode .day-note { pointer-events: none; }
+.view-badge { margin: 0 0 10px; padding: 8px 12px; border-radius: 12px; font-size: 14px;
+  background: color-mix(in srgb, var(--primary) 12%, transparent); color: var(--text); }
+.view-switch { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.family-rights { display: flex; flex-direction: column; gap: 6px; margin: 10px 0; }
+.family-rights label { display: flex; align-items: center; gap: 8px; font-size: 15px; }
+.family-row-rights { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.family-row { flex-wrap: wrap; }
+.family-row .family-name { flex: 1 1 auto; }
+.invite-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }

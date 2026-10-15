@@ -14,7 +14,9 @@ CODE_TTL_S = 15 * 60
 CODE_ATTEMPTS = 5
 LINK_CODE_TTL_S = 15 * 60
 # Колонки с id пользователя, кроме telegram_id: перенос при привязке Telegram.
-USER_COLUMNS = ("telegram_id", "author_id", "reporter_id", "actor_id", "deleted_by")
+# owner_id, follower_id, viewer_id — родные (followers, follow_invites, follow_views).
+USER_COLUMNS = ("telegram_id", "author_id", "reporter_id", "actor_id", "deleted_by",
+                "owner_id", "follower_id", "viewer_id")
 
 
 def normalize_email(email: str) -> str:

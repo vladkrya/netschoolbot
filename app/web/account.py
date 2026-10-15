@@ -26,6 +26,7 @@ from ..accounts.passwords import check_password, hash_password, verify_password
 from ..domain.models import Credentials, LoginType, School
 from ..netschool import login as login_flow
 from ..netschool.errors import NetSchoolError, Reason, wrap
+from . import viewing
 from .api import BOT, context, current_user, json_error
 
 routes = web.RouteTableDef()
@@ -38,7 +39,7 @@ MAX_SCHOOLS = 30
 
 # Без входа доступны только эти адреса.
 PUBLIC_PATHS = ("/api/account/register", "/api/account/login", "/api/account/reset/request",
-                "/api/account/reset/confirm", "/api/account/config")
+                "/api/account/reset/confirm", "/api/account/config", "/api/family/invite-info")
 
 
 def is_public(path: str) -> bool:
@@ -216,13 +217,17 @@ async def account_info(request: web.Request) -> web.Response:
     app, user = context(request), current_user(request)
     account = await app.accounts.by_user(user.telegram_id)
     attempt = app.web_logins.get(user.telegram_id)
+    owner = await viewing.target(app, user)
     return web.json_response({"ok": True, "data": {
+        # Открыт дневник ученика, пригласившего на просмотр: только чтение.
+        "viewing": {"id": owner.telegram_id, "name": owner.label} if owner else None,
         "email": account["email"] if account else None,
         "verified": bool(account and account["email_verified_at"]),
         "telegram": has_telegram(user.telegram_id),
         # Только «не вошёл» (нет школы). enabled=False — это и выключенные
         # уведомления в боте: таким дневник открывать как обычно.
-        "needs_sgo": not user.school.configured,
+        # Родному с просмотром свой дневник не нужен — он смотрит дневник ученика.
+        "needs_sgo": not user.school.configured and owner is None,
         "school": user.school.name,
         "mail": app.mailer.configured,
         "login": attempt.status_json() if isinstance(attempt, WebLogin) else None,
