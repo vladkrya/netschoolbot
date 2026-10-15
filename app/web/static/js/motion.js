@@ -87,7 +87,9 @@ function confetti(origin) {
     canvas.ariaHidden = 'true';
     document.body.append(canvas);
   }
-  const ratio = devicePixelRatio || 1;
+  // Плотность не выше 1.5: на телефоне холст на весь экран в 3x тяжело
+  // перерисовывать каждый кадр, а конфетти мелкие — разницы не видно.
+  const ratio = Math.min(devicePixelRatio || 1, 1.5);
   canvas.width = innerWidth * ratio;
   canvas.height = innerHeight * ratio;
   const styles = getComputedStyle(document.documentElement);
@@ -107,7 +109,7 @@ function confetti(origin) {
 
 function drawConfetti() {
   const ctx = canvas.getContext('2d');
-  const ratio = devicePixelRatio || 1;
+  const ratio = Math.min(devicePixelRatio || 1, 1.5);
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   parts = parts.filter((p) => p.life > 0);
   for (const p of parts) {
@@ -209,38 +211,45 @@ function trendChip(el, delta) {
 
 /* ─────────────────────────── Перелёт ─────────────────────────── */
 
-const easeOut = (t) => 1 - (1 - t) ** 3;
+/** Где target окажется, когда доиграют анимации появления вокруг него
+ *  (экран урока въезжает, карточки поднимаются). Анимации на миг
+ *  перематываются в конец, место замеряется один раз и время
+ *  возвращается — так копии не нужно гнаться за целью каждый кадр:
+ *  замер на каждом кадре заставлял телефон заново раскладывать страницу,
+ *  и полёт подлагивал. */
+function settledRect(target) {
+  const moving = document.getAnimations().filter((animation) => {
+    const element = animation.effect?.target;
+    const end = animation.effect?.getComputedTiming().endTime;
+    return element?.contains(target) && Number.isFinite(end) && animation.playState !== 'finished';
+  });
+  const saved = moving.map((animation) => animation.currentTime);
+  moving.forEach((animation) => { animation.currentTime = animation.effect.getComputedTiming().endTime; });
+  const rect = target.getBoundingClientRect();
+  moving.forEach((animation, index) => { animation.currentTime = saved[index]; });
+  return rect;
+}
 
 /** Копия target перелетает из прямоугольника rect на место target. Пока
- *  летит, сам target спрятан. Цель всё это время сама движется (экран урока
- *  въезжает, карточки поднимаются), поэтому её место берётся заново каждый
- *  кадр — копия садится точно туда, где цель окажется, без рывка в конце. */
+ *  летит, сам target спрятан. Летит одна анимация transform — её ведёт
+ *  видеокарта, без пересчёта страницы. */
 export function flyTo(rect, target, duration = 460) {
   if (!target || reducedMotion() || !rect?.width) return;
-  const first = target.getBoundingClientRect();
-  if (!first.width) return;
+  const end = settledRect(target);
+  if (!end.width) return;
   const flyer = target.cloneNode(true);
   flyer.classList.add('flyer');
+  Object.assign(flyer.style, { left: `${end.left}px`, top: `${end.top}px`, width: `${end.width}px`, height: `${end.height}px` });
   document.body.append(flyer);
   target.style.visibility = 'hidden';
-  const start = performance.now();
-  const step = (now) => {
-    const t = Math.min(1, (now - start) / duration);
-    const k = easeOut(t);
-    const end = target.isConnected ? target.getBoundingClientRect() : first;
-    const left = rect.left + (end.left - rect.left) * k;
-    const top = rect.top + (end.top - rect.top) * k;
-    const scale = (rect.width + (end.width - rect.width) * k) / (end.width || 1);
-    Object.assign(flyer.style, {
-      left: `${end.left}px`, top: `${end.top}px`, width: `${end.width}px`, height: `${end.height}px`,
-      transform: `translate(${left - end.left}px, ${top - end.top}px) scale(${scale})`,
-    });
-    if (t < 1 && target.isConnected) {
-      requestAnimationFrame(step);
-      return;
-    }
+  const animation = flyer.animate([
+    { transform: `translate(${rect.left - end.left}px, ${rect.top - end.top}px) scale(${rect.width / end.width})` },
+    { transform: 'none' },
+  ], { duration, easing: 'cubic-bezier(.2, .8, .3, 1)' });
+  const done = () => {
     flyer.remove();
     target.style.visibility = '';
   };
-  step(start);
+  animation.onfinish = done;
+  animation.oncancel = done;
 }
