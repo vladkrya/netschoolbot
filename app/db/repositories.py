@@ -1397,44 +1397,6 @@ class CaldavRepository:
             await self._db.execute("UPDATE caldav_accounts SET last_sync_at=datetime('now'), last_error=NULL WHERE telegram_id=?", (telegram_id,))
 
 
-class WidgetKeyRepository:
-    """Ключи виджета: только чтение расписания, без доступа к дневнику."""
-
-    def __init__(self, db: Database) -> None:
-        self._db = db
-
-    @staticmethod
-    def _digest(key: str) -> str:
-        return hashlib.sha256(key.encode()).hexdigest()
-
-    async def create(self, telegram_id: int) -> str:
-        """Новый ключ; прежний перестаёт работать."""
-        key = secrets.token_urlsafe(32)
-        await self._db.execute(
-            "INSERT INTO widget_keys (telegram_id, key_hash) VALUES (?, ?) "
-            "ON CONFLICT(telegram_id) DO UPDATE SET key_hash=excluded.key_hash, "
-            "created_at=datetime('now'), used_at=NULL",
-            (telegram_id, self._digest(key)),
-        )
-        return key
-
-    async def get(self, telegram_id: int) -> dict | None:
-        row = await self._db.fetch_one("SELECT * FROM widget_keys WHERE telegram_id=?", (telegram_id,))
-        return dict(row) if row else None
-
-    async def resolve(self, key: str) -> int | None:
-        if not key or len(key) > 128:
-            return None
-        row = await self._db.fetch_one("SELECT telegram_id FROM widget_keys WHERE key_hash=?", (self._digest(key),))
-        if row is None:
-            return None
-        await self._db.execute("UPDATE widget_keys SET used_at=datetime('now') WHERE telegram_id=?", (row["telegram_id"],))
-        return row["telegram_id"]
-
-    async def revoke(self, telegram_id: int) -> None:
-        await self._db.execute("DELETE FROM widget_keys WHERE telegram_id=?", (telegram_id,))
-
-
 class SgoVersionRepository:
     """Последняя увиденная версия «Сетевого города» на каждом сервере."""
 

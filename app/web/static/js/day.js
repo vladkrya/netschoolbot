@@ -157,12 +157,25 @@ export function isHiddenWeekend(iso) {
   return weekdayIndex(iso) >= 5 && !showWeekends() && !days.get(iso)?.lessons?.length;
 }
 
+// Полосу нельзя перерисовывать под пальцем: кнопка, на которой начался
+// жест, пропадает из документа, и остаток жеста (touchend) до полосы уже не
+// доходит — она сдвигалась и не листалась. Пока идёт свайп, перерисовка
+// откладывается; одинаковая разметка не перерисовывается вовсе.
+let stripTouched = 0;
+let stripPending = false;
+
 function renderWeekStrip() {
+  // Если конец жеста всё же потерялся, через пару секунд полоса снова живая.
+  if (stripTouched && performance.now() - stripTouched < 2000) {
+    stripPending = true;
+    return;
+  }
+  stripPending = false;
   const monday = mondayOf(state.date);
   const today = isoToday();
   const dates = Array.from({ length: 7 }, (_, index) => addDays(monday, index))
     .filter((iso) => iso === state.date || !isHiddenWeekend(iso));
-  $('weekStrip').innerHTML = dates.map((iso) => {
+  const html = dates.map((iso) => {
     const classes = ['week-day', iso === state.date ? 'on' : '', iso === today ? 'today' : '',
       days.get(iso)?.lessons?.length ? '' : 'free'].filter(Boolean).join(' ');
     return `<button class="${classes}" data-week-day="${iso}">
@@ -170,6 +183,16 @@ function renderWeekStrip() {
         <span class="wd-num">${parseIso(iso).getDate()}</span>
       </button>`;
   }).join('');
+  const strip = $('weekStrip');
+  if (strip.dataset.html !== html) {
+    strip.innerHTML = html;
+    strip.dataset.html = html;
+  }
+}
+
+function releaseStrip() {
+  stripTouched = 0;
+  if (stripPending) renderWeekStrip();
 }
 
 /** Сводка дня над уроками (новый дизайн): сколько уроков, с какого по какое
@@ -484,7 +507,9 @@ function bindWeekSwipe() {
     // От самого края — жест «назад», если есть куда.
     if (touch.clientX <= EDGE_PX && canGoBack()) return;
     strip.getAnimations().forEach((animation) => animation.cancel());
-    gesture = { x: touch.clientX, y: touch.clientY, t: performance.now(), dx: 0, horizontal: null };
+    const now = performance.now();
+    stripTouched = now;
+    gesture = { x: touch.clientX, y: touch.clientY, dx: 0, horizontal: null, lastX: touch.clientX, lastT: now, speed: 0 };
   }, { passive: true });
   strip.addEventListener('touchmove', (event) => {
     if (!gesture) return;
@@ -492,25 +517,38 @@ function bindWeekSwipe() {
     const dx = touch.clientX - gesture.x;
     const dy = touch.clientY - gesture.y;
     if (gesture.horizontal === null) {
-      if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+      // Пока направление не ясно, а палец идёт вбок — не отдаём жест
+      // прокрутке: иначе iOS забирает его себе с первого же движения.
+      if (Math.abs(dx) >= Math.abs(dy) && event.cancelable) event.preventDefault();
+      if (Math.abs(dx) < 6 && Math.abs(dy) < 6) return;
       gesture.horizontal = Math.abs(dx) > Math.abs(dy);
     }
     if (!gesture.horizontal) return;
     if (event.cancelable) event.preventDefault();
+    // Скорость — по последним движениям, а не от начала: медленный старт
+    // и резкий рывок в конце — тоже листание.
+    const now = performance.now();
+    if (now > gesture.lastT) {
+      gesture.speed = 0.6 * gesture.speed + 0.4 * ((touch.clientX - gesture.lastX) / (now - gesture.lastT));
+    }
+    gesture.lastX = touch.clientX;
+    gesture.lastT = now;
     gesture.dx = dx;
     strip.style.transition = 'none';
     strip.style.transform = `translateX(${dx}px)`;
   }, { passive: false });
   const finish = () => {
     if (!gesture) return;
-    const { dx, t, horizontal } = gesture;
+    const { dx, speed, horizontal } = gesture;
     gesture = null;
+    releaseStrip();
     if (!horizontal) return;
     const width = strip.offsetWidth || 1;
-    const fast = Math.abs(dx) > 24 && Math.abs(dx) / (performance.now() - t) > 0.4;
+    // Рывок в ту же сторону, куда ведёт палец.
+    const fast = Math.abs(dx) > 20 && Math.abs(speed) > 0.3 && Math.sign(speed) === Math.sign(dx);
     strip.style.transform = '';
     strip.style.transition = '';
-    if (Math.abs(dx) < width / 4 && !fast) {
+    if (Math.abs(dx) < width / 5 && !fast) {
       // Не дотянул — полоса возвращается на место.
       if (!reduced()) strip.animate([{ transform: `translateX(${dx}px)` }, { transform: 'none' }], { duration: 220, easing: 'ease-out' });
       return;
@@ -532,11 +570,9 @@ function bindWeekSwipe() {
     else go();
   };
   strip.addEventListener('touchend', finish, { passive: true });
-  strip.addEventListener('touchcancel', () => {
-    gesture = null;
-    strip.style.transform = '';
-    strip.style.transition = '';
-  }, { passive: true });
+  // Жест отняла система (Telegram, прокрутка) — решаем по пройденному
+  // пути, как при отпускании, а не бросаем полосу сдвинутой.
+  strip.addEventListener('touchcancel', finish, { passive: true });
 }
 
 export function initDay() {

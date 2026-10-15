@@ -23,7 +23,6 @@ from aiohttp import web
 
 from ..accounts import has_telegram
 from ..accounts.passwords import check_password, hash_password, verify_password
-from ..db.repositories import WidgetKeyRepository
 from ..domain.models import Credentials, LoginType, School
 from ..netschool import login as login_flow
 from ..netschool.errors import NetSchoolError, Reason, wrap
@@ -187,7 +186,6 @@ async def reset_confirm(request: web.Request) -> web.Response:
     # Пароль сбрасывают, когда к аккаунту могли получить доступ: старые
     # ссылки и входы на других устройствах перестают работать.
     await app.miniapp.revoke_tokens(account["telegram_id"])
-    await WidgetKeyRepository(app.db).revoke(account["telegram_id"])
     LOGIN_FAILURES.reset(email)
     return await _signed_in(request, account["telegram_id"])
 

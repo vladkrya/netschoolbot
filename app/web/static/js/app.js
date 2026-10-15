@@ -377,6 +377,32 @@ function initFresh() {
   });
 }
 
+// Вернулись в приложение, которое iPhone держал в памяти: показанное могло
+// устареть, а сверка за этот запуск уже была. Через минуту отсутствия
+// открытая вкладка заново сверяется со школьным сервером.
+const RESUME_RECHECK_MS = 60000;
+function initResume() {
+  let hiddenAt = 0;
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      hiddenAt = Date.now();
+      return;
+    }
+    if (!hiddenAt || Date.now() - hiddenAt < RESUME_RECHECK_MS) return;
+    hiddenAt = 0;
+    forgetRevalidated();
+    if (demo || $('screens').childElementCount || state.refreshing) return;
+    // Как обновление жестом, только без жеста: данные остаются на экране,
+    // пока идёт запрос, сверху — полоса сверки.
+    state.refreshing = true;
+    syncStarted();
+    quietly(() => TABS[state.tab](true)).finally(() => {
+      state.refreshing = false;
+      syncFinished();
+    });
+  });
+}
+
 /** Перерисовать вкладку на месте: без скелетона и без повторного «въезда»
  *  карточек — только лёгкое проявление обновлённого. */
 async function quietly(render) {
@@ -414,6 +440,7 @@ function initChrome() {
   initNav();
   initIosHaptics();
   initFresh();
+  initResume();
   initLiveDiary();
   $('menuBtn').addEventListener('click', openDrawer);
   $('navMenuBtn').addEventListener('click', openDrawer);

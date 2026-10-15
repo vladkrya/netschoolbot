@@ -13,7 +13,7 @@ from typing import Any
 from xml.sax.saxutils import escape
 
 from . import insights
-from .records import DiaryDay, MarkRecord
+from .records import DiaryDay, MarkRecord, clean_content
 
 Cell = str | int | float | None
 
@@ -255,6 +255,148 @@ def lessons_workbook(days: list[DiaryDay], *, title: str, student: str = "") -> 
                 lesson.topic, lesson.teacher, lesson.room, _marks_text(lesson.marks), lesson.absence,
             ])
     return build_xlsx([("Уроки", rows, [12, 6, 13, 26, 50, 26, 9, 10, 9])])
+
+
+MONTHS = ("янв", "фев", "мар", "апр", "май", "июн", "июл", "авг", "сен", "окт", "ноя", "дек")
+WEEKDAYS = ("Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс")
+
+
+def _rounded(value: float | None) -> float | None:
+    return round(value, 2) if value is not None else None
+
+
+def subjects_workbook(
+    days: list[DiaryDay], *, title: str, student: str = "", prefs: dict[str, Any] | None = None
+) -> bytes:
+    """Сводка по предметам: учитель, сколько уроков, пропусков, заданий и
+    оценок, средний и что выходит — всё на одной строке."""
+    stats: dict[str, dict[str, Any]] = {}
+    for day in days:
+        for lesson in day.lessons:
+            item = stats.setdefault(lesson.subject, {
+                "teachers": [], "lessons": 0, "absences": 0, "homework": 0, "marks": [],
+            })
+            item["lessons"] += 1
+            if lesson.teacher and lesson.teacher not in item["teachers"]:
+                item["teachers"].append(lesson.teacher)
+            if (lesson.absence or "").strip():
+                item["absences"] += 1
+            item["homework"] += sum(1 for h in lesson.homework if not h.classwork and not h.nothing_to_do)
+            item["marks"] += list(lesson.marks)
+    rows: list[list[Cell]] = [[
+        "Предмет", "Учитель", "Уроков", "Пропусков", "Заданий", "Оценок", "Средний", "Выходит", "Последние оценки",
+    ]]
+    for subject, item in sorted(stats.items()):
+        marks = sorted(item["marks"], key=lambda r: r.date)
+        average = insights.weighted(marks)
+        rows.append([
+            subject, ", ".join(item["teachers"]), item["lessons"], item["absences"] or None,
+            item["homework"] or None, len(marks) or None, _rounded(average),
+            insights.grade_for(average, insights.thresholds_for(prefs, subject)) if average is not None else None,
+            _marks_text(marks[-8:]),
+        ])
+    rows += _footer(student, title)
+    return build_xlsx([("Предметы", rows, [28, 30, 8, 10, 9, 8, 9, 9, 24])])
+
+
+def dynamics_workbook(days: list[DiaryDay], *, title: str, student: str = "") -> bytes:
+    """Средний по месяцам: видно, где оценки растут, а где проседают."""
+    marks = sorted((r for day in days for r in day.marks), key=lambda r: r.date)
+    months = sorted({(r.date.year, r.date.month) for r in marks})
+    header: list[Cell] = ["Предмет", *[f"{MONTHS[m - 1]} {y}" for y, m in months], "Изменение"]
+    rows: list[list[Cell]] = [header]
+    by_subject: dict[str, list[MarkRecord]] = {}
+    for record in marks:
+        by_subject.setdefault(record.subject, []).append(record)
+    for subject, items in sorted(by_subject.items()):
+        values = [
+            insights.weighted([r for r in items if (r.date.year, r.date.month) == month]) for month in months
+        ]
+        known = [v for v in values if v is not None]
+        change = round(known[-1] - known[0], 2) if len(known) >= 2 else None
+        rows.append([subject, *[_rounded(v) for v in values], change])
+    rows.append([])
+    rows.append(["Все предметы", *[
+        _rounded(insights.weighted([r for r in marks if (r.date.year, r.date.month) == month])) for month in months
+    ]])
+    rows.append(["Оценок за месяц", *[
+        sum(1 for r in marks if (r.date.year, r.date.month) == month) for month in months
+    ]])
+    if not marks:
+        rows.append(["Оценок за этот срок нет"])
+    rows += _footer(student, title)
+    return build_xlsx([("По месяцам", rows, [28, *[10] * len(months), 11])])
+
+
+def control_works_workbook(days: list[DiaryDay], *, title: str, student: str = "") -> bytes:
+    """Контрольные, проверочные, диктанты и другие работы с большим весом."""
+    marks = sorted(
+        (r for day in days for r in day.marks if insights.is_test_work(r.assignment_type, r.weight)),
+        key=lambda r: (r.date, r.lesson_number or 0),
+    )
+    listing: list[list[Cell]] = [["Дата", "Предмет", "Вид работы", "Тема", "Оценка", "Вес", "Комментарий"]]
+    for record in marks:
+        number = record.numeric_mark
+        listing.append([
+            record.date.strftime("%d.%m.%Y"), record.subject, record.assignment_type, clean_content(record.content),
+            number if number is not None and str(number) == record.mark.strip() else record.mark,
+            record.weight or 1, record.comment,
+        ])
+    summary: list[list[Cell]] = [["Предмет", "Работ", "Средний", "5", "4", "3", "2"]]
+    by_subject: dict[str, list[MarkRecord]] = {}
+    for record in marks:
+        by_subject.setdefault(record.subject, []).append(record)
+    for subject, items in sorted(by_subject.items()):
+        counts = [sum(1 for r in items if r.numeric_mark == v) or None for v in (5, 4, 3, 2)]
+        summary.append([subject, len(items), _rounded(insights.weighted(items)), *counts])
+    if not marks:
+        summary.append(["Контрольных с оценками за этот срок нет"])
+    summary += _footer(student, title)
+    return build_xlsx([
+        ("Итоги", summary, [28, 8, 9, 6, 6, 6, 6]),
+        ("Работы", listing, [12, 26, 22, 44, 8, 6, 36]),
+    ])
+
+
+def schedule_workbook(days: list[DiaryDay], *, title: str, student: str = "") -> bytes:
+    """Обычная неделя: какой предмет чаще всего стоит в этот день этим уроком,
+    со временем и кабинетом. Замены и разовые уроки сюда не попадают."""
+    seen: dict[tuple[int, int], dict[str, int]] = {}
+    times: dict[int, dict[str, int]] = {}
+    rooms: dict[tuple[int, int, str], dict[str, int]] = {}
+    for day in days:
+        weekday = day.day.weekday()
+        for lesson in day.lessons:
+            if lesson.number is None:
+                continue
+            slot = (weekday, lesson.number)
+            counts = seen.setdefault(slot, {})
+            counts[lesson.subject] = counts.get(lesson.subject, 0) + 1
+            if lesson.time_range:
+                by_time = times.setdefault(lesson.number, {})
+                by_time[lesson.time_range] = by_time.get(lesson.time_range, 0) + 1
+            if lesson.room:
+                by_room = rooms.setdefault((*slot, lesson.subject), {})
+                by_room[lesson.room] = by_room.get(lesson.room, 0) + 1
+    top = lambda counts: max(counts.items(), key=lambda kv: (kv[1], kv[0]))[0]  # noqa: E731
+    weekdays = sorted({weekday for weekday, _ in seen})
+    numbers = sorted({number for _, number in seen})
+    rows: list[list[Cell]] = [["Урок", "Время", *[WEEKDAYS[w] for w in weekdays]]]
+    for number in numbers:
+        row: list[Cell] = [number, top(times[number]) if number in times else None]
+        for weekday in weekdays:
+            counts = seen.get((weekday, number))
+            if not counts:
+                row.append(None)
+                continue
+            subject = top(counts)
+            room = rooms.get((weekday, number, subject))
+            row.append(f"{subject} ({top(room)})" if room else subject)
+        rows.append(row)
+    if not seen:
+        rows.append(["Уроков за этот срок нет"])
+    rows += _footer(student, title)
+    return build_xlsx([("Расписание", rows, [6, 13, *[26] * len(weekdays)])])
 
 
 def export_filename(student: str, title: str, prefix: str = "Оценки") -> str:
