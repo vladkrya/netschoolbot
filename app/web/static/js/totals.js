@@ -3,7 +3,7 @@
 
 import {
   $, ABSENCES, DEFAULT_THRESHOLDS, api, avgClass, errorCard, esc, formatAverage, isAbsence, isoToday, dayMonth,
-  plural, shortDate, showFailure, showLoading, skeleton, state, weightedAverage, stillMotion,
+  plural, shortDate, showFailure, showLoading, skeleton, state, weightedAverage, stillMotion, demo,
 } from './core.js';
 import { markBox, openMark } from './details.js';
 import { pushScreen } from './screens.js';
@@ -12,7 +12,7 @@ import { openSheet, closeSheet } from './sheet.js';
 import { select, tap } from './haptics.js';
 import { getPref, setPref } from './prefs.js';
 import { isNewDesign } from './appearance.js';
-import { playAverages } from './motion.js';
+import { playAverages, tweenNumber } from './motion.js';
 import {
   formatThreshold, neededMarks, thresholdPrefs, thresholdsFor, validThresholds,
 } from './grading.js';
@@ -761,7 +761,7 @@ function openSubject(subject, key, existingBody = null, data = state.totals) {
     if ($('totalsContent').querySelector('.totals-table')) render();
   });
 
-  if (state.totals.mobile) loadClassAverage(body, subject.subject, key);
+  if (state.totals.mobile || demo) loadClassAverage(body, subject.subject, key);
 }
 
 /** Средний балл класса приходит отдельным запросом: только мобильное API, и не всегда. */
@@ -810,6 +810,8 @@ function bindWhatIf(card, marks, id, subjectName) {
   const custom = card.querySelector('.whatif-custom');
 
   const saveWeights = () => setPref('weights', weights);
+  // Какой средний «станет» показан сейчас — новый досчитывает от него.
+  let shown = weightedAverage(marks);
 
   const render = () => {
     const thresholds = thresholdsFor(subjectName);
@@ -836,6 +838,9 @@ function bindWhatIf(card, marks, id, subjectName) {
           ? `<span class="whatif-delta ${delta > 0 ? 'up' : 'down'}">${delta > 0 ? '+' : '−'}${Math.abs(delta).toFixed(2).replace('.', ',')}</span>`
           : ''}</span>`
       : '';
+    // Добавили или убрали оценку — средний плавно переходит к новому значению.
+    if (plan.extra.length) tweenNumber(card.querySelector('.whatif-result strong'), shown, after);
+    shown = plan.extra.length && after != null ? after : before;
 
     const all = [...marks, ...plan.extra];
     card.querySelector('.whatif-goals').innerHTML = [5, 4]

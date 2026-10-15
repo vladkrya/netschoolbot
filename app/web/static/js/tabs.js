@@ -95,8 +95,17 @@ export function setNavBadge(tab, count) {
   badges[tab] = count;
   const icon = $('bottomNav').querySelector(`.nav-item[data-tab="${tab}"] .ico`);
   if (!icon) return;
-  icon.querySelector('.nav-badge')?.remove();
-  icon.insertAdjacentHTML('beforeend', badgeHtml(tab));
+  // Значок не пересоздаём: иначе его анимация появления проигрывалась при
+  // каждом фоновом обновлении почты, и счётчик «мигал».
+  const current = icon.querySelector('.nav-badge');
+  if (!count) {
+    current?.remove();
+  } else if (current) {
+    current.textContent = count > 99 ? '99+' : String(count);
+    current.setAttribute('aria-label', `${count} новых`);
+  } else {
+    icon.insertAdjacentHTML('beforeend', badgeHtml(tab));
+  }
 }
 
 /** Пункты панели заново; линзу на активную вкладку ставит app.js. */

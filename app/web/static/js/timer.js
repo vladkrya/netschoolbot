@@ -17,6 +17,8 @@ const BEFORE_FIRST_MIN = 60;
 // свернётся, и пауза перед следующим отсчётом.
 const DONE_HOLD_MS = 4000;
 const NEXT_PAUSE_MS = 500;
+// Сколько стоит «00:00» перед «Урок окончен».
+const ZERO_HOLD_MS = 900;
 // Длительность сворачивания и раскрытия (как в CSS).
 const COLLAPSE_MS = 520;
 // Последние секунды — заметнее.
@@ -158,7 +160,12 @@ async function collapse(box, { finished }) {
   try {
     if (finished) {
       const card = box.querySelector('.lt-card');
+      // «00:00» успевает постоять, и только потом — «Урок окончен»: иначе
+      // ноль мелькал на долю секунды и карточка менялась рывком.
       paintClock(box, clockText(0));
+      const bar = box.querySelector('.lt-bar span');
+      if (bar) bar.style.width = '100%';
+      await wait(ZERO_HOLD_MS);
       card?.classList.add('done');
       notify('success');
       await wait(DONE_HOLD_MS);

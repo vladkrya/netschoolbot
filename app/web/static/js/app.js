@@ -19,7 +19,7 @@ import {
 } from './profile.js';
 import { loadAssistantTab, openAssistant } from './assistant.js';
 import { navTabs, renderNav } from './tabs.js';
-import { closeSheet, initSheet, openSheet } from './sheet.js';
+import { closeSheet, initSheet, openSheet, sheetOpen } from './sheet.js';
 import { clearScreens, handleBack, hasScreens, setFallbackBack } from './screens.js';
 import { initSwipeBack } from './swipeback.js';
 import { initTrackpad } from './trackpad.js';
@@ -107,7 +107,7 @@ function syncNav() {
 
 /** «Назад» вне стека экранов: закрыть шторку, меню, вернуться на первую вкладку. */
 function fallbackBack(dryRun) {
-  if (!$('sheet').hidden) {
+  if (sheetOpen()) {
     if (!dryRun) closeSheet();
     return true;
   }
@@ -524,7 +524,7 @@ function initChrome() {
   // При просмотре дневника родным почты и чатов нет — и опрашивать их незачем.
   if (!isReadOnly()) initMail();
   // Помощник — кнопкой на «Дне»: вкладкой он не помещался в панель.
-  $('aiFab').hidden = !assistantEnabled || demo;
+  $('aiFab').hidden = !assistantEnabled;
   $('aiFab').addEventListener('click', () => openAssistant());
   window.addEventListener('resize', syncHeaderHeight);
   new ResizeObserver(syncHeaderHeight).observe($('appHeader'));

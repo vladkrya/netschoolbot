@@ -12,6 +12,7 @@
 import { $, state } from './core.js';
 import { ICONS } from './icons.js';
 import { canGoBack, handleBack, topScreen } from './screens.js';
+import { sheetOpen } from './sheet.js';
 import { tap } from './haptics.js';
 
 /** Ширина полосы у левого края, с которой начинается жест. */
@@ -73,7 +74,7 @@ export function initSwipeBack() {
     if (gesture || event.touches.length !== 1) return;
     const touch = event.touches[0];
     if (!canGoBack()) return;
-    const overlay = topScreen() || !$('sheet').hidden || $('drawer').classList.contains('open');
+    const overlay = topScreen() || sheetOpen() || $('drawer').classList.contains('open');
     // От правого края влево — тоже «назад»: удобно правой рукой.
     const fromRight = touch.clientX >= innerWidth - EDGE_PX;
     // Вправо — с любого места поверх экрана и на вкладках: своих жестов вбок
@@ -94,7 +95,7 @@ export function initSwipeBack() {
       // вкладки, а не закрытие шторки или меню.
       page: null,
     };
-    if (!gesture.screen && $('sheet').hidden && !$('drawer').classList.contains('open')) {
+    if (!gesture.screen && !sheetOpen() && !$('drawer').classList.contains('open')) {
       gesture.page = document.querySelector('main');
     }
   }, { passive: true });
@@ -117,7 +118,7 @@ export function initSwipeBack() {
         gesture = null;
         return;
       }
-      if (gesture.dir > 0 && gesture.fromRight && state.tab === 'day' && !gesture.screen && $('sheet').hidden && !$('drawer').classList.contains('open')) {
+      if (gesture.dir > 0 && gesture.fromRight && state.tab === 'day' && !gesture.screen && !sheetOpen() && !$('drawer').classList.contains('open')) {
         gesture = null;
         return;
       }

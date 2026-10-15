@@ -173,11 +173,12 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
   color: #fff;
   padding: 8px 4px;
 }
-.date-arrow { width: 44px; height: 44px; color: #fff; display: flex; align-items: center; justify-content: center; border-radius: 50%; transition: background .15s, transform .15s; }
+/* flex: none — длинная подпись даты не сжимает стрелки, они не «дышат». */
+.date-arrow { flex: none; width: 44px; height: 44px; color: #fff; display: flex; align-items: center; justify-content: center; border-radius: 50%; transition: background .15s, transform .15s; }
 .date-arrow:active { background: rgba(255, 255, 255, .18); box-shadow: var(--press-glass); transform: scale(.9); }
 .date-title { transition: transform .15s; }
 .date-title:active { transform: scale(.96); }
-.date-title { flex: 1; display: flex; flex-direction: column; align-items: center; color: #fff; }
+.date-title { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; color: #fff; }
 /* Полоса дня: стороны поровну, заголовок строго посередине. */
 .date-split { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 4px; }
 .date-side { display: flex; align-items: center; gap: 4px; min-width: 0; }
@@ -314,7 +315,12 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 /* ─────────────────────────── Вкладки ─────────────────────────── */
 
 .panel { display: none; padding: 12px 12px 20px; }
-.panel.active { display: block; animation: panel-in .25s var(--ease); }
+/* Вкладка проявляется, а сдвиг — у её содержимого, не у неё самой: сдвиг
+   (transform) у вкладки делал её опорой для position: fixed, и кнопка
+   «Написать» сначала стояла посреди экрана, а потом прыгала вниз. */
+.panel.active { display: block; animation: panel-fade .25s var(--ease); }
+:where(.panel.active) > :where(:not(.fab)) { animation: panel-in .25s var(--ease); }
+@keyframes panel-fade { from { opacity: 0; } }
 #panel-schedule { padding-bottom: 40px; }
 /* Каждая вкладка не ниже экрана. Иначе при загрузке (скелетон короче списка)
    страница схлопывалась, прокрутка на iPhone отскакивала, и вместе с ней
@@ -944,6 +950,11 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
   animation: rise .22s cubic-bezier(.2, .8, .3, 1);
 }
 @keyframes rise { from { transform: translateY(100%); } }
+/* Закрытие: шторка уезжает вниз, затемнение гаснет (sheet.js). */
+.overlay.closing { animation: fade-out .22s ease forwards; pointer-events: none; }
+.overlay.closing .sheet { animation: sink .22s cubic-bezier(.4, 0, .8, .6) forwards; }
+@keyframes fade-out { to { opacity: 0; } }
+@keyframes sink { to { transform: translateY(100%); } }
 .sheet-grip { width: 40px; height: 5px; margin: 8px auto 0; border-radius: 3px; background: var(--text2); opacity: .6; }
 .sheet-head { display: flex; align-items: center; padding: 6px 12px; }
 .sheet-head h3 { flex: 1; font-size: 16px; }
@@ -1293,6 +1304,12 @@ body::after {
 .whatif-result strong.g4 { color: var(--g4); }
 .whatif-result strong.g5 { color: var(--g5); }
 .whatif-delta { font-size: 13px; font-weight: 500; margin-left: 6px; }
+/* Средний «станет» сдвинулся — толчок вверх или вниз (motion.js, tweenNumber). */
+.whatif-result strong { display: inline-block; }
+.tween-up { animation: tween-up .65s cubic-bezier(.34, 1.4, .64, 1); }
+.tween-down { animation: tween-down .65s cubic-bezier(.34, 1.4, .64, 1); }
+@keyframes tween-up { 35% { transform: translateY(-5px) scale(1.08); text-shadow: 0 0 14px color-mix(in srgb, var(--g5) 60%, transparent); } }
+@keyframes tween-down { 35% { transform: translateY(5px) scale(.94); text-shadow: 0 0 14px color-mix(in srgb, var(--g2) 60%, transparent); } }
 .whatif-delta.up { color: var(--g5); }
 .whatif-delta.down { color: var(--g2); }
 
@@ -1962,7 +1979,7 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
 .lt-card.done .lt-done { opacity: 1; }
 .lt-card.done .lt-check { animation: lt-check .55s var(--ease) .05s forwards; }
 @keyframes lt-check { 0% { transform: scale(0) rotate(-30deg); } 70% { transform: scale(1.2) rotate(5deg); } 100% { transform: scale(1); } }
-.lt-card.done > :not(.lt-done) { opacity: 0; filter: blur(3px); transition: opacity .3s ease, filter .3s ease; }
+.lt-card.done > :not(.lt-done) { opacity: 0; filter: blur(3px); transition: opacity .45s ease, filter .45s ease; }
 @media (prefers-reduced-motion: reduce) {
   .lesson-timer, .lt-bar span { transition: none; }
   .lt-digit.roll, .lt-dot, .lt-colon, .lt-card.urgent .lt-clock { animation: none; }
@@ -2132,6 +2149,10 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
 
 /* Оценка, перелетающая из сводки дня в шапку урока. */
 .flyer { position: fixed; z-index: 60; margin: 0; pointer-events: none; transform-origin: 0 0; box-sizing: border-box; will-change: transform; }
+
+/* Смена темы и акцента — одно перетекание всей страницы (smoothRepaint). */
+::view-transition-old(root), ::view-transition-new(root) { animation-duration: .35s; }
+.no-motion::view-transition-old(root), .no-motion::view-transition-new(root) { animation: none; }
 
 /* Кружок выбранной даты, перетекающий к новой (календарь в day.js). */
 .cal-grid { position: relative; }
