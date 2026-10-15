@@ -61,8 +61,9 @@ class FakeNotifier:
     async def send_error(self, user, error):
         self.errors.append(error)
 
-    async def send_text(self, user, text, *, push=None, kind=""):
+    async def send_text(self, user, text, *, push=None, kind="", family=True):
         self.texts.append(text)
+        self.family = family
 
 
 class FakeDiary:

@@ -98,7 +98,7 @@ class TelegramNotifier:
     async def send_token_expiring(self, user: User, expires_at: dt.datetime) -> None:
         await self._send(user, formatting.token_expiring(expires_at, tz=user.tz))
 
-    async def _push_notify(self, user: User, title: str, body: str, *, kind: str = "") -> None:
+    async def _push_notify(self, user: User, title: str, body: str, *, kind: str = "", family: bool = True) -> None:
         """Отправить push, не давая его сбою повлиять на Telegram."""
         if self._push is None:
             return
@@ -114,7 +114,8 @@ class TelegramNotifier:
                 self._pushed[key] = now
         except Exception as exc:  # noqa: BLE001
             logger.warning("Push для %s не ушёл: %s", user.telegram_id, exc)
-        await self._push_followers(user, title, body, kind=kind, now=now)
+        if family:
+            await self._push_followers(user, title, body, kind=kind, now=now)
 
     async def _push_followers(self, user: User, title: str, body: str, *, kind: str, now: float) -> None:
         """Push родным: тем, кто пришёл по почте без Telegram, это единственный канал."""
@@ -137,14 +138,16 @@ class TelegramNotifier:
                 logger.info("Push родному %s не ушёл: %s", follower["id"], exc)
 
     async def send_text(
-        self, user: User, text: str, *, push: tuple[str, str] | None = None, kind: str = ""
+        self, user: User, text: str, *, push: tuple[str, str] | None = None, kind: str = "",
+        family: bool = True,
     ) -> None:
-        """Уведомление-текст (замены, сводки); push — заголовок и строка для браузера."""
+        """Уведомление-текст (замены, сводки); push — заголовок и строка для браузера.
+        family=False — только самому ученику, без копии родным (свои напоминания)."""
         if push:
-            await self._push_notify(user, *push, kind=kind)
-        await self._notify(user, text)
+            await self._push_notify(user, *push, kind=kind, family=family)
+        await self._notify(user, text, family=family)
 
-    async def _notify(self, user: User, text: str) -> None:
+    async def _notify(self, user: User, text: str, *, family: bool = True) -> None:
         """Уведомление в Telegram, если человек его оттуда не выключил.
 
         Служебное — ошибки входа, истекающий токен — идёт в Telegram всегда.
@@ -153,7 +156,8 @@ class TelegramNotifier:
             text = f"{formatting.student_header(user.student_name)}\n{text}"
         if user.notifications.telegram:
             await self._send(user, text)
-        await self._copy_to_followers(user, text)
+        if family:
+            await self._copy_to_followers(user, text)
 
     async def _copy_to_followers(self, user: User, text: str) -> None:
         """Копия родным. Их сбой не задерживает уведомление владельцу."""

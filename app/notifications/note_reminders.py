@@ -55,7 +55,8 @@ async def send_due(notes: Any, users: Any, notifier: Any, now: float) -> int:
             continue
         text, line = reminder_text(note)
         try:
-            await notifier.send_text(user, text, push=("Напоминание", line), kind="note")
+            # Своя задача — дело самого ученика: родным копию не шлём.
+            await notifier.send_text(user, text, push=("Напоминание", line), kind="note", family=False)
             sent += 1
         except Exception as exc:  # noqa: BLE001
             logger.warning("Напоминание %s не ушло: %s", telegram_id, exc)
