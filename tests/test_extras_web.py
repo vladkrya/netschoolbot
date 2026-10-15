@@ -58,7 +58,7 @@ class TestFamilyApi:
         code = await app_context.family.issue_invite(1)
         await app_context.family.accept(code, 2, "Папа")
         data = (await (await client.get(f"{BASE}/api/family", headers=auth(token))).json())["data"]
-        assert data["followers"] == [{"id": 2, "name": "Папа"}]
+        assert data["followers"] == [{"id": 2, "name": "Папа", "notify": True, "view": True}]
         data = (await (await client.post(f"{BASE}/api/family/remove", headers=auth(token), json={"id": 2})).json())["data"]
         assert data["followers"] == []
 
@@ -92,4 +92,109 @@ class TestExportApi:
 
     async def test_bad_scope(self, client, token):
         response = await client.get(f"{BASE}/api/export.xlsx?scope=forever", headers=auth(token))
+        assert response.status == 400
+
+
+class TestFamilyViewing:
+    """Родной с правом просмотра видит дневник ученика, но ничего не меняет."""
+
+    @staticmethod
+    async def invite(client, app_context, viewer_token, *, notify=True, view=True):
+        code = await app_context.family.issue_invite(1, notify=notify, view=view)
+        response = await client.post(f"{BASE}/api/family/accept", headers=auth(viewer_token), json={"code": code})
+        assert response.status == 200, await response.text()
+        return response
+
+    async def test_viewer_without_diary_reads_owner_only(self, client, token, app_context, users):
+        from app.domain.models import School
+        from tests.test_repositories import make_user
+
+        await users.save(make_user(telegram_id=2, school=School("", ""), enabled=False))
+        viewer = await app_context.miniapp.issue_token(2)
+        account = (await (await client.get(f"{BASE}/api/account", headers=auth(viewer))).json())["data"]
+        assert account["needs_sgo"] is True
+        await self.invite(client, app_context, viewer, notify=False)
+        account = (await (await client.get(f"{BASE}/api/account", headers=auth(viewer))).json())["data"]
+        assert account["needs_sgo"] is False
+
+        profile = (await (await client.get(f"{BASE}/api/profile", headers=auth(viewer))).json())["data"]
+        assert profile["readonly"] is True and profile["name"] == "Иванов И."
+        # Своего дневника нет — переключаться не на что, кроме ученика.
+        assert [item["id"] for item in profile["views"]] == [1]
+
+        for path, body in (("/api/notes", {"date": "2026-10-15", "text": "x"}),
+                           ("/api/settings/notifications", {"key": "grades", "value": False}),
+                           ("/api/homework/done", {"key": "k", "done": True}),
+                           ("/api/family/invite", {})):
+            response = await client.post(f"{BASE}{path}", headers=auth(viewer), json=body)
+            if path == "/api/family/invite":
+                # Своё приглашение — про свой дневник, а его нет.
+                assert response.status == 400
+                continue
+            assert response.status == 403, path
+            assert (await response.json())["reason"] == "view"
+        assert (await client.get(f"{BASE}/api/mail", headers=auth(viewer))).status == 403
+
+        # Оформление — своё, у ученика не меняется.
+        response = await client.post(f"{BASE}/api/prefs", headers=auth(viewer), json={"theme": "dark"})
+        assert response.status == 200
+        assert "theme" not in await app_context.miniapp.prefs(1)
+
+        # Ученик забрал просмотр — дневника больше нет.
+        await client.post(f"{BASE}/api/family/rights", headers=auth(token), json={"id": 2, "notify": True, "view": False})
+        profile = (await (await client.get(f"{BASE}/api/profile", headers=auth(viewer))).json())["data"]
+        assert profile["readonly"] is False and profile["views"] == []
+
+    async def test_viewer_with_own_diary_switches(self, client, token, app_context, users):
+        from app.domain.models import School, Student
+        from tests.test_repositories import make_user
+
+        await users.save(make_user(telegram_id=2, school=School("https://other.example.ru", "Школа №2"),
+                                   student_name="Петров П.", selected_student_id=7,
+                                   available_students=(Student(7, "Петров П."),)))
+        viewer = await app_context.miniapp.issue_token(2)
+        await self.invite(client, app_context, viewer)
+        # Только что принятый дневник открывается сразу.
+        profile = (await (await client.get(f"{BASE}/api/profile", headers=auth(viewer))).json())["data"]
+        assert profile["readonly"] is True
+        assert [(item["id"], item["current"]) for item in profile["views"]] == [(None, False), (1, True)]
+
+        assert (await client.post(f"{BASE}/api/view", headers=auth(viewer), json={"id": None})).status == 200
+        profile = (await (await client.get(f"{BASE}/api/profile", headers=auth(viewer))).json())["data"]
+        assert profile["readonly"] is False and profile["name"] == "Петров П."
+        assert (await client.post(f"{BASE}/api/view", headers=auth(viewer), json={"id": 999})).status == 403
+
+        # Отказался — доступа нет.
+        await client.post(f"{BASE}/api/family/remove", headers=auth(viewer), json={"id": 1, "leave": True})
+        assert (await client.post(f"{BASE}/api/view", headers=auth(viewer), json={"id": 1})).status == 403
+
+    async def test_same_student_is_not_offered(self, client, token, app_context, users):
+        from app.domain.models import Student
+        from tests.test_repositories import make_user
+
+        owner = await users.get(1)
+        await users.save(make_user(telegram_id=1, student_name="Иванов И.", selected_student_id=5,
+                                   available_students=(Student(5, "Иванов И."),)))
+        await users.save(make_user(telegram_id=2, school=owner.school, selected_student_id=5,
+                                   available_students=(Student(5, "Иванов И."),)))
+        viewer = await app_context.miniapp.issue_token(2)
+        await self.invite(client, app_context, viewer)
+        profile = (await (await client.get(f"{BASE}/api/profile", headers=auth(viewer))).json())["data"]
+        assert profile["readonly"] is False and profile["views"] == []
+
+    async def test_invite_page_info_is_public_and_link_points_to_site(self, client, token, app_context):
+        response = await client.post(f"{BASE}/api/family/invite", headers=auth(token),
+                                     json={"notify": False, "view": True})
+        data = (await response.json())["data"]
+        assert "/?invite=" in data["url"]
+        code = data["url"].rsplit("=", 1)[1]
+        info = (await (await client.get(f"{BASE}/api/family/invite-info", params={"code": code})).json())["data"]
+        assert info == {"name": "Иванов И.", "school": "Школа №1", "notify": False, "view": True,
+                        "telegram": info["telegram"]}
+        assert (await client.get(f"{BASE}/api/family/invite-info", params={"code": "nope"})).status == 404
+        response = await client.post(f"{BASE}/api/family/invite", headers=auth(token),
+                                     json={"notify": False, "view": False})
+        assert response.status == 400
+        # Своё приглашение принять нельзя.
+        response = await client.post(f"{BASE}/api/family/accept", headers=auth(token), json={"code": code})
         assert response.status == 400

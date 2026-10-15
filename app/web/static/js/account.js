@@ -86,7 +86,8 @@ function renderLogin() {
 function renderRegister() {
   const card = screen(`
     <h2>Регистрация</h2>
-    <p class="muted">Аккаунт для входа на сайт без Telegram. Потом войдёте в «Сетевой город» — как в боте.</p>
+    <p class="muted">${hasInvite() ? 'Аккаунт, чтобы принять приглашение. Пароль от «Сетевого города» не понадобится.'
+      : 'Аккаунт для входа на сайт без Telegram. Потом войдёте в «Сетевой город» — как в боте.'}</p>
     <form class="account-form">
       <input class="field" type="email" name="email" autocomplete="username" placeholder="Почта" required>
       <input class="field" type="password" name="password" autocomplete="new-password" placeholder="Пароль (от 8 символов)" required>
@@ -160,6 +161,73 @@ function renderReset() {
 
 function bindLinks(card) {
   card.querySelectorAll('[data-go]').forEach((link) => link.addEventListener('click', () => showAuth(link.dataset.go)));
+}
+
+/* ─────────────────────── Приглашение от ученика ─────────────────────── */
+
+const INVITE_KEY = 'ns-invite';
+
+function hasInvite() {
+  try { return Boolean(localStorage.getItem(INVITE_KEY) || window.netschoolInvite); } catch { return Boolean(window.netschoolInvite); }
+}
+
+function forgetInvite() {
+  try { localStorage.removeItem(INVITE_KEY); } catch { /* приватный режим */ }
+  window.netschoolInvite = '';
+}
+
+function rightsText(invite) {
+  if (invite.notify && invite.view) return 'уведомления об оценках и заданиях и просмотр дневника';
+  return invite.notify ? 'уведомления об оценках и заданиях' : 'просмотр дневника: оценки, расписание, задания';
+}
+
+/** Ссылка-приглашение (/?invite=…): кто приглашает и что откроется. Без
+ * входа — войти через Telegram или по почте (код ждёт в localStorage до
+ * перезагрузки после входа), со входом — подтвердить. */
+export async function showInvite(code, signedIn) {
+  const card = screen('<h2>Приглашение</h2><p class="muted">Загрузка…</p>');
+  let invite;
+  try {
+    invite = (await api(`/api/family/invite-info?code=${encodeURIComponent(code)}`)).data;
+  } catch (error) {
+    forgetInvite();
+    card.innerHTML = `<h2>Приглашение</h2><p class="account-error">${esc(error.message)}</p>
+      <button class="btn" data-act="go">${signedIn ? 'Открыть дневник' : 'Войти'}</button>`;
+    card.querySelector('[data-act="go"]').addEventListener('click', () => (signedIn ? reload() : showAuth()));
+    return new Promise(() => {});
+  }
+  const who = `<b>${esc(invite.name)}</b>${invite.school ? ` <span class="muted">(${esc(invite.school)})</span>` : ''}`;
+  card.innerHTML = `
+    <h2>Приглашение</h2>
+    <p>${who} приглашает вас. Будет доступно: ${rightsText(invite)}.</p>
+    <p class="muted small">Пароль от «Сетевого города» не нужен, менять что-либо в дневнике нельзя. Отказаться можно в любой момент.</p>
+    <p class="account-error" hidden></p>
+    <div class="invite-actions">
+      ${signedIn ? '<button class="btn" data-act="accept">Принять</button>' : `
+        ${invite.telegram ? `<a class="btn" href="${esc(invite.telegram)}" target="_blank" rel="noopener" data-act="telegram">Через Telegram</a>` : ''}
+        <button class="btn ${invite.telegram ? 'outline' : ''}" data-act="register">Зарегистрироваться по почте</button>
+        <button class="link" data-act="login">Уже есть аккаунт — войти</button>`}
+      <button class="link" data-act="decline">Отказаться</button>
+    </div>`;
+  card.querySelector('[data-act="telegram"]')?.addEventListener('click', forgetInvite);
+  card.querySelector('[data-act="register"]')?.addEventListener('click', () => showAuth('register'));
+  card.querySelector('[data-act="login"]')?.addEventListener('click', () => showAuth('login'));
+  card.querySelector('[data-act="decline"]').addEventListener('click', () => {
+    forgetInvite();
+    if (signedIn) reload(); else showAuth();
+  });
+  card.querySelector('[data-act="accept"]')?.addEventListener('click', (event) => busy(event.currentTarget, async () => {
+    try {
+      await post('/api/family/accept', { code });
+      forgetInvite();
+      notify('success');
+      reload();
+    } catch (error) {
+      notify('error');
+      showError(card, error.message);
+    }
+  }));
+  return new Promise(() => {});
 }
 
 /* ─────────────────── Вход в «Сетевой город» с сайта ─────────────────── */

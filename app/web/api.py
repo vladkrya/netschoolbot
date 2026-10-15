@@ -213,6 +213,9 @@ async def auth_middleware(request: web.Request, handler):
         if user is None:
             return json_error("Ссылка на вложение устарела — откройте его в приложении ещё раз", status=401, reason="auth")
         request[USER] = user
+        from . import viewing
+        if (refused := await viewing.apply(request, context(request), USER)) is not None:
+            return refused
         return await handler(request)
 
     # Регистрация, вход по почте и сброс пароля — до всякого входа.
@@ -253,6 +256,11 @@ async def auth_middleware(request: web.Request, handler):
     blocked = await guard(request)
     if blocked is not None:
         return blocked
+    # Родной с правом просмотра: дневник ученика — только чтение (viewing.py).
+    # После guard: PIN спрашивается у того, кто вошёл, а не у ученика.
+    from . import viewing
+    if (refused := await viewing.apply(request, context(request), USER)) is not None:
+        return refused
     response = await handler(request)
 
     # Токен из ссылки переносим в cookie, чтобы он не тянулся в каждом URL
@@ -430,12 +438,19 @@ def _utc_iso(moment: dt.datetime | None) -> str | None:
 
 @routes.get("/api/profile")
 async def profile(request: web.Request) -> web.Response:
+    from . import viewing
+
     app, user = context(request), current_user(request)
     status = await app.state.watch_status(user.telegram_id)
+    viewer = request.get(viewing.VIEWER)
     return web.json_response(
         {
             "ok": True,
             "data": {
+                # Просмотр дневника родным: интерфейс прячет всё, что меняет данные.
+                "readonly": viewer is not None and viewer.telegram_id != user.telegram_id,
+                "views": await viewing.summary(
+                    app, viewer or user, user if viewer is not None and viewer.telegram_id != user.telegram_id else None),
                 "name": user.label,
                 "school": user.school.name,
                 "students": [

@@ -4,7 +4,7 @@
 
 import {
   absenceText, api, attachmentsHtml, banner, esc, escRich, forDate, fullDate, isAbsence,
-  markClass, state,
+  markClass, refuseReadOnly, state,
 } from './core.js';
 import { notify, tap } from './haptics.js';
 import { pushScreen } from './screens.js';
@@ -34,6 +34,7 @@ export function isDoneItem(item, done = state.hwDone || new Set()) {
  *  сервера, и ещё раз с прежним значением, если сохранить не вышло.
  *  source — кто отметил: этот экран уже перерисован и событие пропустит. */
 export async function saveDone(item, next, apply, source = '') {
+  if (refuseReadOnly()) return;
   const done = state.hwDone || (state.hwDone = new Set());
   const set = (value) => {
     if (value) done.add(item.key);

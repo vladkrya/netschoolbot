@@ -2,7 +2,7 @@
 'use strict';
 
 import {
-  $, api, assistantEnabled, forgetRevalidated, banner, base, demo, loadAttachmentTicket, school, state, student, studentFirstName, syncFinished, syncStarted, tg, token,
+  $, api, assistantEnabled, forgetRevalidated, banner, base, demo, isReadOnly, loadAttachmentTicket, school, state, student, studentFirstName, syncFinished, syncStarted, tg, token,
 } from './core.js';
 import { initDay, loadDay } from './day.js';
 import { initSchedule, loadSchedule } from './schedule.js';
@@ -401,7 +401,7 @@ async function quietly(render) {
  *  забить школьный сервер пачкой запросов. */
 async function prefetch() {
   for (const name of ['day', 'schedule', 'homework', 'totals', 'mail']) {
-    if (name === state.tab) continue;
+    if (name === state.tab || (name === 'mail' && isReadOnly())) continue;
     try {
       await TABS[name]();
     } catch {
@@ -425,7 +425,8 @@ function initChrome() {
   });
   $('bellBtn').addEventListener('click', openAnnouncements);
   $('composeBtn').addEventListener('click', () => openCompose());
-  initMail();
+  // При просмотре дневника родным почты и чатов нет — и опрашивать их незачем.
+  if (!isReadOnly()) initMail();
   // Помощник — кнопкой на «Дне»: вкладкой он не помещался в панель.
   $('aiFab').hidden = !assistantEnabled || demo;
   $('aiFab').addEventListener('click', () => openAssistant());
@@ -538,7 +539,7 @@ async function start() {
     // Флаг «видел» уже пришёл с сервера — окошко не повторится на другом устройстве.
     dropInstallHints();
     showDesignNotice();
-    showChatLaunchNotice();
+    if (!isReadOnly()) showChatLaunchNotice();
     reportVisit();
   });
   offerPushOnFirstLaunch();

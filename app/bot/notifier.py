@@ -50,7 +50,7 @@ class TelegramNotifier:
     def __init__(self, bot: Bot, users: UserRepository, push=None, family=None) -> None:
         self._bot = bot
         self._users = users
-        # Второй родитель (FamilyRepository): копии уведомлений в его Telegram.
+        # Родные (FamilyRepository): копии уведомлений в их Telegram и push.
         self._family = family
         # Push в браузер — дополнение к Telegram, а не замена: приложение
         # может быть не установлено, а подписка — отозвана без уведомления.
@@ -114,6 +114,27 @@ class TelegramNotifier:
                 self._pushed[key] = now
         except Exception as exc:  # noqa: BLE001
             logger.warning("Push для %s не ушёл: %s", user.telegram_id, exc)
+        await self._push_followers(user, title, body, kind=kind, now=now)
+
+    async def _push_followers(self, user: User, title: str, body: str, *, kind: str, now: float) -> None:
+        """Push родным: тем, кто пришёл по почте без Telegram, это единственный канал."""
+        if self._family is None:
+            return
+        try:
+            followers = await self._family.followers(user.telegram_id, notify_only=True)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Список родных %s не прочитан: %s", user.telegram_id, exc)
+            return
+        body = f"{user.label}: {body}"
+        for follower in followers:
+            key = (follower["id"], title, body)
+            if key in self._pushed:
+                continue
+            try:
+                if await self._push.send(follower["id"], title, body, kind=kind):
+                    self._pushed[key] = now
+            except Exception as exc:  # noqa: BLE001 — копия вторична
+                logger.info("Push родному %s не ушёл: %s", follower["id"], exc)
 
     async def send_text(
         self, user: User, text: str, *, push: tuple[str, str] | None = None, kind: str = ""
@@ -135,14 +156,16 @@ class TelegramNotifier:
         await self._copy_to_followers(user, text)
 
     async def _copy_to_followers(self, user: User, text: str) -> None:
-        """Копия второму родителю. Его сбой не задерживает уведомление владельцу."""
+        """Копия родным. Их сбой не задерживает уведомление владельцу."""
         if self._family is None:
             return
         try:
-            followers = await self._family.followers(user.telegram_id)
+            followers = await self._family.followers(user.telegram_id, notify_only=True)
         except Exception as exc:  # noqa: BLE001
             logger.warning("Список родителей %s не прочитан: %s", user.telegram_id, exc)
             return
+        # Без Telegram (вход по почте) копии приходят только push-ом.
+        followers = [follower for follower in followers if has_telegram(follower["id"])]
         if not followers:
             return
         if not text.startswith("👤"):

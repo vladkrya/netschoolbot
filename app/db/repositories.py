@@ -830,69 +830,126 @@ MAX_FOLLOWERS = 5
 
 
 class FamilyRepository:
-    """Второй родитель: приглашения и кто получает копии уведомлений."""
+    """Родные ученика: приглашения, копии уведомлений и просмотр дневника.
+
+    Что доступно приглашённому, выбирает ученик: can_notify — копии
+    уведомлений (Telegram и push), can_view — дневник в приложении только для
+    чтения. Права можно поменять или отозвать, приглашённый может отказаться.
+    """
 
     def __init__(self, db: Database) -> None:
         self._db = db
 
-    async def issue_invite(self, owner_id: int) -> str:
+    async def issue_invite(self, owner_id: int, *, notify: bool = True, view: bool = True) -> str:
+        if not (notify or view):
+            raise ValueError("Приглашение без прав")
         code = secrets.token_urlsafe(9).replace("-", "x").replace("_", "y")
         now = time.time()
         async with self._db.transaction() as db:
             await db.execute("DELETE FROM follow_invites WHERE expires_at < ? OR owner_id = ?", (now, owner_id))
             await db.execute(
-                "INSERT INTO follow_invites (code, owner_id, expires_at) VALUES (?, ?, ?)",
-                (code, owner_id, now + FOLLOW_INVITE_TTL),
+                "INSERT INTO follow_invites (code, owner_id, expires_at, can_notify, can_view) VALUES (?, ?, ?, ?, ?)",
+                (code, owner_id, now + FOLLOW_INVITE_TTL, int(notify), int(view)),
             )
         return code
 
-    async def invite_owner(self, code: str) -> int | None:
+    async def invite(self, code: str) -> dict[str, Any] | None:
+        """Действующее приглашение: чьё и что даёт."""
         row = await self._db.fetch_one(
-            "SELECT owner_id FROM follow_invites WHERE code = ? AND expires_at >= ?", (code, time.time())
+            "SELECT owner_id, can_notify, can_view FROM follow_invites WHERE code = ? AND expires_at >= ?",
+            (code, time.time()),
         )
-        return int(row["owner_id"]) if row else None
+        if not row:
+            return None
+        return {"owner_id": int(row["owner_id"]), "notify": bool(row["can_notify"]), "view": bool(row["can_view"])}
+
+    async def invite_owner(self, code: str) -> int | None:
+        invite = await self.invite(code)
+        return invite["owner_id"] if invite else None
 
     async def accept(self, code: str, follower_id: int, name: str = "") -> int | None:
         """Принять приглашение. Возвращает владельца или None (просрочено, своё, лимит)."""
         async with self._db.transaction() as db:
             cursor = await db.execute(
-                "SELECT owner_id FROM follow_invites WHERE code = ? AND expires_at >= ?", (code, time.time())
+                "SELECT owner_id, can_notify, can_view FROM follow_invites WHERE code = ? AND expires_at >= ?",
+                (code, time.time()),
             )
             row = await cursor.fetchone()
             if row is None or int(row[0]) == follower_id:
                 return None
-            owner_id = int(row[0])
-            cursor = await db.execute("SELECT COUNT(*) FROM followers WHERE owner_id = ?", (owner_id,))
+            owner_id, notify, view = int(row[0]), int(row[1]), int(row[2])
+            cursor = await db.execute(
+                "SELECT COUNT(*) FROM followers WHERE owner_id = ? AND follower_id != ?", (owner_id, follower_id))
             if (await cursor.fetchone())[0] >= MAX_FOLLOWERS:
                 return None
+            # Повторное приглашение того же человека заменяет его права.
             await db.execute(
-                """INSERT INTO followers (owner_id, follower_id, name, created_at) VALUES (?, ?, ?, ?)
-                   ON CONFLICT(owner_id, follower_id) DO UPDATE SET name = excluded.name""",
-                (owner_id, follower_id, name[:64], time.time()),
+                """INSERT INTO followers (owner_id, follower_id, name, created_at, can_notify, can_view)
+                   VALUES (?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(owner_id, follower_id) DO UPDATE SET
+                       name = excluded.name, can_notify = excluded.can_notify, can_view = excluded.can_view""",
+                (owner_id, follower_id, name[:64], time.time(), notify, view),
             )
             # Ссылка одноразовая: пересланная дальше, она уже не сработает.
             await db.execute("DELETE FROM follow_invites WHERE code = ?", (code,))
         return owner_id
 
-    async def followers(self, owner_id: int) -> list[dict[str, Any]]:
+    async def followers(self, owner_id: int, *, notify_only: bool = False) -> list[dict[str, Any]]:
         rows = await self._db.fetch_all(
-            "SELECT follower_id, name, created_at FROM followers WHERE owner_id = ? ORDER BY created_at",
+            "SELECT follower_id, name, created_at, can_notify, can_view FROM followers WHERE owner_id = ?"
+            + (" AND can_notify = 1" if notify_only else "") + " ORDER BY created_at",
             (owner_id,),
         )
-        return [{"id": int(r["follower_id"]), "name": r["name"], "since": r["created_at"]} for r in rows]
+        return [{"id": int(r["follower_id"]), "name": r["name"], "since": r["created_at"],
+                 "notify": bool(r["can_notify"]), "view": bool(r["can_view"])} for r in rows]
 
     async def following(self, follower_id: int) -> list[int]:
+        return [item["owner_id"] for item in await self.access(follower_id)]
+
+    async def access(self, follower_id: int) -> list[dict[str, Any]]:
+        """К кому у приглашённого есть доступ и какой."""
         rows = await self._db.fetch_all(
-            "SELECT owner_id FROM followers WHERE follower_id = ? ORDER BY created_at", (follower_id,)
+            "SELECT owner_id, can_notify, can_view FROM followers WHERE follower_id = ? ORDER BY created_at",
+            (follower_id,),
         )
-        return [int(r["owner_id"]) for r in rows]
+        return [{"owner_id": int(r["owner_id"]), "notify": bool(r["can_notify"]), "view": bool(r["can_view"])}
+                for r in rows]
+
+    async def set_rights(self, owner_id: int, follower_id: int, *, notify: bool, view: bool) -> bool:
+        """Ученик меняет права. Без единого права приглашённый убирается."""
+        if not (notify or view):
+            return await self.remove(owner_id, follower_id)
+        async with self._db.transaction() as db:
+            cursor = await db.execute(
+                "UPDATE followers SET can_notify = ?, can_view = ? WHERE owner_id = ? AND follower_id = ?",
+                (int(notify), int(view), owner_id, follower_id),
+            )
+            if not view:
+                await db.execute("DELETE FROM follow_views WHERE viewer_id = ? AND owner_id = ?", (follower_id, owner_id))
+            return cursor.rowcount > 0
 
     async def remove(self, owner_id: int, follower_id: int) -> bool:
         async with self._db.transaction() as db:
             cursor = await db.execute(
                 "DELETE FROM followers WHERE owner_id = ? AND follower_id = ?", (owner_id, follower_id)
             )
+            await db.execute("DELETE FROM follow_views WHERE viewer_id = ? AND owner_id = ?", (follower_id, owner_id))
             return cursor.rowcount > 0
+
+    async def viewing(self, viewer_id: int) -> int | None:
+        """Чей дневник приглашённый выбрал смотреть (None — свой или не выбирал)."""
+        row = await self._db.fetch_one("SELECT owner_id FROM follow_views WHERE viewer_id = ?", (viewer_id,))
+        return int(row["owner_id"]) if row else None
+
+    async def set_viewing(self, viewer_id: int, owner_id: int | None) -> None:
+        if owner_id is None:
+            await self._db.execute("DELETE FROM follow_views WHERE viewer_id = ?", (viewer_id,))
+            return
+        await self._db.execute(
+            """INSERT INTO follow_views (viewer_id, owner_id) VALUES (?, ?)
+               ON CONFLICT(viewer_id) DO UPDATE SET owner_id = excluded.owner_id""",
+            (viewer_id, owner_id),
+        )
 
 
 MAX_NOTES = 300

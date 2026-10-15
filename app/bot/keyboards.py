@@ -77,7 +77,7 @@ def settings_menu(user: User) -> InlineKeyboardMarkup:
         rows.append(
             [InlineKeyboardButton(text="👶 Переключить ребёнка", callback_data="settings:child")]
         )
-    rows.append([InlineKeyboardButton(text="👪 Уведомления родным", callback_data="family:open")])
+    rows.append([InlineKeyboardButton(text="👪 Родные", callback_data="family:open")])
     rows.append(
         [InlineKeyboardButton(text=f"🔌 API: {user.effective_api_mode.title}", callback_data="settings:api")]
     )
@@ -123,7 +123,7 @@ def marks_filter_choices(user: User) -> InlineKeyboardMarkup:
 
 
 def family(followers: list[dict], following: list[tuple[int, str]]) -> InlineKeyboardMarkup:
-    rows = [[InlineKeyboardButton(text="🔗 Пригласить второго родителя", callback_data="family:invite")]]
+    rows = [[InlineKeyboardButton(text="🔗 Пригласить", callback_data="family:invite")]]
     for follower in followers:
         name = follower["name"] or f"ID {follower['id']}"
         rows.append([InlineKeyboardButton(text=f"✖️ Убрать: {name}"[:60], callback_data=f"family:drop:{follower['id']}")])
@@ -131,6 +131,16 @@ def family(followers: list[dict], following: list[tuple[int, str]]) -> InlineKey
         rows.append([InlineKeyboardButton(text=f"🚪 Не следить за: {label}"[:60], callback_data=f"family:leave:{owner_id}")])
     rows.append([InlineKeyboardButton(text="⬅️ Настройки", callback_data="settings:open")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def family_rights() -> InlineKeyboardMarkup:
+    """Что откроет приглашение: выбирает ученик."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔔👀 Уведомления и дневник", callback_data="family:invite:both")],
+        [InlineKeyboardButton(text="🔔 Только уведомления", callback_data="family:invite:notify")],
+        [InlineKeyboardButton(text="👀 Только просмотр дневника", callback_data="family:invite:view")],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="family:open")],
+    ])
 
 
 def export_periods() -> InlineKeyboardMarkup:

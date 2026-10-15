@@ -16,6 +16,7 @@ from ...domain import formatting
 from ...domain.models import MarkKind, User, normalize
 from ...notifications.outbox import mark_from_dict
 from ...netschool.errors import NetSchoolError
+from ...web import viewing
 from .. import keyboards
 from .common import reply, report_error, require_school
 
@@ -312,7 +313,8 @@ async def profile(message: Message, user: User) -> None:
 @router.message(Command("app"))
 async def open_miniapp(message: Message, user: User, app: AppContext) -> None:
     """Открыть дневник мини-приложением Telegram."""
-    if hint := require_school(user):
+    if (hint := require_school(user)) and not await viewing.choices(app, user):
+        # Родной с просмотром дневника входит без своего «Сетевого города».
         await reply(message, hint)
         return
     url = await miniapp_url(app, user)
@@ -332,7 +334,8 @@ async def install_miniapp(message: Message, user: User, app: AppContext) -> None
     Отдельной командой, потому что внутри Telegram установить приложение
     нельзя — для этого страницу нужно открыть в самом браузере.
     """
-    if hint := require_school(user):
+    if (hint := require_school(user)) and not await viewing.choices(app, user):
+        # Родной с просмотром дневника входит без своего «Сетевого города».
         await reply(message, hint)
         return
     url = await miniapp_url(app, user)

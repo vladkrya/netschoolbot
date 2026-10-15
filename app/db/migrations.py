@@ -541,6 +541,19 @@ MIGRATIONS: list[str] = [
     );
     CREATE INDEX user_notes_day ON user_notes(telegram_id, day);
     """,
+    # Родные: что им доступно — копии уведомлений, просмотр дневника или
+    # оба (выбирает ученик в приглашении). follow_views — чей дневник
+    # приглашённый сейчас смотрит, если у него есть и свой.
+    """
+    ALTER TABLE followers ADD COLUMN can_notify INTEGER NOT NULL DEFAULT 1;
+    ALTER TABLE followers ADD COLUMN can_view INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE follow_invites ADD COLUMN can_notify INTEGER NOT NULL DEFAULT 1;
+    ALTER TABLE follow_invites ADD COLUMN can_view INTEGER NOT NULL DEFAULT 0;
+    CREATE TABLE follow_views (
+        viewer_id INTEGER PRIMARY KEY REFERENCES users(telegram_id) ON DELETE CASCADE,
+        owner_id  INTEGER NOT NULL REFERENCES users(telegram_id) ON DELETE CASCADE
+    );
+    """,
 ]
 
 

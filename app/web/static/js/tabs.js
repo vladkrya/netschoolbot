@@ -7,7 +7,7 @@
 // вернуть.
 'use strict';
 
-import { $ } from './core.js';
+import { $, isReadOnly } from './core.js';
 import { ICONS } from './icons.js';
 import { getPref, setPref } from './prefs.js';
 import { isNewDesign } from './appearance.js';
@@ -37,8 +37,11 @@ export const MAX_TABS = 5;
 // помощник — кнопкой ✨ на «Дне»: отдельные вкладки не помещались в панель.
 const MERGED_IN_NEW = new Set(['schedule', 'assistant']);
 
+// Просмотр дневника родным: почта и чаты — переписка самого ученика.
+const HIDDEN_READONLY = new Set(['mail', 'assistant']);
+
 export function availableTabs() {
-  return Object.keys(TAB_DEFS).filter((tab) => !MERGED_IN_NEW.has(tab));
+  return Object.keys(TAB_DEFS).filter((tab) => !MERGED_IN_NEW.has(tab) && !(isReadOnly() && HIDDEN_READONLY.has(tab)));
 }
 
 const CLASSIC_TABS = ['day', 'schedule', 'homework', 'totals', 'mail'];
@@ -49,13 +52,14 @@ export function defaultTabs() {
 
 /** Вкладки панели: сохранённый выбор без неизвестных и недоступных. */
 export function navTabs() {
-  if (!isNewDesign()) return CLASSIC_TABS;
+  const allowed = (tabs) => (isReadOnly() ? tabs.filter((tab) => !HIDDEN_READONLY.has(tab)) : tabs);
+  if (!isNewDesign()) return allowed(CLASSIC_TABS);
   const saved = getPref('tabs');
-  if (!Array.isArray(saved)) return defaultTabs();
+  if (!Array.isArray(saved)) return allowed(defaultTabs());
   const available = availableTabs();
   const tabs = [...new Set(saved)].filter((tab) => available.includes(tab)).slice(0, MAX_TABS);
   if (!tabs.includes('settings')) tabs.push('settings');
-  return tabs.length >= 2 ? tabs : defaultTabs();
+  return tabs.length >= 2 ? tabs : allowed(defaultTabs());
 }
 
 export function saveTabs(tabs) {
