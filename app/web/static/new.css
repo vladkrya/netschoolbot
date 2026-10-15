@@ -501,6 +501,7 @@
 :root[data-design="new"] .ds-sub { margin-top: 1px; font-size: 13px; color: var(--text2); }
 :root[data-design="new"] .ds-marks { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 5px; max-width: 40%; }
 :root[data-design="new"] .ds-marks .mark-box { min-width: 28px; height: 28px; border-radius: 9px; font-size: 14px; }
+:root[data-design="new"] .ds-mark { display: flex; padding: 0; }
 
 
 /* Вкладки подписаны короче: «Неделя», «Задания», «Оценки», «Почта». */

@@ -216,7 +216,9 @@ function daySummary(lessons) {
   const first = lessons.find((lesson) => lesson.start)?.start;
   const last = [...lessons].reverse().find((lesson) => lesson.end)?.end;
   const homework = lessons.filter((lesson) => lesson.homework.some((item) => !item.classwork)).length;
-  const marks = lessons.flatMap((lesson) => realMarks(lesson.marks)).map((m) => markBox(m.mark)).join('');
+  // Оценка — с коэффициентом, как в карточке урока; нажатие открывает урок.
+  const marks = lessons.flatMap((lesson, index) => realMarks(lesson.marks).map((m) =>
+    `<button class="ds-mark" data-summary-lesson="${index}" aria-label="${esc(lesson.subject)}: ${esc(m.mark)}">${markBox(m.mark, '', m.weight || 1)}</button>`)).join('');
   const parts = [`${lessons.length} ${plural(lessons.length, 'урок', 'урока', 'уроков')}`];
   if (first && last) parts.push(`${first}–${last}`);
   return `<div class="day-summary">
@@ -266,6 +268,10 @@ function renderDay(quiet = false) {
     const next = !note.done;
     row.classList.toggle('done', next);
     if (!await setNoteDone(note, next)) row.classList.toggle('done', !next);
+  }));
+  container.querySelectorAll('[data-summary-lesson]').forEach((button) => button.addEventListener('click', () => {
+    tap();
+    openLesson(lessons[Number(button.dataset.summaryLesson)], state.date);
   }));
   container.querySelectorAll('[data-lesson]').forEach((card) => {
     card.addEventListener('click', (event) => {
@@ -417,7 +423,7 @@ export async function goToDay(iso) {
   await loadDay();
 }
 
-function shiftDay(delta, felt = false) {
+export function shiftDay(delta, felt = false) {
   // Стрелки перешагивают спрятанные выходные.
   let iso = addDays(state.date, delta);
   for (let step = 0; step < 2 && isHiddenWeekend(iso); step += 1) iso = addDays(iso, delta);
@@ -548,7 +554,7 @@ const reducedMotion = () => matchMedia('(prefers-reduced-motion: reduce)').match
 /** Неделя вперёд (step = 1) или назад (−1), тот же день недели. Полоса
  *  уезжает за край — от dx, где её отпустил палец, — и новая неделя
  *  въезжает с другой стороны. Общее для свайпа и стрелок. */
-function pageWeek(step, dx = 0) {
+export function pageWeek(step, dx = 0) {
   const strip = $('weekStrip');
   const width = strip.offsetWidth || 1;
   select();
@@ -632,7 +638,16 @@ function bindWeekSwipe() {
 }
 
 export function initDay() {
-  setInterval(() => { if (state.tab === 'day' && dayData(state.date)) renderDay(true); }, 30000);
+  // Статусы уроков («Закончится через 3 мин», «Урок окончен») меняются ровно
+  // на границе минуты — тогда же, когда таймер над днём доходит до нуля.
+  // Раньше день перерисовывался раз в 30 секунд и отставал от таймера.
+  const refreshOnMinute = () => {
+    setTimeout(() => {
+      if (state.tab === 'day' && dayData(state.date)) renderDay(true);
+      refreshOnMinute();
+    }, 60000 - Date.now() % 60000 + 50);
+  };
+  refreshOnMinute();
   $('dayPrev').addEventListener('click', () => shiftDay(-1));
   $('dayNext').addEventListener('click', () => shiftDay(1));
   $('dayTitle').addEventListener('click', () => openCalendar());
