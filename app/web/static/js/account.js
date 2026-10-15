@@ -5,7 +5,7 @@
 // входе по ссылке из бота.
 'use strict';
 
-import { api, banner, base, esc, tg } from './core.js';
+import { api, banner, base, esc, initData, tg } from './core.js';
 import { notify } from './haptics.js';
 import { pushScreen } from './screens.js';
 
@@ -204,12 +204,28 @@ export async function showInvite(code, signedIn) {
     <p class="account-error" hidden></p>
     <div class="invite-actions">
       ${signedIn ? '<button class="btn" data-act="accept">Принять</button>' : `
-        ${invite.telegram ? `<a class="btn" href="${esc(invite.telegram)}" target="_blank" rel="noopener" data-act="telegram">Через Telegram</a>` : ''}
+        ${invite.telegram ? '<button class="btn" data-act="telegram">Через Telegram</button>' : ''}
         <button class="btn ${invite.telegram ? 'outline' : ''}" data-act="register">Зарегистрироваться по почте</button>
         <button class="link" data-act="login">Уже есть аккаунт — войти</button>`}
       <button class="link" data-act="decline">Отказаться</button>
     </div>`;
-  card.querySelector('[data-act="telegram"]')?.addEventListener('click', forgetInvite);
+  // Ссылку открываем в этой же вкладке: во встроенном браузере Telegram (а
+  // приглашение обычно открывают именно из чата) target=_blank на t.me
+  // ничего не делал. Переход в том же окне Telegram перехватывает и открывает
+  // бота, Safari и Chrome — передают приложению Telegram.
+  card.querySelector('[data-act="telegram"]')?.addEventListener('click', () => {
+    // Приглашение принимает бот; забываем его, только когда Telegram и правда
+    // открылся — иначе после «Зарегистрироваться по почте» оно бы потерялось.
+    document.addEventListener('visibilitychange', forgetInvite, { once: true });
+    if (initData && tg?.openTelegramLink) tg.openTelegramLink(invite.telegram);
+    else location.href = invite.telegram;
+    // Telegram не открылся (не установлен) — даём ссылку, чтобы открыть её вручную.
+    setTimeout(() => {
+      if (document.visibilityState !== 'visible' || card.querySelector('.invite-fallback')) return;
+      card.querySelector('.invite-actions').insertAdjacentHTML('afterbegin', `<p class="muted small invite-fallback">
+        Не открылось? Установите Telegram или откройте <a href="${esc(invite.telegram)}">${esc(invite.telegram)}</a>.</p>`);
+    }, 2500);
+  });
   card.querySelector('[data-act="register"]')?.addEventListener('click', () => showAuth('register'));
   card.querySelector('[data-act="login"]')?.addEventListener('click', () => showAuth('login'));
   card.querySelector('[data-act="decline"]').addEventListener('click', () => {

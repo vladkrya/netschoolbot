@@ -314,14 +314,18 @@ async def attachment_page(request: web.Request) -> web.Response:
     return response
 
 
+EXPORT_NAMES = {"grades": "Оценки", "absences": "Пропуски", "homework": "Задания", "lessons": "Уроки"}
+
+
 @page_routes.get("/export/{scope:(period|year)}")
 async def export_page(request: web.Request) -> web.Response:
-    """Оценки в Excel — та же страница ожидания, что у вложений: книга за год
+    """Отчёты в Excel — та же страница ожидания, что у вложений: книга за год
     собирается до минуты, а потом открывается просмотром или скачивается."""
     response = aiohttp_jinja2.render_template(
         "attachment.html", request, {
-            "name": "Оценки за год" if request.match_info["scope"] == "year" else "Оценки за период",
-            "waiting": "Собираем оценки — за год это может занять до минуты",
+            "name": f"{EXPORT_NAMES.get(request.query.get('report', ''), 'Оценки')} за "
+                    + ("год" if request.match_info["scope"] == "year" else "период"),
+            "waiting": "Собираем отчёт — за год это может занять до минуты",
         })
     response.headers["Cache-Control"] = "no-store"
     return response

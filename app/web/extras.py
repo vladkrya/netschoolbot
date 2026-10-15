@@ -16,7 +16,7 @@ from aiogram.types import BufferedInputFile
 
 from ..accounts import has_telegram
 from ..domain.models import clamp_reminder_hour
-from ..exporting import SCOPES, export_grades
+from ..exporting import REPORTS, SCOPES, export_report
 from ..netschool.errors import NetSchoolError
 from .api import BOT, _content_disposition, context, current_user, json_error
 
@@ -290,18 +290,26 @@ async def export_file(request: web.Request) -> web.Response:
 # prepare получила тот же файл, а не собирала его заново ещё минуту.
 EXPORT_CACHE_S = 600
 
+EXPORT_CAPTIONS = {
+    "grades": "📊 Оценки: лист «Итоги» — средние по предметам, «Оценки» — все работы.",
+    "absences": "📊 Пропуски: по предметам и списком.",
+    "homework": "📊 Домашние задания за период.",
+    "lessons": "📊 Журнал уроков: темы, учителя, оценки и пропуски.",
+}
+
 
 async def _export_file(request: web.Request, scope: str) -> web.Response:
     app, user = context(request), current_user(request)
-    if scope not in SCOPES:
+    report = request.query.get("report", "grades")
+    if scope not in SCOPES or report not in REPORTS:
         return json_error("Некорректный период")
-    cached = app.settings.attachments_dir / f"export-{user.telegram_id}-{scope}"
+    cached = app.settings.attachments_dir / f"export-{user.telegram_id}-{report}-{scope}"
     name_file = cached.with_suffix(".name")
     if (cached.exists() and name_file.exists()
             and time.time() - cached.stat().st_mtime < EXPORT_CACHE_S and not request.query.get("prepare")):
         data, name = cached.read_bytes(), name_file.read_text(encoding="utf-8")
     else:
-        data, name = await export_grades(app, user, scope)
+        data, name = await export_report(app, user, scope, report)
         try:
             cached.parent.mkdir(parents=True, exist_ok=True)
             cached.write_bytes(data)
@@ -322,18 +330,18 @@ async def export_send(request: web.Request) -> web.Response:
     """Оценки файлом в чат с ботом: внутри Telegram скачать файл из окна нельзя."""
     app, user = context(request), current_user(request)
     body = await _body(request) or {}
-    scope = body.get("scope", "period")
-    if scope not in SCOPES:
+    scope, report = body.get("scope", "period"), body.get("report", "grades")
+    if scope not in SCOPES or report not in REPORTS:
         return json_error("Некорректный период")
     bot = request.config_dict.get(BOT)
     if bot is None or not has_telegram(user.telegram_id):
         return json_error("Telegram не привязан — скачайте файл", reason="no_telegram")
     try:
-        data, name = await export_grades(app, user, scope)
+        data, name = await export_report(app, user, scope, report)
     except NetSchoolError:
         raise
     await bot.send_document(
         user.telegram_id, BufferedInputFile(data, filename=name),
-        caption="📊 Оценки: лист «Итоги» — средние по предметам, «Оценки» — все работы.",
+        caption=EXPORT_CAPTIONS[report],
     )
     return web.json_response({"ok": True})

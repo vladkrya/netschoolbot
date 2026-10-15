@@ -90,6 +90,13 @@ class TestExportApi:
         assert (await client.get(f"{BASE}/api/export/year.xlsx", params={"ticket": "garbage"})).status == 401
         assert (await client.get(f"{BASE}/api/export/forever.xlsx", params={"ticket": ticket})).status == 400
 
+    async def test_other_report(self, client, token, app_context):
+        response = await client.get(f"{BASE}/api/export/period.xlsx?report=lessons", headers=auth(token))
+        assert response.status == 200
+        assert "%D0%A3%D1%80%D0%BE%D0%BA%D0%B8" in response.headers["Content-Disposition"]  # «Уроки»
+        response = await client.get(f"{BASE}/api/export/period.xlsx?report=secret", headers=auth(token))
+        assert response.status == 400
+
     async def test_bad_scope(self, client, token):
         response = await client.get(f"{BASE}/api/export.xlsx?scope=forever", headers=auth(token))
         assert response.status == 400

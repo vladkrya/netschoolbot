@@ -64,6 +64,10 @@ export function applyStoredTheme() {
 }
 
 /** Куда рисовать настройки: вкладка в новом дизайне, меню ☰ в классическом. */
+// Виджет — через Scriptable, а он есть только на iPhone и iPad.
+const IS_IOS = /iPhone|iPad|iPod/.test(navigator.userAgent)
+  || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+
 const settingsRoot = () => $(isNewDesign() ? 'settingsContent' : 'drawerBody');
 
 export function isDrawerOpen() {
@@ -229,47 +233,75 @@ function statusLine(status) {
   return `<div class="muted small sync-status ${failing ? 'failing' : ''}">${rows.join('<br>')}</div>`;
 }
 
-/** Оценки в Excel: открываются как вложение из ДЗ — страницей ожидания во
+// Отчёты Excel: ключ, название, что внутри. Пропуски отмечаются только
+// в мобильном API — в веб-режиме этот отчёт был бы пустым.
+const REPORTS = [
+  ['grades', 'Оценки', 'Средние и выходящие по предметам, все работы с датами и весом'],
+  ['absences', 'Пропуски', 'Сколько пропущено по каждому предмету и список по датам', 'mobile'],
+  ['homework', 'Домашние задания', 'Все задания периода с текстом и файлами'],
+  ['lessons', 'Журнал уроков', 'Каждый урок: тема, учитель, оценки и пропуск'],
+];
+
+/** Отчёты в Excel: открываются как вложение из ДЗ — страницей ожидания во
  * внешнем браузере, где файл можно посмотреть или сохранить. В Telegram
  * можно ещё прислать его файлом в чат с ботом. */
 function openExport() {
   tap();
-  const body = openSheet('Оценки в Excel', `
-    <p class="muted small">Лист «Итоги» — средние и выходящие оценки по предметам, «Оценки» — все работы с датами и весом.</p>
-    <div class="export-choices">
-      <button class="btn" data-export="period">Текущий период</button>
-      <button class="btn outline" data-export="year">Весь учебный год</button>
+  const mobile = state.profile?.api_mode === 'mobile';
+  const reports = REPORTS.filter(([, , , only]) => !only || mobile);
+  const body = openSheet('Отчёты', `
+    <div class="report-list" role="radiogroup" aria-label="Отчёт">${reports.map(([key, title, note], i) => `
+      <label class="report-item"><input type="radio" name="report" value="${key}" ${i ? '' : 'checked'}>
+        <span><b>${title}</b><span class="muted small">${note}</span></span></label>`).join('')}
+    </div>
+    <div class="chips report-scope" role="radiogroup" aria-label="Срок">
+      <button class="chip active" data-scope="period" aria-pressed="true">Текущий период</button>
+      <button class="chip" data-scope="year" aria-pressed="false">Весь учебный год</button>
     </div>
     ${initData ? `<label class="switch-row"><span>Прислать файлом в чат с ботом</span>
       <input type="checkbox" switch class="switch" id="exportToChat"></label>` : ''}
+    <button class="btn" id="exportGo">Открыть в Excel</button>
     <div class="muted small export-status"></div>`);
   const status = body.querySelector('.export-status');
-  body.querySelectorAll('[data-export]').forEach((button) => button.addEventListener('click', async () => {
+  const go = body.querySelector('#exportGo');
+  let scope = 'period';
+  body.querySelectorAll('[data-scope]').forEach((chip) => chip.addEventListener('click', () => {
     select();
-    const scope = button.dataset.export;
+    scope = chip.dataset.scope;
+    body.querySelectorAll('[data-scope]').forEach((c) => {
+      c.classList.toggle('active', c === chip);
+      c.setAttribute('aria-pressed', String(c === chip));
+    });
+  }));
+  body.querySelector('#exportToChat')?.addEventListener('change', (event) => {
+    go.textContent = event.target.checked ? 'Прислать в чат' : 'Открыть в Excel';
+  });
+  go.addEventListener('click', async () => {
+    select();
+    const report = body.querySelector('[name="report"]:checked')?.value || 'grades';
     if (!body.querySelector('#exportToChat')?.checked) {
       if (!(await ensureAttachmentTicket()) && initData) {
         notify('error');
         status.textContent = 'Не удалось открыть файл — попробуйте ещё раз.';
         return;
       }
-      openExternal(exportUrl(scope));
+      openExternal(exportUrl(scope, report));
       status.textContent = 'Файл открывается в браузере — там его можно посмотреть или сохранить.';
       return;
     }
-    body.querySelectorAll('[data-export]').forEach((b) => { b.disabled = true; });
-    status.textContent = 'Собираю оценки — за год это может занять до минуты…';
+    go.disabled = true;
+    status.textContent = 'Собираю отчёт — за год это может занять до минуты…';
     try {
-      await api('/api/export/send', { method: 'POST', body: JSON.stringify({ scope }) });
+      await api('/api/export/send', { method: 'POST', body: JSON.stringify({ scope, report }) });
       status.textContent = 'Готово: файл в чате с ботом.';
       notify('success');
     } catch (error) {
       notify('error');
       status.textContent = error.message;
     } finally {
-      body.querySelectorAll('[data-export]').forEach((b) => { b.disabled = false; });
+      go.disabled = false;
     }
-  }));
+  });
 }
 
 function rightsLabel(item) {
@@ -330,20 +362,28 @@ async function openFamily() {
         });
         const box = $('familyLink');
         box.hidden = false;
-        box.innerHTML = `<p class="muted small">Перешлите ссылку тому, кого приглашаете. Она одноразовая и действует сутки.</p>
-          <input class="field" readonly value="${esc(invite.url)}">
-          <div class="family-actions"><button class="btn" id="familyShare">Поделиться</button>
-          <button class="btn outline" id="familyCopy">Скопировать</button></div>`;
+        // Одна кнопка: системное меню «Поделиться» (там и мессенджеры, и
+        // «Скопировать»), а где его нет — копирование. В Telegram ссылку не
+        // уводим: объект Telegram.WebApp есть и в установленном приложении,
+        // и раньше «Поделиться» открывал Telegram даже там.
         const text = 'Приглашение в школьный дневник';
-        $('familyShare').addEventListener('click', () => {
-          if (tg?.openTelegramLink) tg.openTelegramLink(`https://t.me/share/url?url=${encodeURIComponent(invite.url)}&text=${encodeURIComponent(text)}`);
-          else if (navigator.share) navigator.share({ url: invite.url, text }).catch(() => {});
-          else window.open(invite.url, '_blank');
+        const canShare = Boolean(navigator.share) || Boolean(initData && tg?.openTelegramLink);
+        box.innerHTML = `<p class="muted small">Ссылка одноразовая и действует сутки. Нажмите на неё, чтобы скопировать.</p>
+          <input class="field family-url" readonly value="${esc(invite.url)}">
+          <button class="btn" id="familySend">${canShare ? 'Отправить ссылку' : 'Скопировать ссылку'}</button>`;
+        const copy = async () => {
+          try { await navigator.clipboard.writeText(invite.url); notify('success'); banner('Ссылка скопирована', false, 2500); }
+          catch { box.querySelector('.family-url').select(); }
+        };
+        box.querySelector('.family-url').addEventListener('click', copy);
+        $('familySend').addEventListener('click', () => {
+          tap();
+          if (navigator.share) navigator.share({ url: invite.url, text }).catch(() => {});
+          else if (initData && tg?.openTelegramLink) tg.openTelegramLink(`https://t.me/share/url?url=${encodeURIComponent(invite.url)}&text=${encodeURIComponent(text)}`);
+          else copy();
         });
-        $('familyCopy').addEventListener('click', async () => {
-          try { await navigator.clipboard.writeText(invite.url); notify('success'); banner('Скопировано', false, 2500); }
-          catch { prompt('Скопируйте ссылку', invite.url); }
-        });
+        button.textContent = 'Новая ссылка';
+        button.classList.add('outline');
       } catch (error) {
         notify('error');
         banner(error.message, true);
@@ -742,15 +782,15 @@ function render() {
       ${data.assistant && !demo && !readonly && !navTabs().includes('assistant') ? `<button class="drawer-link" id="drawerAssistant">${ICONS.sparkles} ИИ-помощник</button>` : ''}
       ${demo ? '' : `<button class="drawer-link" id="drawerLock">${ICONS.shield} Защита входа</button>`}
       ${demo ? '' : `<button class="drawer-link" id="drawerAccount">${ICONS.mail} Вход по почте</button>`}
-      ${demo ? '' : `<button class="drawer-link" id="drawerBug">${ICONS.chat} Сообщить об ошибке</button>`}
+      ${demo || !data.bug_report ? '' : `<button class="drawer-link" id="drawerBug">${ICONS.chat} Сообщить об ошибке</button>`}
       <button class="drawer-link" id="drawerCalc">${ICONS.calc} Калькулятор баллов</button>
       <button class="drawer-link" id="drawerHistory">${ICONS.clock} История оценок</button>
-      ${demo ? '' : `<button class="drawer-link" id="drawerExport">${ICONS.table} Оценки в Excel</button>`}
+      ${demo ? '' : `<button class="drawer-link" id="drawerExport">${ICONS.table} Отчёты в Excel</button>`}
       ${demo ? '' : `<button class="drawer-link" id="drawerFamily">${ICONS.users} Родные</button>`}
       ${data.api_mode === 'mobile' && !demo && !readonly ? `<button class="drawer-link" id="drawerEvents">${ICONS.trophy} Олимпиады и конкурсы</button>
       <button class="drawer-link" id="drawerReferences">${ICONS.doc} Заказать справку</button>` : ''}
       ${demo || readonly ? '' : `<button class="drawer-link" id="drawerCalendar">${ICONS.calendar} Расписание в календаре</button>`}
-      ${demo || readonly ? '' : `<button class="drawer-link" id="drawerWidget">${ICONS.widget} Виджет на iPhone</button>`}
+      ${demo || readonly || !IS_IOS ? '' : `<button class="drawer-link" id="drawerWidget">${ICONS.widget} Виджет на iPhone</button>`}
     </section>
     <section class="drawer-section">
       <div class="drawer-heading">Оформление</div>

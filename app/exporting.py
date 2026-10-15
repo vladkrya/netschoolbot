@@ -1,10 +1,13 @@
-"""Выгрузка оценок файлом — общая для бота (/export) и приложения."""
+"""Отчёты файлом Excel — общие для бота (/export) и приложения: оценки,
+пропуски, домашние задания и журнал уроков."""
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from .domain.export import export_filename, grades_workbook
+from .domain.export import (
+    absences_workbook, export_filename, grades_workbook, homework_workbook, lessons_workbook,
+)
 from .domain.models import User
 from .domain.periods import current_period, resolve_periods
 from .netschool.errors import NetSchoolError
@@ -13,10 +16,18 @@ if TYPE_CHECKING:
     from .context import AppContext
 
 SCOPES = ("period", "year")
+# Отчёт → начало имени файла.
+REPORTS = {"grades": "Оценки", "absences": "Пропуски", "homework": "Задания", "lessons": "Уроки"}
 
 
 async def export_grades(app: "AppContext", user: User, scope: str = "period") -> tuple[bytes, str]:
     """Книга Excel с оценками за текущий период или весь учебный год и имя файла."""
+    return await export_report(app, user, scope, "grades")
+
+
+async def export_report(app: "AppContext", user: User, scope: str = "period",
+                        report: str = "grades") -> tuple[bytes, str]:
+    """Отчёт `report` за текущий период или весь учебный год и имя файла."""
     today = user.today()
     prefs = await app.miniapp.prefs(user.telegram_id)
     setting = prefs.get("periods") or {}
@@ -36,6 +47,14 @@ async def export_grades(app: "AppContext", user: User, scope: str = "period") ->
         title = period.label
     end = min(today, period.end)
     days = await app.diary.fetch_period(user, start, end, today=today)
-    records = [r for d in days for r in d.marks if start <= r.date <= end]
-    data = grades_workbook(records, title=title, student=user.student_name, prefs=prefs, periods=year)
-    return data, export_filename(user.student_name, title)
+    student = user.student_name
+    if report == "absences":
+        data = absences_workbook(days, title=title, student=student)
+    elif report == "homework":
+        data = homework_workbook(days, title=title, student=student)
+    elif report == "lessons":
+        data = lessons_workbook(days, title=title, student=student)
+    else:
+        records = [r for d in days for r in d.marks if start <= r.date <= end]
+        data = grades_workbook(records, title=title, student=student, prefs=prefs, periods=year)
+    return data, export_filename(student, title, REPORTS.get(report, "Оценки"))

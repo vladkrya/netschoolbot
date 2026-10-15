@@ -10,10 +10,12 @@ import pytest
 
 from app.db.repositories import FamilyRepository, NotesRepository
 from app.domain import formatting, insights
-from app.domain.export import build_xlsx, grades_workbook
+from app.domain.export import (
+    absences_workbook, build_xlsx, export_filename, grades_workbook, homework_workbook, lessons_workbook,
+)
 from app.domain.models import NotificationPrefs, Student, parse_marks_filter
 from app.domain.periods import periods
-from app.domain.records import HomeworkRecord, MarkRecord
+from app.domain.records import DiaryDay, HomeworkRecord, Lesson, MarkRecord
 from app.notifications import digests
 from app.notifications.watcher import UserWatcher
 from tests.test_bot_handlers import app  # noqa: F401 — фикстура
@@ -135,6 +137,31 @@ class TestExport:
                     ElementTree.fromstring(book.read(name))
             summary = book.read("xl/worksheets/sheet1.xml").decode()
             assert "Химия" in summary and "4.5" in summary
+
+    def test_other_reports(self):
+        day = dt.date(2026, 10, 1)
+        days = [DiaryDay(day=day, lessons=[
+            Lesson(1, "Химия", start="08:30", end="09:15", topic="Кислоты", absence="Н", marks=(mark(5),)),
+            Lesson(2, "Физика", absence="Б"),
+        ], homework=[homework(), homework()])]
+
+        def sheets(data):
+            with zipfile.ZipFile(io.BytesIO(data)) as book:
+                names = [n for n in book.namelist() if n.startswith("xl/worksheets/")]
+                for name in book.namelist():
+                    if name.endswith((".xml", ".rels")):
+                        ElementTree.fromstring(book.read(name))
+                return [book.read(n).decode() for n in sorted(names)]
+
+        summary, listing = sheets(absences_workbook(days, title="1 четверть"))
+        assert "Химия" in summary and "Физика" in summary and "<v>2</v>" in summary
+        assert "01.10.2026" in listing
+        listing, by_subject = sheets(homework_workbook(days, title="1 четверть"))
+        # Одно и то же задание в двух местах дневника — одна строка.
+        assert by_subject.count("<v>1</v>") >= 1 and "<v>2</v>" not in by_subject
+        (lessons,) = sheets(lessons_workbook(days, title="1 четверть"))
+        assert "Кислоты" in lessons and "08:30–09:15" in lessons
+        assert export_filename("Иванов", "1 четверть", "Пропуски") == "Пропуски_Иванов_1_четверть.xlsx"
 
     def test_escapes_text(self):
         data = build_xlsx([("Лист", [["<&>"]], [10])])

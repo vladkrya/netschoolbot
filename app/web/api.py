@@ -464,6 +464,8 @@ async def profile(request: web.Request) -> web.Response:
                 "quiet_hours": user.quiet_hours.as_text(),
                 "enabled": user.enabled,
                 "assistant": app.settings.assistant.enabled,
+                # Без капчи отчёт об ошибке не отправить — пункт меню прячется.
+                "bug_report": bool(app.settings.web.captcha_url),
                 "timezone": user.timezone,
                 "periods": (await app.miniapp.prefs(user.telegram_id)).get("periods")
                 or {"scheme": "auto"},
