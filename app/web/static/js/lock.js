@@ -47,7 +47,18 @@ let biometricPrompt = false;
 // в кэше этого устройства — хеш их не раскрывает сверх того.
 const VERIFIER_KEY = 'offlinePin';
 const FAILS_KEY = 'offlinePinFails';
+const RETRY_KEY = 'offlinePinRetry';
+// Данные стёрты после ошибок без сети: до входа с сетью PIN проверять не с чем.
+const WIPED_KEY = 'offlineWiped';
 const OFFLINE_ATTEMPTS = 10;
+// Как на сервере: первые ошибки без паузы, дальше пауза растёт.
+const OFFLINE_FREE = 5;
+const offlinePause = fails => fails < OFFLINE_FREE ? 0 : Math.min(300, 30 * 2 ** (fails - OFFLINE_FREE));
+const seconds = n => n < 60 ? `${n} с` : `${Math.ceil(n / 60)} мин`;
+const WIPED_MESSAGE = 'Сохранённые данные удалены после 10 неверных PIN. Чтобы войти, подключитесь к интернету.';
+function offlineWiped() {
+  try { return localStorage.getItem(WIPED_KEY) === '1'; } catch { return false; }
+}
 // Введённый без сети PIN в памяти: когда сеть вернётся, им же тихо
 // входим на сервере, чтобы не спрашивать второй раз.
 let offlinePin = '';
@@ -64,12 +75,13 @@ async function rememberPin(pin) {
   try {
     const salt = crypto.getRandomValues(new Uint8Array(16));
     localStorage.setItem(VERIFIER_KEY, JSON.stringify({ salt: encode(salt), hash: await pinHash(pin, salt) }));
-    localStorage.removeItem(FAILS_KEY);
+    localStorage.removeItem(FAILS_KEY); localStorage.removeItem(RETRY_KEY); localStorage.removeItem(WIPED_KEY);
   } catch { /* без хеша вход без сети просто недоступен */ }
 }
 function forgetPin() {
   try {
-    localStorage.removeItem(VERIFIER_KEY); localStorage.removeItem(FAILS_KEY); localStorage.removeItem(PASSKEYS_KEY);
+    localStorage.removeItem(VERIFIER_KEY); localStorage.removeItem(FAILS_KEY); localStorage.removeItem(RETRY_KEY);
+    localStorage.removeItem(PASSKEYS_KEY);
   } catch { /* приватный режим */ }
 }
 
@@ -92,6 +104,7 @@ function forgetPasskeys() {
   try { localStorage.removeItem(PASSKEYS_KEY); } catch { /* приватный режим */ }
 }
 async function offlinePasskey() {
+  if (offlineWiped()) throw new Error(WIPED_MESSAGE);
   let credential;
   biometricPrompt = true;
   try {
@@ -112,20 +125,36 @@ async function offlinePasskey() {
 }
 /** Сверить PIN с хешем на устройстве. Много ошибок — стираем и хеш, и данные. */
 async function checkOffline(pin) {
+  if (offlineWiped()) throw new Error(WIPED_MESSAGE);
   const saved = savedVerifier();
   if (!saved) throw new Error(savedPasskeys().length ? 'Без интернета PIN не проверить — войдите по биометрии.' : 'Без интернета PIN не проверить. Подключитесь к сети.');
+  let fails = 0, retry = 0;
+  try { fails = Number(localStorage.getItem(FAILS_KEY) || 0); retry = Number(localStorage.getItem(RETRY_KEY) || 0); }
+  catch { /* приватный режим */ }
+  const left = OFFLINE_ATTEMPTS - fails;
+  const wait = Math.ceil((retry - Date.now()) / 1000);
+  if (wait > 0) throw new Error(`Слишком много ошибок. Попробуйте через ${seconds(wait)}. До удаления сохранённых данных: ${left} ${plural(left)}.`);
   if (await pinHash(pin, decode(saved.salt)) === saved.hash) {
-    try { localStorage.removeItem(FAILS_KEY); } catch { /* приватный режим */ }
+    try { localStorage.removeItem(FAILS_KEY); localStorage.removeItem(RETRY_KEY); } catch { /* приватный режим */ }
     return;
   }
-  let fails = 1;
-  try { fails += Number(localStorage.getItem(FAILS_KEY) || 0); localStorage.setItem(FAILS_KEY, String(fails)); } catch { /* приватный режим */ }
+  fails += 1;
+  const pause = offlinePause(fails);
+  try {
+    localStorage.setItem(FAILS_KEY, String(fails));
+    localStorage.setItem(RETRY_KEY, String(pause ? Date.now() + pause * 1000 : 0));
+  } catch { /* приватный режим */ }
   if (fails >= OFFLINE_ATTEMPTS) {
     forgetPin(); await clearOffline();
-    throw new Error('Слишком много ошибок. Сохранённые данные удалены — войдите, когда появится интернет.');
+    try { localStorage.setItem(WIPED_KEY, '1'); } catch { /* приватный режим */ }
+    throw Object.assign(new Error('Неверный PIN, это была 10-я ошибка: сохранённые данные удалены. Чтобы войти, подключитесь к интернету.'), { wiped: true });
   }
-  throw new Error('Неверный PIN');
+  const rest = OFFLINE_ATTEMPTS - fails;
+  throw new Error(`Неверный PIN. До удаления сохранённых данных: ${rest} ${plural(rest)}.` +
+    (pause ? ` Следующая попытка через ${seconds(pause)}.` : ''));
 }
+const plural = n => n % 10 === 1 && n % 100 !== 11 ? 'попытка'
+  : [2, 3, 4].includes(n % 10) && ![12, 13, 14].includes(n % 100) ? 'попытки' : 'попыток';
 
 let resyncing = null;
 /** Сеть вернулась после входа без сети — получаем вход на сервере тем же PIN. */
@@ -342,8 +371,8 @@ export async function unlockApp() {
           status = { required: true, pin: true, offline: true };
           break;
         }
-        root.querySelector('.lock-error').textContent = failure.reason === 'server'
-          ? 'Нет связи с сервером. Вход по PIN продолжится, когда появится интернет.' : failure.message;
+        root.querySelector('.lock-error').textContent = failure.reason !== 'server' ? failure.message
+          : offlineWiped() ? WIPED_MESSAGE : 'Нет связи с сервером. Вход по PIN продолжится, когда появится интернет.';
         root.querySelector('.lock-actions').innerHTML = '<button type="button">Повторить</button>';
         await new Promise(resolve => {
           root.querySelector('button').onclick = resolve;
@@ -394,7 +423,15 @@ export async function unlockApp() {
             catch (failure) { if (failure.reason !== 'server' || !savedVerifier()) throw failure; }
           }
           if (result) { setUnlock(result.data.unlock); rememberPin(pin); }
-          else { await checkOffline(pin); offlinePin = pin; }
+          else {
+            try { await checkOffline(pin); }
+            catch (failure) {
+              // Данные стёрты — ключом доступа без сети открывать больше нечего.
+              if (failure.wiped || offlineWiped()) root.querySelector('[data-biometric]')?.setAttribute('hidden', '');
+              throw failure;
+            }
+            offlinePin = pin;
+          }
           await controls.success(); await finish();
           if (offlinePin && navigator.onLine !== false) resync();
         }, { forgot: status.password_reset && !tg?.initData ? FORGOT_PASSWORD : FORGOT_TELEGRAM });
