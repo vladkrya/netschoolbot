@@ -165,3 +165,25 @@ class TestApi:
         assert (data["answers"], data["answerHint"]) == ("hide", "2")
         response = await client.post(f"{BASE}/api/prefs", json={"answerHint": "9"}, headers=headers)
         assert response.status == 400
+
+    async def test_lesson_edits_are_validated(self, client, token):
+        headers = {"X-Netschool-Token": token}
+        edits = [
+            {"id": "a1", "kind": "time", "subject": "Россия — мои горизонты", "number": 8, "weekday": 3,
+             "start": "13:05", "end": "13:30"},
+            {"id": "b2", "kind": "add", "subject": "Кружок", "date": "2026-10-15", "start": "15:00", "end": "15:40",
+             "room": "12"},
+            {"id": "c3", "kind": "hide", "subject": "Химия", "number": None, "date": "2026-10-16"},
+        ]
+        response = await client.post(f"{BASE}/api/prefs", json={"lessonEdits": edits}, headers=headers)
+        assert response.status == 200
+        data = (await (await client.get(f"{BASE}/api/prefs", headers=headers)).json())["data"]
+        assert data["lessonEdits"] == edits
+        for bad in (
+            {**edits[0], "end": "13:00"},
+            {**edits[0], "weekday": 7},
+            {**edits[0], "kind": "move"},
+            {key: value for key, value in edits[1].items() if key != "date"},
+        ):
+            response = await client.post(f"{BASE}/api/prefs", json={"lessonEdits": [bad]}, headers=headers)
+            assert response.status == 400

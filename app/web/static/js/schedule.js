@@ -217,6 +217,8 @@ function minutesOf(text) {
 function dayBells(lessons) {
   const rows = new Map();
   for (const lesson of lessons) {
+    // Свои правки — не звонки школы.
+    if (lesson.addedBy || lesson.editedBy) continue;
     const start = minutesOf(lesson.start);
     const end = minutesOf(lesson.end);
     if (start == null || end == null || end <= start) continue;
@@ -289,6 +291,7 @@ function schoolGroups(monday) {
   const starts = new Set();
   for (let index = 0; index < 7; index += 1) {
     for (const lesson of dayData(addDays(monday, index))?.lessons || []) {
+      if (lesson.addedBy || lesson.editedBy) continue;
       const start = minutesOf(lesson.start);
       if (start != null) starts.add(`${index + 1}@${start}`);
     }
@@ -387,6 +390,8 @@ export function bellsHtml(monday) {
 
 export function initSchedule() {
   if (showBells()) loadSchoolBells();
+  // Свои правки расписания меняют неделю карточками.
+  window.addEventListener('netschool:daysedited', () => { if (state.tab === 'schedule') loadSchedule(); });
   // Подсветка идущего урока или перемены.
   setInterval(() => {
     if (state.tab === 'schedule' && showBells() && state.scheduleWeek === 0) {

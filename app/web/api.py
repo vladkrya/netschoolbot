@@ -1572,6 +1572,57 @@ def _clean_periods(value: Any) -> dict[str, Any] | None:
     return {"scheme": scheme, "starts": [f"{m:02d}-{d:02d}" for m, d in dates]}
 
 
+MAX_LESSON_EDITS = 100
+_EDIT_ID = re.compile(r"^[0-9a-z]{1,24}$")
+_CLOCK = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
+
+
+def _clean_lesson_edit(item: Any) -> dict[str, Any] | None:
+    """Правка расписания (edits.js): своё время урока, скрытый урок или свой
+    урок — на один день (`date`) или каждую неделю (`weekday`, 0 — понедельник)."""
+    if not isinstance(item, dict):
+        return None
+    kind, subject, edit_id = item.get("kind"), item.get("subject"), item.get("id")
+    if kind not in ("time", "hide", "add") or not isinstance(edit_id, str) or not _EDIT_ID.match(edit_id):
+        return None
+    if not isinstance(subject, str) or not 0 < len(subject.strip()) <= 120:
+        return None
+    edit: dict[str, Any] = {"id": edit_id, "kind": kind, "subject": subject.strip()}
+    date, weekday = item.get("date"), item.get("weekday")
+    if date is not None:
+        try:
+            edit["date"] = dt.date.fromisoformat(str(date)).isoformat()
+        except ValueError:
+            return None
+    elif isinstance(weekday, int) and not isinstance(weekday, bool) and 0 <= weekday <= 6:
+        edit["weekday"] = weekday
+    else:
+        return None
+    if kind in ("time", "hide"):
+        number = item.get("number")
+        if number is not None and (isinstance(number, bool) or not isinstance(number, int) or not 0 <= number <= 30):
+            return None
+        edit["number"] = number
+    if kind in ("time", "add"):
+        start, end = item.get("start"), item.get("end")
+        if not all(isinstance(t, str) and _CLOCK.match(t) for t in (start, end)) or end <= start:
+            return None
+        edit["start"], edit["end"] = start, end
+    if kind == "add" and item.get("room"):
+        room = item["room"]
+        if not isinstance(room, str) or len(room) > 40:
+            return None
+        edit["room"] = room.strip()
+    return edit
+
+
+def _clean_lesson_edits(value: Any) -> list[dict[str, Any]] | None:
+    if not isinstance(value, list) or len(value) > MAX_LESSON_EDITS:
+        return None
+    edits = [_clean_lesson_edit(item) for item in value]
+    return None if any(edit is None for edit in edits) else edits  # type: ignore[return-value]
+
+
 @routes.get("/api/prefs")
 async def get_prefs(request: web.Request) -> web.Response:
     """Тема, дизайн, цвет шапки и веса калькулятора — общие для Telegram и сайта."""
@@ -1706,6 +1757,11 @@ async def save_prefs(request: web.Request) -> web.Response:
         if thresholds is None:
             return json_error("Некорректные пороги оценок")
         changes["thresholds"] = thresholds
+    if "lessonEdits" in body:
+        edits = _clean_lesson_edits(body["lessonEdits"])
+        if edits is None:
+            return json_error("Некорректные правки расписания")
+        changes["lessonEdits"] = edits
     if not changes:
         return json_error("Нечего сохранять")
     data = await app.miniapp.save_prefs(user.telegram_id, changes)
