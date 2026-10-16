@@ -1,9 +1,9 @@
 [Unit]
-Description=Ежедневная резервная копия базы бота
+Description=Резервная копия базы бота раз в час
 
 [Timer]
-OnCalendar=*-*-* 03:30:00
-RandomizedDelaySec=15m
+OnCalendar=hourly
+RandomizedDelaySec=5m
 Persistent=true
 
 [Install]

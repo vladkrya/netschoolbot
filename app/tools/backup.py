@@ -1,7 +1,7 @@
 """Резервная копия базы с проверкой, что из неё можно восстановиться.
 
-    python -m app.tools.backup            # копия в data/backups, хранить 14 последних
-    python -m app.tools.backup --keep 30
+    python -m app.tools.backup            # копия в data/backups: 24 последние + по одной за 20 суток
+    python -m app.tools.backup --hourly 48 --keep 30
     python -m app.tools.backup --verify data/backups/netschoolbot-20261005-0300.sqlite3
 
 Копия снимается SQLite-ным online backup API: база в WAL, бот пишет в неё
@@ -115,10 +115,24 @@ def restore_backup(source: Path, db_path: Path) -> BackupReport:
     return report
 
 
-def prune(target_dir: Path, keep: int) -> list[Path]:
-    """Удалить старые копии, оставив `keep` последних. Возвращает удалённые."""
+def prune(target_dir: Path, keep: int, hourly: int = 0) -> list[Path]:
+    """Удалить старые копии. Возвращает удалённые.
+
+    Остаются `hourly` самых свежих копий и последняя копия каждых из `keep`
+    последних суток: копии раз в час дают вернуть сделанное за день, а
+    суточные — заглянуть на несколько недель назад.
+    """
     backups = sorted(target_dir.glob(f"{PREFIX}[0-9]*.sqlite3"))
-    stale = backups[:-keep] if keep > 0 else []
+    if keep <= 0 and hourly <= 0:
+        return []
+    kept = set(backups[-hourly:]) if hourly > 0 else set()
+    last_of_day: dict[str, Path] = {}
+    for path in backups:
+        # netschoolbot-ГГГГММДД-ЧЧММСС.sqlite3 — имена сортируются по времени.
+        last_of_day[path.name[len(PREFIX):len(PREFIX) + 8]] = path
+    if keep > 0:
+        kept.update(sorted(last_of_day.values())[-keep:])
+    stale = [path for path in backups if path not in kept]
     for path in stale:
         path.unlink()
     remove_orphans(target_dir)
@@ -143,7 +157,8 @@ def _count_users(db_path: Path) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Резервная копия базы бота")
-    parser.add_argument("--keep", type=int, default=14, help="сколько последних копий хранить")
+    parser.add_argument("--keep", type=int, default=20, help="за сколько суток хранить по копии")
+    parser.add_argument("--hourly", type=int, default=24, help="сколько самых свежих копий хранить все")
     parser.add_argument("--dir", type=Path, help="куда класть копии (по умолчанию data/backups)")
     parser.add_argument("--verify", type=Path, help="только проверить готовую копию")
     parser.add_argument("--restore", type=Path, help="вернуть базу из копии (службу остановить заранее)")
@@ -171,7 +186,7 @@ def main(argv: list[str] | None = None) -> int:
             live_users = _count_users(settings.db_path)
             path = make_backup(settings.db_path, target_dir)
             report = verify_backup(path, expect_users=live_users)
-            removed = prune(target_dir, args.keep)
+            removed = prune(target_dir, args.keep, hourly=args.hourly)
             if removed:
                 print(f"Удалено старых копий: {len(removed)}")
     except BackupError as exc:
