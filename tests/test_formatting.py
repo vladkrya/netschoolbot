@@ -75,6 +75,12 @@ class TestMarkEvent:
         assert "Алгебра" in text
         assert "02.03.2026" in text
 
+    def test_mark_comes_before_title(self):
+        # На часах видно только начало уведомления — оценка должна быть наверху.
+        text = mark_event(MarkEvent(MarkKind.NEW, record(weight=15)))
+        order = [text.index(label) for label in ("Предмет:", "Оценка:", "Вес:", "Дата:", "Работа:")]
+        assert order == sorted(order)
+
     def test_changed_shows_both_values(self):
         text = mark_event(MarkEvent(MarkKind.CHANGED, record(value="5"), old_mark="3", new_mark="5"))
         assert "3 → " in text

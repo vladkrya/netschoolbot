@@ -61,12 +61,12 @@ def mark_event(event: MarkEvent) -> str:
         MarkKind.DELETED: "🗑 <b>Оценка удалена</b>",
     }[event.kind]
 
+    # Оценка и вес — сразу под предметом: на часах уведомление обрезается,
+    # и до конца длинного сообщения с названием работы не доскроллить.
     lines = [
         head,
         "",
         f"<b>Предмет:</b> {esc(record.subject)}",
-        f"<b>Работа:</b> {esc(record.title)}",
-        f"<b>Дата:</b> {record.date:%d.%m.%Y}",
     ]
     if event.kind is MarkKind.CHANGED:
         lines.append(f"<b>Оценка:</b> {esc(event.old_mark)} → <b>{esc(event.new_mark)}</b>")
@@ -76,6 +76,8 @@ def mark_event(event: MarkEvent) -> str:
         lines.append(f"<b>Оценка:</b> <b>{esc(record.mark)}</b>")
     if record.weight and record.weight != 1:
         lines.append(f"<b>Вес:</b> {record.weight}")
+    lines.append(f"<b>Дата:</b> {record.date:%d.%m.%Y}")
+    lines.append(f"<b>Работа:</b> {esc(record.title)}")
     return "\n".join(lines)
 
 
