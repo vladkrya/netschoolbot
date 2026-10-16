@@ -420,7 +420,7 @@ class TestChildSwitching:
 
 
 class TestLogout:
-    async def test_logout_clears_everything(self, app, users, marks, sessions):
+    async def test_logout_ends_school_login_but_keeps_app_link(self, app, users, marks, sessions):
         user = await users.save(make_user())
         await sessions.save(1, "{}")
         token = await app.miniapp.issue_token(1)
@@ -432,7 +432,8 @@ class TestLogout:
         assert updated.enabled is False
         assert updated.school.url == ""
         assert await sessions.load(1) is None
-        assert await app.miniapp.resolve_token(token) is None
+        # Приложение на телефоне остаётся: оно само предложит войти заново.
+        assert await app.miniapp.resolve_token(token) == 1
         assert app.watchers.running == set()
 
 

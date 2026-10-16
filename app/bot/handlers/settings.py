@@ -401,7 +401,9 @@ async def logout(event: Message | CallbackQuery, user: User, app: AppContext) ->
         await app.state.remember_diary(user.telegram_id, user.school.url, user.selected_student_id)
     await app.state.drop_outbox(user.telegram_id)
     await app.cache.clear(user.telegram_id)
-    await app.miniapp.revoke_tokens(user.telegram_id)
+    # Ссылку на приложение не отзываем: без неё приложение на телефоне
+    # показывало «Не удалось вас опознать», а с ней само предлагает войти
+    # в «Сетевой город» заново. Заметки и свои уроки в нём остаются.
     from ...db.repositories import CaldavRepository
     await CaldavRepository(app.db).revoke(user.telegram_id)
     await app.users.save(
@@ -415,7 +417,7 @@ async def logout(event: Message | CallbackQuery, user: User, app: AppContext) ->
             available_students=(),
         )
     )
-    await reply(event, "🚪 Вы вышли. Ссылка на приложение отозвана. Войти заново: /login")
+    await reply(event, "🚪 Вы вышли. Войти заново: /login или прямо в приложении.")
 
 
 @router.callback_query(F.data == "settings:delete")

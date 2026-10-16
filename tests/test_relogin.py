@@ -53,9 +53,12 @@ async def _logout(app, user, monkeypatch):
 async def test_logout_then_same_diary_keeps_marks(app, users, monkeypatch):
     user = await users.save(make_user(selected_student_id=5))
     await app.state.set_homework_done(user.telegram_id, "hw:1", True)
+    token = await app.miniapp.issue_token(user.telegram_id)
     logged_out = await _logout(app, user, monkeypatch)
     assert logged_out.selected_student_id is None
     assert await app.state.done_homework(user.telegram_id) == {"hw:1"}
+    # Приложение на телефоне по-прежнему узнаёт человека и предложит войти.
+    assert await app.miniapp.resolve_token(token) == user.telegram_id
     # Снова вошёл в ту же школу: ученик подставляется прежний, отметки на месте.
     candidate = replace(logged_out, school=user.school)
     saved, _ = await _relogin(app, users, candidate)

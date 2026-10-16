@@ -138,6 +138,22 @@ class AccountRepository:
             return None
         return int(row[0])
 
+    async def has_own_data(self, telegram_id: int) -> bool:
+        """Есть ли у пользователя то, что он сам завёл: заметки, настройки
+        (в них и свои уроки), отметки о заданиях, история оценок или дневник
+        до /logout. move_user стёр бы это вместе с его записью."""
+        row = await self._db.fetch_one(
+            """SELECT COALESCE(
+                   (SELECT 1 FROM user_notes WHERE telegram_id = ? LIMIT 1),
+                   (SELECT 1 FROM web_prefs WHERE telegram_id = ? AND payload NOT IN ('', '{}') LIMIT 1),
+                   (SELECT 1 FROM homework_done WHERE telegram_id = ? LIMIT 1),
+                   (SELECT 1 FROM mark_history WHERE telegram_id = ? LIMIT 1),
+                   (SELECT 1 FROM users WHERE telegram_id = ? AND last_school_url != '' LIMIT 1)
+               ) AS found""",
+            (telegram_id,) * 5,
+        )
+        return bool(row and row["found"])
+
     async def move_user(self, old_id: int, new_id: int) -> None:
         """Перенести все данные пользователя на другой id (привязка Telegram).
 
