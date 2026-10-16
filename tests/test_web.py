@@ -71,6 +71,41 @@ class TestChatLaunchNotice:
         assert response.status == 401
 
 
+class TestSurvey:
+    async def _show(self, client, headers):
+        response = await client.post(f"{BASE}/api/notices/survey", headers=headers)
+        assert response.headers["Cache-Control"] == "no-store"
+        return (await response.json())["data"]["show"]
+
+    async def test_later_keeps_survey_and_answer_is_accepted_once(self, client, token, db):
+        await db.execute("INSERT INTO app_survey (telegram_id) VALUES (?)", (1,))
+        headers = {"X-Netschool-Token": token}
+        # «Не сейчас» ничего не отправляет — опрос будет и при следующем открытии.
+        assert await self._show(client, headers) is True
+        assert await self._show(client, headers) is True
+        for bad in (0, 11, "7", 7.5, None):
+            response = await client.post(f"{BASE}/api/survey", headers=headers, json={"score": bad})
+            assert response.status == 400
+        assert (await client.post(f"{BASE}/api/survey", headers=headers, json={"score": 8})).status == 200
+        assert (await client.post(f"{BASE}/api/survey", headers=headers, json={"score": 2})).status == 409
+        row = await db.fetch_one("SELECT score, shown_at FROM app_survey WHERE telegram_id=1")
+        assert row["score"] == 8 and row["shown_at"]
+        assert await self._show(client, headers) is False
+
+    async def test_decline_removes_survey_for_good(self, client, token, db):
+        await db.execute("INSERT INTO app_survey (telegram_id) VALUES (?)", (1,))
+        headers = {"X-Netschool-Token": token}
+        assert await self._show(client, headers) is True
+        assert (await client.post(f"{BASE}/api/survey/decline", headers=headers)).status == 200
+        assert await self._show(client, headers) is False
+        assert (await client.post(f"{BASE}/api/survey", headers=headers, json={"score": 5})).status == 409
+
+    async def test_new_user_never_gets_survey(self, client, token):
+        headers = {"X-Netschool-Token": token}
+        assert await self._show(client, headers) is False
+        assert (await client.post(f"{BASE}/api/survey", headers=headers, json={"score": 5})).status == 409
+
+
 class TestAuth:
     async def test_api_without_token_is_rejected(self, client):
         response = await client.get(f"{BASE}/api/profile")

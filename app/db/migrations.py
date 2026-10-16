@@ -576,6 +576,20 @@ MIGRATIONS: list[str] = [
     ALTER TABLE user_notes ADD COLUMN remind_at REAL;
     CREATE INDEX user_notes_remind ON user_notes(remind_at) WHERE remind_at IS NOT NULL;
     """,
+    # Одноразовый опрос «нравится ли приложение» (1–10) — только аккаунтам,
+    # которые уже есть на момент обновления. Опрос висит, пока человек не
+    # ответит (score) или не откажется (declined_at); «не сейчас» его не
+    # снимает. shown_at — когда окно показали впервые (для статистики).
+    """
+    CREATE TABLE app_survey (
+        telegram_id INTEGER PRIMARY KEY REFERENCES users(telegram_id) ON DELETE CASCADE,
+        shown_at    REAL,
+        score       INTEGER CHECK (score BETWEEN 1 AND 10),
+        answered_at REAL,
+        declined_at REAL
+    );
+    INSERT INTO app_survey (telegram_id) SELECT telegram_id FROM users;
+    """,
 ]
 
 

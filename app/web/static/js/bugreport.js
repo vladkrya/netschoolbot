@@ -1,4 +1,4 @@
-// «Сообщить об ошибке»: текст уходит админу бота, перед отправкой — KryaCaptcha.
+// «Сообщить об ошибке или идее»: текст уходит админу бота, перед отправкой — KryaCaptcha.
 //
 // Капча живёт в iframe (/captcha-frame) того же origin: стили её SDK задают
 // правила для всего документа и сломали бы приложение. Рамка присылает
@@ -20,8 +20,23 @@ function fileSize(bytes) {
   return bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} МБ` : `${Math.max(1, Math.round(bytes / 1024))} КБ`;
 }
 
-function formData(text, token, meta, files) {
+// Что пишет человек: тексты экрана под ошибку и под идею.
+const KINDS = {
+  bug: {
+    intro: 'Что пошло не так? Опишите, что вы делали и что увидели.',
+    placeholder: 'Например: на вкладке «Оценки» не открывается предмет «Алгебра»',
+    attach: '📎 Прикрепить скриншот или видео',
+  },
+  idea: {
+    intro: 'Чего не хватает в приложении? Расскажите, что добавить или сделать удобнее.',
+    placeholder: 'Например: хочу видеть средний балл класса рядом со своим',
+    attach: '📎 Прикрепить картинку или набросок',
+  },
+};
+
+function formData(kind, text, token, meta, files) {
   const data = new FormData();
+  data.append('kind', kind);
   data.append('text', text);
   data.append('token', token);
   data.append('meta', JSON.stringify(meta));
@@ -45,8 +60,8 @@ function deviceInfo() {
   };
 }
 
-export async function openBugReport() {
-  const screen = pushScreen('Сообщить об ошибке');
+export async function openBugReport(kind = 'bug') {
+  const screen = pushScreen('Ошибка или идея');
   screen.innerHTML = '<div class="muted small">Загрузка…</div>';
   // Тип вкладки берём до того, как экран перекроет приложение.
   const meta = deviceInfo();
@@ -58,7 +73,7 @@ export async function openBugReport() {
     return;
   }
   if (!config.enabled) {
-    screen.innerHTML = '<div class="card"><p>Отчёты об ошибках сейчас выключены. Напишите админу бота.</p></div>';
+    screen.innerHTML = '<div class="card"><p>Форма сейчас выключена. Напишите админу во вкладке «Сообщения → Чаты».</p></div>';
     return;
   }
 
@@ -66,12 +81,17 @@ export async function openBugReport() {
     bind: config.bind, theme: isDark() ? 'dark' : 'light',
   })}`;
   screen.innerHTML = `<div class="card bug-report">
-      <p>Что пошло не так? Опишите, что вы делали и что увидели — сообщение получит разработчик.
-      Логин и пароль писать не нужно.</p>
-      <textarea class="field" id="bugText" rows="7" maxlength="4000"
-        placeholder="Например: на вкладке «Оценки» не открывается предмет «Алгебра»"></textarea>
+      <div class="feedback-kinds" role="radiogroup" aria-label="О чём сообщение">
+        <button class="feedback-kind" data-kind="bug" role="radio">
+          <span class="feedback-kind-icon">🐞</span><b>Ошибка</b><span>что-то не работает</span></button>
+        <button class="feedback-kind" data-kind="idea" role="radio">
+          <span class="feedback-kind-icon">💡</span><b>Идея</b><span>чего не хватает</span></button>
+      </div>
+      <p id="bugIntro"></p>
+      <p class="muted small">Сообщение получит разработчик. Логин и пароль писать не нужно.</p>
+      <textarea class="field" id="bugText" rows="7" maxlength="4000"></textarea>
       <div id="bugFiles" class="compose-files"></div>
-      <label class="btn secondary attach-btn">📎 Прикрепить фото или видео
+      <label class="btn secondary attach-btn"><span id="bugAttach"></span>
         <input type="file" id="bugFile" accept="image/*,video/*" multiple hidden></label>
       <p class="muted small">Чтобы отличить вас от бота, пройдите капчу.</p>
       <iframe class="captcha-frame" id="bugCaptcha" title="Капча" src="${esc(frameSrc)}"></iframe>
@@ -85,6 +105,21 @@ export async function openBugReport() {
   const text = screen.querySelector('#bugText');
   let token = '';
   const files = [];
+
+  const setKind = (value) => {
+    kind = KINDS[value] ? value : 'bug';
+    screen.querySelectorAll('.feedback-kind').forEach((button) => {
+      const on = button.dataset.kind === kind;
+      button.classList.toggle('active', on);
+      button.setAttribute('aria-checked', String(on));
+    });
+    screen.querySelector('#bugIntro').textContent = KINDS[kind].intro;
+    screen.querySelector('#bugAttach').textContent = KINDS[kind].attach;
+    text.placeholder = KINDS[kind].placeholder;
+  };
+  screen.querySelectorAll('.feedback-kind').forEach((button) =>
+    button.addEventListener('click', () => setKind(button.dataset.kind)));
+  setKind(kind);
 
   const renderFiles = () => {
     const list = screen.querySelector('#bugFiles');
@@ -164,7 +199,7 @@ export async function openBugReport() {
   send.addEventListener('click', async () => {
     const body = text.value.trim();
     if (body.length < 10) {
-      banner('Опишите, что случилось, хотя бы парой слов', true);
+      banner(kind === 'idea' ? 'Опишите идею хотя бы парой слов' : 'Опишите, что случилось, хотя бы парой слов', true);
       text.focus();
       return;
     }
@@ -173,10 +208,10 @@ export async function openBugReport() {
     try {
       await api('/api/bug-report', {
         method: 'POST',
-        body: formData(body, token, meta, files),
+        body: formData(kind, body, token, meta, files),
       });
       notify('success');
-      banner('Спасибо! Отчёт отправлен.', false, 4000);
+      banner(kind === 'idea' ? 'Спасибо за идею!' : 'Спасибо! Отчёт отправлен.', false, 4000);
       window.removeEventListener('message', listener);
       listener = null;
       popScreen();
