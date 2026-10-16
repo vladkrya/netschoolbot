@@ -93,6 +93,24 @@ class CaldavService:
             raise RuntimeError(f'CalDAV PROPFIND: {response["status"]}')
         return False
 
+    async def _publish(self, telegram_id, state):
+        text = collection_ics(state)
+        text = text.replace('CALSCALE:GREGORIAN\r\n', 'CALSCALE:GREGORIAN\r\nX-WR-CALNAME:Школьное расписание\r\n', 1)
+        response = await self.call('PUT', f'/ns{telegram_id}/schedule/', PUBLISHER,
+                                   text.encode(), {'Content-Type': 'text/calendar; charset=utf-8'})
+        if response['status'] not in (201, 204):
+            raise RuntimeError(f'CalDAV PUT: {response["status"]}')
+
+    async def clear(self, telegram_id):
+        """Убрать уроки из календаря, оставив подписку (/logout): после
+        следующего входа sync заполнит его расписанием нового дневника."""
+        async with self.sync_lock:
+            if not await self.accounts.get(telegram_id):
+                return
+            await self.prepare(telegram_id)
+            await self._publish(telegram_id, {'events': {}})
+            await self.app.cache.put(telegram_id, 'caldav', {})
+
     async def delete_user(self, telegram_id):
         # Ждём публикацию, уже выполняющуюся в потоке Radicale.
         async with self.sync_lock:
@@ -125,12 +143,7 @@ class CaldavService:
                     return
                 created = await self.prepare(telegram_id)
                 if created or state['events'] != previous.get('events'):
-                    text = collection_ics(state)
-                    text = text.replace('CALSCALE:GREGORIAN\r\n', 'CALSCALE:GREGORIAN\r\nX-WR-CALNAME:Школьное расписание\r\n', 1)
-                    response = await self.call('PUT', f'/ns{telegram_id}/schedule/', PUBLISHER,
-                                               text.encode(), {'Content-Type': 'text/calendar; charset=utf-8'})
-                    if response['status'] not in (201, 204):
-                        raise RuntimeError(f'CalDAV PUT: {response["status"]}')
+                    await self._publish(telegram_id, state)
                 await self.app.cache.put(telegram_id, 'caldav', state)
                 await self.accounts.synced(telegram_id)
             except asyncio.CancelledError:

@@ -2,6 +2,8 @@
 
 import asyncio
 
+import datetime as dt
+
 import pytest
 from aiohttp.test_utils import TestClient, TestServer
 
@@ -133,6 +135,15 @@ class TestTelegramLink:
         _, data, _ = await post(client, "/api/account/telegram-link", {}, body["data"]["token"])
         await users.save(make_user(778))
         assert "уже вошёл" in await link_telegram(app_context, data["data"]["code"], 778)
+
+    async def test_telegram_after_logout_keeps_own_data(self, client, app_context, users):
+        """После /logout школы нет, но заметки остались — перенос стёр бы их."""
+        _, body, _ = await register(client)
+        _, data, _ = await post(client, "/api/account/telegram-link", {}, body["data"]["token"])
+        await users.get_or_create(779)
+        await app_context.notes.add(779, dt.date(2026, 10, 1), "Принести циркуль")
+        assert "свои данные" in await link_telegram(app_context, data["data"]["code"], 779)
+        assert len(await app_context.notes.between(779, dt.date(2026, 9, 1), dt.date(2026, 11, 1))) == 1
 
     async def test_bot_sends_nothing_to_web_users(self, app_context):
         from app.bot.notifier import TelegramNotifier

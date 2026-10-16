@@ -1246,6 +1246,30 @@ async def mail_send(request: web.Request) -> web.Response:
     return web.json_response({"ok": True})
 
 
+# Сколько писем «Прочитать все» открывает за раз: список писем — 50.
+MAIL_READ_ALL_LIMIT = 100
+
+
+@routes.post("/api/mail/read-all")
+async def mail_read_all(request: web.Request) -> web.Response:
+    """Отметить прочитанными непрочитанные письма из списка на экране."""
+    try:
+        body = await request.json()
+        ids = list(dict.fromkeys(int(item) for item in body.get("ids") or []))
+    except (ValueError, TypeError, AttributeError):
+        return json_error("Некорректный запрос")
+    if not ids:
+        return web.json_response({"ok": True, "data": {"read": []}})
+    if len(ids) > MAIL_READ_ALL_LIMIT:
+        return json_error("Слишком много писем за раз")
+
+    app, user = context(request), current_user(request)
+    done = await app.diary.mark_mail_read(user, ids)
+    for message_id in done:
+        await app.cache.mark_mail_read(user.telegram_id, message_id)
+    return web.json_response({"ok": True, "data": {"read": done}})
+
+
 @routes.get("/api/mail/{message_id}")
 async def mail_message(request: web.Request) -> web.Response:
     """Письмо целиком. Не кэшируется: открывают его по одному разу."""

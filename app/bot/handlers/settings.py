@@ -379,7 +379,9 @@ async def ask_logout(callback: CallbackQuery) -> None:
     await reply(
         callback,
         "🚪 Выйти из «Сетевого города»? Настройки уведомлений сохранятся, "
-        "но школу и вход придётся выбрать заново.",
+        "но школу и вход придётся выбрать заново. Отметки о сделанных заданиях "
+        "и история оценок вернутся, если войти в тот же дневник. "
+        "Удалить всё: /delete_data.",
         reply_markup=keyboards.confirm("logout", yes="Выйти"),
     )
 
@@ -393,11 +395,16 @@ async def logout(event: Message | CallbackQuery, user: User, app: AppContext) ->
     # Каждый шаг перечислен явно: раньше часть чистки пряталась внутри
     # чужих методов, и понять, что именно остаётся после выхода, было нельзя.
     await app.pool.invalidate(user.telegram_id, forget_saved=True)
-    await app.state.forget_all(user.telegram_id)
+    # Отметки «выполнено», история оценок и слежение остаются до следующего
+    # входа: тот же дневник продолжит с ними, другой их сотрёт (finish_login).
+    if user.school.configured and user.selected_student_id is not None:
+        await app.state.remember_diary(user.telegram_id, user.school.url, user.selected_student_id)
+    await app.state.drop_outbox(user.telegram_id)
     await app.cache.clear(user.telegram_id)
-    await app.miniapp.revoke_tokens(user.telegram_id)
-    from ...db.repositories import CaldavRepository
-    await CaldavRepository(app.db).revoke(user.telegram_id)
+    # Ссылку на приложение и подписку на календарь (CalDAV) не отзываем: без
+    # ссылки приложение на телефоне показывало «Не удалось вас опознать», а с
+    # ней само предлагает войти заново. Уроки из календаря уходят (ниже), а
+    # после входа — в этот же аккаунт или в другой — появляется новое расписание.
     await app.users.save(
         replace(
             user,
@@ -409,7 +416,14 @@ async def logout(event: Message | CallbackQuery, user: User, app: AppContext) ->
             available_students=(),
         )
     )
-    await reply(event, "🚪 Вы вышли. Ссылка на приложение отозвана. Войти заново: /login")
+    # Уже после сохранения: синхронизация, начатая до выхода, видит смену
+    # школы и не вернёт старые уроки.
+    if app.caldav is not None:
+        try:
+            await app.caldav.clear(user.telegram_id)
+        except Exception:  # noqa: BLE001 — выход не должен падать из-за календаря
+            logger.exception("Не удалось очистить календарь при выходе")
+    await reply(event, "🚪 Вы вышли. Войти заново: /login или прямо в приложении.")
 
 
 @router.callback_query(F.data == "settings:delete")

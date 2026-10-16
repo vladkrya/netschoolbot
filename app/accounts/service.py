@@ -25,6 +25,11 @@ async def link_telegram(app: AppContext, code: str, telegram_id: int) -> str:
         # У этого Telegram уже свой дневник — склеивать два нельзя.
         return ("Этот Telegram уже вошёл в «Сетевой город». Чтобы входить на сайт по почте, "
                 "откройте приложение из бота: Настройки → Вход по почте.")
+    if existing is not None and await app.accounts.has_own_data(telegram_id):
+        # После /logout школы нет, но заметки, свои уроки и отметки на месте —
+        # перенос аккаунта с сайта стёр бы их вместе с записью Telegram.
+        return ("У этого Telegram уже есть свои данные: заметки, свои уроки, отметки о заданиях. "
+                "Чтобы их не потерять, откройте приложение из бота (/app) и войдите в «Сетевой город» там.")
     # Всё, что живёт в памяти под старым номером, — остановить.
     await app.watchers.stop(web_id)
     await app.pool.invalidate(web_id)
