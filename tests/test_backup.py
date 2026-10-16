@@ -59,28 +59,3 @@ async def test_backup_leaves_no_wal_companions(db, tmp_path):
     (target / "netschoolbot-20200101-000000.sqlite3-wal").write_bytes(b"")
     prune(target, keep=5)
     assert sorted(p.name for p in target.iterdir()) == [path.name]
-
-
-async def test_replica_check_sees_fresh_probe(db, users, tmp_path):
-    from app.tools.backup import check_replica
-
-    await users.save(make_user())
-
-    def restore(config, db_path, target):
-        make_backup(db_path, target.parent).replace(target)
-
-    report = check_replica(db._path, tmp_path / "litestream.yml", wait=0, restore=restore)
-    assert report.users == 1
-
-
-async def test_replica_check_catches_stale_replica(db, users, tmp_path):
-    from app.tools.backup import check_replica
-
-    await users.save(make_user())
-    stale = make_backup(db._path, tmp_path / "stale")
-
-    def restore(config, db_path, target):
-        target.write_bytes(stale.read_bytes())
-
-    with pytest.raises(BackupError, match="отстала"):
-        check_replica(db._path, tmp_path / "litestream.yml", wait=0, restore=restore)

@@ -13,10 +13,6 @@
 Возвращается то, что пользователь сделал сам и чего «Сетевой город» не
 восстановит: отметки «выполнено» у ДЗ, история оценок, заметки и задачи,
 настройки приложения (web_prefs, в том числе свои уроки — lessonEdits).
-
-Копию на нужный момент из Litestream:
-    litestream restore -config /etc/litestream.yml -timestamp 2026-10-16T06:00:00Z \\
-        -o /tmp/point.sqlite3 /opt/netschoolbot/data/netschoolbot.sqlite3
 """
 
 from __future__ import annotations
