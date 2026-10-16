@@ -3,6 +3,7 @@
     python -m app.tools.backup            # копия в data/backups, хранить 14 последних
     python -m app.tools.backup --keep 30
     python -m app.tools.backup --verify data/backups/netschoolbot-20261005-0300.sqlite3
+    python -m app.tools.backup --check-replica deploy/litestream/litestream.yml
 
 Копия снимается SQLite-ным online backup API: база в WAL, бот пишет в неё
 прямо сейчас, и простое копирование файла дало бы несогласованный снимок.
@@ -19,7 +20,11 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import sqlite3
+import subprocess
 import sys
+import tempfile
+import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -86,6 +91,60 @@ def verify_backup(path: Path, *, expect_users: int | None = None) -> BackupRepor
     return BackupReport(path=path, size=path.stat().st_size, users=users, schema=schema)
 
 
+REPLICA_PROBE_KEY = "replica_probe"
+LITESTREAM = "litestream"
+
+
+def _litestream_restore(config: Path, db_path: Path, target: Path) -> None:
+    result = subprocess.run(
+        [LITESTREAM, "restore", "-config", str(config), "-o", str(target), str(db_path)],
+        capture_output=True, text=True, timeout=600,
+    )
+    if result.returncode != 0:
+        raise BackupError(f"litestream restore: {(result.stderr or result.stdout).strip()[-500:]}")
+
+
+def check_replica(
+    db_path: Path,
+    config: Path,
+    *,
+    wait: float = 30,
+    restore: Callable[[Path, Path, Path], None] = _litestream_restore,
+) -> BackupReport:
+    """Убедиться, что внешняя реплика живая: из неё восстанавливается свежая база.
+
+    В рабочую базу пишется метка, через `wait` секунд база восстанавливается
+    из бакета во временный файл — метка должна там быть. Так видно и упавшую
+    службу, и протухшие ключи, и реплику, которая молча отстала.
+    """
+    probe = f"{time.time():.3f}"
+    live = sqlite3.connect(db_path, timeout=30)
+    try:
+        with live:
+            live.execute(
+                "INSERT OR REPLACE INTO app_metadata (key, value) VALUES (?, ?)", (REPLICA_PROBE_KEY, probe)
+            )
+        live_users = live.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+    finally:
+        live.close()
+    time.sleep(wait)
+    with tempfile.TemporaryDirectory(prefix="replica-check-") as tmp:
+        target = Path(tmp) / "replica.sqlite3"
+        restore(config, db_path, target)
+        # Пока ждали, кто-то мог и уйти: строго «не меньше» здесь лишнее.
+        report = verify_backup(target, expect_users=max(0, live_users - 5))
+        connection = sqlite3.connect(f"file:{target}?mode=ro", uri=True)
+        try:
+            row = connection.execute(
+                "SELECT value FROM app_metadata WHERE key = ?", (REPLICA_PROBE_KEY,)
+            ).fetchone()
+        finally:
+            connection.close()
+    if not row or row[0] != probe:
+        raise BackupError(f"Реплика отстала: метки {probe} в ней нет (там {row[0] if row else 'ничего'})")
+    return report
+
+
 def schema_version(path: Path) -> int:
     connection = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
     try:
@@ -149,6 +208,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--restore", type=Path, help="вернуть базу из копии (службу остановить заранее)")
     parser.add_argument("--latest", action="store_true", help="напечатать путь к последней копии")
     parser.add_argument("--schema", type=Path, help="напечатать версию схемы базы")
+    parser.add_argument("--check-replica", type=Path, metavar="CONFIG",
+                        help="проверить, что из реплики Litestream восстанавливается свежая база")
     args = parser.parse_args(argv)
 
     settings = load_settings(require_bot_token=False)
@@ -162,7 +223,9 @@ def main(argv: list[str] | None = None) -> int:
                 raise BackupError("Копий нет")
             print(found[-1])
             return 0
-        if args.restore:
+        if args.check_replica:
+            report = check_replica(settings.db_path, args.check_replica)
+        elif args.restore:
             report = restore_backup(args.restore, settings.db_path)
         elif args.verify:
             report = verify_backup(args.verify)

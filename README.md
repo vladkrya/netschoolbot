@@ -139,13 +139,47 @@ deploy/deploy.sh
 
 `netschoolbot-backup.timer` раз в сутки снимает копию базы в `data/backups/`
 (online backup SQLite — корректно при работающем боте), проверяет её
-(`integrity_check`, версия схемы, число пользователей) и хранит 14 последних.
-Перед каждой выкладкой — отдельная копия `netschoolbot-predeploy-*`.
+(`integrity_check`, версия схемы, число пользователей) и хранит 20 последних.
+Перед каждой выкладкой — отдельная копия `netschoolbot-predeploy-*`, их
+выкладка держит 10. Сбой копии — сообщение админу (`netschoolbot-alert@`).
 
 ```bash
 ./venv/bin/python -m app.tools.backup                 # копия сейчас
 ./venv/bin/python -m app.tools.backup --verify FILE   # проверить копию
 systemctl stop netschoolbot && ./venv/bin/python -m app.tools.backup --restore FILE
+```
+
+Вернуть одному пользователю его отметки ДЗ, историю оценок, заметки и
+настройки приложения — без остановки бота и без отката остальных:
+
+```bash
+./venv/bin/python -m app.tools.restore_user --from FILE --user TELEGRAM_ID          # что вернётся
+./venv/bin/python -m app.tools.restore_user --from FILE --user TELEGRAM_ID --apply  # вернуть
+```
+
+Дописывается только недостающее; перед записью снимается свежая копия.
+
+#### Внешняя копия: Litestream
+
+Локальные копии лежат на том же диске и снимаются раз в сутки. Litestream
+каждые 10 секунд отправляет изменения базы в Yandex Object Storage, и базу
+можно восстановить на любой момент за последние 30 дней. Один раз на сервере:
+
+```bash
+curl -fsSLo /tmp/litestream.deb https://github.com/benbjohnson/litestream/releases/download/v0.3.13/litestream-v0.3.13-linux-amd64.deb
+apt install /tmp/litestream.deb && systemctl disable --now litestream
+```
+
+Затем бакет и ключ в `.env` (`LITESTREAM_*`, см. `.env.example`) — со
+следующей выкладкой включатся `netschoolbot-litestream` и ежесуточная
+проверка `netschoolbot-replica-check.timer`: она пишет в базу метку,
+восстанавливает базу из бакета и ищет метку там. Упала служба или
+проверка — сообщение админу.
+
+```bash
+litestream restore -config deploy/litestream/litestream.yml -timestamp 2026-10-16T06:00:00Z \
+  -o /tmp/point.sqlite3 /opt/netschoolbot/data/netschoolbot.sqlite3
+./venv/bin/python -m app.tools.restore_user --from /tmp/point.sqlite3 --user TELEGRAM_ID
 ```
 
 В копии нет ключа шифрования паролей — он в `.env`. Храните `.env` отдельно:

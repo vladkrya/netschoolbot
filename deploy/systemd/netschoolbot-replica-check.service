@@ -1,0 +1,15 @@
+[Unit]
+Description=Проверка, что из реплики Litestream восстанавливается свежая база
+OnFailure=netschoolbot-alert@%n.service
+ConditionPathExists=/usr/bin/litestream
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/netschoolbot
+EnvironmentFile=/opt/netschoolbot/.env
+ExecStart=/opt/netschoolbot/venv/bin/python -m app.tools.backup --check-replica /opt/netschoolbot/deploy/litestream/litestream.yml
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/netschoolbot/data

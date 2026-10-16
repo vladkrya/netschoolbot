@@ -1,5 +1,6 @@
 [Unit]
 Description=Резервная копия базы бота «Сетевого города»
+OnFailure=netschoolbot-alert@%n.service
 
 [Service]
 Type=oneshot
