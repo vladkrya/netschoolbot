@@ -22,6 +22,29 @@ function pendingInvite() {
   try { return localStorage.getItem(INVITE_KEY) || window.netschoolInvite || ''; } catch { return window.netschoolInvite || ''; }
 }
 
+const VIEWING_KEY = 'ns-viewing';
+// Сколько ждать /api/account на старте. Service worker его не кэширует, а
+// мобильный интернет с белыми списками не обрывает запрос, а держит его —
+// без предела заставка «Открываем дневник…» стояла больше минуты, хотя
+// сохранённый дневник показать можно.
+const ACCOUNT_WAIT_MS = 4000;
+
+/** Аккаунт для старта; сервер медлит — прошлый признак просмотра, без входа в СГО. */
+async function accountInfo() {
+  const request = api('/api/account').then(({ data }) => {
+    try { localStorage.setItem(VIEWING_KEY, data?.viewing ? '1' : '0'); } catch { /* приватный режим */ }
+    return data;
+  }, () => null);
+  const late = new Promise(resolve => setTimeout(() => resolve(undefined), ACCOUNT_WAIT_MS));
+  const info = await Promise.race([request, late]);
+  if (info !== undefined) return info;
+  // Сервер ответил позже и просит войти в «Сетевой город» — заново, со входом.
+  request.then(late => { if (late?.needs_sgo) location.reload(); });
+  let viewing = false;
+  try { viewing = localStorage.getItem(VIEWING_KEY) === '1'; } catch { /* приватный режим */ }
+  return { viewing };
+}
+
 async function boot() {
   tg?.ready();
   tg?.expand();
@@ -43,7 +66,7 @@ async function boot() {
   }
   // Ещё не вошли в «Сетевой город» — сначала вход, потом дневник.
   if (!demo) {
-    const info = await api('/api/account').then(({ data }) => data, () => null);
+    const info = await accountInfo();
     // Дневник ученика, пригласившего на просмотр: только чтение, без почты и чатов.
     document.documentElement.classList.toggle('view-mode', Boolean(info?.viewing));
     if (info?.needs_sgo) {
