@@ -38,7 +38,9 @@ async def dav(request):
         return web.Response(status=401, headers=headers)
     telegram_id = await service.accounts.authenticate(auth.login, auth.password)
     user = await context(request).users.get(telegram_id) if telegram_id is not None else None
-    if not user or not user.school.configured or not user.credentials.usable:
+    # Вход в «Сетевой город» не требуется: после /logout календарь на телефоне
+    # показывает последнее расписание, а не просит пароль заново.
+    if not user:
         # Ограниченный параллелизм WSGI + задержка неверной авторизации.
         await asyncio.sleep(1)
         return web.Response(status=401, headers=headers)
