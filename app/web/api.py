@@ -1661,10 +1661,19 @@ async def chat_launch_notice(request: web.Request) -> web.Response:
 
 @routes.post("/api/notices/survey")
 async def survey_notice(request: web.Request) -> web.Response:
-    """Показать ли опрос «нравится ли приложение» — ответ «да» бывает один раз."""
+    """Показать ли опрос «нравится ли приложение»: пока нет ни ответа, ни отказа."""
     app, user = context(request), current_user(request)
-    show = await app.miniapp.claim_survey(user.telegram_id)
-    return web.json_response({"ok": True, "data": {"show": show}}, headers={"Cache-Control": "no-store"})
+    show = await app.miniapp.survey_pending(user.telegram_id)
+    # Куда звать с идеями и ошибками: форма есть, только если настроена капча.
+    data = {"show": show, "bug_report": bool(app.settings.web.captcha_url)}
+    return web.json_response({"ok": True, "data": data}, headers={"Cache-Control": "no-store"})
+
+
+@routes.post("/api/survey/decline")
+async def survey_decline(request: web.Request) -> web.Response:
+    app, user = context(request), current_user(request)
+    await app.miniapp.decline_survey(user.telegram_id)
+    return web.json_response({"ok": True})
 
 
 @routes.post("/api/survey")

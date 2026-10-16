@@ -58,7 +58,7 @@ async def admin_stats(message: Message, app: AppContext) -> None:
     if survey["shown"]:
         lines.append("")
         lines.append("<b>Опрос «нравится ли приложение»</b>")
-        lines.append(f"Показан: {survey['shown']}, ответили: {survey['answered']}")
+        lines.append(f"Показан: {survey['shown']}, ответили: {survey['answered']}, отказались: {survey['declined']}")
         if survey["answered"]:
             lines.append(f"• средняя оценка: {survey['average']:.1f} из 10")
             lines.append("• " + ", ".join(f"{score}: {n}" for score, n in sorted(survey["scores"].items())))

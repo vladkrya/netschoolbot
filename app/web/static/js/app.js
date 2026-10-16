@@ -20,6 +20,7 @@ import {
 import { loadAssistantTab, openAssistant } from './assistant.js';
 import { navTabs, renderNav } from './tabs.js';
 import { closeSheet, initSheet, openSheet, sheetOpen } from './sheet.js';
+import { openBugReport } from './bugreport.js';
 import { clearScreens, handleBack, hasScreens, setFallbackBack } from './screens.js';
 import { initSwipeBack } from './swipeback.js';
 import { initTrackpad } from './trackpad.js';
@@ -625,46 +626,88 @@ async function sheetFree() {
   }
 }
 
-/** Разовый опрос «нравится ли приложение» — только тем, кто был до него. */
+/** Разовый опрос «нравится ли приложение» — только тем, кто был до него.
+ *  «Не сейчас» (и просто закрыть окно) — спросим при следующем открытии;
+ *  ответ или «Не хочу» снимают опрос насовсем. */
 async function showSurvey() {
   if (demo) return;
   await sheetFree();
+  let data;
   try {
-    const { data } = await api('/api/notices/survey', { method: 'POST' });
-    if (!data.show) return;
-    await sheetFree();
-    const scores = Array.from({ length: 10 }, (_, i) => i + 1)
-      .map(n => `<button class="survey-score" data-score="${n}">${n}</button>`).join('');
-    const body = openSheet('Нравится приложение?', `
-      <p>Оцените от 1 до 10 — это поможет сделать его лучше. Спросим один раз.</p>
-      <div class="survey-scores">${scores}</div>
-      <div class="survey-ends"><span>совсем нет</span><span>очень</span></div>
-      <div class="chat-actions">
-        <button class="btn" id="surveySend" disabled>Отправить</button>
-        <button class="btn outline" id="surveySkip">Не сейчас</button>
-      </div>`);
-    let score = 0;
-    body.querySelectorAll('.survey-score').forEach(button => button.addEventListener('click', () => {
-      score = Number(button.dataset.score);
-      body.querySelectorAll('.survey-score').forEach(other => other.classList.toggle('on', other === button));
-      body.querySelector('#surveySend').disabled = false;
-      tap('light');
-    }));
-    body.querySelector('#surveySkip').addEventListener('click', closeSheet);
-    const send = body.querySelector('#surveySend');
-    send.addEventListener('click', async () => {
-      send.disabled = true;
-      try {
-        await api('/api/survey', { method: 'POST', body: JSON.stringify({ score }) });
-        notify('success');
-        body.innerHTML = '<p>Спасибо за оценку!</p>';
-        setTimeout(closeSheet, 1200);
-      } catch {
-        notify('error');
-        send.disabled = false;
-      }
-    });
-  } catch { /* Без связи опрос дождётся следующего открытия приложения. */ }
+    ({ data } = await api('/api/notices/survey', { method: 'POST' }));
+  } catch { return; /* Без связи спросим при следующем открытии. */ }
+  if (!data.show) return;
+  await sheetFree();
+  const body = openSheet('Нравится приложение?', `
+    <p>Ответьте на один вопрос — это займёт пару секунд и поможет сделать приложение лучше.</p>
+    <div class="chat-actions">
+      <button class="btn" id="surveyStart">Пройти сейчас</button>
+      <button class="btn outline" id="surveyLater">Не сейчас</button>
+      <button class="btn outline survey-decline" id="surveyDecline">Не хочу</button>
+    </div>`);
+  body.querySelector('#surveyLater').addEventListener('click', closeSheet);
+  body.querySelector('#surveyDecline').addEventListener('click', () => {
+    api('/api/survey/decline', { method: 'POST' }).catch(() => {});
+    closeSheet();
+  });
+  body.querySelector('#surveyStart').addEventListener('click', () => {
+    tap('light');
+    surveyScores(body, data.bug_report);
+  });
+}
+
+function surveyScores(body, bugReport) {
+  const scores = Array.from({ length: 10 }, (_, i) => i + 1)
+    .map(n => `<button class="survey-score" data-score="${n}">${n}</button>`).join('');
+  body.innerHTML = `
+    <p>Насколько вам нравится приложение — от 1 до 10?</p>
+    <div class="survey-scores">${scores}</div>
+    <div class="survey-ends"><span>совсем нет</span><span>очень</span></div>
+    <div class="chat-actions"><button class="btn" id="surveySend" disabled>Отправить</button></div>`;
+  let score = 0;
+  const send = body.querySelector('#surveySend');
+  body.querySelectorAll('.survey-score').forEach(button => button.addEventListener('click', () => {
+    score = Number(button.dataset.score);
+    body.querySelectorAll('.survey-score').forEach(other => other.classList.toggle('on', other === button));
+    send.disabled = false;
+    tap('light');
+  }));
+  send.addEventListener('click', async () => {
+    send.disabled = true;
+    try {
+      await api('/api/survey', { method: 'POST', body: JSON.stringify({ score }) });
+    } catch (error) {
+      notify('error');
+      banner(error.message, true);
+      send.disabled = false;
+      return;
+    }
+    notify('success');
+    surveyThanks(body, bugReport);
+  });
+}
+
+function surveyThanks(body, bugReport) {
+  const where = bugReport
+    ? 'в меню настроек, внизу — «Сообщить об ошибке»'
+    : 'во вкладке <b>Сообщения → Чаты</b> — там можно написать админу';
+  body.innerHTML = `
+    <p><b>Спасибо за оценку!</b></p>
+    <p>Есть идея, что добавить, или заметили ошибку? Напишите нам — ${where}.</p>
+    <div class="chat-actions">
+      <button class="btn" id="surveyFeedback">${bugReport ? 'Написать об идее или ошибке' : 'Перейти в чаты'}</button>
+      <button class="btn outline" id="surveyDone">Закрыть</button>
+    </div>`;
+  body.querySelector('#surveyDone').addEventListener('click', closeSheet);
+  body.querySelector('#surveyFeedback').addEventListener('click', () => {
+    closeSheet();
+    if (bugReport) {
+      openBugReport();
+    } else {
+      selectChats();
+      switchTab('mail');
+    }
+  });
 }
 
 async function start() {

@@ -72,28 +72,38 @@ class TestChatLaunchNotice:
 
 
 class TestSurvey:
-    async def test_existing_user_gets_survey_once_and_answers_once(self, client, token, db):
+    async def _show(self, client, headers):
+        response = await client.post(f"{BASE}/api/notices/survey", headers=headers)
+        assert response.headers["Cache-Control"] == "no-store"
+        return (await response.json())["data"]["show"]
+
+    async def test_later_keeps_survey_and_answer_is_accepted_once(self, client, token, db):
         await db.execute("INSERT INTO app_survey (telegram_id) VALUES (?)", (1,))
         headers = {"X-Netschool-Token": token}
-        early = await client.post(f"{BASE}/api/survey", headers=headers, json={"score": 7})
-        assert early.status == 409  # до показа ответ не принимается
-        responses = await asyncio.gather(*(
-            client.post(f"{BASE}/api/notices/survey", headers=headers) for _ in range(2)
-        ))
-        assert sorted([(await r.json())["data"]["show"] for r in responses]) == [False, True]
+        # «Не сейчас» ничего не отправляет — опрос будет и при следующем открытии.
+        assert await self._show(client, headers) is True
+        assert await self._show(client, headers) is True
         for bad in (0, 11, "7", 7.5, None):
             response = await client.post(f"{BASE}/api/survey", headers=headers, json={"score": bad})
             assert response.status == 400
         assert (await client.post(f"{BASE}/api/survey", headers=headers, json={"score": 8})).status == 200
         assert (await client.post(f"{BASE}/api/survey", headers=headers, json={"score": 2})).status == 409
-        row = await db.fetch_one("SELECT score FROM app_survey WHERE telegram_id=1")
-        assert row["score"] == 8
-        response = await client.post(f"{BASE}/api/notices/survey", headers=headers)
-        assert (await response.json())["data"]["show"] is False
+        row = await db.fetch_one("SELECT score, shown_at FROM app_survey WHERE telegram_id=1")
+        assert row["score"] == 8 and row["shown_at"]
+        assert await self._show(client, headers) is False
+
+    async def test_decline_removes_survey_for_good(self, client, token, db):
+        await db.execute("INSERT INTO app_survey (telegram_id) VALUES (?)", (1,))
+        headers = {"X-Netschool-Token": token}
+        assert await self._show(client, headers) is True
+        assert (await client.post(f"{BASE}/api/survey/decline", headers=headers)).status == 200
+        assert await self._show(client, headers) is False
+        assert (await client.post(f"{BASE}/api/survey", headers=headers, json={"score": 5})).status == 409
 
     async def test_new_user_never_gets_survey(self, client, token):
-        response = await client.post(f"{BASE}/api/notices/survey", headers={"X-Netschool-Token": token})
-        assert (await response.json())["data"]["show"] is False
+        headers = {"X-Netschool-Token": token}
+        assert await self._show(client, headers) is False
+        assert (await client.post(f"{BASE}/api/survey", headers=headers, json={"score": 5})).status == 409
 
 
 class TestAuth:

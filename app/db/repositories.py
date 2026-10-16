@@ -1259,29 +1259,44 @@ class MiniappRepository:
             )
             return cursor.rowcount > 0
 
-    async def claim_survey(self, telegram_id: int) -> bool:
-        """Выдать опрос один раз на аккаунт — только тем, кто был до него."""
+    async def survey_pending(self, telegram_id: int) -> bool:
+        """Показать ли опрос: аккаунт был до него и ещё не ответил и не отказался."""
         async with self._db.transaction() as db:
-            cursor = await db.execute(
+            await db.execute(
                 "UPDATE app_survey SET shown_at = ? WHERE telegram_id = ? AND shown_at IS NULL",
                 (time.time(), telegram_id),
             )
-            return cursor.rowcount > 0
+            cursor = await db.execute(
+                "SELECT 1 FROM app_survey WHERE telegram_id = ? AND score IS NULL AND declined_at IS NULL",
+                (telegram_id,),
+            )
+            return await cursor.fetchone() is not None
 
     async def answer_survey(self, telegram_id: int, score: int) -> bool:
-        """Записать оценку 1–10. Только после показа и только один раз."""
+        """Записать оценку 1–10 — один раз и только тем, кому опрос положен."""
         async with self._db.transaction() as db:
             cursor = await db.execute(
                 "UPDATE app_survey SET score = ?, answered_at = ? "
-                "WHERE telegram_id = ? AND shown_at IS NOT NULL AND score IS NULL",
+                "WHERE telegram_id = ? AND score IS NULL AND declined_at IS NULL",
                 (score, time.time(), telegram_id),
             )
             return cursor.rowcount > 0
 
+    async def decline_survey(self, telegram_id: int) -> bool:
+        """«Не хочу»: больше не спрашивать."""
+        async with self._db.transaction() as db:
+            cursor = await db.execute(
+                "UPDATE app_survey SET declined_at = ? "
+                "WHERE telegram_id = ? AND score IS NULL AND declined_at IS NULL",
+                (time.time(), telegram_id),
+            )
+            return cursor.rowcount > 0
+
     async def survey_stats(self) -> dict[str, Any]:
-        """Итоги опроса для админа: сколько показали, ответили, средняя и разброс."""
+        """Итоги опроса для админа: сколько показали, ответили, отказались, оценки."""
         totals = await self._db.fetch_one(
-            "SELECT COUNT(shown_at) AS shown, COUNT(score) AS answered, AVG(score) AS average FROM app_survey"
+            "SELECT COUNT(shown_at) AS shown, COUNT(score) AS answered, COUNT(declined_at) AS declined, "
+            "AVG(score) AS average FROM app_survey"
         )
         rows = await self._db.fetch_all(
             "SELECT score, COUNT(*) AS n FROM app_survey WHERE score IS NOT NULL GROUP BY score"
@@ -1289,6 +1304,7 @@ class MiniappRepository:
         return {
             "shown": totals["shown"],
             "answered": totals["answered"],
+            "declined": totals["declined"],
             "average": totals["average"],
             "scores": {row["score"]: row["n"] for row in rows},
         }

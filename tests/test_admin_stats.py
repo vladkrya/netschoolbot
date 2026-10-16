@@ -40,12 +40,15 @@ async def test_visits_are_counted_for_admin(app_context, users):
     assert "в Telegram 1" in text and "установленное приложение 1" in text
     assert "Опрос" not in text  # пока никому не показан
 
-    await app_context.db.execute("INSERT INTO app_survey (telegram_id) VALUES (1), (2)")
+    await users.save(make_user(3))
+    await app_context.db.execute("INSERT INTO app_survey (telegram_id) VALUES (1), (2), (3)")
     for uid, score in ((1, 9), (2, 6)):
-        assert await app_context.miniapp.claim_survey(uid)
+        assert await app_context.miniapp.survey_pending(uid)
         assert await app_context.miniapp.answer_survey(uid, score)
+    assert await app_context.miniapp.survey_pending(3)
+    assert await app_context.miniapp.decline_survey(3)
     message = FakeMessage("/adminstats")
     message.from_user = SimpleNamespace(id=1)
     await admin_stats(message, app_context)
     text = message.answers[0][0]
-    assert "Показан: 2, ответили: 2" in text and "средняя оценка: 7.5 из 10" in text and "6: 1, 9: 1" in text
+    assert "Показан: 3, ответили: 2, отказались: 1" in text and "средняя оценка: 7.5 из 10" in text and "6: 1, 9: 1" in text
