@@ -488,6 +488,16 @@ async function quietly(render) {
       document.body.classList.remove('quiet-render');
       const panel = document.querySelector('.panel.active');
       if (!panel) return;
+      // Анимации появления карточек, заглушённые на время обновления, со
+      // снятием класса запустились бы заново — с прозрачности 0, и экран на
+      // миг пустел. Доводим их сразу до конца; бесконечные (спиннер) не трогаем.
+      void panel.offsetWidth;
+      for (const animation of panel.getAnimations?.({ subtree: true }) || []) {
+        // Только CSS: анимации из motion.js (счётчики, вспышки) идут своим ходом.
+        if (typeof CSSAnimation === 'undefined' || !(animation instanceof CSSAnimation)) continue;
+        if (animation.effect?.getTiming().iterations === Infinity) continue;
+        try { animation.finish(); } catch { /* уже закончилась */ }
+      }
       panel.classList.remove('soft-update');
       void panel.offsetWidth;
       panel.classList.add('soft-update');
