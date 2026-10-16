@@ -111,11 +111,23 @@ async def settle_api_mode(app: AppContext, user: User) -> tuple[User, str]:
     return user, "📱 Мобильное API включено: вход держится 60 дней."
 
 
+def _same_diary(previous: User | None, current: User) -> bool:
+    """Тот же ученик той же школы, что и до входа."""
+    return (
+        previous is not None
+        and previous.school.configured
+        and previous.school.url.rstrip("/") == current.school.url.rstrip("/")
+        and previous.selected_student_id is not None
+        and previous.selected_student_id == current.selected_student_id
+    )
+
+
 async def finish_login(app: AppContext, user: User, payload: str | None) -> tuple[User, str]:
     """После удачного входа: сохранить сессию и пользователя, найти детей,
     запустить проверку оценок. Возвращает пользователя и пояснение про API."""
     if payload:
         await app.sessions.save(user.telegram_id, payload)
+    previous = await app.users.get(user.telegram_id)
     saved = await app.users.save(replace(user, enabled=True))
     saved, api_note = await settle_api_mode(app, saved)
     try:
@@ -124,7 +136,11 @@ async def finish_login(app: AppContext, user: User, payload: str | None) -> tupl
         # Вход удался, а список детей — нет. Это не повод откатывать вход.
         logger.info("Не удалось получить список учеников для %s: %s", saved.telegram_id, exc.reason)
     # Новая школа или новый ребёнок — старое состояние слежения неприменимо.
-    await app.state.forget_all(saved.telegram_id)
+    # Повторный вход в тот же дневник (сессия истекла, сменили пароль) его не
+    # трогает: раньше он стирал отметки «выполнено» у заданий и историю оценок.
+    if not _same_diary(previous, saved):
+        await app.state.forget_all(saved.telegram_id)
+    # Пока не вошли, проверки стояли: накопившееся за это время — молча.
     await app.state.mark_baseline_pending(saved.telegram_id, True)
     await app.cache.clear(saved.telegram_id)
     await app.watchers.start(saved.telegram_id)
