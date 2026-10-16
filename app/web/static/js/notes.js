@@ -101,7 +101,7 @@ export function openNoteEditor(subjects, onSaved, { date = null, subject = '', n
   let day = note?.date || date || addDays(today, weekdayIndex(today) >= 4 ? 7 - weekdayIndex(today) : 1);
   const chosen = note ? note.subject : subject;
   const names = chosen && !subjects.includes(chosen) ? [chosen, ...subjects] : subjects;
-  const remind = note ? note.remind : 15;
+  const remindChosen = note ? note.remind : 15;
   const body = openSheet(note ? 'Своя задача' : 'Новая задача', `
     <div class="note-form">
       <textarea class="field note-text" maxlength="500" rows="3" placeholder="Например: принести циркуль">${esc(note?.text || '')}</textarea>
@@ -111,10 +111,10 @@ export function openNoteEditor(subjects, onSaved, { date = null, subject = '', n
         <label class="field-label">Время
           <input class="field note-time" type="time" value="${esc(note?.time || '')}"></label>
       </div>
-      <label class="field-label note-remind-row">Напомнить
+      <label class="field-label">Напомнить
         <select class="field note-remind">
           <option value="">Не напоминать</option>
-          ${REMIND_OPTIONS.map(([minutes, label]) => `<option value="${minutes}" ${minutes === remind ? 'selected' : ''}>${label}</option>`).join('')}
+          ${REMIND_OPTIONS.map(([minutes, label]) => `<option value="${minutes}" ${minutes === remindChosen ? 'selected' : ''}>${label}</option>`).join('')}
         </select></label>
       <label class="field-label">Предмет
         <select class="field note-subject">
@@ -123,19 +123,14 @@ export function openNoteEditor(subjects, onSaved, { date = null, subject = '', n
         </select></label>
       <button class="btn note-save">${note ? 'Сохранить' : 'Добавить'}</button>
       ${note ? '<button class="btn outline note-remove">Удалить задачу</button>' : ''}
-      <div class="muted small note-hint"></div>
+      <div class="muted small">Бот напомнит вечером накануне, если задача не отмечена. Со временем — ещё и заранее, в Telegram и push-уведомлением.</div>
     </div>`);
   const text = body.querySelector('.note-text');
   const timeInput = body.querySelector('.note-time');
-  const remindRow = body.querySelector('.note-remind-row');
-  const hint = body.querySelector('.note-hint');
-  // Без времени напоминать не к чему: строка «Напомнить» прячется.
-  const sync = () => {
-    remindRow.hidden = !timeInput.value;
-    hint.textContent = timeInput.value
-      ? 'Напоминание придёт в Telegram и push-уведомлением.'
-      : 'Вечером накануне бот напомнит, если задача не отмечена. Укажите время — напомнит и перед ним.';
-  };
+  const remind = body.querySelector('.note-remind');
+  // Без времени напоминать не к чему: выбор гаснет. Не прячется — иначе
+  // шторка подпрыгивает, когда вводят время.
+  const sync = () => { remind.disabled = !timeInput.value; };
   timeInput.addEventListener('input', sync);
   sync();
   if (!note) setTimeout(() => text.focus(), 50);
@@ -153,7 +148,7 @@ export function openNoteEditor(subjects, onSaved, { date = null, subject = '', n
     day = body.querySelector('.note-date').value || day;
     if (!value) { text.focus(); notify('error'); return; }
     const time = timeInput.value;
-    const remindValue = body.querySelector('.note-remind').value;
+    const remindValue = remind.value;
     const payload = {
       date: day, text: value, subject: body.querySelector('.note-subject').value,
       time, remind: time && remindValue !== '' ? Number(remindValue) : null,

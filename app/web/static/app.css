@@ -2045,6 +2045,7 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
 .lc-test { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border: 1px solid; border-radius: 8px; font-size: 12px; }
 .note-form { display: flex; flex-direction: column; gap: 12px; }
 .note-form textarea { resize: vertical; min-height: 70px; font: inherit; }
+.note-form select:disabled { opacity: .45; }
 .streaks { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
 .streak {
   display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px;
