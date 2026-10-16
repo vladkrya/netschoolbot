@@ -123,7 +123,8 @@ class Notifier(Protocol):
     async def send_error(self, user: User, error: NetSchoolError) -> None: ...
 
     async def send_text(
-        self, user: User, text: str, *, push: tuple[str, str] | None = None, kind: str = ""
+        self, user: User, text: str, *, push: tuple[str, str] | None = None, kind: str = "",
+        family: bool = True,
     ) -> None: ...
 
 

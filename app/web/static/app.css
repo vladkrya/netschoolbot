@@ -184,21 +184,11 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .date-side { display: flex; align-items: center; gap: 4px; min-width: 0; }
 .date-side.end { justify-content: flex-end; }
 .date-split .date-title { padding: 0 4px; }
-.date-today {
-  flex: none;
-  height: 30px;
-  padding: 0 10px;
-  border-radius: 15px;
-  background: rgba(255, 255, 255, .16);
-  color: #fff;
-  font-size: 12px;
-  font-weight: 600;
-  white-space: nowrap;
-  transition: transform .15s;
-}
-.date-today:active { transform: scale(.92); }
+/* «Вернуться на сегодня» — иконкой: подпись наезжала на дату под заголовком. */
+.date-today { color: #fff; }
+.date-today .icon { width: 21px; height: 21px; }
+.date-today:not([hidden]) { animation: pop .3s var(--ease) backwards; }
 .date-today[hidden] { display: none; }
-@media (max-width: 359px) { .date-today { padding: 0 7px; font-size: 11px; } }
 .hw-check.auto { opacity: .6; cursor: default; }
 .switch-note { display: block; margin-top: 2px; }
 /* «Выполнено» под заданием на экранах урока и задания. */

@@ -262,6 +262,7 @@ class TestNotesAndFamily:
         now = dt.datetime(2026, 10, 15, 9, 50, tzinfo=dt.timezone.utc).timestamp()
         assert await send_due(notes, users, notifier, now) == 1
         assert notifier.texts == ["⏰ Через 10 мин, в 10:00: Принести &lt;циркуль&gt; (Геометрия)"]
+        assert notifier.family is False
         # Второй раз то же не шлётся, проспанное (давнее STALE_SECONDS) — тоже.
         assert await send_due(notes, users, notifier, now + STALE_SECONDS) == 0
 
@@ -430,3 +431,9 @@ class TestBotFeatures:
         assert [chat for chat, _ in bot.sent] == [1, 2]
         assert [chat for chat, _ in push.sent] == [1, 2, web_id]
         assert push.sent[1][1] == "Аня: Алгебра"
+        # Свои напоминания ученика — только ему самому.
+        bot.sent.clear()
+        push.sent.clear()
+        await notifier.send_text(owner, "⏰ Сменка", push=("Напоминание", "Сменка"), kind="note", family=False)
+        assert [chat for chat, _ in bot.sent] == [1]
+        assert [chat for chat, _ in push.sent] == [1]
