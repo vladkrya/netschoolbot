@@ -689,7 +689,7 @@ function surveyScores(body, bugReport) {
 
 function surveyThanks(body, bugReport) {
   const where = bugReport
-    ? 'в меню настроек, внизу — «Сообщить об ошибке»'
+    ? 'в меню настроек, внизу — «Сообщить об ошибке или идее»'
     : 'во вкладке <b>Сообщения → Чаты</b> — там можно написать админу';
   body.innerHTML = `
     <p><b>Спасибо за оценку!</b></p>
@@ -702,7 +702,7 @@ function surveyThanks(body, bugReport) {
   body.querySelector('#surveyFeedback').addEventListener('click', () => {
     closeSheet();
     if (bugReport) {
-      openBugReport();
+      openBugReport('idea');
     } else {
       selectChats();
       switchTab('mail');

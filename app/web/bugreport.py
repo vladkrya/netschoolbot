@@ -1,4 +1,4 @@
-"""Отчёт об ошибке из мини-приложения: текст уходит админу бота в Telegram.
+"""Сообщение об ошибке или идея из мини-приложения: текст уходит админу бота в Telegram.
 
 Перед отправкой человек проходит KryaCaptcha. Токен капчи проверяется здесь,
 на сервере, через `siteverify` с привязкой к пользователю (`bind`) и
@@ -60,10 +60,13 @@ def _clip(value, limit: int) -> str:
     return str(value or "")[:limit]
 
 
-def format_report(user, text: str, meta: dict) -> str:
+KINDS = {"bug": "🐞 <b>Отчёт об ошибке</b>", "idea": "💡 <b>Идея</b>"}
+
+
+def format_report(user, text: str, meta: dict, kind: str = "bug") -> str:
     """Сообщение админу. У бота parse_mode=HTML — всё пользовательское экранируется."""
     lines = [
-        "🐞 <b>Отчёт об ошибке</b>",
+        KINDS.get(kind, KINDS["bug"]),
         f"От: {html.escape(user.display_name or '—')} (<code>{user.telegram_id}</code>)",
         f"Школа: {html.escape(user.school.name or '—')}",
         f"API: {user.effective_api_mode.value}",
@@ -151,7 +154,7 @@ async def read_report(request: web.Request) -> tuple[dict, list[tuple[str, bytes
                 if not data:
                     raise BadReport(f"«{name}» пустой")
                 files.append((name, bytes(data)))
-            elif part.name in ("text", "token"):
+            elif part.name in ("text", "token", "kind"):
                 fields[part.name] = await part.text()
             elif part.name == "meta":
                 try:
@@ -193,8 +196,9 @@ async def bug_report(request: web.Request) -> web.Response:
     text = str(body.get("text") or "").strip()
     token = body.get("token")
     meta = body.get("meta") if isinstance(body.get("meta"), dict) else {}
+    kind = body.get("kind") if body.get("kind") in KINDS else "bug"
     if len(text) < MIN_TEXT:
-        return json_error("Опишите, что случилось, хотя бы парой слов")
+        return json_error("Напишите хотя бы парой слов")
     if len(text) > MAX_TEXT:
         return json_error(f"Слишком длинно: не больше {MAX_TEXT} символов")
     if not isinstance(token, str) or not token or len(token) > 4096:
@@ -217,7 +221,7 @@ async def bug_report(request: web.Request) -> web.Response:
 
     _last_sent[user.telegram_id] = now
     try:
-        await deliver(bot, settings.telegram.admin_id, format_report(user, text, meta), files)
+        await deliver(bot, settings.telegram.admin_id, format_report(user, text, meta, kind), files)
     except Exception:
         _last_sent.pop(user.telegram_id, None)
         logger.exception("Не удалось переслать отчёт об ошибке от %s", user.telegram_id)

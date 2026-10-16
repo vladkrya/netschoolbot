@@ -280,3 +280,36 @@ async def test_captcha_proxy_forwards_without_login(app_context, bot, monkeypatc
         await client.close()
         await server.close()
     assert seen == [("POST", "/api/v1/session/new", '{"mode": "rounds"}')]
+
+
+async def test_idea_is_marked_for_admin(app_context, bot, token, verifications):
+    client = await _client(app_context, bot)
+    try:
+        response = await _post(client, token, kind="idea", text="Добавьте средний балл класса")
+        assert response.status == 200, await response.text()
+    finally:
+        await client.close()
+    ((_, text),) = bot.sent
+    assert text.startswith("💡 <b>Идея</b>") and "средний балл" in text
+
+
+async def test_unknown_kind_is_a_bug_report(app_context, bot, token, verifications):
+    client = await _client(app_context, bot)
+    try:
+        assert (await _post(client, token, kind="<b>")).status == 200
+    finally:
+        await client.close()
+    ((_, text),) = bot.sent
+    assert text.startswith("🐞 <b>Отчёт об ошибке</b>")
+
+
+async def test_idea_with_picture_comes_through_multipart(app_context, bot, token, verifications):
+    form = _form(("набросок.png", b"PNG", "image/png"), text="Вот так бы выглядел виджет")
+    form.add_field("kind", "idea")
+    client = await _client(app_context, bot)
+    try:
+        response = await client.post(f"{BASE}/api/bug-report", params={"token": token}, data=form)
+        assert response.status == 200, await response.text()
+    finally:
+        await client.close()
+    assert bot.sent[0][1].startswith("💡 <b>Идея</b>")

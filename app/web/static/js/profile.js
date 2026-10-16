@@ -811,7 +811,7 @@ function render() {
     </section>`}
     ${demoSection()}
     <div class="drawer-foot muted small">Дневник «Сетевого города»${window.NETSCHOOL.appVersion ? ` · v. ${esc(window.NETSCHOOL.appVersion)}` : ''}
-      ${demo || !data.bug_report ? '' : `<button class="link small" id="drawerBug">Сообщить об ошибке</button>`}</div>`;
+      ${demo || !data.bug_report ? '' : `<button class="link small" id="drawerBug">Сообщить об ошибке или идее</button>`}</div>`;
 
   bindDrawer();
   loadStudentClass(currentStudent);
