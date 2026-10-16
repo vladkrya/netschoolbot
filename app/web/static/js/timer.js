@@ -230,6 +230,16 @@ async function tick() {
   if (fresh) await show(box, fresh, daySwitch);
 }
 
+/** Следующий тик — сразу после смены секунды. Раньше был setInterval с
+ *  произвольным сдвигом: цифры менялись с опозданием до секунды, а «00:00»
+ *  приходило вовремя (по смене статуса урока), и 00:01 висело полсекунды. */
+function schedule() {
+  timer = setTimeout(() => {
+    schedule();
+    tick();
+  }, 1000 - (Date.now() % 1000) + 20);
+}
+
 /** День перерисован: уроки сегодняшнего дня или null (другой день, нет уроков). */
 export function updateTimer(list, isToday) {
   lessons = Array.isArray(list) ? list : [];
@@ -239,7 +249,7 @@ export function updateTimer(list, isToday) {
   if (next !== active) instant = true;
   active = next;
   if (!timer) {
-    timer = setInterval(tick, 1000);
+    schedule();
     document.addEventListener('visibilitychange', () => { if (!document.hidden) tick(); });
   }
   tick();
