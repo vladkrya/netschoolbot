@@ -111,15 +111,16 @@ async def settle_api_mode(app: AppContext, user: User) -> tuple[User, str]:
     return user, "📱 Мобильное API включено: вход держится 60 дней."
 
 
-def _same_diary(previous: User | None, current: User) -> bool:
-    """Тот же ученик той же школы, что и до входа."""
-    return (
-        previous is not None
-        and previous.school.configured
-        and previous.school.url.rstrip("/") == current.school.url.rstrip("/")
-        and previous.selected_student_id is not None
-        and previous.selected_student_id == current.selected_student_id
-    )
+def _same_school(a: str, b: str) -> bool:
+    return bool(a) and a.rstrip("/") == b.rstrip("/")
+
+
+async def _known_diary(app: AppContext, telegram_id: int) -> tuple[str, int] | None:
+    """Чей дневник был до входа: текущий, а после /logout — запомненный при выходе."""
+    previous = await app.users.get(telegram_id)
+    if previous and previous.school.configured and previous.selected_student_id is not None:
+        return previous.school.url, previous.selected_student_id
+    return await app.state.last_diary(telegram_id)
 
 
 async def finish_login(app: AppContext, user: User, payload: str | None) -> tuple[User, str]:
@@ -127,7 +128,11 @@ async def finish_login(app: AppContext, user: User, payload: str | None) -> tupl
     запустить проверку оценок. Возвращает пользователя и пояснение про API."""
     if payload:
         await app.sessions.save(user.telegram_id, payload)
-    previous = await app.users.get(user.telegram_id)
+    known = await _known_diary(app, user.telegram_id)
+    # Вход после /logout: ученик не выбран — тот же, что был до выхода
+    # (sync_students оставит его, только если он есть в этом аккаунте).
+    if known and user.selected_student_id is None and _same_school(known[0], user.school.url):
+        user = replace(user, selected_student_id=known[1])
     saved = await app.users.save(replace(user, enabled=True))
     saved, api_note = await settle_api_mode(app, saved)
     try:
@@ -138,8 +143,9 @@ async def finish_login(app: AppContext, user: User, payload: str | None) -> tupl
     # Новая школа или новый ребёнок — старое состояние слежения неприменимо.
     # Повторный вход в тот же дневник (сессия истекла, сменили пароль) его не
     # трогает: раньше он стирал отметки «выполнено» у заданий и историю оценок.
-    if not _same_diary(previous, saved):
+    if not (known and _same_school(known[0], saved.school.url) and known[1] == saved.selected_student_id):
         await app.state.forget_all(saved.telegram_id)
+    await app.state.remember_diary(saved.telegram_id, "", None)
     # Пока не вошли, проверки стояли: накопившееся за это время — молча.
     await app.state.mark_baseline_pending(saved.telegram_id, True)
     await app.cache.clear(saved.telegram_id)

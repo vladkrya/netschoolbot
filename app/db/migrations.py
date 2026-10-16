@@ -590,6 +590,13 @@ MIGRATIONS: list[str] = [
     );
     INSERT INTO app_survey (telegram_id) SELECT telegram_id FROM users;
     """,
+    # Чей дневник был до /logout: школа и ученик. Выход больше не стирает
+    # отметки «выполнено» и историю оценок — при входе в тот же дневник они
+    # остаются, а при входе в другой стираются.
+    """
+    ALTER TABLE users ADD COLUMN last_school_url TEXT NOT NULL DEFAULT '';
+    ALTER TABLE users ADD COLUMN last_student_id INTEGER;
+    """,
 ]
 
 

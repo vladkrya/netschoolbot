@@ -379,7 +379,9 @@ async def ask_logout(callback: CallbackQuery) -> None:
     await reply(
         callback,
         "🚪 Выйти из «Сетевого города»? Настройки уведомлений сохранятся, "
-        "но школу и вход придётся выбрать заново.",
+        "но школу и вход придётся выбрать заново. Отметки о сделанных заданиях "
+        "и история оценок вернутся, если войти в тот же дневник. "
+        "Удалить всё: /delete_data.",
         reply_markup=keyboards.confirm("logout", yes="Выйти"),
     )
 
@@ -393,7 +395,11 @@ async def logout(event: Message | CallbackQuery, user: User, app: AppContext) ->
     # Каждый шаг перечислен явно: раньше часть чистки пряталась внутри
     # чужих методов, и понять, что именно остаётся после выхода, было нельзя.
     await app.pool.invalidate(user.telegram_id, forget_saved=True)
-    await app.state.forget_all(user.telegram_id)
+    # Отметки «выполнено», история оценок и слежение остаются до следующего
+    # входа: тот же дневник продолжит с ними, другой их сотрёт (finish_login).
+    if user.school.configured and user.selected_student_id is not None:
+        await app.state.remember_diary(user.telegram_id, user.school.url, user.selected_student_id)
+    await app.state.drop_outbox(user.telegram_id)
     await app.cache.clear(user.telegram_id)
     await app.miniapp.revoke_tokens(user.telegram_id)
     from ...db.repositories import CaldavRepository

@@ -815,6 +815,26 @@ class MarkStateRepository:
                 "DELETE FROM child_state WHERE telegram_id = ? AND student_id = ?", drop
             )
 
+    async def remember_diary(self, telegram_id: int, school_url: str, student_id: int | None) -> None:
+        """Запомнить при выходе, чей дневник был открыт; пустой url — забыть."""
+        await self._db.execute(
+            "UPDATE users SET last_school_url = ?, last_student_id = ? WHERE telegram_id = ?",
+            (school_url, student_id, telegram_id),
+        )
+
+    async def last_diary(self, telegram_id: int) -> tuple[str, int] | None:
+        """Школа и ученик до выхода, если выходили."""
+        row = await self._db.fetch_one(
+            "SELECT last_school_url, last_student_id FROM users WHERE telegram_id = ?", (telegram_id,)
+        )
+        if not row or not row["last_school_url"] or row["last_student_id"] is None:
+            return None
+        return row["last_school_url"], int(row["last_student_id"])
+
+    async def drop_outbox(self, telegram_id: int) -> None:
+        """Неотправленные уведомления — после выхода они уже не к месту."""
+        await self._db.execute("DELETE FROM outbox WHERE telegram_id = ?", (telegram_id,))
+
     async def forget_all(self, telegram_id: int) -> None:
         """Сбросить слежение — например при смене школы или ученика."""
         async with self._db.transaction() as db:
