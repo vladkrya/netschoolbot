@@ -1,0 +1,10 @@
+# Подключается к другим юнитам: OnFailure=netschoolbot-alert@%n.service.
+# $$ — экранирование от подстановок самого systemd.
+[Unit]
+Description=Сообщить админу о сбое %i
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/netschoolbot
+EnvironmentFile=-/opt/netschoolbot/.env
+ExecStart=/bin/sh -c 'log=$$(journalctl -u "$$1" -n 15 --no-pager -o cat); exec /opt/netschoolbot/venv/bin/python -m app.tools.notify_admin "🔴 Сбой $$1, журнал:" "$$log"' sh %i

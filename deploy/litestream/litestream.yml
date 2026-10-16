@@ -1,0 +1,19 @@
+# Непрерывная копия базы в Yandex Object Storage (Litestream 0.3.x).
+# Ключи и бакет — в /opt/netschoolbot/.env: LITESTREAM_BUCKET,
+# LITESTREAM_ACCESS_KEY_ID, LITESTREAM_SECRET_ACCESS_KEY (ключи Litestream
+# берёт из окружения сам). Восстановить на момент времени:
+#   litestream restore -config deploy/litestream/litestream.yml \
+#     -timestamp 2026-10-16T06:00:00Z -o /tmp/point.sqlite3 /opt/netschoolbot/data/netschoolbot.sqlite3
+dbs:
+  - path: /opt/netschoolbot/data/netschoolbot.sqlite3
+    replicas:
+      - type: s3
+        bucket: ${LITESTREAM_BUCKET}
+        path: netschoolbot
+        endpoint: https://storage.yandexcloud.net
+        region: ru-central1
+        force-path-style: true
+        sync-interval: 10s
+        # Полный снимок раз в сутки, между ними — WAL; хранится месяц.
+        snapshot-interval: 24h
+        retention: 720h
