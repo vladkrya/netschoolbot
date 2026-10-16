@@ -1361,3 +1361,37 @@ class TestStudentClass:
         monkeypatch.setattr(app_context.diary, "fetch_class_name", fetch, raising=False)
         response = await client.get(f"{BASE}/api/student-class", params={"token": token})
         assert (await response.json())["data"] == {"name": "", "label": ""}
+
+
+async def test_every_report_can_be_sent_to_chat(app_context, users, tmp_path, monkeypatch):
+    """Подпись была не у всех отчётов: «Контрольные» и другие падали KeyError."""
+    from dataclasses import replace
+
+    import app.web.extras as extras
+    from app.exporting import REPORTS
+
+    await users.save(make_user(1))
+    app_context.settings = replace(app_context.settings, data_dir=tmp_path)
+
+    async def fake_report(app, user, scope, report):
+        return b"xlsx", f"{report}.xlsx"
+
+    monkeypatch.setattr(extras, "export_report", fake_report)
+    sent = []
+
+    class Bot:
+        async def send_document(self, chat_id, document, caption=""):
+            sent.append(caption)
+
+    client = TestClient(TestServer(create_app(app_context, bot=Bot())))
+    await client.start_server()
+    try:
+        token = await app_context.miniapp.issue_token(1)
+        for report in REPORTS:
+            response = await client.post(f"{BASE}/api/export/send", headers={"X-Netschool-Token": token},
+                                         json={"scope": "period", "report": report})
+            assert response.status == 200, report
+    finally:
+        await client.close()
+    assert len(sent) == len(REPORTS) and all(sent)
+    assert set(extras.EXPORT_CAPTIONS) == set(REPORTS)

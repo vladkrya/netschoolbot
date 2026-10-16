@@ -338,6 +338,10 @@ EXPORT_CAPTIONS = {
     "absences": "📊 Пропуски: по предметам и списком.",
     "homework": "📊 Домашние задания за период.",
     "lessons": "📊 Журнал уроков: темы, учителя, оценки и пропуски.",
+    "subjects": "📊 Сводка по предметам: учитель, уроки, пропуски, задания и средний.",
+    "dynamics": "📊 Динамика: средний по каждому предмету помесячно.",
+    "tests": "📊 Контрольные и проверочные работы с оценками.",
+    "schedule": "📊 Расписание недели — для печати.",
 }
 
 
@@ -385,6 +389,8 @@ async def export_send(request: web.Request) -> web.Response:
         raise
     await bot.send_document(
         user.telegram_id, BufferedInputFile(data, filename=name),
-        caption=EXPORT_CAPTIONS[report],
+        # Отчёт без своей подписи (добавили, а подпись забыли) — общая,
+        # а не KeyError после того, как файл уже собран.
+        caption=EXPORT_CAPTIONS.get(report, f"📊 {REPORTS[report]}"),
     )
     return web.json_response({"ok": True})

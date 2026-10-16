@@ -271,12 +271,19 @@ function openExport() {
       <button class="chip active" data-scope="period" aria-pressed="true">Текущий период</button>
       <button class="chip" data-scope="year" aria-pressed="false">Весь учебный год</button>
     </div>
-    ${initData ? `<label class="switch-row"><span>Прислать файлом в чат с ботом</span>
-      <input type="checkbox" switch class="switch" id="exportToChat"></label>` : ''}
+    <label class="switch-row" id="exportChatRow" ${initData ? '' : 'hidden'}><span>Прислать файлом в чат с ботом</span>
+      <input type="checkbox" switch class="switch" id="exportToChat"></label>
     <button class="btn" id="exportGo">Открыть в Excel</button>
     <div class="muted small export-status"></div>`);
   const status = body.querySelector('.export-status');
   const go = body.querySelector('#exportGo');
+  // В приложении на телефоне и на сайте initData нет, но бот пришлёт файл
+  // и туда, если к аккаунту привязан Telegram — раньше переключателя не было.
+  if (!initData && !demo) {
+    api('/api/account').then(({ data }) => {
+      if (data?.telegram) body.querySelector('#exportChatRow').hidden = false;
+    }, () => {});
+  }
   let scope = 'period';
   body.querySelectorAll('[data-scope]').forEach((chip) => chip.addEventListener('click', () => {
     select();
