@@ -1384,6 +1384,8 @@ main.leaving { transition: transform .22s var(--ease); box-shadow: -8px 0 24px r
 .mail-search-row { display: flex; gap: 8px; align-items: stretch; }
 .mail-search-row .search { flex: 1; min-width: 0; }
 .mail-sort { flex: none; white-space: nowrap; }
+.mail-read-all { margin-left: auto; }
+.mail-read-all[hidden] { display: none; }
 .hw-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
 .hw-check {
   position: relative; isolation: isolate; overflow: hidden;

@@ -391,6 +391,12 @@ export async function demoApi(path, options = {}) {
     return { ok: true };
   }
 
+  if (route === '/api/mail/read-all') {
+    const ids = (body?.ids || []).map(String);
+    MAIL.forEach((m) => { if (ids.includes(String(m.id))) m.read = true; });
+    return ok({ read: body?.ids || [] });
+  }
+
   const mailMatch = route.match(/^\/api\/mail\/(\d+)$/);
   if (mailMatch) {
     const message = MAIL.find((m) => String(m.id) === mailMatch[1]) || MAIL[0];
