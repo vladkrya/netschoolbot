@@ -187,7 +187,7 @@ async def test_failure_retains_calendar_and_credentials_can_be_revoked(calendar_
     assert await app.miniapp.resolve_token(token) == 1
 
 
-async def test_password_rotation_and_logout(calendar_client):
+async def test_password_rotation_and_calendar_survives_logout(calendar_client):
     client, app, token, old_auth = calendar_client
     password = await app.caldav.accounts.create(1)
     assert await app.caldav.accounts.authenticate('ns1', old_auth.password) is None
@@ -195,9 +195,11 @@ async def test_password_rotation_and_logout(calendar_client):
     from app.bot.handlers.settings import logout
     from tests.test_bot_handlers import FakeMessage
     await logout(FakeMessage(), await app.users.get(1), app)
-    assert await app.caldav.accounts.get(1) is None
+    # Выход из «Сетевого города» календарь не отключает: подписка на телефоне
+    # остаётся и обновится после следующего входа.
+    assert await app.caldav.accounts.get(1) is not None
     response = await client.request('PROPFIND', BASE + '/caldav/', auth=BasicAuth('ns1', password))
-    assert response.status == 401
+    assert response.status == 207
 
 
 async def test_snapshot_and_calendar_recover_after_storage_loss(calendar_client, tmp_path):

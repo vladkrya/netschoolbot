@@ -401,11 +401,10 @@ async def logout(event: Message | CallbackQuery, user: User, app: AppContext) ->
         await app.state.remember_diary(user.telegram_id, user.school.url, user.selected_student_id)
     await app.state.drop_outbox(user.telegram_id)
     await app.cache.clear(user.telegram_id)
-    # Ссылку на приложение не отзываем: без неё приложение на телефоне
-    # показывало «Не удалось вас опознать», а с ней само предлагает войти
-    # в «Сетевой город» заново. Заметки и свои уроки в нём остаются.
-    from ...db.repositories import CaldavRepository
-    await CaldavRepository(app.db).revoke(user.telegram_id)
+    # Ссылку на приложение и календарь (CalDAV) не отзываем: без ссылки
+    # приложение на телефоне показывало «Не удалось вас опознать», а с ней само
+    # предлагает войти заново. Календарь без входа хранит последнее
+    # расписание и обновится после входа — в этот же аккаунт или в другой.
     await app.users.save(
         replace(
             user,

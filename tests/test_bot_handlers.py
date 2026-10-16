@@ -17,6 +17,7 @@ from app.bot.handlers import auth, menu, settings as settings_handlers
 from app.bot.handlers.settings import parse_interval, parse_quiet_hours
 from app.bot.notifier import TelegramNotifier
 from app.context import AppContext
+from app.db.repositories import CaldavRepository
 from app.domain.models import MarkKind, NotificationPrefs, QuietHours
 from app.domain.records import MarkEvent, MarkRecord
 from app.netschool.errors import NetSchoolError, Reason
@@ -424,6 +425,7 @@ class TestLogout:
         user = await users.save(make_user())
         await sessions.save(1, "{}")
         token = await app.miniapp.issue_token(1)
+        await CaldavRepository(app.db).create(1)
         await app.watchers.start(1)
 
         await settings_handlers.logout(FakeMessage(), user, app)
@@ -432,8 +434,9 @@ class TestLogout:
         assert updated.enabled is False
         assert updated.school.url == ""
         assert await sessions.load(1) is None
-        # Приложение на телефоне остаётся: оно само предложит войти заново.
+        # Приложение на телефоне и календарь остаются: войти можно заново.
         assert await app.miniapp.resolve_token(token) == 1
+        assert await CaldavRepository(app.db).get(1) is not None
         assert app.watchers.running == set()
 
 
