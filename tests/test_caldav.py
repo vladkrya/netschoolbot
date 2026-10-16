@@ -187,19 +187,26 @@ async def test_failure_retains_calendar_and_credentials_can_be_revoked(calendar_
     assert await app.miniapp.resolve_token(token) == 1
 
 
-async def test_password_rotation_and_calendar_survives_logout(calendar_client):
+async def test_logout_empties_calendar_and_login_refills_it(calendar_client):
     client, app, token, old_auth = calendar_client
     password = await app.caldav.accounts.create(1)
     assert await app.caldav.accounts.authenticate('ns1', old_auth.password) is None
     assert await app.caldav.accounts.authenticate('ns1', password) == 1
     from app.bot.handlers.settings import logout
     from tests.test_bot_handlers import FakeMessage
-    await logout(FakeMessage(), await app.users.get(1), app)
-    # Выход из «Сетевого города» календарь не отключает: подписка на телефоне
-    # остаётся и обновится после следующего входа.
+    user = await app.users.get(1)
+    await logout(FakeMessage(), user, app)
+    # Подписка на телефоне остаётся, а уроки из календаря уходят.
+    auth = BasicAuth('ns1', password)
     assert await app.caldav.accounts.get(1) is not None
-    response = await client.request('PROPFIND', BASE + '/caldav/', auth=BasicAuth('ns1', password))
-    assert response.status == 207
+    assert objects(await query(client, auth)) == {}
+    # Вход (в тот же или другой аккаунт) сразу публикует новое расписание.
+    from app.netschool import login as login_flow
+    app.diary.sync_students = AsyncMock(side_effect=lambda u: u)
+    await login_flow.finish_login(app, user, None)
+    await asyncio.gather(*list(app.caldav.jobs.values()))
+    await app.watchers.stop(1)
+    assert len(objects(await query(client, auth))) == 2
 
 
 async def test_snapshot_and_calendar_recover_after_storage_loss(calendar_client, tmp_path):

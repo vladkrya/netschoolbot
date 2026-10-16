@@ -401,10 +401,10 @@ async def logout(event: Message | CallbackQuery, user: User, app: AppContext) ->
         await app.state.remember_diary(user.telegram_id, user.school.url, user.selected_student_id)
     await app.state.drop_outbox(user.telegram_id)
     await app.cache.clear(user.telegram_id)
-    # Ссылку на приложение и календарь (CalDAV) не отзываем: без ссылки
-    # приложение на телефоне показывало «Не удалось вас опознать», а с ней само
-    # предлагает войти заново. Календарь без входа хранит последнее
-    # расписание и обновится после входа — в этот же аккаунт или в другой.
+    # Ссылку на приложение и подписку на календарь (CalDAV) не отзываем: без
+    # ссылки приложение на телефоне показывало «Не удалось вас опознать», а с
+    # ней само предлагает войти заново. Уроки из календаря уходят (ниже), а
+    # после входа — в этот же аккаунт или в другой — появляется новое расписание.
     await app.users.save(
         replace(
             user,
@@ -416,6 +416,13 @@ async def logout(event: Message | CallbackQuery, user: User, app: AppContext) ->
             available_students=(),
         )
     )
+    # Уже после сохранения: синхронизация, начатая до выхода, видит смену
+    # школы и не вернёт старые уроки.
+    if app.caldav is not None:
+        try:
+            await app.caldav.clear(user.telegram_id)
+        except Exception:  # noqa: BLE001 — выход не должен падать из-за календаря
+            logger.exception("Не удалось очистить календарь при выходе")
     await reply(event, "🚪 Вы вышли. Войти заново: /login или прямо в приложении.")
 
 

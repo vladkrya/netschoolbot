@@ -150,4 +150,8 @@ async def finish_login(app: AppContext, user: User, payload: str | None) -> tupl
     await app.state.mark_baseline_pending(saved.telegram_id, True)
     await app.cache.clear(saved.telegram_id)
     await app.watchers.start(saved.telegram_id)
+    # Календарь (если подключён) — сразу расписанием этого дневника, а не
+    # через полчаса очередного цикла: после /logout он пустой.
+    if app.caldav is not None:
+        app.caldav.request_sync(saved.telegram_id)
     return saved, api_note
