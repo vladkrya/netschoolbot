@@ -684,6 +684,31 @@ class TestNewFeatures:
         assert [m["read"] for m in payload["messages"]] == [True, False]
         assert updated == before
 
+    async def test_read_all_opens_unread_mail_at_school(self, client, app_context, token):
+        """Отдельной команды у школы нет — «Прочитать все» открывает каждое письмо."""
+        uid = await app_context.miniapp.resolve_token(token)
+        await app_context.cache.put(uid, "mail", {"messages": [
+            {"id": 7, "read": False}, {"id": 8, "read": False}, {"id": 9, "read": False}]})
+        opened = []
+
+        async def mark_mail_read(user, ids):
+            opened.extend(ids)
+            return [i for i in ids if i != 9]  # одно письмо школа не отдала
+
+        app_context.diary.mark_mail_read = mark_mail_read
+        response = await client.post(
+            f"{BASE}/api/mail/read-all", params={"token": token}, json={"ids": [7, "8", 9, 7]}
+        )
+        assert (await response.json())["data"]["read"] == [7, 8]
+        assert opened == [7, 8, 9]
+        payload, _ = await app_context.cache.get(uid, "mail")
+        assert [m["read"] for m in payload["messages"]] == [True, True, False]
+
+    async def test_read_all_rejects_bad_ids(self, client, token):
+        for body in ({"ids": ["abc"]}, {"ids": list(range(101))}, []):
+            response = await client.post(f"{BASE}/api/mail/read-all", params={"token": token}, json=body)
+            assert response.status == 400, body
+
     async def test_mail_send_requires_recipient_and_subject(self, client, token):
         response = await client.post(
             f"{BASE}/api/mail/send", params={"token": token}, json={"to": [], "subject": "Тема"}

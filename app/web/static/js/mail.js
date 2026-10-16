@@ -70,6 +70,7 @@ function render() {
   $('mailFilters').querySelectorAll('[data-filter]').forEach((chip) =>
     chip.classList.toggle('active', chip.dataset.filter === filter));
   $('mailSort').textContent = newestFirst ? '↓ Новые' : '↑ Старые';
+  $('mailReadAll').hidden = !messages.some((message) => message.read === false);
   if (!messages.length) {
     container.innerHTML = '<div class="empty big">Писем нет</div>';
     return;
@@ -114,11 +115,37 @@ function markRead(message) {
     return;
   }
   setMailBadge('mail', (state.mail.messages || []).filter((item) => item.read === false).length);
+  $('mailReadAll').hidden = !(state.mail.messages || []).some((item) => item.read === false);
   element.classList.remove('unread');
   const dot = element.querySelector('.unread-dot');
   if (dot) {
     dot.classList.add('gone');
     setTimeout(() => dot.remove(), 400);
+  }
+}
+
+/** «Прочитать все»: школьный сервер открывает каждое непрочитанное письмо. */
+async function readAll() {
+  const button = $('mailReadAll');
+  const unread = (state.mail?.messages || []).filter((message) => message.read === false);
+  if (!unread.length || button.disabled) return;
+  select();
+  button.disabled = true;
+  button.textContent = 'Отмечаем…';
+  try {
+    const { data } = await api('/api/mail/read-all', {
+      method: 'POST', body: JSON.stringify({ ids: unread.map((message) => message.id) }),
+    });
+    const done = new Set((data.read || []).map(String));
+    unread.forEach((message) => { if (done.has(String(message.id))) message.read = true; });
+    if (done.size < unread.length) banner('Часть писем отметить не удалось — попробуйте ещё раз', true);
+    else notify('success');
+    render();
+  } catch (error) {
+    banner(error.message, true);
+  } finally {
+    button.disabled = false;
+    button.textContent = '✓ Прочитать все';
   }
 }
 
@@ -237,6 +264,7 @@ export function initMail() {
     query = event.target.value;
     if (state.mail) render();
   });
+  $('mailReadAll').addEventListener('click', readAll);
   $('mailFilters').addEventListener('click', (event) => {
     const chip = event.target.closest('[data-filter]');
     if (!chip || chip.dataset.filter === filter) return;

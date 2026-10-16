@@ -639,6 +639,24 @@ class DiaryService:
 
         return await self._with_session(user, call)
 
+    async def mark_mail_read(self, user: User, message_ids: list[int]) -> list[int]:
+        """Отметить письма прочитанными: отдельной команды у школьного сервера
+        нет, письмо становится прочитанным, когда его открывают. Возвращает
+        номера писем, которые удалось открыть."""
+
+        async def call(client: Any) -> list[int]:
+            done: list[int] = []
+            for message_id in message_ids:
+                try:
+                    await client.mail_read(message_id)
+                except Exception as exc:
+                    logger.debug("Не удалось открыть письмо %s: %s", message_id, exc)
+                else:
+                    done.append(message_id)
+            return done
+
+        return await self._with_session(user, call)
+
     async def download_attachment(self, user: User, attachment_id: int) -> bytes:
         return await self._with_session(
             user, lambda client: client.download_attachment_as_bytes(attachment_id)
