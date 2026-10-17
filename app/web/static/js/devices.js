@@ -34,6 +34,8 @@ function describe(item) {
 function row(item) {
   const seen = item.last_used ? `<span class="device-seen">Активность: ${when(item.last_used)}</span>` : '';
   const badge = item.current ? '<span class="device-badge">Это устройство</span>' : '';
+  const clients = item.clients ? `<button class="device-more" data-clients>
+      <span>${item.clients.length ? `${item.clients.length} ${plural(item.clients.length, 'устройство', 'устройства', 'устройств')}` : 'Какие устройства'}</span>${ICONS.right}</button>` : '';
   const action = item.main ? '' : `<button class="btn outline danger device-end" data-end="${esc(item.id)}">${item.current ? 'Выйти' : 'Завершить'}</button>`;
   return `<div class="card device-row">
     <div class="device-head">
@@ -41,7 +43,7 @@ function row(item) {
       <div class="device-title"><b>${esc(item.label)}</b>${badge}</div>
     </div>
     <p class="muted small">${esc(describe(item))}</p>
-    ${seen}${action}
+    ${seen}${clients}${action}
   </div>`;
 }
 
@@ -50,6 +52,31 @@ function confirmText(item) {
   if (item.kind === 'links') return 'Завершить ссылки из бота? Старые иконки на экране «Домой» и ссылки с ключом в адресе перестанут открывать дневник. Если ваш календарь подписан по старой ссылке — переподпишитесь в меню.';
   if (item.kind === 'calendar') return 'Отключить подписку на календарь? Расписание в календаре перестанет обновляться.';
   return `Завершить сеанс «${item.label}»? На том устройстве дневник перестанет открываться — войти снова можно через бота или по почте.`;
+}
+
+/** Подвкладка «Ссылки из бота»: какие устройства ходят по общему ключу. */
+function clientIcon(client) {
+  const text = `${client.label} ${client.details}`;
+  if (/iPhone|iPad|Android/.test(text)) return ICONS.install;
+  return ICONS.table;
+}
+
+function openLinkClients(item, onEndAll) {
+  const body = pushScreen('Ссылки из бота');
+  const cards = item.clients.map((client) => `<div class="card device-row">
+      <div class="device-head">
+        <span class="device-icon">${clientIcon(client)}</span>
+        <div class="device-title"><b>${esc(client.label)}</b></div>
+      </div>
+      ${client.details ? `<p class="device-detail">${esc(client.details)}</p>` : ''}
+      <p class="muted small">Впервые: ${when(client.first_seen)}${client.ip ? ` · адрес ${esc(client.ip)}` : ''}</p>
+      <span class="device-seen">Активность: ${when(client.last_seen)}</span>
+    </div>`).join('');
+  body.innerHTML = `
+    <p class="muted small device-note">Эти устройства открывают дневник по одной и той же ссылке с ключом в адресе — старые иконки на экране «Домой» и ссылки из бота. Завершить их можно только все вместе.</p>
+    ${cards || '<div class="card"><p class="muted">Пока никого не видно: устройства записываются, когда открывают дневник по такой ссылке.</p></div>'}
+    <button class="btn outline danger device-end-all" data-end-links>Завершить все ссылки из бота</button>`;
+  body.querySelector('[data-end-links]').addEventListener('click', () => onEndAll(body));
 }
 
 export function openDevices() {
@@ -76,6 +103,19 @@ export function openDevices() {
         banner(error.message, true);
       }
     }));
+    body.querySelector('[data-clients]')?.addEventListener('click', () => {
+      const links = items.find((entry) => entry.kind === 'links');
+      openLinkClients(links, async (screen) => {
+        if (!window.confirm(confirmText(links))) return;
+        try {
+          draw((await post('/api/devices/revoke', { id: 'links' })).data.items);
+          notify('success');
+          screen.closest('.screen')?.querySelector('.screen-back')?.click();
+        } catch (error) {
+          banner(error.message, true);
+        }
+      });
+    });
     body.querySelector('[data-end-all]')?.addEventListener('click', async (event) => {
       if (!window.confirm('Завершить все сеансы, кроме этого? Telegram и подписка на календарь останутся.')) return;
       event.currentTarget.disabled = true;

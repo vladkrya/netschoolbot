@@ -1239,14 +1239,49 @@ class MiniappRepository:
         )
         return row is not None
 
-    async def touch_token(self, token: str, label: str) -> None:
+    async def touch_token(self, token: str, label: str, model: str = "", ip: str = "") -> None:
         """Отметить активность токена для экрана «Устройства»; название
-        устройства запоминается при первом использовании."""
-        await self._db.execute(
-            """UPDATE miniapp_tokens SET last_used = ?, label = CASE WHEN label = '' THEN ? ELSE label END
-               WHERE token = ? AND revoked_at IS NULL""",
-            (time.time(), label, token),
+        устройства запоминается при первом использовании. По общему токену
+        («Ссылки из бота») ходит несколько устройств — каждое пишется отдельно."""
+        now = time.time()
+        async with self._db.transaction() as db:
+            await db.execute(
+                """UPDATE miniapp_tokens SET last_used = ?, label = CASE WHEN label = '' THEN ? ELSE label END
+                   WHERE token = ? AND revoked_at IS NULL""",
+                (now, label, token),
+            )
+            cursor = await db.execute(
+                """SELECT telegram_id FROM miniapp_tokens
+                   WHERE token = ? AND revoked_at IS NULL AND device = 0 AND scope = ''""",
+                (token,),
+            )
+            row = await cursor.fetchone()
+            if row is None:
+                return
+            await db.execute(
+                """INSERT INTO token_clients (telegram_id, token_hash, client, model, ip, first_seen, last_seen)
+                   VALUES (?,?,?,?,?,?,?)
+                   ON CONFLICT (token_hash, client, model) DO UPDATE SET last_seen = excluded.last_seen, ip = excluded.ip""",
+                (row[0], hashlib.sha256(token.encode()).hexdigest(), label, model, ip, now, now),
+            )
+
+    async def link_clients(self, telegram_id: int) -> list[dict]:
+        """Устройства, ходившие по действующим общим токенам пользователя."""
+        tokens = await self._db.fetch_all(
+            """SELECT token FROM miniapp_tokens
+               WHERE telegram_id = ? AND revoked_at IS NULL AND device = 0 AND scope = ''""",
+            (telegram_id,),
         )
+        hashes = [hashlib.sha256(row["token"].encode()).hexdigest() for row in tokens]
+        if not hashes:
+            return []
+        marks = ",".join("?" * len(hashes))
+        rows = await self._db.fetch_all(
+            f"""SELECT client, model, ip, first_seen, last_seen FROM token_clients
+                WHERE telegram_id = ? AND token_hash IN ({marks}) ORDER BY last_seen DESC""",
+            (telegram_id, *hashes),
+        )
+        return [dict(row) for row in rows]
 
     async def sessions(self, telegram_id: int) -> list[dict]:
         """Действующие токены пользователя — для экрана «Устройства»."""

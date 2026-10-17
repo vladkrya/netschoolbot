@@ -57,3 +57,26 @@ async def test_end_links_and_calendar(client, token, app_context):
     assert await app_context.miniapp.resolve_token(token) is None
     assert (await post(client, phone, "/api/devices/revoke", {"id": "calendar"}))[0] == 200
     assert await app_context.miniapp.resolve_calendar_token(calendar) is None
+
+
+async def test_link_clients_are_listed(client, token, app_context):
+    from app.web import devices as devices_web
+    devices_web._touched.clear()
+    phone = await app_context.miniapp.issue_token(1, device=True)
+    android = "Mozilla/5.0 (Linux; Android 14; SM-S918B Build/UP1A) AppleWebKit Chrome/120 Mobile Safari/537.36"
+    iphone = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit Version/27.2 Mobile/15E148 Safari/604.1"
+    # Два разных устройства открывают дневник по одной общей ссылке.
+    for ua, ip in ((android, "95.24.10.20"), (iphone, "178.66.1.2")):
+        response = await client.get(f"{BASE}/api/prefs", headers={"X-Netschool-Token": token, "User-Agent": ua, "X-Real-IP": ip})
+        assert response.status == 200
+    links = next(item for item in await items(client, phone) if item["kind"] == "links")
+    clients = {entry["label"]: entry for entry in links["clients"]}
+    assert set(clients) == {"Chrome на Android", "Safari на iPhone"}
+    assert clients["Chrome на Android"]["details"] == "SM-S918B · Android 14"
+    assert clients["Safari на iPhone"]["details"] == "iOS 18.7"
+    # Точный адрес не хранится.
+    assert clients["Chrome на Android"]["ip"] == "95.24.*.*"
+    assert "10.20" not in str(links)
+    # Завершили ссылки — список пуст.
+    await post(client, phone, "/api/devices/revoke", {"id": "links"})
+    assert await app_context.miniapp.link_clients(1) == []

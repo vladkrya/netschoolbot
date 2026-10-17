@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import re
 import secrets
 import time
 from dataclasses import dataclass
@@ -88,3 +89,28 @@ def describe_browser(user_agent: str) -> str:
         ("Mac OS X", "Mac"), ("Linux", "Linux"),
     ) if key in ua), "")
     return f"{browser} на {system}" if system else browser
+
+
+_ANDROID_MODEL = re.compile(r"Android [\d.]+; ([^;)]+?)(?: Build/[^;)]*)?[;)]")
+
+
+def device_model(user_agent: str) -> str:
+    """Модель телефона, если браузер её сообщает (Android — да, iPhone — нет)."""
+    match = _ANDROID_MODEL.search(user_agent or "")
+    model = match.group(1).strip() if match else ""
+    # Chrome последних версий вместо модели пишет «K».
+    return "" if model in ("K", "wv") else model[:40]
+
+
+def system_version(user_agent: str) -> str:
+    """«iOS 18.7», «Android 14», «Windows» — что получится разобрать."""
+    ua = user_agent or ""
+    if match := re.search(r"(?:iPhone|CPU) OS (\d+)[_.](\d+)", ua):
+        return f"iOS {match.group(1)}.{match.group(2)}"
+    if match := re.search(r"Android ([\d.]+)", ua):
+        return f"Android {match.group(1)}"
+    if match := re.search(r"Mac OS X (\d+)[_.](\d+)", ua):
+        return f"macOS {match.group(1)}.{match.group(2)}"
+    if "Windows" in ua:
+        return "Windows"
+    return ""

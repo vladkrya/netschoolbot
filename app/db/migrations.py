@@ -629,6 +629,21 @@ MIGRATIONS: list[str] = [
     ALTER TABLE miniapp_tokens ADD COLUMN label TEXT NOT NULL DEFAULT '';
     ALTER TABLE miniapp_tokens ADD COLUMN last_used REAL;
     """,
+    # Кто ходит по общему токену («Ссылки из бота»): токен один, а устройств
+    # может быть несколько — экран «Устройства» показывает их списком.
+    """
+    CREATE TABLE token_clients (
+        telegram_id INTEGER NOT NULL,
+        token_hash  TEXT NOT NULL,
+        client      TEXT NOT NULL,
+        model       TEXT NOT NULL DEFAULT '',
+        ip          TEXT NOT NULL DEFAULT '',
+        first_seen  REAL NOT NULL,
+        last_seen   REAL NOT NULL,
+        PRIMARY KEY (token_hash, client, model)
+    );
+    CREATE INDEX idx_token_clients_user ON token_clients(telegram_id);
+    """,
 ]
 
 
