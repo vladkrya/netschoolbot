@@ -1559,6 +1559,7 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
 .pin-dots.wrong i { border-color: var(--red, #e5484d); background: var(--red, #e5484d); box-shadow: none; }
 .pin-forgot { display: block; margin: 22px auto 0; padding: 8px 14px; border-radius: 12px; background: transparent; color: var(--accent); font-size: 15px; font-weight: 500; touch-action: manipulation; }
 .pin-forgot:active { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.pin-forgot.pin-sign-out { margin-top: 4px; color: var(--text2, #6b7585); font-size: 14px; }
 
 /* Настройки защиты: экран целиком, сгруппированные строки как в настройках iOS. */
 .app-lock.lock-settings { display: block; padding: 0; background: var(--bg, #eef1f6); color: var(--text, #202733); }

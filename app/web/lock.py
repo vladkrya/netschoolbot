@@ -49,6 +49,10 @@ async def guard(request):
     suffix = request.path.split('/api/lock/', 1)
     if len(suffix) == 2 and suffix[1] in PUBLIC:
         return None
+    # «Выйти из аккаунта» с экрана PIN: выход только отзывает токен этого
+    # устройства и ничего из дневника не отдаёт.
+    if request.path.rstrip('/').endswith('/api/account/logout'):
+        return None
     if not await unlocked(request):
         return json_error('Разблокируйте дневник', status=423, reason='locked')
     return None

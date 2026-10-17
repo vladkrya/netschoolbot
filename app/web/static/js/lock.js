@@ -444,6 +444,7 @@ export async function unlockApp() {
           await controls.success(); await finish();
           if (offlinePin && navigator.onLine !== false) resync();
         }, { forgot: status.password_reset && !tg?.initData ? FORGOT_PASSWORD : FORGOT_TELEGRAM });
+        addSignOut(root);
         biometricReady.then(config => {
           if (!config || !root.isConnected) return;
           const run = pad.setBiometric({ ...config, run: async () => {
@@ -455,6 +456,7 @@ export async function unlockApp() {
       } else {
         root.querySelector('.lock-fields').innerHTML = '<p>Введите прежний пароль, затем замените его на PIN из 4 цифр.</p><label>Прежний пароль<input type="password" autocomplete="current-password" required maxlength="128" autofocus></label>';
         root.querySelector('.lock-actions').innerHTML = '<button type="submit">Продолжить</button>';
+        addSignOut(root);
         root.querySelector('form').onsubmit = async event => {
           event.preventDefault();
           const button = root.querySelector('[type="submit"]'); button.disabled = true;
@@ -477,6 +479,33 @@ export async function unlockApp() {
     });
   })();
   try { await pending; } finally { pending = null; }
+}
+
+/** «Выйти из аккаунта» прямо с экрана PIN — на сайте и в установленном
+ * приложении. В Telegram вход — сам Telegram, выходить там не из чего.
+ * Тот же выход, что в меню (signOut в profile.js), но без запросов, которые
+ * при закрытом дневнике сервер не пустит: push отписываем в браузере. */
+function addSignOut(root) {
+  if (tg?.initData || demo || root.querySelector('[data-sign-out]')) return;
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'pin-forgot pin-sign-out';
+  button.dataset.signOut = '';
+  button.textContent = 'Выйти из аккаунта';
+  button.addEventListener('click', async () => {
+    if (!window.confirm('Точно выйти из аккаунта на этом устройстве? Уведомления сюда приходить перестанут. '
+      + 'Войти снова можно через Telegram-бота или по почте.')) return;
+    button.disabled = true;
+    try {
+      const registration = await navigator.serviceWorker?.getRegistration();
+      await (await registration?.pushManager?.getSubscription())?.unsubscribe();
+    } catch { /* без push — нечего отписывать */ }
+    await api('/api/account/logout', { method: 'POST', body: '{}' }).catch(() => {});
+    await clearOffline().catch(() => {});
+    try { localStorage.setItem('ns-signed-out', window.NETSCHOOL.token || '1'); } catch { /* приватный режим */ }
+    location.replace(`${window.NETSCHOOL.base}/`);
+  });
+  (root.querySelector('.pin-forgot') || root.querySelector('.lock-actions'))?.after(button);
 }
 
 export async function clearOffline() {

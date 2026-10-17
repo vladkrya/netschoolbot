@@ -283,3 +283,16 @@ async def test_pin_blocked_after_max_failures_until_biometric_unlock(client, tok
     response = await client.post(f'{BASE}/api/lock/biometric/unlock', headers=headers, json={'device': 'iphone', 'token': secret})
     assert response.status == 200
     assert (await client.post(f'{BASE}/api/lock/unlock', headers=headers, json={'pin': '1234'})).status == 200
+
+
+async def test_sign_out_works_from_locked_screen(client, token, app_context):
+    # «Выйти из аккаунта» на экране PIN: дневник закрыт, но выход проходит
+    # и отзывает токен этого устройства.
+    device = await app_context.miniapp.issue_token(1, device=True)
+    await enable(client, device)
+    headers = {'X-Netschool-Token': device}
+    assert (await client.get(f'{BASE}/api/profile', headers=headers)).status == 423
+    response = await client.post(f'{BASE}/api/account/logout', headers=headers, json={})
+    assert response.status == 200 and (await response.json())['data']['revoked']
+    assert await app_context.miniapp.resolve_token(device) is None
+    assert await app_context.miniapp.resolve_token(token) == 1
