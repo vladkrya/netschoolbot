@@ -238,3 +238,21 @@ async def test_lock_status_offers_password_reset_only_with_account(client, app_c
     _, body, _ = await register(client)
     status = await (await client.get(f"{BASE}/api/lock/status", params={"token": body["data"]["token"]})).json()
     assert status["data"]["password_reset"] is True
+
+
+def test_smtp_ssl_checks_certificate_against_tls_name(monkeypatch):
+    # Через туннель подключаемся к 127.0.0.1, а сертификат сверяем с mail.ikrya.ru.
+    import smtplib
+
+    from app.accounts.mailer import _SMTPSSL
+
+    seen = {}
+
+    def fake_get_socket(self, host, port, timeout):
+        seen.update(connect=host, name=self._host)
+        raise OSError("стоп")
+
+    monkeypatch.setattr(smtplib.SMTP_SSL, "_get_socket", fake_get_socket)
+    with pytest.raises(OSError):
+        _SMTPSSL("127.0.0.1", 2465, tls_name="mail.ikrya.ru", timeout=1)
+    assert seen == {"connect": "127.0.0.1", "name": "mail.ikrya.ru"}

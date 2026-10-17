@@ -15,6 +15,18 @@ from ..settings import MailSettings
 logger = logging.getLogger("netschoolbot.mail")
 
 
+class _SMTPSSL(smtplib.SMTP_SSL):
+    """SMTP_SSL, сверяющий сертификат с tls_name, а не с адресом подключения."""
+
+    def __init__(self, *args, tls_name: str = "", **kwargs) -> None:
+        self._tls_name = tls_name
+        super().__init__(*args, **kwargs)
+
+    def _get_socket(self, host, port, timeout):
+        self._host = self._tls_name or host
+        return super()._get_socket(host, port, timeout)
+
+
 class Mailer:
     def __init__(self, settings: MailSettings) -> None:
         self._settings = settings
@@ -48,11 +60,14 @@ class Mailer:
         settings = self._settings
         context = ssl.create_default_context()
         if settings.security == "ssl":
-            smtp: smtplib.SMTP = smtplib.SMTP_SSL(settings.host, settings.port, context=context, timeout=20)
+            smtp: smtplib.SMTP = _SMTPSSL(settings.host, settings.port, context=context, timeout=20,
+                                          tls_name=settings.tls_name)
         else:
             smtp = smtplib.SMTP(settings.host, settings.port, timeout=20)
         try:
             if settings.security == "starttls":
+                if settings.tls_name:
+                    smtp._host = settings.tls_name  # starttls сверяет сертификат с _host
                 smtp.starttls(context=context)
             if settings.user:
                 smtp.login(settings.user, settings.password)

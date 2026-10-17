@@ -1,0 +1,17 @@
+[Unit]
+Description=SSH-туннель к почте ns@ikrya.ru (vdsde): хостер режет исходящие 465/587
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# Бот шлёт письма на 127.0.0.1:2465 (MAIL_SMTP_HOST/PORT, MAIL_SMTP_TLS_NAME=mail.ikrya.ru),
+# туннель доносит их до Stalwart на vdsde. Ключ на vdsde пускает только этот проброс.
+ExecStart=/usr/bin/ssh -N -i /root/.ssh/smtp_tunnel_ed25519 \
+  -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=3 \
+  -o StrictHostKeyChecking=accept-new -o BatchMode=yes \
+  -L 127.0.0.1:2465:127.0.0.1:465 smtptunnel@vdsde.ikrya.ru
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

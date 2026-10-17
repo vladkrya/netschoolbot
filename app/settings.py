@@ -191,6 +191,9 @@ class MailSettings:
     sender: str = ""
     # starttls (587), ssl (465) или plain (локальный сервер без шифрования).
     security: str = "starttls"
+    # Имя в сертификате сервера, если подключение идёт не по нему — например,
+    # через SSH-туннель на 127.0.0.1. Пусто — сверяется с host.
+    tls_name: str = ""
 
     @property
     def configured(self) -> bool:
@@ -348,5 +351,6 @@ def load_settings(*, require_bot_token: bool = True) -> Settings:
             password=_env("MAIL_SMTP_PASSWORD"),
             sender=_env("MAIL_FROM"),
             security=(_env("MAIL_SMTP_SECURITY") or "starttls").lower(),
+            tls_name=_env("MAIL_SMTP_TLS_NAME"),
         ),
     )
