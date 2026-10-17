@@ -2307,3 +2307,19 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
 }
 .no-motion .landing *, .no-motion .landing *::before { animation: none !important; transition: none !important; }
 .no-motion .ld-toast { opacity: 1; transform: translate(-50%, -6px); }
+
+/* Настройки → «Устройства» (devices.js). */
+.device-row { display: flex; flex-direction: column; gap: 6px; }
+.device-head { display: flex; align-items: center; gap: 12px; }
+.device-icon { flex: none; width: 38px; height: 38px; display: grid; place-items: center; border-radius: 12px;
+  color: var(--primary); background: color-mix(in srgb, var(--primary) 13%, transparent); }
+.device-icon .icon { width: 20px; height: 20px; }
+.device-title { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+.device-badge { padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 600;
+  color: var(--g5); background: color-mix(in srgb, var(--g5) 14%, transparent); }
+.device-row .muted { margin: 0; }
+.device-seen { font-size: 13px; color: var(--text2); }
+.device-end { align-self: flex-start; width: auto; margin-top: 4px; padding: 8px 14px; }
+.device-end-all { width: 100%; margin-top: 4px; }
+.device-note { margin: 12px 4px; }
+:root .btn.outline.danger.device-end, :root .btn.outline.danger.device-end-all { color: var(--g2); border-color: color-mix(in srgb, var(--g2) 45%, transparent); background: color-mix(in srgb, var(--g2) 10%, transparent); }

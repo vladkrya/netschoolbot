@@ -745,6 +745,7 @@ function render() {
       ${demo ? '' : `<div class="account-links">
         <button class="drawer-link" id="drawerLock">${ICONS.shield} Защита входа</button>
         <button class="drawer-link" id="drawerAccount">${ICONS.mail} Вход по почте</button>
+        <button class="drawer-link" id="drawerDevices">${ICONS.install} Устройства</button>
         ${initData ? '' : `<button class="drawer-link drawer-logout" id="drawerLogout">${ICONS.logout} Выйти из аккаунта</button>`}
       </div>`}
       ${demo || readonly ? '' : '<button class="link small drawer-relogin" id="drawerSgo">Сменили пароль от «Сетевого города» или школу? Войти заново</button>'}
@@ -1034,6 +1035,12 @@ function bindDrawer() {
   });
   $('drawerLock')?.addEventListener('click', () => { closeDrawer(); openLockSettings().catch(error => banner(error.message, true)); });
   $('drawerCalendar')?.addEventListener('click', () => { tap(); openCalendar(); });
+  $('drawerDevices')?.addEventListener('click', async () => {
+    tap();
+    closeDrawer();
+    const { openDevices } = await import('./devices.js');
+    openDevices();
+  });
   $('drawerAccount')?.addEventListener('click', async () => {
     tap();
     closeDrawer();
@@ -1298,8 +1305,8 @@ async function subscribePush() {
  * push, отзывает токен этого устройства, стирает офлайн-копию дневника и
  * запоминает выход: иначе иконка на домашнем экране, где токен вшит в
  * адрес, тут же входила бы обратно (см. boot.js). */
-export async function signOut() {
-  if (!window.confirm('Выйти из аккаунта на этом устройстве? Уведомления сюда приходить перестанут. '
+export async function signOut({ confirmed = false } = {}) {
+  if (!confirmed && !window.confirm('Выйти из аккаунта на этом устройстве? Уведомления сюда приходить перестанут. '
     + 'Войти снова можно через Telegram-бота или по почте.')) return;
   await unsubscribePush().catch(() => {});
   await api('/api/account/logout', { method: 'POST', body: '{}' }).catch(() => {});

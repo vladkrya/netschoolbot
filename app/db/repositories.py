@@ -1239,6 +1239,37 @@ class MiniappRepository:
         )
         return row is not None
 
+    async def touch_token(self, token: str, label: str) -> None:
+        """Отметить активность токена для экрана «Устройства»; название
+        устройства запоминается при первом использовании."""
+        await self._db.execute(
+            """UPDATE miniapp_tokens SET last_used = ?, label = CASE WHEN label = '' THEN ? ELSE label END
+               WHERE token = ? AND revoked_at IS NULL""",
+            (time.time(), label, token),
+        )
+
+    async def sessions(self, telegram_id: int) -> list[dict]:
+        """Действующие токены пользователя — для экрана «Устройства»."""
+        rows = await self._db.fetch_all(
+            """SELECT token, device, scope, label, created_at, last_used FROM miniapp_tokens
+               WHERE telegram_id = ? AND revoked_at IS NULL ORDER BY created_at""",
+            (telegram_id,),
+        )
+        return [dict(row) for row in rows]
+
+    async def revoke_where(self, telegram_id: int, condition: str, params: tuple = ()) -> int:
+        """Отозвать токены пользователя по условию (только из кода экрана «Устройства»)."""
+        async with self._db.transaction() as db:
+            cursor = await db.execute(
+                f"""UPDATE miniapp_tokens SET revoked_at = datetime('now')
+                    WHERE telegram_id = ? AND revoked_at IS NULL AND ({condition})""",
+                (telegram_id, *params),
+            )
+            return cursor.rowcount
+
+    async def drop_install_codes(self, telegram_id: int) -> None:
+        await self._db.execute("DELETE FROM install_codes WHERE telegram_id = ?", (telegram_id,))
+
     ENTER_TTL = 24 * 3600
     ICON_TTL = 180 * 24 * 3600
 

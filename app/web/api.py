@@ -160,7 +160,11 @@ async def resolve_identity(request: web.Request) -> tuple[int | None, str]:
         or ""
     ).strip()
     if token:
-        return await app.miniapp.resolve_token(token), "token"
+        telegram_id = await app.miniapp.resolve_token(token)
+        if telegram_id is not None:
+            from .devices import touch
+            await touch(request, token)
+        return telegram_id, "token"
 
     return None, "none"
 
@@ -239,6 +243,8 @@ async def auth_middleware(request: web.Request, handler):
         calendar_id = await context(request).miniapp.resolve_calendar_token(request.query.get("token", ""))
         if calendar_id is not None and (user := await context(request).users.get(calendar_id)) is not None:
             request[USER] = user
+            from .devices import touch
+            await touch(request, request.query["token"])
             return await handler(request)
 
     telegram_id, method = await resolve_identity(request)

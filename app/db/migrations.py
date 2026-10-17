@@ -624,6 +624,11 @@ MIGRATIONS: list[str] = [
     );
     CREATE INDEX idx_install_codes_user ON install_codes(telegram_id);
     """,
+    # Экран «Устройства»: чем открывали и когда последний раз.
+    """
+    ALTER TABLE miniapp_tokens ADD COLUMN label TEXT NOT NULL DEFAULT '';
+    ALTER TABLE miniapp_tokens ADD COLUMN last_used REAL;
+    """,
 ]
 
 

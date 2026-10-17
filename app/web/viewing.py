@@ -40,7 +40,7 @@ OWNER_READ_PREFIXES = ("/api/homework/", "/api/attachment/", "/api/export/")
 VIEWER_PREFIXES = (
     "/api/account", "/api/lock/", "/api/prefs", "/api/push/", "/api/family", "/api/bug-report",
     "/api/sgo/", "/api/attachment-ticket", "/api/visit", "/api/pwa-link", "/api/view",
-    "/api/settings/timezone", "/api/notices/",
+    "/api/settings/timezone", "/api/notices/", "/api/devices",
 )
 
 READ_ONLY_MESSAGE = "Это просмотр дневника ученика — менять в нём ничего нельзя"
