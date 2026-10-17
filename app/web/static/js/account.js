@@ -62,7 +62,7 @@ function heroHtml() {
         в одном красивом приложении. Работает в Telegram, в браузере и на домашнем экране телефона.</p>
       <div class="ld-actions">
         <a class="btn ld-tg" data-landing-bot hidden>Открыть в Telegram</a>
-        <a class="btn outline" href="${base}/demo">Посмотреть демо</a>
+        <a class="btn ld-demo" href="${base}/demo">▶ Демо-режим</a>
       </div>
     </section>
     <div class="ld-preview" aria-hidden="true">
@@ -166,7 +166,8 @@ function renderLogin() {
     <div class="account-links">
       <button class="link" data-go="register">Регистрация</button>
       <button class="link" data-go="reset">Забыли пароль?</button>
-    </div>`);
+    </div>
+    <a class="ld-demo-link" href="${base}/demo">Без входа — <b>попробовать демо-режим</b> на выдуманном ученике</a>`);
   bindLinks(card);
   const form = card.querySelector('form');
   form.addEventListener('submit', (event) => {
