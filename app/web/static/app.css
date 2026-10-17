@@ -2225,6 +2225,11 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
 .landing .ld-actions .btn.ld-demo { color: #fff; border: 0; background: linear-gradient(120deg, var(--head, #4a6fae), #8b5cf6);
   box-shadow: 0 8px 22px color-mix(in srgb, #8b5cf6 35%, transparent); animation: ld-glow 3s ease-in-out infinite; }
 @keyframes ld-glow { 50% { box-shadow: 0 8px 30px color-mix(in srgb, #8b5cf6 60%, transparent); } }
+.landing .account-card .btn.ld-tg-login { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%;
+  margin: 6px 0 0; padding: 12px; background: #2aabee; border-color: #2aabee; color: #fff; text-decoration: none; font-weight: 600; }
+.landing .account-card [data-landing-bot][hidden] { display: none; }
+.ld-or { display: flex; align-items: center; gap: 10px; margin: 14px 0 8px; color: var(--text2); font-size: 13px; }
+.ld-or::before, .ld-or::after { content: ""; flex: 1; height: 1px; background: var(--border); }
 .ld-demo-link { display: block; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border);
   text-align: center; font-size: 14px; color: var(--text2); text-decoration: none; }
 .ld-demo-link b { color: var(--primary); font-weight: 600; }

@@ -61,7 +61,7 @@ function heroHtml() {
       <p class="ld-lead">Оценки, домашние задания и расписание из вашего электронного дневника
         в одном красивом приложении. Работает в Telegram, в браузере и на домашнем экране телефона.</p>
       <div class="ld-actions">
-        <a class="btn ld-tg" data-landing-bot hidden>Открыть в Telegram</a>
+        <a class="btn ld-tg" data-landing-bot hidden>Открыть Telegram-бота</a>
         <a class="btn ld-demo" href="${base}/demo">▶ Демо-режим</a>
       </div>
     </section>
@@ -101,6 +101,7 @@ function landing(html) {
   }
   const card = root.querySelector('.account-card');
   card.innerHTML = html;
+  showBotLinks(root);
   card.classList.remove('ld-swap');
   void card.offsetWidth; // перезапуск анимации смены карточки
   card.classList.add('ld-swap');
@@ -113,11 +114,16 @@ async function bindLanding(root) {
   } catch {
     landingConfig = {};
   }
-  const bot = root.querySelector('[data-landing-bot]');
-  if (landingConfig.bot && bot) {
-    bot.href = landingConfig.bot;
-    bot.hidden = false;
-  }
+  showBotLinks(root);
+}
+
+/** Кнопки «в Telegram» — когда известен адрес бота (ссылка t.me открывает его). */
+function showBotLinks(root) {
+  if (!landingConfig?.bot) return;
+  root.querySelectorAll('[data-landing-bot]').forEach((link) => {
+    if (link.tagName === 'A') link.href = landingConfig.bot;
+    link.hidden = false;
+  });
 }
 
 function reload() {
@@ -155,8 +161,11 @@ export function showAuth(view = 'login') {
 
 function renderLogin() {
   const card = landing(`
-    <h2>Дневник</h2>
-    <p class="muted">Войдите по почте и паролю. Есть Telegram — откройте дневник кнопкой в боте.</p>
+    <h2>Вход в дневник</h2>
+    <a class="btn ld-tg-login" data-landing-bot hidden>
+      <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M9.8 15.2 9.6 19c.4 0 .6-.2.8-.4l1.9-1.8 4 2.9c.7.4 1.3.2 1.5-.7l2.7-12.6c.3-1.1-.4-1.6-1.1-1.3L3.6 10.9c-1 .4-1 1-.2 1.3l4 1.2 9.3-5.9c.4-.3.8-.1.5.2z"/></svg>
+      Войти через Telegram-бота</a>
+    <p class="ld-or" data-landing-bot hidden><span>или по почте</span></p>
     <form class="account-form">
       <input class="field" type="email" name="email" autocomplete="username" placeholder="Почта" required>
       <input class="field" type="password" name="password" autocomplete="current-password" placeholder="Пароль" required>
