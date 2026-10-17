@@ -746,9 +746,8 @@ function render() {
         <button class="drawer-link" id="drawerLock">${ICONS.shield} Защита входа</button>
         <button class="drawer-link" id="drawerAccount">${ICONS.mail} Вход по почте</button>
         <button class="drawer-link" id="drawerDevices">${ICONS.install} Устройства</button>
-        ${initData ? '' : `<button class="drawer-link drawer-logout" id="drawerLogout">${ICONS.logout} Выйти из аккаунта</button>`}
+        ${initData && readonly ? '' : `<button class="drawer-link drawer-logout" id="drawerLogout">${ICONS.logout} Выйти из аккаунта</button>`}
       </div>`}
-      ${demo || readonly ? '' : '<button class="link small drawer-relogin" id="drawerSgo">Сменили пароль от «Сетевого города» или школу? Войти заново</button>'}
     </section>
     <section class="drawer-section">
       <div class="drawer-heading">Инструменты</div>
@@ -1047,17 +1046,7 @@ function bindDrawer() {
     const { openAccountSettings } = await import('./account.js');
     openAccountSettings();
   });
-  $('drawerLogout')?.addEventListener('click', () => { tap(); closeDrawer(); signOut(); });
-  // Повторный вход — для смены пароля или школы, а не часть «Входа по почте»:
-  // там он путал, будто почта требует входить в «Сетевой город» ещё раз.
-  $('drawerSgo')?.addEventListener('click', async () => {
-    tap();
-    closeDrawer();
-    const [{ showSgoLogin }, info] = await Promise.all([
-      import('./account.js'), api('/api/account').then((r) => r.data).catch(() => ({})),
-    ]);
-    showSgoLogin(info);
-  });
+  $('drawerLogout')?.addEventListener('click', () => { tap(); chooseSignOut(Boolean(state.profile?.readonly)); });
   $('drawerBug')?.addEventListener('click', () => { tap(); closeDrawer(); openBugReport(); });
   bindTabs();
   bindPushToggle();
@@ -1298,6 +1287,43 @@ async function subscribePush() {
     method: 'POST',
     body: JSON.stringify(subscription.toJSON()),
   });
+}
+
+/** «Выйти из аккаунта»: из «Сетевого города» (школа, пароль) или из самого
+ * приложения на этом устройстве. В Telegram вход в приложение — сам
+ * Telegram, там остаётся только «Сетевой город»; при просмотре чужого
+ * дневника своего входа в школу нет — только приложение. */
+function chooseSignOut(readonly) {
+  const options = [
+    !readonly && ['netschool', 'Из «Сетевого города»',
+      'Сменили пароль или школу — войдёте заново, приложение и настройки останутся'],
+    !initData && ['app', 'Из приложения', 'На этом устройстве: дневник закроется, уведомления сюда приходить перестанут'],
+  ].filter(Boolean);
+  const body = openSheet('Выйти из аккаунта', `<div class="student-list">${options.map(([id, title, note]) =>
+    `<button class="student-option" data-out="${id}">
+      <span class="student-name">${title}<br><span class="muted small">${note}</span></span>
+    </button>`).join('')}</div>`);
+  body.querySelector('[data-out="netschool"]')?.addEventListener('click', () => { tap(); closeSheet(); closeDrawer(); signOutNetschool(); });
+  body.querySelector('[data-out="app"]')?.addEventListener('click', () => { tap(); closeSheet(); closeDrawer(); signOut(); });
+}
+
+/** Выйти из «Сетевого города», оставшись в приложении (как /logout в боте):
+ * после перезагрузки приложение само откроет вход в школу. */
+async function signOutNetschool() {
+  if (!window.confirm('Выйти из «Сетевого города»? Школу и вход придётся выбрать заново. '
+    + 'Настройки, отметки о сделанных заданиях и история оценок вернутся, если войти в тот же дневник.')) return;
+  try {
+    await api('/api/account/netschool-logout', { method: 'POST', body: '{}' });
+  } catch (error) {
+    banner(error.message, true);
+    return;
+  }
+  const { clearOffline } = await import('./lock.js');
+  await clearOffline().catch(() => {});
+  try {
+    ['ns-viewing', 'ns-seen-marks', 'ns-shown-averages', 'ns-totals-counts'].forEach((key) => localStorage.removeItem(key));
+  } catch { /* приватный режим */ }
+  location.reload();
 }
 
 /** «Выйти из аккаунта» на сайте и в установленном приложении (в Telegram

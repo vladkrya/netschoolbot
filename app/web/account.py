@@ -403,6 +403,14 @@ async def logout(request: web.Request) -> web.Response:
     return response
 
 
+@routes.post("/api/account/netschool-logout")
+async def netschool_logout(request: web.Request) -> web.Response:
+    """Выйти из «Сетевого города», оставшись в приложении: то же, что /logout
+    в боте. Дальше приложение предлагает войти в школу заново."""
+    await context(request).sign_out_netschool(current_user(request))
+    return web.json_response({"ok": True})
+
+
 # ─────────────────────── Вход в «Сетевой город» с сайта ───────────────────────
 
 

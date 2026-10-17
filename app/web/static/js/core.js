@@ -214,6 +214,8 @@ const REQUEST_TIMEOUT_MS = 75000;
 const REVALIDATE_AFTER_S = 60;
 const OFFLINE_TEXT = 'Нет связи — показаны сохранённые данные';
 const STALE_TEXT = 'Не удалось обновить дневник. Показаны сохранённые данные.';
+// Школьный сервер не отвечает (техработы, сбой): ничего делать не нужно.
+const SERVER_TEXT = 'Не удалось подключиться к серверу «Сетевого города». Показаны сохранённые данные.';
 // Пути, которые за этот запуск уже сверили со школьным сервером.
 const revalidated = new Set();
 
@@ -223,11 +225,49 @@ export function forgetRevalidated() {
   revalidated.clear();
 }
 
-function staleBanner(show) {
+function staleBanner(show, reason) {
   // Свежий ответ пришёл — плашка о сохранённых данных больше не правда.
-  if (show) showNotice(STALE_TEXT);
-  else clearNotices();
+  if (!show) clearNotices();
+  else if (reason === 'auth') loginFailedNotice();
+  else showNotice(reason === 'server' ? SERVER_TEXT : STALE_TEXT);
 }
+
+// «Сетевой город» не пускает с сохранённым паролем — скорее всего, его
+// сменили. Сам вход не повторить: спрашиваем, войти заново или остаться
+// с сохранёнными данными. «Продолжить так» — до закрытия приложения.
+const LOGIN_FAILED_KEY = 'ns-login-failed-dismissed';
+
+function loginFailedNotice() {
+  if ($('loginFailed') || $('accountScreen')) return;
+  try { if (sessionStorage.getItem(LOGIN_FAILED_KEY)) return; } catch { /* приватный режим */ }
+  const el = document.createElement('div');
+  el.id = 'loginFailed';
+  el.className = 'banner error login-failed';
+  el.setAttribute('role', 'alert');
+  el.innerHTML = `<p>Не удалось войти в «Сетевой город». Возможно, сменился пароль или школа.</p>
+    <div class="login-failed-actions">
+      <button class="btn" data-sgo-relogin>Войти заново</button>
+      <button class="btn outline" data-act="continue">Продолжить так</button>
+    </div>`;
+  el.querySelector('[data-act="continue"]').addEventListener('click', () => {
+    try { sessionStorage.setItem(LOGIN_FAILED_KEY, '1'); } catch { /* приватный режим */ }
+    el.remove();
+  });
+  document.body.append(el);
+}
+
+/** Войти в «Сетевой город» заново: кнопка в уведомлении и в карточке ошибки. */
+async function relogin() {
+  $('loginFailed')?.remove();
+  const [{ showSgoLogin }, info] = await Promise.all([
+    import('./account.js'), request('/api/account').then((r) => r.data).catch(() => ({})),
+  ]);
+  showSgoLogin(info);
+}
+
+document.addEventListener('click', (event) => {
+  if (event.target.closest?.('[data-sgo-relogin]')) relogin();
+});
 
 /** Запрос к API с удостоверением личности и разбором ошибки. */
 async function request(path, options = {}) {
@@ -273,6 +313,8 @@ async function request(path, options = {}) {
     }
     const error = new Error(payload.error || `Ошибка ${response.status}`);
     error.reason = payload.reason;
+    // Сохранённых данных нет — экран покажет ошибку, а уведомление даст войти.
+    if (error.reason === 'auth') loginFailedNotice();
     throw error;
   }
   if (response.headers.get('X-Netschool-Offline')) {
@@ -339,9 +381,9 @@ async function revalidateNow(path, shown, onFresh) {
   let fresh;
   try {
     fresh = await request(withRefresh(path));
-  } catch {
+  } catch (error) {
     revalidated.delete(path);
-    staleBanner(true);
+    staleBanner(true, error.reason);
     return;
   }
   // Сервер ещё ждёт школу (refreshing): обновление идёт у него в фоне и
@@ -359,7 +401,7 @@ async function revalidateNow(path, shown, onFresh) {
   // Школьный сервер не ответил — на экране остаются сохранённые данные.
   if (fresh.stale || fresh.offline) {
     revalidated.delete(path);
-    staleBanner(true);
+    staleBanner(true, fresh.reason);
     return;
   }
   staleBanner(false);
@@ -397,7 +439,7 @@ export async function api(path, options = {}) {
       }
     }
   }
-  if (payload.stale && !payload.refreshing) staleBanner(true);
+  if (payload.stale && !payload.refreshing) staleBanner(true, payload.reason);
   else if ('data' in payload && !payload.stale) staleBanner(false);
   return payload;
 }
@@ -492,7 +534,7 @@ export function errorCard(error, retryId) {
   const needsLogin = error.reason === 'login' || error.reason === 'auth';
   return `<div class="card error-card">
       <p>${esc(error.message)}</p>
-      ${needsLogin ? '<p class="muted small" style="margin-top:6px">Откройте бота и выполните /login.</p>' : ''}
+      ${needsLogin ? '<button class="btn outline" data-sgo-relogin>Войти заново</button>' : ''}
       ${retryId ? `<button class="btn" id="${retryId}">Повторить</button>` : ''}
     </div>`;
 }

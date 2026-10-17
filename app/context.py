@@ -10,12 +10,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .caldav.service import CaldavService
+    from .domain.models import User
 
 from .db.crypto import PasswordCipher
 from .db.engine import Database
@@ -165,6 +166,43 @@ class AppContext:
             await self.caldav.delete_user(telegram_id)
         await self.pool.invalidate(telegram_id, forget_saved=True)
         await self.users.delete(telegram_id)
+
+    async def sign_out_netschool(self, user: "User") -> None:
+        """Выйти из «Сетевого города» (/logout в боте и выход в приложении).
+
+        Каждый шаг перечислен явно: раньше часть чистки пряталась внутри
+        чужих методов, и понять, что именно остаётся после выхода, было нельзя.
+        """
+        await self.watchers.stop(user.telegram_id)
+        await self.pool.invalidate(user.telegram_id, forget_saved=True)
+        # Отметки «выполнено», история оценок и слежение остаются до следующего
+        # входа: тот же дневник продолжит с ними, другой их сотрёт (finish_login).
+        if user.school.configured and user.selected_student_id is not None:
+            await self.state.remember_diary(user.telegram_id, user.school.url, user.selected_student_id)
+        await self.state.drop_outbox(user.telegram_id)
+        await self.cache.clear(user.telegram_id)
+        # Ссылку на приложение и подписку на календарь (CalDAV) не отзываем: без
+        # ссылки приложение на телефоне показывало «Не удалось вас опознать», а с
+        # ней само предлагает войти заново. Уроки из календаря уходят (ниже), а
+        # после входа — в этот же аккаунт или в другой — появляется новое расписание.
+        await self.users.save(
+            replace(
+                user,
+                enabled=False,
+                school=replace(user.school, url="", name=""),
+                credentials=replace(user.credentials, login="", password=""),
+                student_name="",
+                selected_student_id=None,
+                available_students=(),
+            )
+        )
+        # Уже после сохранения: синхронизация, начатая до выхода, видит смену
+        # школы и не вернёт старые уроки.
+        if self.caldav is not None:
+            try:
+                await self.caldav.clear(user.telegram_id)
+            except Exception:  # noqa: BLE001 — выход не должен падать из-за календаря
+                logger.exception("Не удалось очистить календарь при выходе")
 
     async def stop_cache_refreshes(self) -> None:
         tasks = list(self.cache_refreshes.values())

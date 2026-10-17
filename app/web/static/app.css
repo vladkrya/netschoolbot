@@ -298,6 +298,11 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 }
 @keyframes drop { from { transform: translateY(-20px); opacity: 0; } }
 .banner.error { background: #ffebee; color: #b71c1c; }
+/* Не пустил «Сетевой город»: выбор вместо закрытия по касанию. */
+.banner.login-failed { cursor: default; touch-action: auto; }
+.login-failed-actions { display: flex; gap: 8px; margin-top: 10px; }
+.login-failed-actions .btn { flex: 1; margin: 0; }
+#loginFailed .btn.outline { background: rgba(255, 255, 255, .55); color: #b71c1c; border: 1.5px solid currentColor; box-shadow: none; }
 .banner { cursor: pointer; touch-action: none; transition: transform .15s, opacity .15s; }
 /* Перерисовка дня по таймеру — без анимации появления. */
 .list.quiet, .list.quiet * { animation: none !important; }
@@ -885,7 +890,6 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .drawer-section { padding: 12px 0; border-bottom: 1px solid var(--border); }
 .drawer-heading { font-weight: 700; font-size: 17px; margin-bottom: 8px; }
 .drawer-name { font-size: 15px; }
-.drawer-relogin { display: block; margin-top: 8px; padding: 0; border: 0; background: none; font: inherit; font-size: 13px; text-align: left; color: var(--primary); cursor: pointer; }
 .drawer-children { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 6px; }
 .drawer-link { display: flex; align-items: center; gap: 8px; color: var(--primary); font-size: 16px; font-weight: 600; padding: 4px 0; }
 /* Инструменты плитками: значок над подписью, по три в ряд. */

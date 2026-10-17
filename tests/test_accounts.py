@@ -328,6 +328,18 @@ class TestSignOut:
         status, data, _ = await post(client, "/api/account/logout", {}, shared)
         assert not data["data"]["revoked"] and await app_context.miniapp.resolve_token(shared) == uid
 
+    async def test_netschool_logout_keeps_app_login(self, client, app_context):
+        await app_context.users.save(make_user(31))
+        token = await app_context.miniapp.issue_token(31)
+        status, data, _ = await post(client, "/api/account/netschool-logout", {}, token)
+        assert status == 200 and data["ok"]
+        user = await app_context.users.get(31)
+        assert not user.school.configured and not user.credentials.login and not user.enabled
+        # В приложении остался: дальше оно предложит войти в школу.
+        assert await app_context.miniapp.resolve_token(token) == 31
+        response = await client.get(f"{BASE}/api/account", headers={"X-Netschool-Token": token})
+        assert (await response.json())["data"]["needs_sgo"]
+
     async def test_page_with_revoked_token_falls_back_to_cookie(self, client, app_context):
         _, body, _ = await register(client)
         device = body["data"]["token"]
