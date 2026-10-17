@@ -262,10 +262,26 @@ async def index(request: web.Request) -> web.Response:
     и там же происходит настоящая проверка доступа.
     """
     context: AppContext = request.app[CONTEXT]
+    # Иконка на экране «Домой», первый запуск: код из start_url меняется на
+    # свой токен устройства в cookie, и иконка открывает чистый адрес.
+    if (icon := request.query.get("icon")) and (telegram_id := await context.miniapp.use_icon_code(icon)):
+        response = web.HTTPFound(f"{_base(request)}/")
+        _set_token_cookie(request, response, await context.miniapp.issue_token(telegram_id, device=True))
+        raise response
+    # Ссылка установки из /app_install: адрес с кодом не меняем — из
+    # встроенного браузера Telegram его ещё откроют «в Safari», и там код
+    # тоже должен сработать (сутки, каждый раз свой токен устройства).
+    entered = ""
+    if (enter := request.query.get("enter")) and (telegram_id := await context.miniapp.use_enter_code(enter)):
+        current = await context.miniapp.resolve_token(request.cookies.get("netschool_token", ""))
+        if current == telegram_id and await context.miniapp.is_device_token(request.cookies["netschool_token"]):
+            entered = request.cookies["netschool_token"]  # обновили страницу — токен уже есть
+        else:
+            entered = await context.miniapp.issue_token(telegram_id, device=True)
     # Ссылка с токеном важнее cookie, но отозванный токен в ссылке (старая
     # иконка на домашнем экране после «Выйти») не мешает войти по cookie.
     token, user = "", None
-    for candidate in (request.query.get("token"), request.cookies.get("netschool_token")):
+    for candidate in (entered, request.query.get("token"), request.cookies.get("netschool_token")):
         candidate = (candidate or "").strip()
         if candidate and (telegram_id := await context.miniapp.resolve_token(candidate)):
             token, user = candidate, await context.users.get(telegram_id)
@@ -292,15 +308,19 @@ async def index(request: web.Request) -> web.Response:
     if not token and request.cookies.get("netschool_token"):
         response.del_cookie("netschool_token")
     if token:
-        response.set_cookie(
-            "netschool_token",
-            token,
-            max_age=365 * 24 * 3600,
-            httponly=True,
-            samesite="Lax",
-            secure=request.url.scheme == "https",
-        )
+        _set_token_cookie(request, response, token)
     return response
+
+
+def _set_token_cookie(request: web.Request, response: web.StreamResponse, token: str) -> None:
+    response.set_cookie(
+        "netschool_token",
+        token,
+        max_age=365 * 24 * 3600,
+        httponly=True,
+        samesite="Lax",
+        secure=request.url.scheme == "https",
+    )
 
 
 @page_routes.get("/attachment/{attachment_id:\\d+}")
@@ -390,13 +410,21 @@ async def manifest(request: web.Request) -> web.Response:
     if telegram_id := await context.miniapp.resolve_token(token):
         user = await context.users.get(telegram_id)
 
+    start_url = f"{base}/"
+    if user and await context.miniapp.is_device_token(token):
+        start_url = f"{base}/?icon={await context.miniapp.icon_code(user.telegram_id, token)}"
+    elif token:
+        start_url = f"{base}/?token={token}"
     payload = {
         "name": user.school.name if user and user.school.name else "Сетевой город",
         "short_name": "Дневник",
         "description": "Дневник, оценки и домашние задания",
         # start_url с токеном: иначе установленное приложение открывалось бы
-        # на странице «не удалось вас опознать».
-        "start_url": f"{base}/?token={token}" if token else f"{base}/",
+        # на странице «не удалось вас опознать». Вошли на этом устройстве
+        # (ссылка установки, бот, почта) — вместо токена одноразовый код:
+        # первый запуск иконки меняет его на свой токен, и через «Поделиться»
+        # иконки уходит адрес, который уже ничего не открывает.
+        "start_url": start_url,
         "scope": f"{base}/",
         "display": "standalone",
         "orientation": "portrait",

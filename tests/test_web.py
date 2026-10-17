@@ -123,6 +123,16 @@ class TestAuth:
         assert response.status == 200
         assert (await response.json())["data"]["name"] == "Иванов И."
 
+    async def test_halloween_only_for_admin(self, client, app_context, users, token):
+        # В тестовых настройках TG_ADMIN_ID = 1.
+        response = await client.get(f"{BASE}/api/profile", params={"token": token})
+        assert (await response.json())["data"]["halloween"] is True
+        await users.save(make_user(2, student_name="Петров П."))
+        other = await app_context.miniapp.issue_token(2)
+        client.session.cookie_jar.clear()
+        response = await client.get(f"{BASE}/api/profile", params={"token": other})
+        assert (await response.json())["data"]["halloween"] is False
+
     async def test_token_accepted_in_header(self, client, token):
         response = await client.get(f"{BASE}/api/profile", headers={"X-Netschool-Token": token})
         assert response.status == 200
@@ -751,9 +761,49 @@ class TestNewFeatures:
         assert (await response.json())["ok"] is True
         assert sent == [(["abc"], "Вопрос", "Здравствуйте")]
 
-    async def test_pwa_link_is_personal(self, client, token):
+    async def test_pwa_link_is_personal(self, client, token, app_context):
         response = await client.get(f"{BASE}/api/pwa-link", params={"token": token})
-        assert f"token={token}" in (await response.json())["data"]["url"]
+        url = (await response.json())["data"]["url"]
+        assert token not in url and "?enter=" in url
+        assert await app_context.miniapp.use_enter_code(url.split("enter=")[1]) == 1
+
+    async def test_install_link_puts_device_token_and_clean_icon(self, client, token, app_context):
+        """Ссылка установки → свой токен устройства в cookie; в иконке вместо
+        токена одноразовый код, первый запуск меняет его на новый токен."""
+        import re
+        code = await app_context.miniapp.issue_enter_code(1)
+        client.session.cookie_jar.clear()
+        page = await (await client.get(f"{BASE}/", params={"enter": code})).text()
+        device = re.search(r'token: "([^"]+)"', page).group(1)
+        assert device != token and await app_context.miniapp.is_device_token(device)
+        assert client.session.cookie_jar.filter_cookies(client.make_url("/"))["netschool_token"].value == device
+        # Ссылку открыли ещё раз в другом браузере (из Telegram — «в Safari»).
+        client.session.cookie_jar.clear()
+        other = re.search(r'token: "([^"]+)"', await (await client.get(f"{BASE}/", params={"enter": code})).text()).group(1)
+        assert other not in (device, token)
+
+        manifest = await (await client.get(f"{BASE}/manifest.webmanifest", params={"token": device})).json()
+        start = manifest["start_url"]
+        assert device not in start and "?icon=" in start
+        # Пока иконку не запустили, манифест отдаёт тот же код.
+        again = await (await client.get(f"{BASE}/manifest.webmanifest", params={"token": device})).json()
+        assert again["start_url"] == start
+        icon = start.split("icon=")[1]
+        client.session.cookie_jar.clear()
+        response = await client.get(f"{BASE}/", params={"icon": icon}, allow_redirects=False)
+        assert response.status == 302 and response.headers["Location"] == f"{BASE}/"
+        launched = response.cookies["netschool_token"].value
+        assert await app_context.miniapp.resolve_token(launched) == 1 and launched not in (device, other)
+        # Второй раз код ничего не открывает: «Поделиться» иконкой безопасно.
+        client.session.cookie_jar.clear()
+        response = await client.get(f"{BASE}/", params={"icon": icon}, allow_redirects=False)
+        assert response.status == 200 and 'token: ""' in await response.text()
+        # Старые общие токены — как раньше: в манифесте сам токен.
+        old = await (await client.get(f"{BASE}/manifest.webmanifest", params={"token": token})).json()
+        assert old["start_url"].endswith(f"?token={token}")
+        # /app_reset гасит и ссылки установки.
+        await app_context.miniapp.revoke_tokens(1)
+        assert await app_context.miniapp.use_enter_code(code) is None
 
     async def test_demo_page_needs_no_login(self, client):
         response = await client.get(f"{BASE}/demo")

@@ -1223,11 +1223,75 @@ class MiniappRepository:
         return int(row["telegram_id"]) if row else None
 
     async def revoke_tokens(self, telegram_id: int) -> None:
-        await self._db.execute(
-            """UPDATE miniapp_tokens SET revoked_at = datetime('now')
-               WHERE telegram_id = ? AND revoked_at IS NULL""",
-            (telegram_id,),
+        async with self._db.transaction() as db:
+            await db.execute(
+                """UPDATE miniapp_tokens SET revoked_at = datetime('now')
+                   WHERE telegram_id = ? AND revoked_at IS NULL""",
+                (telegram_id,),
+            )
+            # Ссылки установки и коды иконок открыли бы новый токен — тоже гасим.
+            await db.execute("DELETE FROM install_codes WHERE telegram_id = ?", (telegram_id,))
+
+    async def is_device_token(self, token: str) -> bool:
+        row = await self._db.fetch_one(
+            "SELECT 1 FROM miniapp_tokens WHERE token = ? AND device = 1 AND revoked_at IS NULL AND scope = ''",
+            (token,),
         )
+        return row is not None
+
+    ENTER_TTL = 24 * 3600
+    ICON_TTL = 180 * 24 * 3600
+
+    async def issue_enter_code(self, telegram_id: int) -> str:
+        """Ссылка установки из /app_install: сутки, открывать можно не раз
+        (сначала встроенный браузер Telegram, потом Safari) — каждый раз
+        это новый токен устройства."""
+        code = secrets.token_urlsafe(24)
+        await self._db.execute(
+            "INSERT INTO install_codes (code, telegram_id, kind, expires_at) VALUES (?,?,'enter',?)",
+            (code, telegram_id, time.time() + self.ENTER_TTL),
+        )
+        return code
+
+    async def use_enter_code(self, code: str) -> int | None:
+        row = await self._db.fetch_one(
+            "SELECT telegram_id FROM install_codes WHERE code = ? AND kind = 'enter' AND expires_at > ?",
+            (code, time.time()),
+        )
+        return int(row["telegram_id"]) if row else None
+
+    async def icon_code(self, telegram_id: int, source: str) -> str:
+        """Код для start_url иконки. Пока иконку не запустили, на каждый
+        запрос манифеста отдаётся тот же код, а не плодится новый."""
+        row = await self._db.fetch_one(
+            """SELECT code FROM install_codes WHERE telegram_id = ? AND kind = 'icon' AND source = ?
+               AND used_at IS NULL AND expires_at > ? ORDER BY expires_at DESC LIMIT 1""",
+            (telegram_id, source, time.time()),
+        )
+        if row:
+            return row["code"]
+        code = secrets.token_urlsafe(24)
+        async with self._db.transaction() as db:
+            await db.execute("DELETE FROM install_codes WHERE expires_at < ?", (time.time(),))
+            await db.execute(
+                "INSERT INTO install_codes (code, telegram_id, kind, source, expires_at) VALUES (?,?,'icon',?,?)",
+                (code, telegram_id, source, time.time() + self.ICON_TTL),
+            )
+        return code
+
+    async def use_icon_code(self, code: str) -> int | None:
+        """Первый запуск иконки: код срабатывает один раз."""
+        async with self._db.transaction() as db:
+            cursor = await db.execute(
+                """UPDATE install_codes SET used_at = ? WHERE code = ? AND kind = 'icon'
+                   AND used_at IS NULL AND expires_at > ?""",
+                (time.time(), code, time.time()),
+            )
+            if cursor.rowcount == 0:
+                return None
+            cursor = await db.execute("SELECT telegram_id FROM install_codes WHERE code = ?", (code,))
+            row = await cursor.fetchone()
+        return int(row[0]) if row else None
 
     async def issue_login_code(self, telegram_id: int) -> str:
         """Шестизначный код для подтверждения входа в PWA через Telegram."""

@@ -338,7 +338,10 @@ async def install_miniapp(message: Message, user: User, app: AppContext) -> None
         # Родной с просмотром дневника входит без своего «Сетевого города».
         await reply(message, hint)
         return
-    url = await miniapp_url(app, user)
+    # Не постоянный токен, а ссылка установки на сутки: она кладёт браузеру
+    # свой токен устройства, а иконка получает адрес без токена (server.py).
+    code = await app.miniapp.issue_enter_code(user.telegram_id)
+    url = f"{app.settings.web.miniapp_url}/?enter={code}"
     mirror = mirror_url(app, url)
     mirror_hint = (
         "Если мобильный интернет урезан и основной адрес не открывается — "
@@ -349,7 +352,7 @@ async def install_miniapp(message: Message, user: User, app: AppContext) -> None
         "Откройте ссылку в браузере и выберите «Добавить на домашний экран» — "
         "дневник появится отдельной иконкой и будет работать без Telegram.\n\n"
         f"{mirror_hint}"
-        "⚠️ Ссылка персональная: по ней открывается ваш дневник. "
+        "⚠️ Ссылка персональная и действует сутки — потом попросите новую. "
         "Если она утекла — <code>/app_reset</code>.",
         parse_mode="HTML",
         reply_markup=keyboards.miniapp_external(url, mirror),

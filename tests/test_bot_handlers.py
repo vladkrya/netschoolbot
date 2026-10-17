@@ -316,7 +316,9 @@ class TestMenu:
         await menu.install_miniapp(message, user, app)
         button = message.answers[-1][1]["reply_markup"].inline_keyboard[0][0]
         assert button.web_app is None
-        assert button.url.startswith("https://example.ru/mini/?token=")
+        # Ссылка установки на сутки, а не постоянный токен.
+        assert button.url.startswith("https://example.ru/mini/?enter=")
+        assert await app.miniapp.use_enter_code(button.url.split("enter=")[1]) == 1
 
     async def test_app_requires_school(self, app, users):
         user = await users.get_or_create(1)

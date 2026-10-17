@@ -473,6 +473,10 @@ async def profile(request: web.Request) -> web.Response:
                 "quiet_hours": user.quiet_hours.as_text(),
                 "enabled": user.enabled,
                 "assistant": app.settings.assistant.enabled,
+                # Хеллоуинское оформление пока видит только админ — по тому,
+                # кто вошёл, а не чей дневник открыт.
+                "halloween": bool(app.settings.telegram.admin_id)
+                and (viewer or user).telegram_id == app.settings.telegram.admin_id,
                 # Без капчи отчёт об ошибке не отправить — пункт меню прячется.
                 "bug_report": bool(app.settings.web.captcha_url),
                 "timezone": user.timezone,
@@ -1864,10 +1868,11 @@ async def student_class(request: web.Request) -> web.Response:
 
 @routes.get("/api/pwa-link")
 async def pwa_link(request: web.Request) -> web.Response:
-    """Постоянная ссылка для установки на домашний экран (как /app_install)."""
+    """Ссылка для установки на домашний экран (как /app_install): действует
+    сутки и даёт браузеру свой токен устройства, а не общий токен."""
     app, user = context(request), current_user(request)
-    token = await app.miniapp.issue_token(user.telegram_id)
-    return web.json_response({"ok": True, "data": {"url": f"{app.settings.web.miniapp_url}/?token={token}"}})
+    code = await app.miniapp.issue_enter_code(user.telegram_id)
+    return web.json_response({"ok": True, "data": {"url": f"{app.settings.web.miniapp_url}/?enter={code}"}})
 
 
 @routes.get("/api/push/key")

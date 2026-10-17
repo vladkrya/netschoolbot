@@ -609,6 +609,21 @@ MIGRATIONS: list[str] = [
     """
     ALTER TABLE miniapp_tokens ADD COLUMN scope TEXT NOT NULL DEFAULT '';
     """,
+    # Установка на экран «Домой» без токена в адресе. kind='enter' — ссылка
+    # из /app_install (сутки, можно открыть и во встроенном браузере, и в
+    # настоящем); kind='icon' — код в start_url манифеста: первый запуск
+    # иконки меняет его на свой токен устройства, дальше код ничего не открывает.
+    """
+    CREATE TABLE install_codes (
+        code        TEXT PRIMARY KEY,
+        telegram_id INTEGER NOT NULL,
+        kind        TEXT NOT NULL,
+        source      TEXT NOT NULL DEFAULT '',
+        expires_at  REAL NOT NULL,
+        used_at     REAL
+    );
+    CREATE INDEX idx_install_codes_user ON install_codes(telegram_id);
+    """,
 ]
 
 
