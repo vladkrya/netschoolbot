@@ -43,7 +43,16 @@
   background:
     radial-gradient(120% 60% at 50% 115%, color-mix(in srgb, var(--head) 16%, transparent), transparent 60%),
     radial-gradient(90% 50% at 20% -10%, rgba(142, 91, 214, .22), transparent 65%),
-    #120d18 fixed;
+    /* Звёзды: мелкие точки плиткой 220×260, вторая плитка смещена — без явного узора. */
+    radial-gradient(1px 1px at 24px 38px, rgba(255, 255, 255, .55), transparent),
+    radial-gradient(1px 1px at 132px 92px, rgba(255, 255, 255, .4), transparent),
+    radial-gradient(1.5px 1.5px at 188px 20px, rgba(255, 240, 210, .6), transparent),
+    radial-gradient(1px 1px at 76px 170px, rgba(255, 255, 255, .35), transparent),
+    radial-gradient(1px 1px at 160px 214px, rgba(255, 255, 255, .45), transparent),
+    radial-gradient(1.5px 1.5px at 40px 236px, rgba(210, 190, 255, .5), transparent),
+    #120d18;
+  background-size: 100% 100%, 100% 100%, 220px 260px, 220px 260px, 220px 260px, 220px 260px, 220px 260px, 220px 260px, auto;
+  background-attachment: fixed;
 }
 :root[data-holiday="halloween"]:not(#_) body { background: transparent; }
 
@@ -103,6 +112,10 @@
 .hw-bat:nth-child(3) { --y: 6px; --w: 26px; --t: 17s; --d: -3s; }
 .hw-bat:nth-child(4) { --y: 26px; --w: 18px; --t: 23s; --d: -12s; }
 .hw-bat:nth-child(5) { --y: 14px; --w: 22px; --t: 29s; --d: -20s; }
+/* 31 октября мышей шесть. */
+.hw-bat:nth-child(6) { --y: 30px; --w: 16px; --t: 14s; --d: -7s; }
+.hw-bat:nth-child(7) { --y: 2px; --w: 20px; --t: 21s; --d: -16s; }
+.hw-bat:nth-child(8) { --y: 20px; --w: 28px; --t: 33s; --d: -26s; }
 @keyframes hw-fly {
   0%   { translate: -60px 0; }
   25%  { translate: 25vw -6px; }
@@ -116,8 +129,89 @@
 .no-motion .hw-bat:nth-child(3) { --x: 30vw; }
 .no-motion .hw-bat:nth-child(4) { --x: 64vw; }
 .no-motion .hw-bat:nth-child(5) { --x: 46vw; }
+.no-motion .hw-bat:nth-child(n+6) { display: none; }
 @media (prefers-reduced-motion: reduce) {
   .hw-bat { animation: none; translate: var(--x, 30vw) 0; }
+}
+
+
+/* ─────────────────── Паук, туман, большая мышь ─────────────────── */
+
+/* Паучок спускается на паутинке из угла с паутиной и поднимается обратно. */
+.hw-spider { display: none; }
+:root[data-holiday="halloween"][data-design="new"]:not(#_) .hw-spider {
+  display: block;
+  position: fixed;
+  right: 26px;
+  top: 0;
+  z-index: 21;
+  width: 2px;
+  height: calc(var(--bar-top, 0px) + 70px);
+  pointer-events: none;
+  background: linear-gradient(rgba(217, 200, 238, .45), rgba(217, 200, 238, .25));
+  transform-origin: top center;
+  animation: hw-dangle 9s ease-in-out infinite;
+}
+:root[data-holiday="halloween"][data-design="new"]:not(#_) .hw-spider::after {
+  content: '';
+  position: absolute;
+  left: -10px;
+  bottom: -18px;
+  width: 22px;
+  height: 22px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23d9c8ee' stroke-width='1.6' stroke-linecap='round'%3E%3Ccircle cx='12' cy='9' r='2.4' fill='%23110a18'/%3E%3Cellipse cx='12' cy='14.4' rx='3.4' ry='3.8' fill='%23110a18'/%3E%3Cpath d='M9 12.6 5.6 10.4 3.5 12M8.7 14.6H5l-2 2.2M9.2 16.6 6.6 19.2v2M15 12.6l3.4-2.2 2.1 1.6M15.3 14.6H19l2 2.2M14.8 16.6l2.6 2.6v2'/%3E%3Ccircle cx='11.2' cy='8.6' r='.5' fill='%23ff8a1f' stroke='none'/%3E%3Ccircle cx='12.8' cy='8.6' r='.5' fill='%23ff8a1f' stroke='none'/%3E%3C/svg%3E") center / contain no-repeat;
+  animation: hw-wiggle 1.6s ease-in-out infinite alternate;
+}
+@keyframes hw-dangle {
+  0%, 100% { scale: 1 .55; }
+  45%, 60% { scale: 1 1.25; }
+}
+@keyframes hw-wiggle { from { rotate: -8deg; } to { rotate: 8deg; } }
+
+/* Туман стелется над панелью вкладок. */
+.hw-fog { display: none; }
+:root[data-holiday="halloween"]:not(#_) .hw-fog {
+  display: block;
+  position: fixed;
+  left: -50%;
+  right: -50%;
+  bottom: 0;
+  height: calc(var(--nav-h, 74px) + 70px);
+  z-index: 38;
+  pointer-events: none;
+  background:
+    radial-gradient(40% 60% at 20% 100%, rgba(190, 170, 220, .14), transparent 70%),
+    radial-gradient(35% 55% at 55% 100%, rgba(190, 170, 220, .11), transparent 70%),
+    radial-gradient(45% 65% at 85% 100%, rgba(190, 170, 220, .13), transparent 70%);
+  animation: hw-fog 24s ease-in-out infinite alternate;
+}
+@keyframes hw-fog { to { translate: 18% 0; } }
+
+/* Раз за запуск большая мышь с горящими глазами пролетает по диагонали. */
+.hw-swoop {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 60;
+  width: 120px;
+  aspect-ratio: 2;
+  pointer-events: none;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 32'%3E%3Cpath fill='%23060309' d='M32 9c-2 0-3 2-3 4l-2-3c0 2 0 4 1 5-4-1-7-5-9-10-3 4-8 6-14 5 4 3 6 7 6 11 4-2 8-1 11 2 1-3 4-5 7-5l3 3 3-3c3 0 6 2 7 5 3-3 7-4 11-2 0-4 2-8 6-11-6 1-11-1-14-5-2 5-5 9-9 10 1-1 1-3 1-5l-2 3c0-2-1-4-3-4z'/%3E%3Ccircle cx='30.6' cy='13.4' r='.7' fill='%23ffb347'/%3E%3Ccircle cx='33.4' cy='13.4' r='.7' fill='%23ffb347'/%3E%3C/svg%3E") center / contain no-repeat;
+  filter: drop-shadow(0 6px 12px rgba(0, 0, 0, .5));
+  animation: hw-swoop 2.4s cubic-bezier(.45, .05, .55, .95) forwards, hw-flap .18s ease-in-out infinite alternate;
+}
+@keyframes hw-swoop {
+  0%   { translate: -140px 70vh; scale: .6; }
+  40%  { translate: 35vw 35vh; scale: 1.15; }
+  70%  { translate: 65vw 22vh; scale: .9; }
+  100% { translate: calc(100vw + 140px) -10vh; scale: .5; }
+}
+
+/* Без анимаций паук висит, туман стоит. */
+.no-motion :is(.hw-spider, .hw-spider::after, .hw-fog) { animation: none !important; }
+@media (prefers-reduced-motion: reduce) {
+  :is(.hw-spider, .hw-fog) { animation: none !important; }
+  .hw-spider::after { animation: none !important; }
 }
 
 /* ──────────────────────── Шапка и меню ──────────────────────── */
@@ -192,3 +286,111 @@
 
 /* Подсказка в меню вместо выбора темы. */
 :root[data-holiday="halloween"]:not(#_) .halloween-note { margin: 4px 2px 6px; }
+
+/* ────────────────────────── Мелочи ────────────────────────── */
+
+/* Заголовки разделов меню — тёплым светом акцента. */
+:root[data-holiday="halloween"]:not(#_) .drawer-heading {
+  color: var(--primary);
+  text-shadow: 0 0 10px color-mix(in srgb, var(--head) 45%, transparent);
+  letter-spacing: .06em;
+}
+
+/* Плитки «Возможностей» — тёмное стекло, иконка светится. */
+:root[data-holiday="halloween"]:not(#_) .tool-tile {
+  background: linear-gradient(160deg, var(--card-2), color-mix(in srgb, var(--head) 8%, var(--card)));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .04), 0 0 0 1px color-mix(in srgb, var(--head) 10%, transparent);
+}
+:root[data-holiday="halloween"]:not(#_) .tool-ico {
+  color: var(--primary);
+  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--head) 55%, transparent));
+}
+
+/* Активная вкладка — иконка горит и покачивается при выборе. */
+:root[data-holiday="halloween"]:not(#_) .nav-item.active .ico svg {
+  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--head) 70%, transparent));
+  animation: hw-boo .5s var(--ease, ease) 1;
+}
+@keyframes hw-boo {
+  0% { rotate: 0deg; scale: 1; }
+  30% { rotate: -12deg; scale: 1.18; }
+  60% { rotate: 9deg; }
+  100% { rotate: 0deg; scale: 1; }
+}
+:root[data-holiday="halloween"]:not(#_) .nav-glider {
+  box-shadow: 0 0 18px color-mix(in srgb, var(--head) 22%, transparent), inset 0 0 0 1px color-mix(in srgb, var(--head) 18%, transparent);
+}
+
+/* Номер урока мерцает, как свеча. */
+:root[data-holiday="halloween"]:not(#_) .lc-num { animation: hw-candle 3.4s ease-in-out infinite; }
+:root[data-holiday="halloween"]:not(#_) .lesson-card:nth-child(2n) .lc-num { animation-delay: -1.3s; }
+:root[data-holiday="halloween"]:not(#_) .lesson-card:nth-child(3n) .lc-num { animation-delay: -2.1s; }
+@keyframes hw-candle {
+  0%, 100% { text-shadow: 0 0 8px color-mix(in srgb, var(--head) 60%, transparent); }
+  47% { text-shadow: 0 0 4px color-mix(in srgb, var(--head) 40%, transparent); }
+  52% { text-shadow: 0 0 12px color-mix(in srgb, var(--head) 75%, transparent); }
+}
+
+/* Двойка — кроваво светится. */
+:root[data-holiday="halloween"]:not(#_) .mark.m2 { box-shadow: 0 0 10px rgba(255, 70, 80, .4); }
+
+/* Сегодня в полосе недели — маленькая тыква. */
+:root[data-holiday="halloween"]:not(#_) .week-day.today { position: relative; }
+:root[data-holiday="halloween"]:not(#_) .week-day.today::after {
+  content: '🎃';
+  position: absolute;
+  right: 4px;
+  top: 2px;
+  font-size: 10px;
+  line-height: 1;
+}
+
+/* Скелетоны загрузки — переливаются туманом. */
+:root[data-holiday="halloween"]:not(#_) .skeleton::after {
+  background: linear-gradient(90deg, transparent, rgba(190, 160, 230, .14), color-mix(in srgb, var(--head) 14%, transparent), transparent);
+}
+
+/* Кружок «потяните, чтобы обновить» — тыквенный. */
+:root[data-holiday="halloween"]:not(#_) .pull-ring {
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--head) 35%, transparent), 0 0 18px color-mix(in srgb, var(--head) 30%, transparent);
+}
+
+/* Шторки снизу: ручка — в цвет акцента, в углу паутинка. */
+:root[data-holiday="halloween"]:not(#_) .sheet-grip { background: var(--primary); opacity: .8; }
+:root[data-holiday="halloween"]:not(#_) .sheet { position: relative; }
+:root[data-holiday="halloween"]:not(#_) .sheet::before {
+  content: '';
+  position: absolute;
+  right: 0;
+  top: 0;
+  width: 64px;
+  height: 64px;
+  pointer-events: none;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 160 160' fill='none' stroke='%23d9c8ee' stroke-opacity='.5' stroke-width='1.4'%3E%3Cpath d='M160 0L0 40M160 0L40 120M160 0L120 160M160 0L0 95M160 0L70 160'/%3E%3Cpath d='M132 7Q136 20 139 22Q146 26 152 30'/%3E%3Cpath d='M102 15Q110 38 117 43Q130 52 145 59'/%3E%3Cpath d='M70 23Q82 55 94 66Q114 82 138 89'/%3E%3Cpath d='M36 31Q54 72 71 88Q98 110 130 119'/%3E%3C/svg%3E") center / contain no-repeat;
+  opacity: .35;
+  border-top-right-radius: inherit;
+}
+
+/* Полосы прокрутки — ночные. */
+:root[data-holiday="halloween"]:not(#_) { scrollbar-color: color-mix(in srgb, var(--head) 50%, #3a2d4a) transparent; }
+
+/* Экран PIN — то же ночное небо, над карточкой парит привидение. */
+:root[data-holiday="halloween"]:not(#_) .app-lock { background: transparent; }
+:root[data-holiday="halloween"]:not(#_) .app-lock-card { position: relative; box-shadow: 0 20px 50px rgba(0, 0, 0, .5), 0 0 0 1px color-mix(in srgb, var(--head) 14%, transparent); }
+:root[data-holiday="halloween"]:not(#_) .app-lock-card::before {
+  content: '👻';
+  position: absolute;
+  left: 50%;
+  top: -34px;
+  margin-left: -20px;
+  font-size: 40px;
+  line-height: 1;
+  filter: drop-shadow(0 6px 10px rgba(0, 0, 0, .45));
+  animation: hw-float 3s ease-in-out infinite alternate;
+}
+
+/* Без анимаций — ничего не качается и не мерцает. */
+.no-motion :is(.lc-num, .nav-item .ico svg, .app-lock-card::before) { animation: none !important; }
+@media (prefers-reduced-motion: reduce) {
+  :root[data-holiday="halloween"]:not(#_) :is(.lc-num, .nav-item .ico svg) { animation: none; }
+}

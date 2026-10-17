@@ -894,6 +894,9 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .drawer-link { display: flex; align-items: center; gap: 8px; color: var(--primary); font-size: 16px; font-weight: 600; padding: 4px 0; }
 /* Инструменты плитками: значок над подписью, по три в ряд. */
 .tool-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 8px; }
+/* «Вход и защита» сразу под заголовком раздела, «Полезное» — с отступом. */
+.drawer-heading + .drawer-sub { margin-top: 2px; }
+.tool-grid-account + .drawer-sub { margin-top: 14px; }
 .tool-tile {
   display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 6px;
   padding: 12px 6px 10px; border-radius: 14px; background: var(--card-2); color: var(--text);

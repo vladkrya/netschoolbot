@@ -9,7 +9,7 @@ import {
 } from './core.js';
 import {
   ACCENTS, currentAccent, forgetAccent, isNewDesign, rememberAccent, saveAccent, savedAccents, saveAnswers, saveBells, saveDesign, saveHomeworkStatus, saveWeekends, showAnswers, showBells,
-  applyMotion, HALLOWEEN_ACCENTS, halloweenAccent, isHalloween, saveHalloween, saveHalloweenAccent, showConfetti, saveConfetti, showMotion, saveMotion, showHomeworkStatus, showWeekends, syncChromeColor,
+  applyMotion, HALLOWEEN_ACCENTS, halloweenAccent, halloweenCountdown, isHalloween, saveHalloween, saveHalloweenAccent, showConfetti, saveConfetti, showMotion, saveMotion, showHomeworkStatus, showWeekends, syncChromeColor,
 } from './appearance.js';
 import { ICONS } from './icons.js';
 import { smoothRepaint } from './motion.js';
@@ -742,15 +742,19 @@ function render() {
       ${!readonly && data.students.length > 1 ? `<div class="drawer-children">${data.students
         .map((s) => `<button class="chip ${s.current ? 'active' : ''}" data-student="${s.id}">${esc(s.name)}</button>`)
         .join('')}</div>` : ''}
-      ${demo ? '' : `<div class="account-links">
-        <button class="drawer-link" id="drawerLock">${ICONS.shield} Защита входа</button>
-        <button class="drawer-link" id="drawerAccount">${ICONS.mail} Вход по почте</button>
-        <button class="drawer-link" id="drawerDevices">${ICONS.install} Устройства</button>
-        ${initData && readonly ? '' : `<button class="drawer-link drawer-logout" id="drawerLogout">${ICONS.logout} Выйти из аккаунта</button>`}
+      ${demo || (initData && readonly) ? '' : `<div class="account-links">
+        <button class="drawer-link drawer-logout" id="drawerLogout">${ICONS.logout} Выйти из аккаунта</button>
       </div>`}
     </section>
     <section class="drawer-section">
-      <div class="drawer-heading">Инструменты</div>
+      <div class="drawer-heading">Возможности</div>
+      ${demo ? '' : `<div class="drawer-sub">Вход и защита</div>
+      <div class="tool-grid tool-grid-account">
+      ${toolTile('drawerAccount', 'mail', 'Вход по почте')}
+      ${toolTile('drawerLock', 'shield', 'PIN-код')}
+      ${toolTile('drawerDevices', 'install', 'Устройства')}
+      </div>
+      <div class="drawer-sub">Полезное</div>`}
       <div class="tool-grid">
       ${data.assistant && !demo && !readonly && !navTabs().includes('assistant') ? toolTile('drawerAssistant', 'sparkles', 'ИИ-помощник') : ''}
       ${toolTile('drawerCalc', 'calc', 'Калькулятор баллов')}
@@ -764,7 +768,7 @@ function render() {
     </section>
     <section class="drawer-section">
       <div class="drawer-heading">Оформление</div>
-      ${data.halloween ? `<label class="switch-row halloween-row"><span>🎃 Хеллоуин<span class="muted small switch-note">тыквы, летучие мыши и паутина · видно только вам</span></span>
+      ${data.halloween ? `<label class="switch-row halloween-row"><span>🎃 Хеллоуин<span class="muted small switch-note">${halloweenCountdown()} · видно только вам</span></span>
         <input type="checkbox" switch class="switch" id="halloweenOn" ${isHalloween() ? 'checked' : ''}></label>` : ''}
       ${spooky ? '<div class="muted small halloween-note">В Хеллоуин тема всегда ночная. Светлая и свой цвет вернутся, когда выключите праздник.</div>'
         : isNewDesign() ? themeSegment : `${radio('light', 'Светлая тема')}

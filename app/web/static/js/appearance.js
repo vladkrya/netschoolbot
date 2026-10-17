@@ -159,16 +159,27 @@ export function applyHalloween() {
   const was = root.getAttribute('data-holiday') === 'halloween';
   if (on) root.setAttribute('data-holiday', 'halloween');
   else root.removeAttribute('data-holiday');
-  // Луна, паутина и летучие мыши — отдельный слой поверх шапки (halloween.css).
+  // Луна, паутина, мыши и паук — слой поверх шапки, туман — над панелью
+  // вкладок (halloween.css). В сам Хеллоуин мышей больше.
   let decor = document.querySelector('.hw-decor');
   if (on && !decor) {
     decor = document.createElement('div');
     decor.className = 'hw-decor';
     decor.ariaHidden = 'true';
+    const bats = halloweenDaysLeft() === 0 ? 6 : 3;
     decor.innerHTML = '<span class="hw-moon"></span><span class="hw-web"></span>'
-      + '<span class="hw-bat"></span><span class="hw-bat"></span><span class="hw-bat"></span>';
-    document.body.append(decor);
-  } else if (!on) decor?.remove();
+      + '<span class="hw-bat"></span>'.repeat(bats);
+    const spider = document.createElement('div');
+    spider.className = 'hw-spider';
+    spider.ariaHidden = 'true';
+    const fog = document.createElement('div');
+    fog.className = 'hw-fog';
+    fog.ariaHidden = 'true';
+    document.body.append(decor, spider, fog);
+    swoop();
+  } else if (!on) {
+    document.querySelectorAll('.hw-decor, .hw-spider, .hw-fog, .hw-swoop').forEach((el) => el.remove());
+  }
   if (on === was) return;
   applyAccent();
   // Иконки панели меняются на месте — значки непрочитанного остаются.
@@ -176,6 +187,40 @@ export function applyHalloween() {
     icon.querySelector('svg.icon')?.remove();
     icon.insertAdjacentHTML('afterbegin', navIcon(icon.dataset.icon));
   });
+}
+
+/** Сколько дней до 31 октября этого года; 0 — сегодня; после — отрицательное. */
+export function halloweenDaysLeft(now = new Date()) {
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const day = new Date(now.getFullYear(), 9, 31);
+  return Math.round((day - today) / 86400000);
+}
+
+/** Подпись к тумблеру: обратный отсчёт до праздника. */
+export function halloweenCountdown(now = new Date()) {
+  const left = halloweenDaysLeft(now);
+  if (left === 0) return 'сегодня Хеллоуин! 🎃';
+  if (left < 0) return 'Хеллоуин прошёл — до следующего года';
+  const mod10 = left % 10;
+  const mod100 = left % 100;
+  const word = mod10 === 1 && mod100 !== 11 ? 'день'
+    : mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14) ? 'дня' : 'дней';
+  return `до Хеллоуина ${left} ${word}`;
+}
+
+/** Раз за запуск большая летучая мышь пролетает через весь экран. */
+let swooped = false;
+function swoop() {
+  if (swooped || !showMotion() || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  swooped = true;
+  setTimeout(() => {
+    if (!isHalloween()) return;
+    const bat = document.createElement('div');
+    bat.className = 'hw-swoop';
+    bat.ariaHidden = 'true';
+    bat.addEventListener('animationend', () => bat.remove(), { once: true });
+    document.body.append(bat);
+  }, 2500);
 }
 
 /** Профиль сказал, доступно ли оформление этому человеку. */
