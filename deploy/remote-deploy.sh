@@ -86,20 +86,20 @@ install_units() {
     install -m 644 deploy/systemd/netschoolbot-health.service deploy/systemd/netschoolbot-health.timer /etc/systemd/system/
   fi
   if [ -f deploy/systemd/netschoolbot-alert@.service ]; then
-    install -m 644 deploy/systemd/netschoolbot-alert@.service deploy/systemd/netschoolbot-litestream.service \
-      deploy/systemd/netschoolbot-replica-check.service deploy/systemd/netschoolbot-replica-check.timer \
-      /etc/systemd/system/
+    install -m 644 deploy/systemd/netschoolbot-alert@.service /etc/systemd/system/
   fi
+  # Litestream пробовали и отказались: его юниты, если остались, убираем.
+  local unit
+  for unit in netschoolbot-litestream.service netschoolbot-replica-check.service netschoolbot-replica-check.timer; do
+    if [ -f "/etc/systemd/system/$unit" ]; then
+      systemctl disable --now "$unit" >/dev/null 2>&1 || true
+      rm -f "/etc/systemd/system/$unit"
+    fi
+  done
   if [ -f deploy/systemd/netschoolbot-autodeploy.timer ]; then
     install -m 644 deploy/systemd/netschoolbot-autodeploy.service deploy/systemd/netschoolbot-autodeploy.timer /etc/systemd/system/
   fi
   systemctl daemon-reload
-}
-
-# Litestream включается сам, как только на сервере есть бинарник и бакет в .env.
-litestream_ready() {
-  [ -f deploy/systemd/netschoolbot-litestream.service ] && [ -x /usr/bin/litestream ] \
-    && grep -q '^LITESTREAM_BUCKET=..*' "$APP/.env" 2>/dev/null
 }
 
 install_nginx() {
@@ -149,11 +149,8 @@ rollback() {
     git reset -q --hard "$PREV"
     if [ -n "$BACKUP" ] && [ "$(db_tool schema "$DB" || echo x)" != "$(db_tool schema "$BACKUP" || echo y)" ]; then
       echo "↩ Схема базы изменилась — возвращаю копию $BACKUP"
-      # Litestream держит базу открытой: -wal под ним не удаляют.
-      systemctl stop netschoolbot-litestream 2>/dev/null || true
       rm -f "$DB-wal" "$DB-shm"
       db_tool restore "$BACKUP" "$DB" || echo "!! База не восстановлена — нужна ручная проверка"
-      if litestream_ready; then systemctl start netschoolbot-litestream || true; fi
     fi
     install_deps || true
     install_units || true
@@ -207,12 +204,6 @@ systemctl enable --now netschoolbot-backup.timer >/dev/null 2>&1 || true
 # Внешняя проверка «бот отвечает» — сообщение админу, если упал.
 systemctl enable --now netschoolbot-health.timer >/dev/null 2>&1 || true
 systemctl enable --now netschoolbot-autodeploy.timer >/dev/null 2>&1 || true
-# Непрерывная копия во внешнее хранилище; конфиг мог поменяться — перезапуск.
-if litestream_ready; then
-  systemctl enable netschoolbot-litestream netschoolbot-replica-check.timer >/dev/null 2>&1 || true
-  systemctl restart netschoolbot-litestream || true
-  systemctl start netschoolbot-replica-check.timer || true
-fi
 
 step "Конфигурация nginx"
 install_nginx

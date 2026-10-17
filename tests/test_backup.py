@@ -29,12 +29,25 @@ async def test_missing_users_are_caught(db, tmp_path):
         verify_backup(path, expect_users=5)
 
 
-async def test_prune_keeps_latest(db, tmp_path):
+async def test_prune_keeps_latest_hours_and_one_per_day(db, tmp_path):
+    target = tmp_path / "backups"
+    # Трое суток копий каждые 6 часов: 5-го, 6-го и 7-го октября.
+    for day in (5, 6, 7):
+        for hour in (0, 6, 12, 18):
+            make_backup(db._path, target, now=dt.datetime(2026, 10, day, hour))
+    prune(target, keep=2, hourly=3)
+    left = sorted(p.name[len("netschoolbot-"):-len(".sqlite3")] for p in target.glob("*.sqlite3"))
+    # Три свежих и последняя копия двух последних суток; 5-е октября ушло целиком.
+    assert left == ["20261006-180000", "20261007-060000", "20261007-120000", "20261007-180000"]
+
+
+async def test_prune_daily_only(db, tmp_path):
+    target = tmp_path / "backups"
     for hour in range(4):
-        make_backup(db._path, tmp_path, now=dt.datetime(2026, 10, 5, hour))
-    removed = prune(tmp_path, keep=2)
-    assert len(removed) == 2
-    assert sorted(p.name for p in tmp_path.glob("*.sqlite3"))[0].endswith("020000.sqlite3")
+        make_backup(db._path, target, now=dt.datetime(2026, 10, 5, hour))
+    removed = prune(target, keep=2)
+    assert len(removed) == 3
+    assert [p.name for p in target.glob("*.sqlite3")] == ["netschoolbot-20261005-030000.sqlite3"]
 
 
 async def test_restore_returns_previous_state(db, users, tmp_path):
@@ -59,28 +72,3 @@ async def test_backup_leaves_no_wal_companions(db, tmp_path):
     (target / "netschoolbot-20200101-000000.sqlite3-wal").write_bytes(b"")
     prune(target, keep=5)
     assert sorted(p.name for p in target.iterdir()) == [path.name]
-
-
-async def test_replica_check_sees_fresh_probe(db, users, tmp_path):
-    from app.tools.backup import check_replica
-
-    await users.save(make_user())
-
-    def restore(config, db_path, target):
-        make_backup(db_path, target.parent).replace(target)
-
-    report = check_replica(db._path, tmp_path / "litestream.yml", wait=0, restore=restore)
-    assert report.users == 1
-
-
-async def test_replica_check_catches_stale_replica(db, users, tmp_path):
-    from app.tools.backup import check_replica
-
-    await users.save(make_user())
-    stale = make_backup(db._path, tmp_path / "stale")
-
-    def restore(config, db_path, target):
-        target.write_bytes(stale.read_bytes())
-
-    with pytest.raises(BackupError, match="отстала"):
-        check_replica(db._path, tmp_path / "litestream.yml", wait=0, restore=restore)
