@@ -1410,15 +1410,23 @@ class MiniappRepository:
         )
 
     async def record_visit(self, telegram_id: int, design: str, client: str) -> None:
-        """Открытие приложения: последний дизайн и откуда открыто."""
+        """Открытие приложения: последний дизайн и откуда открыто, а также
+        все места, где его открывали."""
         now = time.time()
-        await self._db.execute(
-            """INSERT INTO app_visits (telegram_id, design, client, first_seen_at, seen_at)
-               VALUES (?, ?, ?, ?, ?)
-               ON CONFLICT(telegram_id) DO UPDATE SET
-                   design = excluded.design, client = excluded.client, seen_at = excluded.seen_at""",
-            (telegram_id, design, client, now, now),
-        )
+        async with self._db.transaction() as db:
+            await db.execute(
+                """INSERT INTO app_visits (telegram_id, design, client, first_seen_at, seen_at)
+                   VALUES (?, ?, ?, ?, ?)
+                   ON CONFLICT(telegram_id) DO UPDATE SET
+                       design = excluded.design, client = excluded.client, seen_at = excluded.seen_at""",
+                (telegram_id, design, client, now, now),
+            )
+            await db.execute(
+                """INSERT INTO app_clients (telegram_id, client, first_seen_at, seen_at)
+                   VALUES (?, ?, ?, ?)
+                   ON CONFLICT(telegram_id, client) DO UPDATE SET seen_at = excluded.seen_at""",
+                (telegram_id, client, now, now),
+            )
 
     async def has_installed_app(self, telegram_id: int) -> bool:
         """Открывали ли приложение с экрана «Домой»: последний вход оттуда
@@ -1442,6 +1450,48 @@ class MiniappRepository:
                 (since,))
             result[column] = {row["key"]: row["n"] for row in rows}
         return result
+
+    async def audience_stats(self, now: float, web_id_base: int) -> dict[str, Any]:
+        """Для /adminstats: пользователи по способу входа и по местам, где
+        открывали приложение. «Новые» — за 7 дней до `now`.
+
+        login: telegram (без почты), both (Telegram и почта), email (только
+        почта — служебный id от `web_id_base`). places — за всё время (all) и
+        за 30 дней (month): telegram — только в Telegram, both — и там, и в
+        браузере, browser — только в браузере (сайт или установленное);
+        pwa — сколько из них открывали установленное приложение.
+        """
+        week_ago = now - 7 * 86400
+        week_ago_text = dt.datetime.fromtimestamp(week_ago, dt.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        rows = await self._db.fetch_all(
+            """SELECT CASE WHEN u.telegram_id >= ? THEN 'email'
+                           WHEN a.telegram_id IS NULL THEN 'telegram' ELSE 'both' END AS kind,
+                      COUNT(*) AS n, SUM(u.created_at >= ?) AS fresh
+               FROM users u LEFT JOIN accounts a ON a.telegram_id = u.telegram_id
+               GROUP BY kind""",
+            (web_id_base, week_ago_text),
+        )
+        login = {key: {"n": 0, "new": 0} for key in ("telegram", "both", "email")}
+        for row in rows:
+            login[row["kind"]] = {"n": row["n"], "new": row["fresh"] or 0}
+        email = await self._db.fetch_one(
+            "SELECT COUNT(*) AS linked, COUNT(email_verified_at) AS verified FROM accounts")
+        places = {}
+        for period, since in (("all", 0.0), ("month", now - 30 * 86400)):
+            rows = await self._db.fetch_all(
+                """SELECT kind, COUNT(*) AS n, SUM(first >= ?) AS fresh, SUM(pwa) AS pwa FROM (
+                       SELECT CASE WHEN MAX(client = 'telegram') AND MAX(client != 'telegram') THEN 'both'
+                                   WHEN MAX(client = 'telegram') THEN 'telegram' ELSE 'browser' END AS kind,
+                              MIN(first_seen_at) AS first, MAX(client = 'pwa') AS pwa
+                       FROM app_clients WHERE seen_at >= ? GROUP BY telegram_id)
+                   GROUP BY kind""",
+                (week_ago, since),
+            )
+            counts = {key: {"n": 0, "new": 0, "pwa": 0} for key in ("telegram", "both", "browser")}
+            for row in rows:
+                counts[row["kind"]] = {"n": row["n"], "new": row["fresh"] or 0, "pwa": row["pwa"] or 0}
+            places[period] = counts
+        return {"login": login, "email": dict(email), "places": places}
 
     async def claim_chat_launch_notice(self, telegram_id: int) -> bool:
         """Выдать объявление один раз на аккаунт, в том числе между устройствами."""

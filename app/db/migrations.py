@@ -644,6 +644,20 @@ MIGRATIONS: list[str] = [
     );
     CREATE INDEX idx_token_clients_user ON token_clients(telegram_id);
     """,
+    # Все места, где пользователь открывал приложение (app_visits помнит
+    # только последнее): кто бывал в Telegram, а кто только в браузере.
+    # Для /adminstats. Прошлое — из app_visits, последнее известное место.
+    """
+    CREATE TABLE app_clients (
+        telegram_id INTEGER NOT NULL REFERENCES users(telegram_id) ON DELETE CASCADE,
+        client TEXT NOT NULL,
+        first_seen_at REAL NOT NULL,
+        seen_at REAL NOT NULL,
+        PRIMARY KEY (telegram_id, client)
+    );
+    INSERT INTO app_clients (telegram_id, client, first_seen_at, seen_at)
+    SELECT telegram_id, client, first_seen_at, seen_at FROM app_visits;
+    """,
 ]
 
 

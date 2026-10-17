@@ -8,13 +8,15 @@ from aiogram import Router
 from aiogram.filters import Command
 from aiogram.types import Message
 
+from ...accounts import WEB_ID_BASE
 from ...context import AppContext
 from .common import reply
 
 router = Router(name="admin")
 
 DESIGNS = {"new": "новый", "classic": "старый"}
-CLIENTS = {"telegram": "в Telegram", "pwa": "установленное приложение", "web": "в браузере"}
+LOGINS = {"telegram": "только Telegram", "both": "Telegram и почта", "email": "только почта"}
+PLACES = {"telegram": "только в Telegram", "both": "в Telegram и в браузере", "browser": "только в браузере"}
 
 
 def _is_admin(message: Message, app: AppContext) -> bool:
@@ -22,46 +24,100 @@ def _is_admin(message: Message, app: AppContext) -> bool:
     return bool(admin) and message.from_user is not None and message.from_user.id == admin
 
 
+def _num(n: int) -> str:
+    """1234 → «1 234» (неразрывный пробел)."""
+    return f"{n:,}".replace(",", "\u00a0")
+
+
+def _pct(n: int, total: int) -> str:
+    if not total:
+        return "—"
+    share = n * 100 / total
+    return "&lt;1%" if 0 < share < 1 else f"{round(share)}%"
+
+
 def _split(counts: dict[str, int], names: dict[str, str]) -> str:
     total = sum(counts.values())
     if not total:
         return "—"
-    return ", ".join(f"{names.get(key, key)} {n} ({round(n * 100 / total)}%)"
+    return ", ".join(f"{names.get(key, key)} {_num(n)} ({_pct(n, total)})"
                      for key, n in sorted(counts.items(), key=lambda item: -item[1]))
+
+
+def _groups(counts: dict[str, dict[str, int]], names: dict[str, str], *, fresh: bool) -> list[str]:
+    """Строки групп: число, доля от всех в разбивке и (fresh) новые за 7 дней."""
+    total = sum(item["n"] for item in counts.values())
+    lines = []
+    for key, name in names.items():
+        item = counts[key]
+        line = f"• {name}: <b>{_num(item['n'])}</b> ({_pct(item['n'], total)})"
+        if fresh:
+            line += f" · +{_num(item['new'])}"
+        lines.append(line)
+    return lines
 
 
 @router.message(Command("adminstats"))
 async def admin_stats(message: Message, app: AppContext) -> None:
-    """Сводка: пользователи, открытия приложения, дизайн, чаты, опрос."""
+    """Сводка: пользователи, способ входа, где открывают приложение,
+    активность, опрос."""
     if not _is_admin(message, app):
         return
     db = app.db
+    now = time.time()
     users = await db.fetch_one("SELECT COUNT(*) AS n, SUM(enabled) AS on_ FROM users")
     chats = await db.fetch_one("SELECT COUNT(*) AS n FROM chat_profiles")
     push = await db.fetch_one("SELECT COUNT(DISTINCT telegram_id) AS n FROM push_subscriptions")
-    now = time.time()
+    audience = await app.miniapp.audience_stats(now, WEB_ID_BASE)
+    login, email = audience["login"], audience["email"]
+    total = users["n"]
+    fresh = sum(item["new"] for item in login.values())
+
     lines = [
-        "<b>📊 Статистика</b>",
-        f"Пользователей: {users['n']}, с проверкой оценок: {users['on_'] or 0}",
-        f"В чатах: {chats['n']}, с push в браузере: {push['n']}",
+        "📊 <b>Статистика</b>",
         "",
-        "<b>Открывали приложение</b>",
+        f"👥 <b>Пользователи: {_num(total)}</b>",
+        f"• новых за 7 дней: +{_num(fresh)}",
+        f"• проверяют оценки: {_num(users['on_'] or 0)} ({_pct(users['on_'] or 0, total)})",
+        f"• в чатах: {_num(chats['n'])}",
+        f"• с push в браузере: {_num(push['n'])}",
+        "",
+        "🔑 <b>Как входят</b> <i>(+ новые за 7 дней)</i>",
+        *_groups(login, LOGINS, fresh=True),
+        f"Почта привязана: {_num(email['linked'])}, подтверждена: {_num(email['verified'])}"
+        f" ({_pct(email['verified'], email['linked'])})",
+        "",
+        "📱 <b>Где открывают приложение</b>",
     ]
-    for label, days in (("за сутки", 1), ("за неделю", 7), ("за месяц", 30)):
+    for period, title in (("all", "За всё время"), ("month", "За 30 дней")):
+        places = audience["places"][period]
+        opened = sum(item["n"] for item in places.values())
+        lines.append(f"<u>{title}</u>: {_num(opened)}" + (" <i>(+ новые за 7 дней)</i>" if period == "all" else ""))
+        if not opened:
+            continue
+        lines.extend(_groups(places, PLACES, fresh=period == "all"))
+        pwa = sum(item["pwa"] for item in places.values())
+        lines.append(f"Установленное приложение (экран «Домой»): {_num(pwa)}")
+
+    lines.append("")
+    lines.append("📈 <b>Активность</b>")
+    opened = []
+    for label, days in (("сутки", 1), ("неделю", 7), ("месяц", 30)):
         stats = await app.miniapp.visit_stats(now - days * 86400)
-        total = sum(stats["design"].values())
-        lines.append(f"{label}: {total}")
-        if days == 30 and total:
-            lines.append(f"• дизайн: {_split(stats['design'], DESIGNS)}")
-            lines.append(f"• где: {_split(stats['client'], CLIENTS)}")
+        opened.append(f"за {label} {_num(sum(stats['design'].values()))}")
+    lines.append("• открывали: " + ", ".join(opened))
+    lines.append(f"• дизайн за месяц: {_split(stats['design'], DESIGNS)}")
+
     survey = await app.miniapp.survey_stats()
     if survey["shown"]:
         lines.append("")
-        lines.append("<b>Опрос «нравится ли приложение»</b>")
-        lines.append(f"Показан: {survey['shown']}, ответили: {survey['answered']}, отказались: {survey['declined']}")
+        lines.append("💬 <b>Опрос «нравится ли приложение»</b>")
+        lines.append(f"• показан: {_num(survey['shown'])}, ответили: {_num(survey['answered'])}"
+                     f" ({_pct(survey['answered'], survey['shown'])}), отказались: {_num(survey['declined'])}")
         if survey["answered"]:
             lines.append(f"• средняя оценка: {survey['average']:.1f} из 10")
-            lines.append("• " + ", ".join(f"{score}: {n}" for score, n in sorted(survey["scores"].items())))
+            lines.append("• оценки: " + ", ".join(f"{score} — {n}" for score, n in sorted(survey["scores"].items())))
     lines.append("")
-    lines.append("<i>Считаются открытия после обновления, в котором появилась статистика.</i>")
+    lines.append("<i>До версии 5.21 запоминалось только последнее место открытия, "
+                 "поэтому «в Telegram и в браузере» до неё недосчитано.</i>")
     await reply(message, "\n".join(lines))
