@@ -11,7 +11,7 @@ import { loadTotals } from './totals.js';
 import { chatEvents } from './chat-live.js';
 import { initMail, loadMail, openAnnouncements, openCompose, selectChats } from './mail.js';
 import {
-  applyAccent, applyDesign, applyHalloween, applyScheduleTab, initFullscreen, isNewDesign, navIcon, saveDesign, setHalloweenAccess,
+  applyAccent, applyDesign, applyHalloween, applyScheduleTab, initFullscreen, isNewDesign, navIcon, setHalloweenAccess,
 } from './appearance.js';
 import { ICONS } from './icons.js';
 import { dropInstallHints, initInstallPrompt } from './install.js';
@@ -576,23 +576,6 @@ function storedName() {
 }
 
 /** Один раз: дизайн по умолчанию сменился, старый — в настройках. */
-function showDesignNotice() {
-  if (demo || getPref('designNotice') === 'seen') return;
-  const seen = () => setPref('designNotice', 'seen');
-  const body = openSheet('Новый дизайн', `
-    <p>Мы обновили приложение: новый дизайн теперь включён у всех.</p>
-    <p class="muted">Если привычнее старый — его можно вернуть в настройках, тумблер «Старый дизайн».</p>
-    <div class="chat-actions">
-      <button class="btn" id="designNoticeOk">Понятно</button>
-      <button class="btn outline" id="designNoticeOld">Вернуть старый дизайн</button>
-    </div>`, { onClose: seen });
-  body.querySelector('#designNoticeOk').addEventListener('click', closeSheet);
-  body.querySelector('#designNoticeOld').addEventListener('click', () => {
-    saveDesign(false);
-    closeSheet();
-  });
-}
-
 /** Статистика для админа: какой дизайн и где открыто приложение. */
 function reportVisit() {
   if (demo) return;
@@ -745,7 +728,6 @@ async function start() {
     }
     // Флаг «видел» уже пришёл с сервера — окошко не повторится на другом устройстве.
     dropInstallHints();
-    showDesignNotice();
     if (!isReadOnly()) showChatLaunchNotice().then(showSurvey);
     reportVisit();
   });
