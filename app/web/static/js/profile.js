@@ -9,7 +9,7 @@ import {
 } from './core.js';
 import {
   ACCENTS, currentAccent, forgetAccent, isNewDesign, rememberAccent, saveAccent, savedAccents, saveAnswers, saveBells, saveDesign, saveHomeworkStatus, saveWeekends, showAnswers, showBells,
-  applyMotion, showConfetti, saveConfetti, showMotion, saveMotion, showHomeworkStatus, showWeekends, syncChromeColor,
+  applyMotion, HALLOWEEN_ACCENTS, halloweenAccent, isHalloween, saveHalloween, saveHalloweenAccent, showConfetti, saveConfetti, showMotion, saveMotion, showHomeworkStatus, showWeekends, syncChromeColor,
 } from './appearance.js';
 import { ICONS } from './icons.js';
 import { smoothRepaint } from './motion.js';
@@ -702,13 +702,16 @@ function render() {
   const currentStudent = data.students.find((s) => s.current)?.id ?? null;
   const studentClass = classLabels.get(currentStudent) || '';
   const theme = currentTheme();
-  const accent = currentAccent();
+  // В Хеллоуин — свои цвета и свой выбранный: отмеченный кружок совпадает с экраном.
+  const spooky = isHalloween();
+  const palette = spooky ? HALLOWEEN_ACCENTS : ACCENTS;
+  const accent = spooky ? halloweenAccent() : currentAccent();
   // Дневник ученика по приглашению: его уведомления и почту не трогаем.
   const readonly = Boolean(data.readonly);
   const views = data.views || [];
-  const saved = savedAccents().filter((color) => !ACCENTS.some(([c]) => c === color));
+  const saved = spooky ? [] : savedAccents().filter((color) => !ACCENTS.some(([c]) => c === color));
   // Свой цвет, ещё не сохранённый: его можно оставить кружком рядом с готовыми.
-  const customAccent = !ACCENTS.some(([c]) => c === accent) && !saved.includes(accent);
+  const customAccent = !palette.some(([c]) => c === accent) && !saved.includes(accent);
   const radio = (value, label) =>
     `<label class="drawer-option"><input type="radio" name="theme" value="${value}" ${theme === value ? 'checked' : ''}><span>${label}</span></label>`;
   // Новый дизайн: тема — капсулой с линзой, как переключатель периода в «Оценках».
@@ -761,17 +764,20 @@ function render() {
     </section>
     <section class="drawer-section">
       <div class="drawer-heading">Оформление</div>
-      ${isNewDesign() ? themeSegment : `${radio('light', 'Светлая тема')}
+      ${data.halloween ? `<label class="switch-row halloween-row"><span>🎃 Хеллоуин<span class="muted small switch-note">тыквы, летучие мыши и паутина · видно только вам</span></span>
+        <input type="checkbox" switch class="switch" id="halloweenOn" ${isHalloween() ? 'checked' : ''}></label>` : ''}
+      ${spooky ? '<div class="muted small halloween-note">В Хеллоуин тема всегда ночная. Светлая и свой цвет вернутся, когда выключите праздник.</div>'
+        : isNewDesign() ? themeSegment : `${radio('light', 'Светлая тема')}
       ${radio('auto', 'Как в системе')}
       ${radio('dark', 'Тёмная тема')}`}
-      <div class="drawer-sub">${ICONS.palette} ${isNewDesign() ? 'Цвет акцента' : 'Цвет меню'}</div>
+      <div class="drawer-sub">${ICONS.palette} ${spooky ? 'Цвет на Хеллоуин' : isNewDesign() ? 'Цвет акцента' : 'Цвет меню'}</div>
       <div class="swatches">
-        ${ACCENTS.map(([color, name]) => `<button class="swatch ${color === accent ? 'on' : ''}" data-accent="${color}" style="background:${color}" aria-label="${name}" title="${name}"></button>`).join('')}
+        ${palette.map(([color, name]) => `<button class="swatch ${color === accent ? 'on' : ''}" data-accent="${color}" style="background:${color}" aria-label="${name}" title="${name}"></button>`).join('')}
         ${saved.map((color) => `<button class="swatch saved ${color === accent ? 'on' : ''}" data-accent="${color}" style="background:${color}" aria-label="Сохранённый цвет ${color}" title="Сохранённый цвет"></button>`).join('')}
         <label class="swatch custom ${customAccent ? 'on' : ''}" title="Свой цвет" style="background:${accent}">
           <input type="color" id="accentCustom" value="${accent}">＋</label>
       </div>
-      ${customAccent ? '<button class="link accent-action" id="accentRemember">Сохранить этот цвет</button>'
+      ${spooky ? '' : customAccent ? '<button class="link accent-action" id="accentRemember">Сохранить этот цвет</button>'
         : saved.includes(accent) ? '<button class="link accent-action" id="accentForget">Убрать из сохранённых</button>' : ''}
       ${more('look', 'Ещё настройки вида', `
       <label class="switch-row design-row"><span>Старый дизайн</span>
@@ -899,6 +905,13 @@ function bindDrawer() {
     select();
     saveBells(event.target.checked);
   });
+  $('halloweenOn')?.addEventListener('change', (event) => {
+    select();
+    smoothRepaint(() => {
+      saveHalloween(event.target.checked);
+      render();
+    });
+  });
   $('designOld').addEventListener('change', (event) => {
     select();
     saveDesign(!event.target.checked);
@@ -907,13 +920,13 @@ function bindDrawer() {
     button.addEventListener('click', () => {
       select();
       smoothRepaint(() => {
-        saveAccent(button.dataset.accent);
+        (isHalloween() ? saveHalloweenAccent : saveAccent)(button.dataset.accent);
         render();
       });
     })
   );
   $('accentCustom').addEventListener('change', (event) => {
-    saveAccent(event.target.value);
+    (isHalloween() ? saveHalloweenAccent : saveAccent)(event.target.value);
     select();
     render();
   });

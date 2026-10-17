@@ -1,0 +1,194 @@
+/* Хеллоуин — праздничное оформление поверх любого дизайна и темы.
+   Включается атрибутом data-holiday="halloween" на <html> (appearance.js
+   и скрипт в <head>); пока доступно только админу.
+   Тема всегда тёмная: ночь, луна, паутина в углу, летучие мыши над шапкой,
+   тыквенный акцент. Селекторы с :not(#_) — вес id: перебивают и новый
+   дизайн, и тёмную тему без !important. */
+
+/* ─────────────────────────── Палитра ─────────────────────────── */
+
+:root[data-holiday="halloween"]:not(#_) {
+  color-scheme: dark;
+  --bg: #120d18;
+  --card: #1d1626;
+  --card-2: #271e33;
+  --text: #f3ecf8;
+  --text2: #a596b3;
+  --border: #33283f;
+  /* Акцент — выбранный цвет на Хеллоуин (--head ставит appearance.js),
+     по умолчанию тыквенный; чуть светлее, чтобы читался на ночном фоне. */
+  --primary: color-mix(in srgb, var(--head) 80%, #fff);
+  --mark-bg: #241b2f;
+  --g2: #ff5e62;
+  --g3: #ffa340;
+  --g4: #c3e04f;
+  --g5: #5fdc7e;
+  --soft: color-mix(in srgb, var(--head) 16%, transparent);
+  --soft-2: color-mix(in srgb, var(--head) 26%, transparent);
+  --glass: rgba(40, 28, 52, .68);
+  --glass-2: rgba(26, 18, 36, .55);
+  --glass-edge: color-mix(in srgb, var(--head) 20%, transparent);
+  --glass-shine: color-mix(in srgb, var(--head) 24%, transparent);
+  --glass-shadow: 0 10px 30px rgba(0, 0, 0, .55);
+  --lens: color-mix(in srgb, var(--head) 18%, transparent);
+  --lens-shine: color-mix(in srgb, var(--head) 30%, transparent);
+  --lift: 0 0 0 1px color-mix(in srgb, var(--head) 9%, transparent);
+  --lift-2: 0 10px 30px rgba(0, 0, 0, .55), 0 0 0 1px color-mix(in srgb, var(--head) 12%, transparent);
+  --sync-color: var(--primary);
+  --boot-bg: #120d18;
+}
+
+/* Небо: фиолетовая ночь, сверху — туман, снизу — отсвет тыкв. */
+:root[data-holiday="halloween"]:not(#_) {
+  background:
+    radial-gradient(120% 60% at 50% 115%, color-mix(in srgb, var(--head) 16%, transparent), transparent 60%),
+    radial-gradient(90% 50% at 20% -10%, rgba(142, 91, 214, .22), transparent 65%),
+    #120d18 fixed;
+}
+:root[data-holiday="halloween"]:not(#_) body { background: transparent; }
+
+/* ─────────────────── Луна, паутина, летучие мыши ─────────────────── */
+
+/* Слой .hw-decor создаёт appearance.js: поверх шапки, но не ловит нажатий.
+   Луна — слева в строке шапки, паутина — в правом верхнем углу, три мыши
+   пролетают над шапкой с разной скоростью. */
+.hw-decor { display: none; }
+:root[data-holiday="halloween"]:not(#_) .hw-decor {
+  display: block;
+  position: fixed;
+  left: 0; right: 0; top: 0;
+  height: calc(var(--topbar-h, 52px) + 10px);
+  z-index: 21;
+  pointer-events: none;
+  overflow: hidden;
+}
+.hw-moon {
+  position: absolute;
+  left: 16px;
+  top: calc(var(--bar-top, 0px) + 12px);
+  width: 26px; height: 26px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 38% 36%, #fffbe8, #f6dc95 70%);
+  box-shadow: 0 0 14px 4px rgba(247, 220, 140, .35), 0 0 40px 12px rgba(247, 220, 140, .12);
+}
+/* Тень на луне — кратеры. */
+.hw-moon::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 64% 40%, rgba(180, 150, 90, .35) 0 3px, transparent 4px),
+    radial-gradient(circle at 40% 68%, rgba(180, 150, 90, .3) 0 2px, transparent 3px);
+}
+/* В классическом дизайне по краям шапки кнопки — луну и паутину туда не вешаем. */
+:root:not([data-design="new"]) :is(.hw-moon, .hw-web) { display: none; }
+.hw-web {
+  position: absolute;
+  right: 0; top: 0;
+  width: 84px; height: 84px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 160 160' fill='none' stroke='%23d9c8ee' stroke-opacity='.5' stroke-width='1.4'%3E%3Cpath d='M160 0L0 40M160 0L40 120M160 0L120 160M160 0L0 95M160 0L70 160'/%3E%3Cpath d='M132 7Q136 20 139 22Q146 26 152 30'/%3E%3Cpath d='M102 15Q110 38 117 43Q130 52 145 59'/%3E%3Cpath d='M70 23Q82 55 94 66Q114 82 138 89'/%3E%3Cpath d='M36 31Q54 72 71 88Q98 110 130 119'/%3E%3C/svg%3E") center / contain no-repeat;
+  opacity: .55;
+}
+.hw-bat {
+  position: absolute;
+  left: 0;
+  top: calc(var(--bar-top, 0px) + var(--y, 10px));
+  width: var(--w, 26px);
+  aspect-ratio: 2;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 32'%3E%3Cpath fill='%23b9a2d6' d='M32 9c-2 0-3 2-3 4l-2-3c0 2 0 4 1 5-4-1-7-5-9-10-3 4-8 6-14 5 4 3 6 7 6 11 4-2 8-1 11 2 1-3 4-5 7-5l3 3 3-3c3 0 6 2 7 5 3-3 7-4 11-2 0-4 2-8 6-11-6 1-11-1-14-5-2 5-5 9-9 10 1-1 1-3 1-5l-2 3c0-2-1-4-3-4z'/%3E%3C/svg%3E") center / contain no-repeat;
+  opacity: .8;
+    animation: hw-fly var(--t, 18s) linear var(--d, 0s) infinite, hw-flap .35s ease-in-out infinite alternate;
+}
+.hw-bat:nth-child(3) { --y: 6px; --w: 26px; --t: 17s; --d: -3s; }
+.hw-bat:nth-child(4) { --y: 26px; --w: 18px; --t: 23s; --d: -12s; }
+.hw-bat:nth-child(5) { --y: 14px; --w: 22px; --t: 29s; --d: -20s; }
+@keyframes hw-fly {
+  0%   { translate: -60px 0; }
+  25%  { translate: 25vw -6px; }
+  50%  { translate: 50vw 4px; }
+  75%  { translate: 75vw -4px; }
+  100% { translate: calc(100vw + 60px) 0; }
+}
+@keyframes hw-flap { to { scale: 1 .6; } }
+/* Без анимаций мыши просто висят у шапки. */
+.no-motion .hw-bat { animation: none; translate: var(--x, 30vw) 0; }
+.no-motion .hw-bat:nth-child(3) { --x: 30vw; }
+.no-motion .hw-bat:nth-child(4) { --x: 64vw; }
+.no-motion .hw-bat:nth-child(5) { --x: 46vw; }
+@media (prefers-reduced-motion: reduce) {
+  .hw-bat { animation: none; translate: var(--x, 30vw) 0; }
+}
+
+/* ──────────────────────── Шапка и меню ──────────────────────── */
+
+:root[data-holiday="halloween"]:not(#_) .topbar-title::after {
+  content: ' 🎃';
+  font-size: .9em;
+}
+
+/* Классический дизайн: цветная шапка — тыквенный градиент в ночь. */
+:root[data-holiday="halloween"]:not([data-design="new"]):not(#_) .app-header {
+  background: linear-gradient(180deg, var(--head), color-mix(in srgb, var(--head) 45%, #120d18));
+}
+
+/* Панель вкладок — тёмное стекло с тыквенным отсветом. */
+:root[data-holiday="halloween"]:not(#_) .bottom-nav {
+  box-shadow: var(--lift-2), 0 0 24px color-mix(in srgb, var(--head) 16%, transparent), inset 0 1px 0 var(--glass-edge);
+}
+:root[data-holiday="halloween"]:not(#_) .nav-item.active { color: var(--primary); }
+
+/* ─────────────────────────── Карточки ─────────────────────────── */
+
+:root[data-holiday="halloween"]:not(#_) .card,
+:root[data-holiday="halloween"]:not(#_) .lesson-card {
+  box-shadow: var(--lift), 0 6px 18px rgba(0, 0, 0, .28);
+}
+/* Номер урока — светится, как свечка в тыкве. */
+:root[data-holiday="halloween"]:not(#_) .lc-num {
+  color: color-mix(in srgb, var(--head) 60%, #fff);
+  background: radial-gradient(circle at 50% 60%, color-mix(in srgb, var(--head) 34%, transparent), color-mix(in srgb, var(--head) 10%, transparent));
+  text-shadow: 0 0 8px color-mix(in srgb, var(--head) 60%, transparent);
+}
+
+/* Пятёрка — с тыквенным огоньком. */
+:root[data-holiday="halloween"]:not(#_) .mark.m5 {
+  box-shadow: 0 0 10px rgba(95, 220, 126, .35);
+}
+
+/* Переключатель в меню — с фиолетовой подсветкой. */
+:root[data-holiday="halloween"]:not(#_) .halloween-row {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--head) 14%, transparent), rgba(142, 91, 214, .12));
+  border-radius: 12px;
+  padding-left: 10px;
+  padding-right: 10px;
+}
+
+/* Заставка загрузки — тоже ночная. */
+:root[data-holiday="halloween"]:not(#_) .boot-spinner { border-top-color: var(--head); }
+
+/* Экран PIN-кода (он раньше профиля — тема уже по прошлому запуску):
+   клавиши — ночное стекло, акцент читается на тёмном. */
+:root[data-holiday="halloween"]:not(#_) .app-lock {
+  --accent: var(--primary);
+  --key: rgba(255, 255, 255, .07);
+  --key-press: color-mix(in srgb, var(--head) 30%, transparent);
+}
+
+/* Пустые экраны («уроков нет», «заданий нет») — с привидением. */
+:root[data-holiday="halloween"]:not(#_) .empty::before {
+  content: '👻';
+  display: block;
+  font-size: 34px;
+  margin-bottom: 8px;
+  animation: hw-float 3s ease-in-out infinite alternate;
+}
+@keyframes hw-float { to { translate: 0 -6px; } }
+.no-motion .empty::before { animation: none !important; }
+
+/* Выделение текста, курсор, флажки — в цвет акцента. */
+:root[data-holiday="halloween"]:not(#_) { accent-color: var(--primary); caret-color: var(--primary); }
+:root[data-holiday="halloween"]:not(#_) ::selection { background: color-mix(in srgb, var(--head) 40%, transparent); }
+
+/* Подсказка в меню вместо выбора темы. */
+:root[data-holiday="halloween"]:not(#_) .halloween-note { margin: 4px 2px 6px; }

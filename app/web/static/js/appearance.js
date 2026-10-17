@@ -3,7 +3,7 @@
 
 import { initData, tg } from './core.js';
 import { getPref, setPref } from './prefs.js';
-import { ICONS } from './icons.js';
+import { HALLOWEEN_ICONS, ICONS } from './icons.js';
 
 export const ACCENTS = [
   ['#4a6fae', 'Синий'],
@@ -32,6 +32,8 @@ function shade(hex, amount) {
 
 export function applyAccent(color = currentAccent()) {
   if (!/^#[0-9a-f]{6}$/i.test(color)) color = ACCENTS[0][0];
+  // У хеллоуинского оформления свой акцент — обычный выбранный цвет не трогаем.
+  if (isHalloween()) color = halloweenAccent();
   const root = document.documentElement.style;
   const dark = shade(color, -0.18);
   root.setProperty('--head', color);
@@ -92,6 +94,101 @@ export function saveDesign(on) {
   applyDesign();
   // Часть экранов в новом дизайне устроена иначе — их надо перерисовать.
   window.dispatchEvent(new CustomEvent('netschool:design'));
+}
+
+/*
+ * Хеллоуинское оформление — пока только у админа (флаг halloween в профиле).
+ * Хранится только на устройстве, в ns-halloween: 'on' — включено и разрешено,
+ * 'off' — админ выключил. Скрипт в <head> по 'on' ставит data-holiday до
+ * отрисовки, правила — в halloween.css.
+ */
+const HALLOWEEN_KEY = 'ns-halloween';
+const HALLOWEEN_ACCENT_KEY = 'ns-halloween-accent';
+let halloweenAllowed = null;
+
+/** Свои цвета акцента на Хеллоуин: в меню вместо обычных, пока тема включена. */
+export const HALLOWEEN_ACCENTS = [
+  ['#e8740c', 'Тыквенный'],
+  ['#8e4fd6', 'Ведьмин'],
+  ['#5ea82e', 'Зелье'],
+  ['#c7303d', 'Кровавая луна'],
+  ['#3f9fae', 'Призрачный'],
+  ['#c2a46a', 'Костяной'],
+];
+
+export function halloweenAccent() {
+  let color = null;
+  try { color = localStorage.getItem(HALLOWEEN_ACCENT_KEY); } catch { /* приватный режим */ }
+  return /^#[0-9a-f]{6}$/i.test(color || '') ? color : HALLOWEEN_ACCENTS[0][0];
+}
+
+export function saveHalloweenAccent(color) {
+  try { localStorage.setItem(HALLOWEEN_ACCENT_KEY, color); } catch { /* приватный режим */ }
+  applyAccent();
+}
+
+/** Иконка вкладки нижней панели: в Хеллоуин — праздничная, если такая есть. */
+export function navIcon(name) {
+  return (isHalloween() && HALLOWEEN_ICONS[name]) || ICONS[name] || '';
+}
+
+function readHalloween() {
+  try { return localStorage.getItem(HALLOWEEN_KEY); } catch { return null; }
+}
+
+function writeHalloween(value) {
+  try {
+    if (value == null) localStorage.removeItem(HALLOWEEN_KEY);
+    else localStorage.setItem(HALLOWEEN_KEY, value);
+  } catch { /* приватный режим — продержится до перезагрузки */ }
+}
+
+export function halloweenAvailable() {
+  return halloweenAllowed === true;
+}
+
+export function isHalloween() {
+  // Пока профиль не пришёл — верим прошлому запуску, чтобы не мигать.
+  if (halloweenAllowed === null) return readHalloween() === 'on';
+  return halloweenAllowed && readHalloween() !== 'off';
+}
+
+export function applyHalloween() {
+  const on = isHalloween();
+  const root = document.documentElement;
+  const was = root.getAttribute('data-holiday') === 'halloween';
+  if (on) root.setAttribute('data-holiday', 'halloween');
+  else root.removeAttribute('data-holiday');
+  // Луна, паутина и летучие мыши — отдельный слой поверх шапки (halloween.css).
+  let decor = document.querySelector('.hw-decor');
+  if (on && !decor) {
+    decor = document.createElement('div');
+    decor.className = 'hw-decor';
+    decor.ariaHidden = 'true';
+    decor.innerHTML = '<span class="hw-moon"></span><span class="hw-web"></span>'
+      + '<span class="hw-bat"></span><span class="hw-bat"></span><span class="hw-bat"></span>';
+    document.body.append(decor);
+  } else if (!on) decor?.remove();
+  if (on === was) return;
+  applyAccent();
+  // Иконки панели меняются на месте — значки непрочитанного остаются.
+  document.querySelectorAll('.bottom-nav .ico[data-icon]').forEach((icon) => {
+    icon.querySelector('svg.icon')?.remove();
+    icon.insertAdjacentHTML('afterbegin', navIcon(icon.dataset.icon));
+  });
+}
+
+/** Профиль сказал, доступно ли оформление этому человеку. */
+export function setHalloweenAccess(allowed) {
+  halloweenAllowed = Boolean(allowed);
+  if (!halloweenAllowed) writeHalloween(null);
+  else if (readHalloween() !== 'off') writeHalloween('on');
+  applyHalloween();
+}
+
+export function saveHalloween(on) {
+  writeHalloween(on ? 'on' : 'off');
+  applyHalloween();
 }
 
 /** Субботу и воскресенье без уроков прячем, если не включено «Показывать выходные». */
@@ -166,7 +263,7 @@ export function applyScheduleTab() {
   const bells = showBells();
   const icon = item.querySelector('.ico');
   icon.dataset.icon = bells ? 'clock' : 'calendar';
-  icon.innerHTML = ICONS[icon.dataset.icon];
+  icon.innerHTML = navIcon(icon.dataset.icon);
   item.querySelector('.lbl-old').textContent = bells ? 'Звонки' : 'Расписание';
   item.querySelector('.lbl-new').textContent = bells ? 'Звонки' : 'Неделя';
 }

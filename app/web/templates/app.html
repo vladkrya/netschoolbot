@@ -25,6 +25,13 @@
     // «Анимации» выключены в настройках — до первой отрисовки, без мигания.
     if (localStorage.getItem('ns-motion') === 'off') document.documentElement.classList.add('no-motion');
     var bg = fresh ? (dark ? '#0f1217' : '#f3f4f8') : (dark ? '#141a22' : '#eef1f6');
+    // Хеллоуинское оформление (пока только у админа) — ночное, со своим цветом акцента.
+    if (localStorage.getItem('ns-halloween') === 'on') {
+      document.documentElement.setAttribute('data-holiday', 'halloween');
+      bg = '#120d18';
+      accent = localStorage.getItem('ns-halloween-accent');
+      if (!/^#[0-9a-f]{6}$/i.test(accent || '')) accent = '#e8740c';
+    }
     var glass = CSS.supports('background', 'color-mix(in srgb, red 50%, transparent)')
       && (CSS.supports('backdrop-filter', 'blur(1px)') || CSS.supports('-webkit-backdrop-filter', 'blur(1px)'));
     var chrome = '#' + [1, 3, 5].map(function(offset) {
@@ -61,6 +68,8 @@
 <link rel="stylesheet" href="{{ base }}/static/v{{ version }}/new.css">
 <!-- Планшеты и компьютеры: колонка по центру, на компьютере вкладки слева. -->
 <link rel="stylesheet" href="{{ base }}/static/v{{ version }}/wide.css">
+<!-- Хеллоуин: правила под html[data-holiday="halloween"], включает appearance.js. -->
+<link rel="stylesheet" href="{{ base }}/static/v{{ version }}/halloween.css">
 <!-- До app.js: приложению нужен Telegram.WebApp уже при старте, чтобы
      забрать initData до первого запроса. Копия у нас, а не с telegram.org:
      без VPN telegram.org заблокирован, и синхронный скрипт в head не давал

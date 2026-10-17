@@ -8,9 +8,8 @@
 'use strict';
 
 import { $, isReadOnly } from './core.js';
-import { ICONS } from './icons.js';
 import { getPref, setPref } from './prefs.js';
-import { isNewDesign } from './appearance.js';
+import { isNewDesign, navIcon } from './appearance.js';
 
 // Подписи: классический дизайн и новый (lbl-old / lbl-new в app.css).
 export const TAB_DEFS = {
@@ -116,7 +115,7 @@ export function renderNav(activeTab = '') {
   nav.insertAdjacentHTML('beforeend', tabs.map((tab) => {
     const def = TAB_DEFS[tab];
     return `<button class="nav-item${tab === activeTab ? ' active' : ''}" data-tab="${tab}" aria-label="${def.fresh}">
-        <span class="ico" data-icon="${def.icon}">${ICONS[def.icon]}${badgeHtml(tab)}</span>
+        <span class="ico" data-icon="${def.icon}">${navIcon(def.icon)}${badgeHtml(tab)}</span>
         <span class="lbl-old">${def.old}</span><span class="lbl-new">${def.fresh}</span></button>`;
   }).join(''));
   nav.style.setProperty('--n', tabs.length);

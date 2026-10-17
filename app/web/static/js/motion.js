@@ -105,7 +105,10 @@ function confetti(origin) {
   canvas.height = innerHeight * ratio;
   const styles = getComputedStyle(document.documentElement);
   const colors = ['--g5', '--g4', '--primary', '--g3'].map((name) => styles.getPropertyValue(name).trim() || '#22a04b');
-  for (let i = 0; i < 30; i += 1) {
+  // В Хеллоуин вместо бумажек летят тыквы, мыши и привидения — их меньше и они крупнее.
+  const spooky = document.documentElement.dataset.holiday === 'halloween';
+  const emoji = ['🎃', '🦇', '👻', '🍬'];
+  for (let i = 0; i < (spooky ? 14 : 30); i += 1) {
     const angle = -Math.PI / 2 + (Math.random() - 0.5) * 2.2;
     const speed = 3 + Math.random() * 4;
     parts.push({
@@ -113,6 +116,7 @@ function confetti(origin) {
       vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
       turn: Math.random() * 6, spin: (Math.random() - 0.5) * 0.4,
       w: 4 + Math.random() * 4, h: 2 + Math.random() * 3, color: colors[i % colors.length], life: 1,
+      emoji: spooky ? emoji[i % emoji.length] : '', size: 14 + Math.random() * 8,
     });
   }
   if (!frame) frame = requestAnimationFrame(drawConfetti);
@@ -134,8 +138,16 @@ function drawConfetti() {
     ctx.globalAlpha = Math.max(0, Math.min(1, p.life * 1.5));
     ctx.translate(p.x * ratio, p.y * ratio);
     ctx.rotate(p.turn);
-    ctx.fillStyle = p.color;
-    ctx.fillRect((-p.w * ratio) / 2, (-p.h * ratio) / 2, p.w * ratio, p.h * ratio);
+    if (p.emoji) {
+      ctx.font = `${Math.round(p.size * ratio)}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.rotate(-p.turn * 0.8);  // крутятся слегка, чтобы оставались узнаваемыми
+      ctx.fillText(p.emoji, 0, 0);
+    } else {
+      ctx.fillStyle = p.color;
+      ctx.fillRect((-p.w * ratio) / 2, (-p.h * ratio) / 2, p.w * ratio, p.h * ratio);
+    }
     ctx.restore();
   }
   frame = parts.length ? requestAnimationFrame(drawConfetti) : 0;

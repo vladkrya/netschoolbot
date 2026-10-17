@@ -10,7 +10,9 @@ import { initHomework, loadHomework } from './homework.js';
 import { loadTotals } from './totals.js';
 import { chatEvents } from './chat-live.js';
 import { initMail, loadMail, openAnnouncements, openCompose, selectChats } from './mail.js';
-import { applyAccent, applyDesign, applyScheduleTab, initFullscreen, isNewDesign, saveDesign } from './appearance.js';
+import {
+  applyAccent, applyDesign, applyHalloween, applyScheduleTab, initFullscreen, isNewDesign, navIcon, saveDesign, setHalloweenAccess,
+} from './appearance.js';
 import { ICONS } from './icons.js';
 import { dropInstallHints, initInstallPrompt } from './install.js';
 import {
@@ -134,7 +136,7 @@ function initTelegram() {
 /** Иконки подставляются из одного набора: в разметке только data-icon. */
 function renderIcons(root = document) {
   root.querySelectorAll('[data-icon]').forEach((el) => {
-    el.innerHTML = ICONS[el.dataset.icon] || '';
+    el.innerHTML = el.closest('.bottom-nav') ? navIcon(el.dataset.icon) : ICONS[el.dataset.icon] || '';
   });
 }
 
@@ -725,6 +727,7 @@ async function start() {
   // из нажатия, ждать сети в этот момент нельзя.
   loadAttachmentTicket();
   applyStoredTheme();
+  applyHalloween();
   applyAccent();
   applyDesign();
   // Telegram должен скрыть свой экран загрузки до ввода PIN.
@@ -774,6 +777,7 @@ async function start() {
   // если страница открыта без токена (по initData Telegram).
   try {
     const profile = await loadProfile();
+    setHalloweenAccess(profile?.halloween);
     if (profile?.name) {
       $('topName').textContent = studentFirstName(profile.name);
       try { localStorage.setItem(NAME_KEY, profile.name); } catch { /* приватный режим */ }
