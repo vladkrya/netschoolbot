@@ -61,7 +61,6 @@ function heroHtml() {
       <p class="ld-lead">Оценки, домашние задания и расписание из вашего электронного дневника
         в одном красивом приложении. Работает в Telegram, в браузере и на домашнем экране телефона.</p>
       <div class="ld-actions">
-        <a class="btn ld-tg" data-landing-bot hidden>Открыть Telegram-бота</a>
         <a class="btn ld-demo" href="${base}/demo">▶ Демо-режим</a>
       </div>
     </section>
