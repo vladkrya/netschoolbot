@@ -6,6 +6,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from . import has_telegram
+from .mailer import letter
 
 if TYPE_CHECKING:
     from ..context import AppContext
@@ -40,5 +41,23 @@ async def link_telegram(app: AppContext, code: str, telegram_id: int) -> str:
     if moved is not None and moved.ready_to_check:
         await app.watchers.start(telegram_id)
     logger.info("Аккаунт %s привязан к Telegram %s", web_id, telegram_id)
+    await _notify_linked(app, telegram_id)
     return ("✅ Telegram привязан. Уведомления теперь приходят и сюда, а на сайт можно "
             "по-прежнему входить по почте. Откройте приложение заново.")
+
+
+async def _notify_linked(app: AppContext, telegram_id: int) -> None:
+    """Письмо на почту аккаунта: если привязывал не владелец, он об этом узнает."""
+    account = await app.accounts.by_user(telegram_id)
+    if not account or not app.mailer.configured:
+        return
+    text, body = letter(
+        "Telegram привязан",
+        "К вашему аккаунту Дневника привязали Telegram: уведомления теперь приходят и туда, "
+        "а на сайт можно по-прежнему входить по почте.",
+        note="Если это были не вы — смените пароль в приложении: Настройки → Вход по почте.",
+    )
+    try:
+        await app.mailer.send(account["email"], "Telegram привязан — Дневник", text, html_body=body)
+    except Exception as exc:  # noqa: BLE001 — привязка уже прошла, письмо не главное
+        logger.warning("Письмо о привязке Telegram не ушло: %s", exc)

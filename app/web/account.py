@@ -22,6 +22,7 @@ from typing import Any
 from aiohttp import web
 
 from ..accounts import has_telegram
+from ..accounts.mailer import letter
 from ..accounts.passwords import check_password, hash_password, verify_password
 from ..domain.models import Credentials, LoginType, School
 from ..netschool import login as login_flow
@@ -100,9 +101,29 @@ async def _signed_in(request: web.Request, telegram_id: int) -> web.Response:
 # ─────────────────────────────── Без входа ───────────────────────────────
 
 
+_bot_username = ""
+
+
+async def bot_username(request: web.Request) -> str:
+    """Имя бота для ссылок t.me — спрашиваем Telegram один раз."""
+    global _bot_username
+    bot = request.config_dict.get(BOT)
+    if not _bot_username and bot is not None:
+        try:
+            _bot_username = (await bot.get_me()).username or ""
+        except Exception:  # noqa: BLE001 — без имени просто не будет кнопки
+            return ""
+    return _bot_username
+
+
 @routes.get("/api/account/config")
 async def account_config(request: web.Request) -> web.Response:
-    return web.json_response({"ok": True, "data": {"mail": context(request).mailer.configured}})
+    """Что нужно главному экрану без входа: работает ли почта и куда звать в Telegram."""
+    username = await bot_username(request)
+    return web.json_response({"ok": True, "data": {
+        "mail": context(request).mailer.configured,
+        "bot": f"https://t.me/{username}" if username else "",
+    }})
 
 
 @routes.post("/api/account/register")
@@ -156,7 +177,9 @@ async def reset_request(request: web.Request) -> web.Response:
         code = await app.accounts.issue_code(email, "reset")
         text = f"Код для сброса пароля: {code}\nОн действует 15 минут. Если вы не запрашивали сброс — ничего не делайте."
         if app.mailer.configured:
-            await _mail(request, email, "Сброс пароля — Дневник", text)
+            await _mail(request, email, "Сброс пароля — Дневник", *letter(
+                "Сброс пароля", "Код для сброса пароля:", code=code,
+                note="Он действует 15 минут. Если вы не запрашивали сброс — ничего не делайте."))
         elif has_telegram(account["telegram_id"]) and (bot := request.config_dict.get(BOT)):
             try:
                 await bot.send_message(account["telegram_id"], "🔑 " + text)
@@ -190,9 +213,9 @@ async def reset_confirm(request: web.Request) -> web.Response:
     return await _signed_in(request, account["telegram_id"])
 
 
-async def _mail(request: web.Request, email: str, subject: str, text: str) -> bool:
+async def _mail(request: web.Request, email: str, subject: str, text: str, html_body: str | None = None) -> bool:
     try:
-        await context(request).mailer.send(email, subject, text)
+        await context(request).mailer.send(email, subject, text, html_body=html_body)
         return True
     except Exception as exc:  # noqa: BLE001 — недоставленное письмо не ломает вход
         logger.warning("Письмо не ушло: %s", exc)
@@ -205,8 +228,9 @@ async def _send_verification(request: web.Request, email: str) -> None:
         return
     CODE_REQUESTS.hit(email)
     code = await app.accounts.issue_code(email, "verify")
-    await _mail(request, email, "Подтверждение почты — Дневник",
-                f"Код подтверждения: {code}\nОн действует 15 минут.")
+    await _mail(request, email, "Подтверждение почты — Дневник", *letter(
+        "Подтверждение почты", "Код подтверждения:", code=code,
+        note="Введите его в приложении: Настройки → Вход по почте. Код действует 15 минут."))
 
 
 # ─────────────────────────────── После входа ───────────────────────────────
@@ -302,13 +326,7 @@ async def telegram_link(request: web.Request) -> web.Response:
     if has_telegram(user.telegram_id):
         return json_error("Telegram уже привязан")
     code = await app.accounts.issue_link_code(user.telegram_id)
-    bot = request.config_dict.get(BOT)
-    username = ""
-    if bot is not None:
-        try:
-            username = (await bot.get_me()).username or ""
-        except Exception:  # noqa: BLE001
-            username = ""
+    username = await bot_username(request)
     return web.json_response({"ok": True, "data": {
         "code": code, "url": f"https://t.me/{username}?start=link_{code}" if username else ""}})
 

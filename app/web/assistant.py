@@ -106,7 +106,7 @@ def app_guide(design: str = "classic", tabs: list[str] | None = None) -> str:
     return "\n".join(lines) + "\n" + COMMON_GUIDE
 
 RULES = """\
-Ты — помощник в школьном электронном дневнике «Сетевой город». Отвечай по-русски, коротко и по делу, дружелюбно, без канцелярита. Форматирование — только простой текст и списки с «- », без таблиц и заголовков.
+Ты — помощник в школьном электронном дневнике «Сетевой город». Отвечай по-русски, коротко и по делу, дружелюбно, без канцелярита. Форматирование — только простой текст и списки с «- », без таблиц и заголовков. Русские слова пиши только кириллицей, без латинских букв внутри.
 
 Что ты делаешь:
 - подсказываешь, как пользоваться приложением (описание ниже);
@@ -338,6 +338,29 @@ async def complete(settings: AssistantSettings, messages: list[dict[str, str]]) 
     return text.strip()
 
 
+# Бесплатные модели иногда пишут русское слово наполовину латиницей
+# («Зdesь»). Слово, где есть и кириллица, и латиница, переводится в кириллицу.
+_LATIN_TO_CYRILLIC = str.maketrans({
+    "a": "а", "b": "б", "c": "с", "d": "д", "e": "е", "f": "ф", "g": "г", "h": "х", "i": "и",
+    "j": "й", "k": "к", "l": "л", "m": "м", "n": "н", "o": "о", "p": "п", "q": "к", "r": "р",
+    "s": "с", "t": "т", "u": "у", "v": "в", "w": "в", "x": "кс", "y": "у", "z": "з",
+})
+_MIXED_WORD = re.compile(r"[A-Za-zА-Яа-яЁё]*(?:[A-Za-z][А-Яа-яЁё]|[А-Яа-яЁё][A-Za-z])[A-Za-zА-Яа-яЁё]*")
+
+
+def _fix_word(match: re.Match[str]) -> str:
+    return "".join(
+        char.lower().translate(_LATIN_TO_CYRILLIC).upper() if char.isupper() and char.isascii()
+        else char.translate(_LATIN_TO_CYRILLIC)
+        for char in match.group()
+    )
+
+
+def fix_mixed_script(text: str) -> str:
+    """«Зdesь есть» → «Здесь есть». Чисто латинские слова (Gmail, PDF) не трогает."""
+    return _MIXED_WORD.sub(_fix_word, text)
+
+
 def _clean_history(value: Any) -> list[dict[str, str]] | None:
     if not isinstance(value, list) or not value:
         return None
@@ -405,4 +428,4 @@ async def ask(request: web.Request) -> web.Response:
         # Сбой модели — не вина человека, вопрос не сгорает.
         _refund_quota(app, user)
         return json_error(str(exc), status=exc.status, reason=exc.reason)
-    return web.json_response({"ok": True, "data": {"reply": reply, "left": left}})
+    return web.json_response({"ok": True, "data": {"reply": fix_mixed_script(reply), "left": left}})

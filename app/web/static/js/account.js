@@ -21,6 +21,105 @@ function screen(html) {
   return root.querySelector('.account-card');
 }
 
+/* ───────────────────────────── Главный экран ───────────────────────────── */
+
+const FEATURES = [
+  ['🔔', 'Оценки сразу', 'Новая оценка, домашка или замена урока — уведомление в Telegram или push.'],
+  ['🧮', 'Сколько до пятёрки', 'Средний балл с весами и расчёт: какие оценки нужны до нужной итоговой.'],
+  ['🤖', 'ИИ-помощник', 'Подскажет, что повторить, и поможет написать письмо учителю.'],
+  ['👨‍👩‍👧', 'Для родных', 'Пригласите родителей: уведомления и просмотр дневника без пароля.'],
+  ['📅', 'Календарь', 'Расписание и задания — в календаре телефона или компьютера.'],
+  ['🔒', 'PIN и Face ID', 'Дневник под замком и без интернета: последнее загруженное всегда под рукой.'],
+];
+
+// Макет дня в превью: предмет, время и оценка, которая «прилетает».
+const DEMO_LESSONS = [
+  ['Алгебра', '8:30', '5', 'g5'],
+  ['Русский язык', '9:25', '4', 'g4'],
+  ['Биология', '10:20', '5', 'g5'],
+  ['История', '11:25', '', ''],
+];
+
+let landingConfig = null;
+
+function heroHtml() {
+  const lessons = DEMO_LESSONS.map(([subject, time, mark, tone], index) => `
+    <div class="ld-lesson" style="--i:${index}">
+      <span class="ld-no">${index + 1}</span>
+      <span class="ld-subject">${subject}<small>${time}</small></span>
+      ${mark ? `<span class="ld-mark ${tone}">${mark}</span>` : '<span class="ld-dot"></span>'}
+    </div>`).join('');
+  const features = FEATURES.map(([icon, title, text], index) => `
+    <li class="ld-feature" style="--i:${index}">
+      <span class="ld-icon" aria-hidden="true">${icon}</span>
+      <b>${title}</b><span>${text}</span>
+    </li>`).join('');
+  return `
+    <section class="ld-hero">
+      <div class="ld-brand"><img src="${base}/static/icon-192.png" alt="" width="36" height="36"> Дневник</div>
+      <h1>«Сетевой город» —<br><span class="ld-grad">удобно и быстро</span></h1>
+      <p class="ld-lead">Оценки, домашние задания и расписание из вашего электронного дневника
+        в одном красивом приложении. Работает в Telegram, в браузере и на домашнем экране телефона.</p>
+      <div class="ld-actions">
+        <a class="btn ld-tg" data-landing-bot hidden>Открыть в Telegram</a>
+        <a class="btn outline" href="${base}/demo">Посмотреть демо</a>
+      </div>
+    </section>
+    <div class="ld-preview" aria-hidden="true">
+      <div class="ld-phone">
+        <div class="ld-phone-head"><b>Сегодня</b><span>понедельник</span></div>
+        ${lessons}
+        <div class="ld-avg"><span>Средний по алгебре</span><b class="ld-count">4,83</b></div>
+      </div>
+      <div class="ld-toast"><span>🔔</span><div><b>Новая оценка</b><small>Биология · 5</small></div></div>
+    </div>
+    <ul class="ld-features">${features}</ul>`;
+}
+
+/** Вход, регистрация и сброс — на главном экране: слева о проекте, справа
+ * карточка. При переходе между ними меняется только карточка, а описание с
+ * анимациями остаётся на месте и не проигрывается заново. */
+function landing(html) {
+  document.getElementById('bootSplash')?.remove();
+  let root = document.getElementById('accountScreen');
+  if (!root?.classList.contains('landing')) {
+    root?.remove();
+    root = document.createElement('div');
+    root.className = 'app-lock account-screen landing';
+    root.id = 'accountScreen';
+    root.innerHTML = `
+      <div class="ld-bg" aria-hidden="true"><i></i><i></i><i></i></div>
+      <div class="ld-grid">
+        ${heroHtml()}
+        <aside class="ld-auth"><div class="app-lock-card account-card"></div></aside>
+      </div>
+      <footer class="ld-foot">Неофициальное приложение: данные берутся из вашего «Сетевого города»,
+        пароль хранится зашифрованным.</footer>`;
+    document.body.appendChild(root);
+    document.documentElement.classList.add('app-locked');
+    bindLanding(root);
+  }
+  const card = root.querySelector('.account-card');
+  card.innerHTML = html;
+  card.classList.remove('ld-swap');
+  void card.offsetWidth; // перезапуск анимации смены карточки
+  card.classList.add('ld-swap');
+  return card;
+}
+
+async function bindLanding(root) {
+  try {
+    landingConfig ??= (await api('/api/account/config')).data;
+  } catch {
+    landingConfig = {};
+  }
+  const bot = root.querySelector('[data-landing-bot]');
+  if (landingConfig.bot && bot) {
+    bot.href = landingConfig.bot;
+    bot.hidden = false;
+  }
+}
+
 function reload() {
   location.replace(`${base}/`);
 }
@@ -55,7 +154,7 @@ export function showAuth(view = 'login') {
 }
 
 function renderLogin() {
-  const card = screen(`
+  const card = landing(`
     <h2>Дневник</h2>
     <p class="muted">Войдите по почте и паролю. Есть Telegram — откройте дневник кнопкой в боте.</p>
     <form class="account-form">
@@ -84,7 +183,7 @@ function renderLogin() {
 }
 
 function renderRegister() {
-  const card = screen(`
+  const card = landing(`
     <h2>Регистрация</h2>
     <p class="muted">${hasInvite() ? 'Аккаунт, чтобы принять приглашение. Пароль от «Сетевого города» не понадобится.'
       : 'Аккаунт для входа на сайт без Telegram. Потом войдёте в «Сетевой город» — как в боте.'}</p>
@@ -116,7 +215,7 @@ function renderRegister() {
 }
 
 function renderReset() {
-  const card = screen(`
+  const card = landing(`
     <h2>Сброс пароля</h2>
     <p class="muted">Пришлём код на почту — или в Telegram, если он привязан.</p>
     <form class="account-form" data-step="email">

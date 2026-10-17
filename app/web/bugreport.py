@@ -63,11 +63,15 @@ def _clip(value, limit: int) -> str:
 KINDS = {"bug": "🐞 <b>Отчёт об ошибке</b>", "idea": "💡 <b>Идея</b>"}
 
 
-def format_report(user, text: str, meta: dict, kind: str = "bug") -> str:
-    """Сообщение админу. У бота parse_mode=HTML — всё пользовательское экранируется."""
+def format_report(user, text: str, meta: dict, kind: str = "bug", email: str | None = None) -> str:
+    """Сообщение админу. У бота parse_mode=HTML — всё пользовательское экранируется.
+
+    У пришедших без Telegram имени нет — вместо него почта аккаунта."""
+    sender = user.display_name or user.student_name or email or "—"
     lines = [
         KINDS.get(kind, KINDS["bug"]),
-        f"От: {html.escape(user.display_name or '—')} (<code>{user.telegram_id}</code>)",
+        f"От: {html.escape(sender)} (<code>{user.telegram_id}</code>)",
+        *([f"Почта: {html.escape(email)}"] if email and email != sender else []),
         f"Школа: {html.escape(user.school.name or '—')}",
         f"API: {user.effective_api_mode.value}",
         "",
@@ -220,8 +224,10 @@ async def bug_report(request: web.Request) -> web.Response:
         return json_error("Капча не подтвердилась, пройдите её заново", reason="captcha")
 
     _last_sent[user.telegram_id] = now
+    account = await app.accounts.by_user(user.telegram_id)
+    email = account["email"] if account else None
     try:
-        await deliver(bot, settings.telegram.admin_id, format_report(user, text, meta, kind), files)
+        await deliver(bot, settings.telegram.admin_id, format_report(user, text, meta, kind, email), files)
     except Exception:
         _last_sent.pop(user.telegram_id, None)
         logger.exception("Не удалось переслать отчёт об ошибке от %s", user.telegram_id)
