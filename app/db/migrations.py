@@ -603,6 +603,12 @@ MIGRATIONS: list[str] = [
     """
     ALTER TABLE miniapp_tokens ADD COLUMN device INTEGER NOT NULL DEFAULT 0;
     """,
+    # Токен подписки на календарь: открывает только calendar.ics. Адрес
+    # подписки хранят календарные приложения и их облака — утечка не должна
+    # давать весь дневник. Прежние подписки (scope = '') работают как раньше.
+    """
+    ALTER TABLE miniapp_tokens ADD COLUMN scope TEXT NOT NULL DEFAULT '';
+    """,
 ]
 
 

@@ -233,6 +233,14 @@ async def auth_middleware(request: web.Request, handler):
         request[USER] = user
         return await handler(request)
 
+    # Токен подписки на календарь — только для calendar.ics и без PIN: он
+    # открывает одно расписание, а календарь PIN ввести не может.
+    if request.path.endswith("/api/calendar.ics"):
+        calendar_id = await context(request).miniapp.resolve_calendar_token(request.query.get("token", ""))
+        if calendar_id is not None and (user := await context(request).users.get(calendar_id)) is not None:
+            request[USER] = user
+            return await handler(request)
+
     telegram_id, method = await resolve_identity(request)
     if telegram_id is None:
         return json_error(
@@ -890,7 +898,7 @@ async def calendar_feed(request: web.Request) -> web.Response:
 async def calendar_link(request: web.Request) -> web.Response:
     """Адрес подписки: webcal:// открывает календарь телефона сразу."""
     app, user = context(request), current_user(request)
-    token = await app.miniapp.issue_token(user.telegram_id)
+    token = await app.miniapp.issue_calendar_token(user.telegram_id)
     url = f"{app.settings.web.miniapp_url}/api/calendar.ics?token={token}"
     return web.json_response(
         {"ok": True, "data": {"url": url, "webcal": "webcal://" + url.split("://", 1)[1]}}

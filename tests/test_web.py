@@ -538,6 +538,23 @@ class TestNewFeatures:
         assert "SUMMARY:1. Алгебра" in await response.text()
         link = await (await client.get(f"{BASE}/api/calendar-link", params={"token": token})).json()
         assert link["data"]["webcal"].startswith("webcal://")
+        # Новая ссылка — свой токен календаря, а не токен приложения.
+        calendar = link["data"]["url"].split("token=")[1]
+        assert calendar != token
+        again = await (await client.get(f"{BASE}/api/calendar-link", params={"token": token})).json()
+        assert again["data"]["url"] == link["data"]["url"]
+        response = await client.get(f"{BASE}/api/calendar.ics", params={"token": calendar})
+        assert "SUMMARY:1. Алгебра" in await response.text()
+        # Кроме расписания он ничего не открывает — ни API, ни страницу.
+        assert (await client.get(f"{BASE}/api/prefs", params={"token": calendar})).status == 401
+        assert await app_context.miniapp.resolve_token(calendar) is None
+        # С защитой входа календарь по своему токену работает (PIN он ввести
+        # не может), а прежняя ссылка с токеном приложения — как раньше.
+        await app_context.db.execute(
+            "INSERT INTO app_locks (telegram_id, salt, password_hash) VALUES (1, ?, ?)", (b"s" * 16, b"h"))
+        response = await client.get(f"{BASE}/api/calendar.ics", params={"token": calendar})
+        assert response.status == 200
+        assert (await client.get(f"{BASE}/api/calendar.ics", params={"token": token})).status == 423
 
     async def test_prefs_are_shared_and_merged(self, client, token):
         url = f"{BASE}/api/prefs"

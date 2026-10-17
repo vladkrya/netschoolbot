@@ -1149,7 +1149,7 @@ class MiniappRepository:
         elif not device:
             row = await self._db.fetch_one(
                 """SELECT token FROM miniapp_tokens
-                   WHERE telegram_id = ? AND revoked_at IS NULL AND device = 0
+                   WHERE telegram_id = ? AND revoked_at IS NULL AND device = 0 AND scope = ''
                    ORDER BY created_at DESC LIMIT 1""",
                 (telegram_id,),
             )
@@ -1190,7 +1190,34 @@ class MiniappRepository:
         if not token:
             return None
         row = await self._db.fetch_one(
-            "SELECT telegram_id FROM miniapp_tokens WHERE token = ? AND revoked_at IS NULL",
+            "SELECT telegram_id FROM miniapp_tokens WHERE token = ? AND revoked_at IS NULL AND scope = ''",
+            (token,),
+        )
+        return int(row["telegram_id"]) if row else None
+
+    async def issue_calendar_token(self, telegram_id: int) -> str:
+        """Токен подписки на календарь: годится только для calendar.ics.
+        Повторный запрос ссылки отдаёт тот же — подписка не ломается."""
+        row = await self._db.fetch_one(
+            """SELECT token FROM miniapp_tokens
+               WHERE telegram_id = ? AND revoked_at IS NULL AND scope = 'calendar'
+               ORDER BY created_at DESC LIMIT 1""",
+            (telegram_id,),
+        )
+        if row:
+            return row["token"]
+        token = secrets.token_urlsafe(32)
+        await self._db.execute(
+            "INSERT INTO miniapp_tokens (token, telegram_id, scope) VALUES (?,?,'calendar')",
+            (token, telegram_id),
+        )
+        return token
+
+    async def resolve_calendar_token(self, token: str) -> int | None:
+        if not token:
+            return None
+        row = await self._db.fetch_one(
+            "SELECT telegram_id FROM miniapp_tokens WHERE token = ? AND revoked_at IS NULL AND scope = 'calendar'",
             (token,),
         )
         return int(row["telegram_id"]) if row else None
