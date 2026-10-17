@@ -7,7 +7,7 @@
 // Правка — на один день (`date`) или каждую неделю в этот день (`weekday`).
 'use strict';
 
-import { addDays, esc, fullDate, isoToday, weekdayIndex } from './core.js';
+import { addDays, esc, fullDate, isoToday, refuseReadOnly, weekdayIndex } from './core.js';
 import { getPref, setPref } from './prefs.js';
 import { closeSheet, openSheet } from './sheet.js';
 import { notify, select, tap } from './haptics.js';
@@ -152,6 +152,7 @@ function without(edits, sample) {
 /** Шторка урока: своё время, скрыть, вернуть как в дневнике. Свой урок —
  *  поменять время или удалить. onDone — после сохранения. */
 export function openLessonEditor(lesson, iso, onDone) {
+  if (refuseReadOnly()) return;
   tap();
   if (lesson.addedBy) {
     openAddedEditor(lesson, iso, onDone);
@@ -227,6 +228,7 @@ function openAddedEditor(lesson, iso, onDone) {
 
 /** Шторка «Добавить урок» на день iso. subjects — для подсказок. */
 export function openAddLesson(iso, subjects = []) {
+  if (refuseReadOnly()) return;
   tap();
   const body = openSheet('Добавить урок', `
     <div class="note-form lesson-edit">

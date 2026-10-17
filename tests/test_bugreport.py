@@ -313,3 +313,16 @@ async def test_idea_with_picture_comes_through_multipart(app_context, bot, token
     finally:
         await client.close()
     assert bot.sent[0][1].startswith("💡 <b>Идея</b>")
+
+
+async def test_report_from_mail_account_names_the_email(app_context, bot, verifications):
+    # Пришёл без Telegram: имени нет — в отчёте почта, а не «—».
+    uid = await app_context.accounts.create_web_user("kid@example.com", "hash")
+    token = await app_context.miniapp.issue_token(uid)
+    client = await _client(app_context, bot)
+    try:
+        assert (await _post(client, token)).status == 200
+    finally:
+        await client.close()
+    ((_, text),) = bot.sent
+    assert f"От: kid@example.com (<code>{uid}</code>)" in text and "Почта:" not in text

@@ -80,10 +80,10 @@ class TestPasswords:
         app_context.mailer.outbox = []
         _, body, _ = await register(client)
         old_token = body["data"]["token"]
-        assert "Код подтверждения" in app_context.mailer.outbox[0].get_content()
+        assert "Код подтверждения" in app_context.mailer.outbox[0].get_body(("plain",)).get_content()
         status, data, _ = await post(client, "/api/account/reset/request", {"email": "kid@example.com"})
         assert status == 200 and data["data"]["channel"] == "mail"
-        code = app_context.mailer.outbox[-1].get_content().split("сброса пароля: ")[1][:6]
+        code = app_context.mailer.outbox[-1].get_body(("plain",)).get_content().split("сброса пароля: ")[1][:6]
         assert (await post(client, "/api/account/reset/confirm",
                            {"email": "kid@example.com", "code": "000000", "password": "новый-пароль-1"}))[0] == 400
         status, data, _ = await post(client, "/api/account/reset/confirm",
@@ -122,8 +122,13 @@ class TestTelegramLink:
         code = data["data"]["code"]
         # Бот уже завёл пустую запись, когда человек написал /link.
         await users.get_or_create(777)
+        app_context.mailer.outbox = []
         answer = await link_telegram(app_context, code, 777)
         assert answer.startswith("✅")
+        # Владельцу почты — письмо о привязке, в двух видах.
+        (letter,) = app_context.mailer.outbox
+        assert letter["To"] == "kid@example.com" and "Telegram привязан" in letter["Subject"]
+        assert letter.get_body(("html",)) is not None
         assert await users.get(web_id) is None
         assert (await app_context.accounts.by_email("kid@example.com"))["telegram_id"] == 777
         assert await app_context.miniapp.resolve_token(token) == 777

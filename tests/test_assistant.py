@@ -159,3 +159,12 @@ class TestModerationVerdict:
         response = await client.post(f"{BASE}/api/assistant", params={"token": token}, json=body)
         assert response.status == 502
         assert enabled.assistant_usage[1][1] == 0
+
+
+def test_mixed_script_words_become_cyrillic():
+    from app.web.assistant import fix_mixed_script
+
+    assert fix_mixed_script("Зdesь есть две оценки") == "Здесь есть две оценки"
+    assert fix_mixed_script("ПРИВЕТ МИР, ПРИВEТ") == "ПРИВЕТ МИР, ПРИВЕТ"
+    # Чисто латинские слова и слова через дефис остаются как есть.
+    assert fix_mixed_script("Откройте Gmail, PDF-файл и e-mail") == "Откройте Gmail, PDF-файл и e-mail"
