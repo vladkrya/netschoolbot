@@ -262,11 +262,14 @@ async def index(request: web.Request) -> web.Response:
     и там же происходит настоящая проверка доступа.
     """
     context: AppContext = request.app[CONTEXT]
-    token = (request.query.get("token") or request.cookies.get("netschool_token") or "").strip()
-
-    user = None
-    if telegram_id := await context.miniapp.resolve_token(token):
-        user = await context.users.get(telegram_id)
+    # Ссылка с токеном важнее cookie, но отозванный токен в ссылке (старая
+    # иконка на домашнем экране после «Выйти») не мешает войти по cookie.
+    token, user = "", None
+    for candidate in (request.query.get("token"), request.cookies.get("netschool_token")):
+        candidate = (candidate or "").strip()
+        if candidate and (telegram_id := await context.miniapp.resolve_token(candidate)):
+            token, user = candidate, await context.users.get(telegram_id)
+            break
 
     protected = bool(user and await lock.enabled(context.db, user.telegram_id))
     response = aiohttp_jinja2.render_template(
@@ -286,6 +289,8 @@ async def index(request: web.Request) -> web.Response:
             "attachment_hosts": context.settings.web.attachment_hosts,
         },
     )
+    if not token and request.cookies.get("netschool_token"):
+        response.del_cookie("netschool_token")
     if token:
         response.set_cookie(
             "netschool_token",

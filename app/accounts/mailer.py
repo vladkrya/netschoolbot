@@ -28,8 +28,10 @@ class _SMTPSSL(smtplib.SMTP_SSL):
 
 
 class Mailer:
-    def __init__(self, settings: MailSettings) -> None:
+    def __init__(self, settings: MailSettings, site: str = "") -> None:
         self._settings = settings
+        # Адрес сайта: логотип и ссылка в подвале писем.
+        self.site = site.rstrip("/")
         # Для тестов: письма складываются сюда вместо SMTP.
         self.outbox: list[EmailMessage] | None = None
 
@@ -79,8 +81,9 @@ class Mailer:
                 pass
 
 
-def letter(title: str, lead: str, *, code: str = "", note: str = "") -> tuple[str, str]:
-    """Письмо в двух видах: (простой текст, HTML). Код — крупно посередине."""
+def letter(title: str, lead: str, *, code: str = "", note: str = "", site: str = "") -> tuple[str, str]:
+    """Письмо в двух видах: (простой текст, HTML). Код — крупно посередине.
+    site — адрес сайта: сверху иконка приложения, как на домашнем экране."""
     text = "\n\n".join(part for part in (f"{lead} {code}".strip(), note) if part)
     esc = html.escape
     code_html = (
@@ -89,16 +92,22 @@ def letter(title: str, lead: str, *, code: str = "", note: str = "") -> tuple[st
         if code else ""
     )
     note_html = f'<p style="margin:0;color:#6b7280;font-size:14px;line-height:1.5">{esc(note)}</p>' if note else ""
+    logo_html = (
+        f'<img src="{esc(site)}/static/icon-192.png" width="56" height="56" alt="Дневник" '
+        f'style="display:block;margin:0 auto;border-radius:14px">'
+        if site else ""
+    )
+    footer = esc(site.split("//")[-1]) if site else "Дневник"
     body = f"""<!doctype html>
 <html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
 <title>{esc(title)}</title></head>
 <body style="margin:0;padding:24px 12px;background:#f3f4f6;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif">
 <div style="max-width:440px;margin:0 auto;background:#fff;border-radius:20px;padding:32px 28px;text-align:center;color:#111827">
-<div style="font-size:40px;line-height:1">📘</div>
+{logo_html}
 <h1 style="margin:12px 0 8px;font-size:22px">{esc(title)}</h1>
 <p style="margin:0 0 4px;font-size:16px;line-height:1.5">{esc(lead)}</p>
 {code_html}{note_html}
 </div>
-<p style="text-align:center;color:#9ca3af;font-size:12px;margin:16px 0 0">Дневник · ns.ikrya.ru</p>
+<p style="text-align:center;color:#9ca3af;font-size:12px;margin:16px 0 0">Дневник · {footer}</p>
 </body></html>"""
     return text, body

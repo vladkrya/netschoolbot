@@ -23,6 +23,7 @@ from aiohttp import web
 
 from ..accounts import has_telegram
 from ..accounts.mailer import letter
+from ..accounts.site_login import PREFIX as SITE_LOGIN_PREFIX, describe_browser
 from ..accounts.passwords import check_password, hash_password, verify_password
 from ..domain.models import Credentials, LoginType, School
 from ..netschool import login as login_flow
@@ -40,7 +41,8 @@ MAX_SCHOOLS = 30
 
 # Без входа доступны только эти адреса.
 PUBLIC_PATHS = ("/api/account/register", "/api/account/login", "/api/account/reset/request",
-                "/api/account/reset/confirm", "/api/account/config", "/api/family/invite-info")
+                "/api/account/reset/confirm", "/api/account/config", "/api/family/invite-info",
+                "/api/account/tg-login")
 
 
 def is_public(path: str) -> bool:
@@ -75,6 +77,7 @@ LOGIN_FAILURES = Limiter(8, 15 * 60)  # на почту
 IP_FAILURES = Limiter(30, 15 * 60)  # на адрес
 REGISTRATIONS = Limiter(5, 3600)  # на адрес
 CODE_REQUESTS = Limiter(3, 15 * 60)  # писем с кодом на почту
+SITE_LOGINS = Limiter(10, 15 * 60)  # входов через бота на адрес
 
 
 def _ip(request: web.Request) -> str:
@@ -91,7 +94,8 @@ async def _body(request: web.Request) -> dict[str, Any]:
 
 async def _signed_in(request: web.Request, telegram_id: int) -> web.Response:
     """Ответ с постоянным токеном в cookie — страница перезагрузится уже с ним."""
-    token = await context(request).miniapp.issue_token(telegram_id)
+    # Свой токен на каждое устройство: «Выйти» отзывает только его.
+    token = await context(request).miniapp.issue_token(telegram_id, device=True)
     response = web.json_response({"ok": True, "data": {"token": token}})
     response.set_cookie(COOKIE, token, max_age=365 * 24 * 3600, httponly=True, samesite="Lax",
                         secure=request.url.scheme == "https")
@@ -124,6 +128,42 @@ async def account_config(request: web.Request) -> web.Response:
         "mail": context(request).mailer.configured,
         "bot": f"https://t.me/{username}" if username else "",
     }})
+
+
+@routes.post("/api/account/tg-login")
+async def tg_login_start(request: web.Request) -> web.Response:
+    """Начать вход через бота: ссылка t.me с одноразовым кодом."""
+    ip = _ip(request)
+    username = await bot_username(request)
+    if not username:
+        return json_error("Бот сейчас недоступен — войдите по почте", status=503)
+    if SITE_LOGINS.blocked(ip):
+        return json_error("Слишком много попыток входа — подождите 15 минут", status=429)
+    code = context(request).site_logins.start(ip, describe_browser(request.headers.get("User-Agent", "")))
+    if code is None:
+        return json_error("Сервер занят — попробуйте через минуту", status=503)
+    SITE_LOGINS.hit(ip)
+    return web.json_response({"ok": True, "data": {
+        "code": code, "url": f"https://t.me/{username}?start={SITE_LOGIN_PREFIX}{code}"}})
+
+
+@routes.get("/api/account/tg-login")
+async def tg_login_status(request: web.Request) -> web.Response:
+    """Ждём подтверждения в боте: pending → ok (с токеном в cookie), declined или expired."""
+    logins = context(request).site_logins
+    code = request.query.get("code", "")
+    item = logins.get(code)
+    if item is None:
+        return web.json_response({"ok": True, "data": {"status": "expired"}})
+    if item.declined:
+        return web.json_response({"ok": True, "data": {"status": "declined"}})
+    if item.telegram_id is None:
+        return web.json_response({"ok": True, "data": {"status": "pending"}})
+    item = logins.take(code)
+    if item is None:
+        return web.json_response({"ok": True, "data": {"status": "expired"}})
+    logger.info("Вход на сайт через бота: %s", item.telegram_id)
+    return await _signed_in(request, item.telegram_id)
 
 
 @routes.post("/api/account/register")
@@ -179,7 +219,7 @@ async def reset_request(request: web.Request) -> web.Response:
         if app.mailer.configured:
             await _mail(request, email, "Сброс пароля — Дневник", *letter(
                 "Сброс пароля", "Код для сброса пароля:", code=code,
-                note="Он действует 15 минут. Если вы не запрашивали сброс — ничего не делайте."))
+                note="Он действует 15 минут. Если вы не запрашивали сброс — ничего не делайте.", site=app.mailer.site))
         elif has_telegram(account["telegram_id"]) and (bot := request.config_dict.get(BOT)):
             try:
                 await bot.send_message(account["telegram_id"], "🔑 " + text)
@@ -230,7 +270,7 @@ async def _send_verification(request: web.Request, email: str) -> None:
     code = await app.accounts.issue_code(email, "verify")
     await _mail(request, email, "Подтверждение почты — Дневник", *letter(
         "Подтверждение почты", "Код подтверждения:", code=code,
-        note="Введите его в приложении: Настройки → Вход по почте. Код действует 15 минут."))
+        note="Введите его в приложении: Настройки → Вход по почте. Код действует 15 минут.", site=app.mailer.site))
 
 
 # ─────────────────────────────── После входа ───────────────────────────────
@@ -353,7 +393,12 @@ async def lock_password_reset(request: web.Request) -> web.Response:
 
 @routes.post("/api/account/logout")
 async def logout(request: web.Request) -> web.Response:
-    response = web.json_response({"ok": True})
+    """Выйти на этом устройстве. Токен входа с этого устройства отзывается;
+    общий токен (ссылки из бота, подписка на календарь) остаётся — его
+    страница просто забывает (см. boot.js, ns-signed-out)."""
+    token = (request.headers.get("X-Netschool-Token") or request.cookies.get(COOKIE) or "").strip()
+    revoked = await context(request).miniapp.revoke_device_token(token)
+    response = web.json_response({"ok": True, "data": {"revoked": revoked}})
     response.del_cookie(COOKIE)
     return response
 

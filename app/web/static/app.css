@@ -2239,8 +2239,11 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
 .account-card.ld-swap > * { animation: ld-rise .35s ease both; }
 
 /* Превью: «телефон» с днём, оценки прилетают по очереди, сверху — уведомление. */
-.ld-preview { position: relative; display: flex; justify-content: center; padding: 18px 0 30px; }
-.ld-phone { width: min(100%, 330px); padding: 16px; border-radius: 28px; background: var(--card);
+.ld-preview { display: flex; justify-content: center; padding: 8px 0 30px; }
+/* Уведомление — над макетом, а не поверх его строк: место под него
+   оставляет отступ сцены сверху. */
+.ld-stage { position: relative; width: min(100%, 330px); padding-top: 74px; }
+.ld-phone { width: 100%; padding: 16px; border-radius: 28px; background: var(--card);
   box-shadow: 0 30px 60px rgba(15, 25, 45, .18); border: 1px solid var(--border); animation: ld-bob 6s ease-in-out 1.2s infinite; }
 @keyframes ld-bob { 50% { transform: translateY(-8px); } }
 .ld-phone-head { display: flex; justify-content: space-between; align-items: baseline; margin: 2px 4px 10px; }
@@ -2260,11 +2263,13 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
 .ld-avg { display: flex; justify-content: space-between; align-items: center; margin-top: 12px; padding: 12px 10px 4px;
   border-top: 1px dashed var(--border); color: var(--text2); font-size: 14px; }
 .ld-avg b { color: var(--g5); font-size: 22px; }
-.ld-toast { position: absolute; top: 0; left: 50%; display: flex; gap: 10px; align-items: center; width: min(86%, 290px);
+.ld-toast { position: absolute; top: 0; left: 50%; display: flex; gap: 12px; align-items: center; width: min(92%, 290px);
   padding: 10px 14px; border-radius: 16px; background: color-mix(in srgb, var(--card) 88%, transparent);
   -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); box-shadow: 0 12px 30px rgba(15, 25, 45, .2);
   transform: translate(-50%, -12px); opacity: 0; animation: ld-toast 7s ease 2.6s infinite; }
-.ld-toast span { font-size: 22px; }
+.ld-toast-icon { flex: none; width: 36px; height: 36px; display: grid; place-items: center; border-radius: 11px;
+  color: #fff; background: linear-gradient(135deg, var(--head, #4a6fae), #8b5cf6); }
+.ld-toast-icon .icon { width: 20px; height: 20px; }
 .ld-toast div { display: flex; flex-direction: column; font-size: 14px; }
 .ld-toast small { color: var(--text2); }
 @keyframes ld-toast {
@@ -2280,7 +2285,10 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
   transition: transform .25s ease, box-shadow .25s ease; }
 .ld-feature:hover { transform: translateY(-4px); box-shadow: 0 14px 30px rgba(15, 25, 45, .12); }
 .ld-feature span:not(.ld-icon) { color: var(--text2); font-size: 14px; line-height: 1.4; }
-.ld-icon { font-size: 26px; margin-bottom: 4px; transition: transform .3s ease; }
+.ld-icon { width: 42px; height: 42px; display: grid; place-items: center; margin-bottom: 8px; border-radius: 13px;
+  color: var(--primary); background: color-mix(in srgb, var(--primary) 14%, transparent); transition: transform .3s ease; }
+.ld-feature:nth-child(3n+2) .ld-icon { color: #8b5cf6; background: color-mix(in srgb, #8b5cf6 14%, transparent); }
+.ld-feature:nth-child(3n) .ld-icon { color: var(--g5); background: color-mix(in srgb, var(--g5) 14%, transparent); }
 .ld-feature:hover .ld-icon { transform: scale(1.2) rotate(-8deg); }
 .ld-foot { width: min(100%, 1120px); margin: 0 auto; padding: 8px 16px calc(env(safe-area-inset-bottom, 0px) + 24px);
   color: var(--text2); font-size: 13px; text-align: center; }
@@ -2288,9 +2296,7 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
 @media (min-width: 960px) {
   .ld-grid { grid-template-columns: minmax(0, 1fr) 400px; column-gap: 48px; row-gap: 32px; padding-top: 56px;
     grid-template-areas: "hero auth" "preview auth" "features features"; align-items: start; }
-  .ld-auth { position: sticky; top: 32px; }
   .ld-preview { justify-content: flex-start; padding-left: 40px; }
-  .ld-toast { left: 360px; top: 60px; }
   .ld-features { grid-template-columns: repeat(3, 1fr); }
 }
 

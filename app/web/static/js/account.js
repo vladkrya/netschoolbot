@@ -7,6 +7,7 @@
 
 import { api, banner, base, esc, initData, tg } from './core.js';
 import { notify } from './haptics.js';
+import { ICONS } from './icons.js';
 import { pushScreen } from './screens.js';
 
 function screen(html) {
@@ -24,12 +25,12 @@ function screen(html) {
 /* ───────────────────────────── Главный экран ───────────────────────────── */
 
 const FEATURES = [
-  ['🔔', 'Оценки сразу', 'Новая оценка, домашка или замена урока — уведомление в Telegram или push.'],
-  ['🧮', 'Сколько до пятёрки', 'Средний балл с весами и расчёт: какие оценки нужны до нужной итоговой.'],
-  ['🤖', 'ИИ-помощник', 'Подскажет, что повторить, и поможет написать письмо учителю.'],
-  ['👨‍👩‍👧', 'Для родных', 'Пригласите родителей: уведомления и просмотр дневника без пароля.'],
-  ['📅', 'Календарь', 'Расписание и задания — в календаре телефона или компьютера.'],
-  ['🔒', 'PIN и Face ID', 'Дневник под замком и без интернета: последнее загруженное всегда под рукой.'],
+  ['bell', 'Оценки сразу', 'Новая оценка, домашка или замена урока — уведомление в Telegram или push.'],
+  ['calc', 'Сколько до пятёрки', 'Средний балл с весами и расчёт: какие оценки нужны до нужной итоговой.'],
+  ['sparkles', 'ИИ-помощник', 'Подскажет, что повторить, и поможет написать письмо учителю.'],
+  ['users', 'Для родных', 'Пригласите родителей: уведомления и просмотр дневника без пароля.'],
+  ['calendar', 'Календарь', 'Расписание и задания — в календаре телефона или компьютера.'],
+  ['shield', 'PIN и Face ID', 'Дневник под замком и без интернета: последнее загруженное всегда под рукой.'],
 ];
 
 // Макет дня в превью: предмет, время и оценка, которая «прилетает».
@@ -51,7 +52,7 @@ function heroHtml() {
     </div>`).join('');
   const features = FEATURES.map(([icon, title, text], index) => `
     <li class="ld-feature" style="--i:${index}">
-      <span class="ld-icon" aria-hidden="true">${icon}</span>
+      <span class="ld-icon" aria-hidden="true">${ICONS[icon]}</span>
       <b>${title}</b><span>${text}</span>
     </li>`).join('');
   return `
@@ -65,12 +66,14 @@ function heroHtml() {
       </div>
     </section>
     <div class="ld-preview" aria-hidden="true">
-      <div class="ld-phone">
-        <div class="ld-phone-head"><b>Сегодня</b><span>понедельник</span></div>
-        ${lessons}
-        <div class="ld-avg"><span>Средний по алгебре</span><b class="ld-count">4,83</b></div>
+      <div class="ld-stage">
+        <div class="ld-toast"><span class="ld-toast-icon">${ICONS.bell}</span><div><b>Новая оценка</b><small>Биология · 5</small></div></div>
+        <div class="ld-phone">
+          <div class="ld-phone-head"><b>Сегодня</b><span>понедельник</span></div>
+          ${lessons}
+          <div class="ld-avg"><span>Средний по алгебре</span><b class="ld-count">4,83</b></div>
+        </div>
       </div>
-      <div class="ld-toast"><span>🔔</span><div><b>Новая оценка</b><small>Биология · 5</small></div></div>
     </div>
     <ul class="ld-features">${features}</ul>`;
 }
@@ -116,17 +119,20 @@ async function bindLanding(root) {
   showBotLinks(root);
 }
 
-/** Кнопки «в Telegram» — когда известен адрес бота (ссылка t.me открывает его). */
+/** Вход через бота — когда бот доступен. */
 function showBotLinks(root) {
   if (!landingConfig?.bot) return;
-  root.querySelectorAll('[data-landing-bot]').forEach((link) => {
-    if (link.tagName === 'A') link.href = landingConfig.bot;
-    link.hidden = false;
-  });
+  root.querySelectorAll('[data-landing-bot]').forEach((element) => { element.hidden = false; });
 }
 
 function reload() {
   location.replace(`${base}/`);
+}
+
+/** Вошли (по почте или через бота): прежний выход больше не действует. */
+function signedIn() {
+  try { localStorage.removeItem('ns-signed-out'); } catch { /* приватный режим */ }
+  reload();
 }
 
 /** Кнопка с ожиданием: пока идёт запрос, нажать второй раз нельзя. */
@@ -161,9 +167,9 @@ export function showAuth(view = 'login') {
 function renderLogin() {
   const card = landing(`
     <h2>Вход в дневник</h2>
-    <a class="btn ld-tg-login" data-landing-bot hidden>
+    <button class="btn ld-tg-login" type="button" data-landing-bot hidden>
       <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M9.8 15.2 9.6 19c.4 0 .6-.2.8-.4l1.9-1.8 4 2.9c.7.4 1.3.2 1.5-.7l2.7-12.6c.3-1.1-.4-1.6-1.1-1.3L3.6 10.9c-1 .4-1 1-.2 1.3l4 1.2 9.3-5.9c.4-.3.8-.1.5.2z"/></svg>
-      Войти через Telegram-бота</a>
+      Войти через Telegram-бота</button>
     <p class="ld-or" data-landing-bot hidden><span>или по почте</span></p>
     <form class="account-form">
       <input class="field" type="email" name="email" autocomplete="username" placeholder="Почта" required>
@@ -177,13 +183,14 @@ function renderLogin() {
     </div>
     <a class="ld-demo-link" href="${base}/demo">Без входа — <b>попробовать демо-режим</b> на выдуманном ученике</a>`);
   bindLinks(card);
+  card.querySelector('.ld-tg-login').addEventListener('click', (event) => startBotLogin(event.currentTarget));
   const form = card.querySelector('form');
   form.addEventListener('submit', (event) => {
     event.preventDefault();
     busy(form.querySelector('button'), async () => {
       try {
         await post('/api/account/login', { email: form.email.value, password: form.password.value });
-        reload();
+        signedIn();
       } catch (error) {
         showError(card, error.message);
       }
@@ -215,7 +222,7 @@ function renderRegister() {
     busy(form.querySelector('button'), async () => {
       try {
         await post('/api/account/register', { email: form.email.value, password: form.password.value });
-        reload();
+        signedIn();
       } catch (error) {
         showError(card, error.message);
       }
@@ -259,12 +266,67 @@ function renderReset() {
         await post('/api/account/reset/confirm', {
           email: form.email.value, code: form.code.value, password: form.password.value,
         });
-        reload();
+        signedIn();
       } catch (error) {
         showError(card, error.message);
       }
     });
   });
+}
+
+/* ─────────────────────── Вход через Telegram-бота ─────────────────────── */
+
+const BOT_POLL_MS = 2000;
+let botPoll = 0;
+
+/** Открыть бота с одноразовым кодом и ждать, пока вход подтвердят там
+ * (app/accounts/site_login.py). Окно открываем сразу, в обработчике нажатия:
+ * открытое после запроса браузеры блокируют как всплывающее. */
+async function startBotLogin(button) {
+  const popup = window.open('', '_blank');
+  let data;
+  try {
+    button.disabled = true;
+    ({ data } = await post('/api/account/tg-login', {}));
+  } catch (error) {
+    popup?.close();
+    button.disabled = false;
+    showError(button.closest('.account-card'), error.message);
+    return;
+  }
+  if (popup) popup.location.href = data.url;
+  const card = landing(`
+    <h2>Подтвердите вход</h2>
+    <p class="muted">В Telegram открылся бот — нажмите там <b>«✅ Войти»</b>. Эта страница откроет дневник сама.</p>
+    <div class="account-wait"><span class="boot-spinner" aria-hidden="true"></span></div>
+    <p class="account-error" hidden></p>
+    <a class="btn ld-tg-login" href="${esc(data.url)}" ${popup ? 'target="_blank" rel="noopener"' : ''}>Открыть бота ещё раз</a>
+    <div class="account-links"><button class="link" data-go="login">Назад</button></div>`);
+  bindLinks(card);
+  if (!popup) location.href = data.url;
+  waitForBot(card, data.code);
+}
+
+function waitForBot(card, code) {
+  clearTimeout(botPoll);
+  const tick = async () => {
+    if (!card.isConnected) return;
+    try {
+      const { data } = await api(`/api/account/tg-login?code=${encodeURIComponent(code)}`);
+      if (data.status === 'pending') {
+        botPoll = setTimeout(tick, BOT_POLL_MS);
+      } else if (data.token) {
+        notify('success');
+        signedIn();
+      } else {
+        card.querySelector('.account-wait')?.remove();
+        showError(card, data.status === 'declined' ? 'Вход отменён в боте.' : 'Время на подтверждение вышло — попробуйте ещё раз.');
+      }
+    } catch {
+      botPoll = setTimeout(tick, BOT_POLL_MS * 2); // сеть моргнула — пробуем дальше
+    }
+  };
+  botPoll = setTimeout(tick, BOT_POLL_MS);
 }
 
 function bindLinks(card) {
@@ -644,7 +706,7 @@ export async function openAccountSettings() {
           <div class="account-link-code"></div>
           <button class="btn outline" data-act="link">Привязать Telegram</button>
         </div>`}
-      ${info.email && !tg?.initData ? '<button class="btn outline danger account-logout" data-act="logout">Выйти на этом устройстве</button>' : ''}`;
+      ${!tg?.initData ? '<button class="btn outline danger account-logout" data-act="logout">Выйти из аккаунта</button>' : ''}`;
     bind(info);
   };
 
@@ -710,9 +772,8 @@ export async function openAccountSettings() {
       });
     });
     body.querySelector('[data-act="logout"]')?.addEventListener('click', async () => {
-      if (!window.confirm('Выйти на этом устройстве? Войти снова можно по почте и паролю.')) return;
-      await post('/api/account/logout', {}).catch(() => {});
-      reload();
+      const { signOut } = await import('./profile.js');
+      signOut();
     });
   };
 

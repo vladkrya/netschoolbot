@@ -742,6 +742,7 @@ function render() {
       ${demo ? '' : `<div class="account-links">
         <button class="drawer-link" id="drawerLock">${ICONS.shield} Защита входа</button>
         <button class="drawer-link" id="drawerAccount">${ICONS.mail} Вход по почте</button>
+        ${initData ? '' : `<button class="drawer-link drawer-logout" id="drawerLogout">${ICONS.logout} Выйти из аккаунта</button>`}
       </div>`}
       ${demo || readonly ? '' : '<button class="link small drawer-relogin" id="drawerSgo">Сменили пароль от «Сетевого города» или школу? Войти заново</button>'}
     </section>
@@ -1026,6 +1027,7 @@ function bindDrawer() {
     const { openAccountSettings } = await import('./account.js');
     openAccountSettings();
   });
+  $('drawerLogout')?.addEventListener('click', () => { tap(); closeDrawer(); signOut(); });
   // Повторный вход — для смены пароля или школы, а не часть «Входа по почте»:
   // там он путал, будто почта требует входить в «Сетевой город» ещё раз.
   $('drawerSgo')?.addEventListener('click', async () => {
@@ -1276,6 +1278,25 @@ async function subscribePush() {
     method: 'POST',
     body: JSON.stringify(subscription.toJSON()),
   });
+}
+
+/** «Выйти из аккаунта» на сайте и в установленном приложении (в Telegram
+ * вход — сам Telegram, выходить там не из чего). Отписывает устройство от
+ * push, отзывает токен этого устройства, стирает офлайн-копию дневника и
+ * запоминает выход: иначе иконка на домашнем экране, где токен вшит в
+ * адрес, тут же входила бы обратно (см. boot.js). */
+export async function signOut() {
+  if (!window.confirm('Выйти из аккаунта на этом устройстве? Уведомления сюда приходить перестанут. '
+    + 'Войти снова можно через Telegram-бота или по почте.')) return;
+  await unsubscribePush().catch(() => {});
+  await api('/api/account/logout', { method: 'POST', body: '{}' }).catch(() => {});
+  const { clearOffline } = await import('./lock.js');
+  await clearOffline().catch(() => {});
+  try {
+    localStorage.setItem('ns-signed-out', window.NETSCHOOL.token || '1');
+    ['ns-viewing', 'ns-seen-marks', 'ns-shown-averages', 'ns-totals-counts'].forEach((key) => localStorage.removeItem(key));
+  } catch { /* приватный режим */ }
+  location.replace(`${window.NETSCHOOL.base}/`);
 }
 
 async function unsubscribePush() {

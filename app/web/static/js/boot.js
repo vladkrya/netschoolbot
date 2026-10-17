@@ -45,13 +45,19 @@ async function accountInfo() {
   return { viewing };
 }
 
+function signedOut() {
+  try { return localStorage.getItem('ns-signed-out') === token; } catch { return false; }
+}
+
 async function boot() {
   tg?.ready();
   tg?.expand();
   initIosHaptics();
   rememberInvite();
-  // Ни Telegram, ни ссылки с токеном — вход по почте.
-  if (!demo && !token && !tg?.initData) {
+  // Ни Telegram, ни ссылки с токеном — главный экран со входом. Сюда же —
+  // после «Выйти из аккаунта», если адрес иконки на домашнем экране всё ещё
+  // несёт прежний общий токен (signOut в profile.js).
+  if (!demo && !tg?.initData && (!token || signedOut())) {
     const { showAuth, showInvite } = await import('./account.js');
     if (pendingInvite()) await showInvite(pendingInvite(), false);
     else await showAuth();

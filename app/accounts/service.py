@@ -56,6 +56,7 @@ async def _notify_linked(app: AppContext, telegram_id: int) -> None:
         "К вашему аккаунту Дневника привязали Telegram: уведомления теперь приходят и туда, "
         "а на сайт можно по-прежнему входить по почте.",
         note="Если это были не вы — смените пароль в приложении: Настройки → Вход по почте.",
+        site=app.mailer.site,
     )
     try:
         await app.mailer.send(account["email"], "Telegram привязан — Дневник", text, html_body=body)

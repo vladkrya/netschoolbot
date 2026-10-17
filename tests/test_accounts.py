@@ -256,3 +256,86 @@ def test_smtp_ssl_checks_certificate_against_tls_name(monkeypatch):
     with pytest.raises(OSError):
         _SMTPSSL("127.0.0.1", 2465, tls_name="mail.ikrya.ru", timeout=1)
     assert seen == {"connect": "127.0.0.1", "name": "mail.ikrya.ru"}
+
+
+class FakeBot:
+    async def get_me(self):
+        from types import SimpleNamespace
+        return SimpleNamespace(username="netschoolbot")
+
+
+@pytest.fixture
+async def bot_client(app_context, monkeypatch) -> TestClient:
+    monkeypatch.setattr(account_web, "_bot_username", "")
+    client = TestClient(TestServer(create_app(app_context, FakeBot())))
+    await client.start_server()
+    yield client
+    await client.close()
+
+
+class TestSiteLoginThroughBot:
+    async def test_login_needs_confirmation_in_bot(self, bot_client, app_context, users):
+        await users.save(make_user(telegram_id=4242))
+        status, body, _ = await post(bot_client, "/api/account/tg-login", {})
+        assert status == 200
+        code = body["data"]["code"]
+        assert body["data"]["url"] == f"https://t.me/netschoolbot?start=web_{code}"
+
+        async def poll():
+            response = await bot_client.get(f"{BASE}/api/account/tg-login", params={"code": code})
+            return await response.json(), response
+
+        # Пока в боте не нажали «Войти» — ждём, токена нет.
+        data, _ = await poll()
+        assert data["data"] == {"status": "pending"}
+        assert app_context.site_logins.decide(code, 4242, approve=True) is not None
+        # Решённый запрос второй раз не решается — ни тем же, ни другим человеком.
+        assert app_context.site_logins.decide(code, 5555, approve=True) is None
+        data, response = await poll()
+        token = data["data"]["token"]
+        assert await app_context.miniapp.resolve_token(token) == 4242
+        assert response.cookies["netschool_token"].value == token
+        # Код одноразовый.
+        assert (await poll())[0]["data"] == {"status": "expired"}
+
+    async def test_declined_login_gives_nothing(self, bot_client, app_context):
+        _, body, _ = await post(bot_client, "/api/account/tg-login", {})
+        code = body["data"]["code"]
+        app_context.site_logins.decide(code, 4242, approve=False)
+        response = await bot_client.get(f"{BASE}/api/account/tg-login", params={"code": code})
+        assert (await response.json())["data"] == {"status": "declined"}
+
+    async def test_unknown_code_is_expired(self, bot_client):
+        response = await bot_client.get(f"{BASE}/api/account/tg-login", params={"code": "nope"})
+        assert (await response.json())["data"] == {"status": "expired"}
+
+
+class TestSignOut:
+    async def test_logout_revokes_only_this_device(self, client, app_context):
+        _, body, _ = await register(client)
+        device = body["data"]["token"]
+        uid = await app_context.miniapp.resolve_token(device)
+        # Общий токен — ссылки из бота, подписка на календарь.
+        shared = await app_context.miniapp.issue_token(uid)
+        assert shared != device
+        # Общий токен не подменяется токеном устройства.
+        assert await app_context.miniapp.issue_token(uid) == shared
+        status, data, response = await post(client, "/api/account/logout", {}, device)
+        assert status == 200 and data["data"]["revoked"]
+        assert await app_context.miniapp.resolve_token(device) is None
+        assert await app_context.miniapp.resolve_token(shared) == uid
+        # Выход с общим токеном его не отзывает.
+        status, data, _ = await post(client, "/api/account/logout", {}, shared)
+        assert not data["data"]["revoked"] and await app_context.miniapp.resolve_token(shared) == uid
+
+    async def test_page_with_revoked_token_falls_back_to_cookie(self, client, app_context):
+        _, body, _ = await register(client)
+        device = body["data"]["token"]
+        uid = await app_context.miniapp.resolve_token(device)
+        await app_context.miniapp.revoke_device_token(device)
+        fresh = await app_context.miniapp.issue_token(uid, device=True)
+        client.session.cookie_jar.clear()
+        response = await client.get(f"{BASE}/", params={"token": device}, cookies={"netschool_token": fresh})
+        page = await response.text()
+        assert f'"token": "{fresh}"' in page or f'token: "{fresh}"' in page
+        assert device not in page

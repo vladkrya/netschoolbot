@@ -31,6 +31,7 @@ from .db.repositories import (
 from .netschool.service import DiaryService
 from .netschool.session import SessionPool
 from .accounts.mailer import Mailer
+from .accounts.site_login import SiteLogins
 from .accounts.repository import AccountRepository
 from .chat.hub import ChatHub
 from .notifications.watcher import Notifier, WatcherRegistry
@@ -65,6 +66,8 @@ class AppContext:
     mailer: Mailer | None = None
     # Незавершённые входы в «Сетевой город» с сайта: {telegram_id: попытка}.
     web_logins: dict[int, object] = field(default_factory=dict)
+    # Входы на сайт с подтверждением в боте (accounts/site_login.py).
+    site_logins: SiteLogins = field(default_factory=SiteLogins)
     # Второй родитель и свои заметки ученика.
     family: FamilyRepository | None = None
     notes: NotesRepository | None = None
@@ -77,7 +80,7 @@ class AppContext:
         if self.accounts is None:
             self.accounts = AccountRepository(self.db)
         if self.mailer is None:
-            self.mailer = Mailer(self.settings.mail)
+            self.mailer = Mailer(self.settings.mail, site=self.settings.web.miniapp_url)
 
     @classmethod
     async def create(cls, settings: Settings, notifier: Notifier | None = None) -> "AppContext":

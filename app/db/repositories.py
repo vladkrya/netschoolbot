@@ -1139,14 +1139,17 @@ class MiniappRepository:
         self._db = db
         self._login_code_ttl = login_code_ttl
 
-    async def issue_token(self, telegram_id: int, *, revoke_existing: bool = False) -> str:
-        """Выдать (или переиспользовать) постоянный токен доступа к PWA."""
+    async def issue_token(self, telegram_id: int, *, revoke_existing: bool = False, device: bool = False) -> str:
+        """Выдать (или переиспользовать) постоянный токен доступа к PWA.
+
+        device=True — новый токен для входа на одном устройстве: его
+        отзывает выход на этом устройстве, общий токен при этом не трогается."""
         if revoke_existing:
             await self.revoke_tokens(telegram_id)
-        else:
+        elif not device:
             row = await self._db.fetch_one(
                 """SELECT token FROM miniapp_tokens
-                   WHERE telegram_id = ? AND revoked_at IS NULL
+                   WHERE telegram_id = ? AND revoked_at IS NULL AND device = 0
                    ORDER BY created_at DESC LIMIT 1""",
                 (telegram_id,),
             )
@@ -1155,10 +1158,22 @@ class MiniappRepository:
 
         token = secrets.token_urlsafe(32)
         await self._db.execute(
-            "INSERT INTO miniapp_tokens (token, telegram_id) VALUES (?,?)",
-            (token, telegram_id),
+            "INSERT INTO miniapp_tokens (token, telegram_id, device) VALUES (?,?,?)",
+            (token, telegram_id, int(device)),
         )
         return token
+
+    async def revoke_device_token(self, token: str) -> bool:
+        """Выход на одном устройстве: отозвать его токен, если он «устройственный»."""
+        if not token:
+            return False
+        async with self._db.transaction() as db:
+            cursor = await db.execute(
+                """UPDATE miniapp_tokens SET revoked_at = datetime('now')
+                   WHERE token = ? AND device = 1 AND revoked_at IS NULL""",
+                (token,),
+            )
+            return cursor.rowcount > 0
 
     async def import_token(self, token: str, telegram_id: int) -> None:
         """Записать готовый токен — для переноса из старого проекта.

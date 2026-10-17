@@ -597,6 +597,12 @@ MIGRATIONS: list[str] = [
     ALTER TABLE users ADD COLUMN last_school_url TEXT NOT NULL DEFAULT '';
     ALTER TABLE users ADD COLUMN last_student_id INTEGER;
     """,
+    # Токены входа на конкретном устройстве (по почте или через бота): выход
+    # отзывает только такой, а общий токен ссылок из бота и подписки на
+    # календарь остаётся.
+    """
+    ALTER TABLE miniapp_tokens ADD COLUMN device INTEGER NOT NULL DEFAULT 0;
+    """,
 ]
 
 

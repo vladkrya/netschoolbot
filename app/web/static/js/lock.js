@@ -479,7 +479,7 @@ export async function unlockApp() {
   try { await pending; } finally { pending = null; }
 }
 
-async function clearOffline() {
+export async function clearOffline() {
   try { localStorage.removeItem('studentName'); } catch { /* приватный режим */ }
   if (!('caches' in window)) return;
   for (const name of await caches.keys()) {
