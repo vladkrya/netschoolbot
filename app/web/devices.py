@@ -150,3 +150,15 @@ async def revoke_others(request: web.Request) -> web.Response:
     await app.miniapp.revoke_where(user.telegram_id, "scope = '' AND token != ?", (current,))
     await app.miniapp.drop_install_codes(user.telegram_id)
     return await devices(request)
+
+
+@routes.post("/api/devices/new-link")
+async def new_device_link(request: web.Request) -> web.Response:
+    """«Добавить устройство» — то же, что /app_install в боте: ссылка на сутки,
+    которая даст новому устройству свой токен, и QR-код для камеры телефона."""
+    from .account import _render_qr
+
+    app, user = context(request), current_user(request)
+    code = await app.miniapp.issue_enter_code(user.telegram_id)
+    url = f"{app.settings.web.miniapp_url}/?enter={code}"
+    return web.json_response({"ok": True, "data": {"url": url, "qr": _render_qr(url)}})

@@ -80,3 +80,13 @@ async def test_link_clients_are_listed(client, token, app_context):
     # Завершили ссылки — список пуст.
     await post(client, phone, "/api/devices/revoke", {"id": "links"})
     assert await app_context.miniapp.link_clients(1) == []
+
+
+async def test_new_device_link(client, token, app_context):
+    phone = await app_context.miniapp.issue_token(1, device=True)
+    status, body = await post(client, phone, "/api/devices/new-link")
+    assert status == 200
+    url = body["data"]["url"]
+    assert "?enter=" in url and token not in url and phone not in url
+    assert await app_context.miniapp.use_enter_code(url.split("enter=")[1]) == 1
+    assert body["data"]["qr"].startswith("data:image/png;base64,")

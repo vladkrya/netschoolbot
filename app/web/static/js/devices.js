@@ -77,11 +77,47 @@ function openLinkClients(item, onEndAll) {
   body.querySelector('[data-end-links]').addEventListener('click', () => onEndAll(body));
 }
 
+/** «Добавить устройство»: ссылка на сутки (как /app_install в боте) и QR. */
+async function openNewDevice() {
+  const body = pushScreen('Новое устройство');
+  body.innerHTML = '<div class="card"><div class="muted">Готовим ссылку…</div></div>';
+  let data;
+  try {
+    ({ data } = await post('/api/devices/new-link'));
+  } catch (error) {
+    body.innerHTML = `<div class="card error-card"><p>${esc(error.message)}</p></div>`;
+    return;
+  }
+  body.innerHTML = `
+    <div class="card device-new">
+      <p>Откройте ссылку на новом устройстве — в Safari, Chrome или другом браузере, — и дневник откроется без входа.
+        Потом его можно добавить на экран «Домой».</p>
+      ${data.qr ? `<img class="device-qr" src="${data.qr}" alt="QR-код ссылки" width="220" height="220">
+        <p class="muted small device-qr-hint">Наведите камеру телефона на код.</p>` : ''}
+      <div class="device-link"><code>${esc(data.url)}</code></div>
+      <div class="device-new-actions">
+        <button class="btn" data-copy>${ICONS.doc} Скопировать</button>
+        ${navigator.share ? `<button class="btn outline" data-share>${ICONS.share} Поделиться</button>` : ''}
+      </div>
+      <p class="muted small">Ссылка действует сутки и открывает ваш дневник — не пересылайте её чужим. Каждое открытие появится в «Устройствах» отдельной строкой, и его можно будет завершить.</p>
+    </div>`;
+  body.querySelector('[data-copy]').addEventListener('click', () => {
+    navigator.clipboard?.writeText(data.url).then(
+      () => { notify('success'); banner('Ссылка скопирована', false, 1500); },
+      () => { notify('error'); banner('Не получилось скопировать — выделите ссылку вручную', true); },
+    );
+  });
+  body.querySelector('[data-share]')?.addEventListener('click', () => {
+    navigator.share({ title: 'Дневник', url: data.url }).catch(() => {});
+  });
+}
+
 export function openDevices() {
   const body = pushScreen('Устройства');
   const draw = (items) => {
     const others = items.some((item) => !item.main && !item.current && item.kind !== 'calendar');
-    body.innerHTML = `${items.map(row).join('')}
+    body.innerHTML = `<button class="btn device-add" data-add>${ICONS.plus} Добавить устройство</button>
+      ${items.map(row).join('')}
       ${others ? '<button class="btn outline danger device-end-all" data-end-all>Завершить все другие сеансы</button>' : ''}
       <p class="muted small device-note">Если ссылка на дневник могла попасть к чужим — завершите лишние сеансы или отправьте боту /app_reset: он отзовёт все ссылки сразу.</p>`;
     body.querySelectorAll('[data-end]').forEach((button) => button.addEventListener('click', async () => {
@@ -101,6 +137,7 @@ export function openDevices() {
         banner(error.message, true);
       }
     }));
+    body.querySelector('[data-add]').addEventListener('click', openNewDevice);
     body.querySelector('[data-clients]')?.addEventListener('click', () => {
       const links = items.find((entry) => entry.kind === 'links');
       openLinkClients(links, async (screen) => {
