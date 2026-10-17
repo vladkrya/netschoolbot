@@ -9,15 +9,13 @@ import { pushScreen } from './screens.js';
 
 const post = (path, body) => api(path, { method: 'POST', body: JSON.stringify(body || {}) });
 
+/** Точные дата и время: «18 октября 2026 в 01:45». */
 function when(seconds) {
   if (!seconds) return '';
   const date = new Date(seconds * 1000);
-  const today = new Date();
+  const day = date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' }).replace(/\s*г\.$/, '');
   const time = date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
-  if (date.toDateString() === today.toDateString()) return `сегодня в ${time}`;
-  const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1);
-  if (date.toDateString() === yesterday.toDateString()) return `вчера в ${time}`;
-  return date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: date.getFullYear() === today.getFullYear() ? undefined : 'numeric' });
+  return `${day} в ${time}`;
 }
 
 const ICON = { telegram: 'send', device: 'install', links: 'share', calendar: 'calendar' };
