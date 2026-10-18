@@ -41,11 +41,6 @@ export async function checkServer({ failed = false, slow = false } = {}) {
   try {
     const data = await checking;
     if (!failed && data.state !== 'down') return;
-    // Уже попросил сообщить — карточку не повторяем, просто не ждём школу.
-    if (data.subscribed?.up) {
-      markSgoDown();
-      return;
-    }
     show(data, slow && data.state !== 'down');
   } catch {
     /* бот тоже не ответил — об этом скажет обычная плашка */
@@ -83,12 +78,21 @@ function show(data, slow) {
   el.id = 'sgoDown';
   el.className = 'sgo-down';
   el.setAttribute('role', 'alert');
-  el.innerHTML = `<button class="sgo-down-x" data-act="close" aria-label="Закрыть">×</button>
-    <p class="sgo-down-text">${headline(data, slow)} Попробуйте зайти позже.</p>
-    <div class="sgo-down-actions">
-      <button class="sgo-down-btn primary" data-act="notify">Сообщить, когда заработает</button>
-      <button class="sgo-down-btn" data-act="status">Статус</button>
-    </div>`;
+  // Уже попросил сообщить — второй раз не предлагаем: только говорим, что
+  // сервер лежит и что сообщим, и даём закрыть.
+  if (data.subscribed?.up) {
+    el.innerHTML = `<p class="sgo-down-text">${headline(data, slow)} Мы сообщим, когда заработает.</p>
+      <div class="sgo-down-actions">
+        <button class="sgo-down-btn primary" data-act="close">Закрыть</button>
+      </div>`;
+  } else {
+    el.innerHTML = `<button class="sgo-down-x" data-act="close" aria-label="Закрыть">×</button>
+      <p class="sgo-down-text">${headline(data, slow)} Попробуйте зайти позже.</p>
+      <div class="sgo-down-actions">
+        <button class="sgo-down-btn primary" data-act="notify">Сообщить, когда заработает</button>
+        <button class="sgo-down-btn" data-act="status">Статус</button>
+      </div>`;
+  }
   const text = el.querySelector('.sgo-down-text');
   const actions = el.querySelector('.sgo-down-actions');
   const close = () => {
@@ -96,8 +100,8 @@ function show(data, slow) {
     setTimeout(() => el.remove(), 250);
   };
   const notify = el.querySelector('[data-act="notify"]');
-  const label = notify.textContent;
-  notify.addEventListener('click', async () => {
+  const label = notify?.textContent;
+  notify?.addEventListener('click', async () => {
     tap();
     // После await event.currentTarget уже null — раньше на ошибке это падало,
     // и кнопка оставалась тёмной без единого слова.
@@ -122,7 +126,7 @@ function show(data, slow) {
     dismiss();
     close();
   });
-  el.querySelector('[data-act="status"]').addEventListener('click', () => {
+  el.querySelector('[data-act="status"]')?.addEventListener('click', () => {
     dismiss();
     el.remove();
     openStatus();
