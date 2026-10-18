@@ -1337,6 +1337,54 @@ class MiniappRepository:
         )
         return int(row["telegram_id"]) if row else None
 
+    DEVICE_TTL = 3600
+
+    async def issue_device_code(self, telegram_id: int) -> tuple[str, float]:
+        """Ссылка с экрана «Добавить устройство»: час и только одно открытие —
+        её показывают на экране и QR-кодом, пересылать дальше незачем."""
+        code, expires = secrets.token_urlsafe(24), time.time() + self.DEVICE_TTL
+        async with self._db.transaction() as db:
+            await db.execute("DELETE FROM install_codes WHERE expires_at < ?", (time.time(),))
+            await db.execute(
+                "INSERT INTO install_codes (code, telegram_id, kind, expires_at) VALUES (?,?,'device',?)",
+                (code, telegram_id, expires),
+            )
+        return code, expires
+
+    async def use_device_code(self, code: str) -> str | None:
+        """Первое открытие: код гаснет и сразу даёт токен устройства."""
+        async with self._db.transaction() as db:
+            cursor = await db.execute(
+                """UPDATE install_codes SET used_at = ? WHERE code = ? AND kind = 'device'
+                   AND used_at IS NULL AND expires_at > ?""",
+                (time.time(), code, time.time()),
+            )
+            if cursor.rowcount == 0:
+                return None
+            cursor = await db.execute("SELECT telegram_id FROM install_codes WHERE code = ?", (code,))
+            telegram_id = int((await cursor.fetchone())[0])
+        token = await self.issue_token(telegram_id, device=True)
+        await self._db.execute("UPDATE install_codes SET token = ? WHERE code = ?", (token, code))
+        return token
+
+    async def device_code(self, telegram_id: int, code: str) -> dict | None:
+        """Состояние своей ссылки: ждёт, открыта (и чем) или истекла."""
+        row = await self._db.fetch_one(
+            """SELECT c.expires_at, c.used_at, c.token, t.label, t.revoked_at FROM install_codes c
+               LEFT JOIN miniapp_tokens t ON t.token = c.token
+               WHERE c.code = ? AND c.telegram_id = ? AND c.kind = 'device'""",
+            (code, telegram_id),
+        )
+        return dict(row) if row else None
+
+    async def drop_device_code(self, telegram_id: int, code: str) -> bool:
+        async with self._db.transaction() as db:
+            cursor = await db.execute(
+                "DELETE FROM install_codes WHERE code = ? AND telegram_id = ? AND kind = 'device' AND used_at IS NULL",
+                (code, telegram_id),
+            )
+            return cursor.rowcount > 0
+
     async def icon_code(self, telegram_id: int, source: str) -> str:
         """Код для start_url иконки. Пока иконку не запустили, на каждый
         запрос манифеста отдаётся тот же код, а не плодится новый."""

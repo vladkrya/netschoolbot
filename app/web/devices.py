@@ -15,14 +15,17 @@ Telegram, завершить его отсюда нельзя (выход из T
 
 from __future__ import annotations
 
+import base64
 import calendar
 import hashlib
 import time
 
+from aiogram.types import BufferedInputFile
 from aiohttp import web
 
+from ..accounts import has_telegram
 from ..accounts.site_login import describe_browser, device_model, system_version
-from .api import context, current_user, json_error
+from .api import BOT, context, current_user, json_error
 
 routes = web.RouteTableDef()
 
@@ -154,13 +157,75 @@ async def revoke_others(request: web.Request) -> web.Response:
     return await devices(request)
 
 
+def _device_url(app, code: str) -> str:
+    return f"{app.settings.web.miniapp_url}/?device={code}&install=1"
+
+
 @routes.post("/api/devices/new-link")
 async def new_device_link(request: web.Request) -> web.Response:
-    """«Добавить устройство» — то же, что /app_install в боте: ссылка на сутки,
-    которая даст новому устройству свой токен, и QR-код для камеры телефона."""
+    """«Добавить устройство»: ссылка на час и одно открытие, QR-код для камеры
+    телефона. Метка install=1 — на телефоне сразу покажется, как поставить
+    дневник на экран «Домой». /app_install в боте по-прежнему даёт ссылку на
+    сутки: её открывают сначала в Telegram, потом в Safari."""
     from .account import _render_qr
 
     app, user = context(request), current_user(request)
-    code = await app.miniapp.issue_enter_code(user.telegram_id)
-    url = f"{app.settings.web.miniapp_url}/?enter={code}"
-    return web.json_response({"ok": True, "data": {"url": url, "qr": _render_qr(url)}})
+    code, expires = await app.miniapp.issue_device_code(user.telegram_id)
+    url = _device_url(app, code)
+    return web.json_response({"ok": True, "data": {"url": url, "code": code, "expires": expires, "qr": _render_qr(url)}})
+
+
+async def _code(request: web.Request) -> str:
+    try:
+        body = await request.json()
+    except ValueError:
+        body = {}
+    return str((body or {}).get("code") or "")
+
+
+@routes.post("/api/devices/new-link/status")
+async def new_device_status(request: web.Request) -> web.Response:
+    """Экран ссылки спрашивает раз в несколько секунд: открыли ли её."""
+    app, user = context(request), current_user(request)
+    row = await app.miniapp.device_code(user.telegram_id, await _code(request))
+    if row is None:
+        return web.json_response({"ok": True, "data": {"state": "gone"}})
+    if row["used_at"]:
+        return web.json_response({"ok": True, "data": {
+            "state": "used", "label": row["label"] or "Браузер",
+            "id": fingerprint(row["token"]) if row["token"] else None}})
+    state = "waiting" if row["expires_at"] > time.time() else "expired"
+    return web.json_response({"ok": True, "data": {"state": state, "expires": row["expires_at"]}})
+
+
+@routes.post("/api/devices/new-link/cancel")
+async def new_device_cancel(request: web.Request) -> web.Response:
+    app, user = context(request), current_user(request)
+    await app.miniapp.drop_device_code(user.telegram_id, await _code(request))
+    return web.json_response({"ok": True})
+
+
+@routes.post("/api/devices/new-link/send-qr")
+async def new_device_send_qr(request: web.Request) -> web.Response:
+    """QR-код картинкой в чат с ботом: из окна Telegram файл не сохранить."""
+    from .account import _render_qr
+
+    app, user = context(request), current_user(request)
+    code = await _code(request)
+    row = await app.miniapp.device_code(user.telegram_id, code)
+    if row is None or row["used_at"] or row["expires_at"] <= time.time():
+        return json_error("Ссылка уже не действует — создайте новую")
+    bot = request.config_dict.get(BOT)
+    if bot is None or not has_telegram(user.telegram_id):
+        return json_error("Telegram не привязан")
+    qr = _render_qr(_device_url(app, code))
+    if not qr:
+        return json_error("QR-код сейчас не собрать — скопируйте ссылку")
+    png = base64.b64decode(qr.split(",", 1)[1])
+    left = max(1, round((row["expires_at"] - time.time()) / 60))
+    await bot.send_photo(
+        user.telegram_id, BufferedInputFile(png, filename="dnevnik-qr.png"),
+        caption=f"📱 QR-код для нового устройства. Действует {left} мин и только на одно открытие — "
+                "не пересылайте его чужим.",
+    )
+    return web.json_response({"ok": True})

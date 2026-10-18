@@ -2,10 +2,10 @@
 // Сервер — app/web/devices.py. Telegram — основной сеанс, его не завершить.
 'use strict';
 
-import { api, banner, esc, plural } from './core.js';
+import { api, banner, esc, initData, plural, tg } from './core.js';
 import { notify } from './haptics.js';
 import { ICONS } from './icons.js';
-import { pushScreen } from './screens.js';
+import { popScreen, pushScreen } from './screens.js';
 
 const post = (path, body) => api(path, { method: 'POST', body: JSON.stringify(body || {}) });
 
@@ -77,39 +77,144 @@ function openLinkClients(item, onEndAll) {
   body.querySelector('[data-end-links]').addEventListener('click', () => onEndAll(body));
 }
 
-/** «Добавить устройство»: ссылка на сутки (как /app_install в боте) и QR. */
-async function openNewDevice() {
-  const body = pushScreen('Новое устройство');
-  body.innerHTML = '<div class="card"><div class="muted">Готовим ссылку…</div></div>';
-  let data;
-  try {
-    ({ data } = await post('/api/devices/new-link'));
-  } catch (error) {
-    body.innerHTML = `<div class="card error-card"><p>${esc(error.message)}</p></div>`;
+/** Сколько осталось: «59:07». */
+function countdown(seconds) {
+  const total = Math.max(0, Math.round(seconds));
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
+}
+
+/** QR-код картинкой: в Telegram — в чат с ботом (из окна файл не сохранить),
+ *  в браузере — через «Поделиться» (там есть «Сохранить изображение») или загрузкой. */
+async function saveQr(data) {
+  if (initData) {
+    await post('/api/devices/new-link/send-qr', { code: data.code });
+    notify('success');
+    banner('QR-код в чате с ботом', false, 2000);
     return;
   }
-  body.innerHTML = `
-    <div class="card device-new">
-      <p>Откройте ссылку на новом устройстве — в Safari, Chrome или другом браузере, — и дневник откроется без входа.
-        Потом его можно добавить на экран «Домой».</p>
-      ${data.qr ? `<img class="device-qr" src="${data.qr}" alt="QR-код ссылки" width="220" height="220">
-        <p class="muted small device-qr-hint">Наведите камеру телефона на код.</p>` : ''}
-      <div class="device-link"><code>${esc(data.url)}</code></div>
-      <div class="device-new-actions">
-        <button class="btn" data-copy>${ICONS.doc} Скопировать</button>
-        ${navigator.share ? `<button class="btn outline" data-share>${ICONS.share} Поделиться</button>` : ''}
-      </div>
-      <p class="muted small">Ссылка действует сутки и открывает ваш дневник — не пересылайте её чужим. Каждое открытие появится в «Устройствах» отдельной строкой, и его можно будет завершить.</p>
-    </div>`;
-  body.querySelector('[data-copy]').addEventListener('click', () => {
-    navigator.clipboard?.writeText(data.url).then(
-      () => { notify('success'); banner('Ссылка скопирована', false, 1500); },
-      () => { notify('error'); banner('Не получилось скопировать — выделите ссылку вручную', true); },
-    );
-  });
-  body.querySelector('[data-share]')?.addEventListener('click', () => {
-    navigator.share({ title: 'Дневник', url: data.url }).catch(() => {});
-  });
+  const blob = await (await fetch(data.qr)).blob();
+  const file = new File([blob], 'dnevnik-qr.png', { type: 'image/png' });
+  if (navigator.canShare?.({ files: [file] })) {
+    await navigator.share({ files: [file] }).catch(() => {});
+    return;
+  }
+  const link = Object.assign(document.createElement('a'), { href: data.qr, download: file.name });
+  link.click();
+}
+
+/** «Добавить устройство»: ссылка на час и одно открытие, QR. Экран ждёт,
+ *  пока её откроют, и показывает, какое устройство вошло. */
+async function openNewDevice(onConnected) {
+  const body = pushScreen('Новое устройство');
+  let timer = 0;
+  const stop = () => clearInterval(timer);
+  const finish = (title, text, action) => {
+    stop();
+    body.innerHTML = `<div class="card device-new device-finish">
+        ${action === 'done' ? `<span class="device-finish-icon">${ICONS.check}</span>` : ''}
+        <b>${esc(title)}</b>
+        <p class="muted">${esc(text)}</p>
+        ${action === 'done' ? '<button class="btn" data-done>Готово</button>' : `<button class="btn" data-again>${ICONS.plus} Новая ссылка</button>`}
+      </div>`;
+    body.querySelector('[data-done]')?.addEventListener('click', () => popScreen());
+    body.querySelector('[data-again]')?.addEventListener('click', create);
+  };
+  const expired = () => finish('Ссылка истекла', 'Она действовала час. Создайте новую — старая уже ничего не открывает.');
+
+  const show = (data) => {
+    const external = initData && tg?.openLink;
+    body.innerHTML = `
+      <div class="card device-new">
+        <p>Откройте ссылку на новом устройстве — в Safari, Chrome или другом браузере, — и дневник откроется без входа.
+          На телефоне сразу появится подсказка, как добавить его на экран «Домой».</p>
+        <div class="device-secret hidden">
+          ${data.qr ? `<img class="device-qr" src="${data.qr}" alt="QR-код ссылки" width="220" height="220">
+            <p class="muted small device-qr-hint">Наведите камеру телефона на код.</p>` : ''}
+          <div class="device-link"><code>${esc(data.url)}</code></div>
+          <button class="btn outline device-reveal" data-reveal>${ICONS.eye} Показать</button>
+        </div>
+        <p class="device-timer">Действует <b data-left>${countdown(data.expires - Date.now() / 1000)}</b> · на одно открытие
+          <button class="link device-hide" data-hide hidden>Скрыть</button></p>
+        <div class="device-new-actions">
+          <button class="btn" data-copy>${ICONS.doc} Скопировать</button>
+          ${navigator.share ? `<button class="btn outline" data-share>${ICONS.share} Поделиться</button>` : ''}
+          ${external ? `<button class="btn outline" data-open>${ICONS.external} В браузере</button>` : ''}
+          ${data.qr ? `<button class="btn outline" data-qr>${ICONS.qr} ${initData ? 'QR-код в чат' : 'Сохранить QR'}</button>` : ''}
+        </div>
+        <p class="muted small">Ссылка открывает ваш дневник — не пересылайте её чужим. Вошедшее устройство появится в «Устройствах», и его можно будет завершить.</p>
+        <button class="btn outline danger device-end-all" data-cancel>Отменить ссылку</button>
+      </div>`;
+    const secret = body.querySelector('.device-secret');
+    const hide = body.querySelector('[data-hide]');
+    const reveal = (open) => {
+      secret.classList.toggle('hidden', !open);
+      hide.hidden = !open;
+    };
+    body.querySelector('[data-reveal]').addEventListener('click', () => reveal(true));
+    hide.addEventListener('click', () => reveal(false));
+    body.querySelector('[data-copy]').addEventListener('click', () => {
+      navigator.clipboard?.writeText(data.url).then(
+        () => { notify('success'); banner('Ссылка скопирована', false, 1500); },
+        () => { notify('error'); banner('Не получилось скопировать — откройте и выделите ссылку вручную', true); },
+      );
+    });
+    body.querySelector('[data-share]')?.addEventListener('click', () => {
+      navigator.share({ title: 'Дневник', url: data.url }).catch(() => {});
+    });
+    // Внешний браузер этого же телефона, а не встроенный в Telegram.
+    body.querySelector('[data-open]')?.addEventListener('click', () => {
+      tg.openLink(data.url, { try_instant_view: false });
+    });
+    body.querySelector('[data-qr]')?.addEventListener('click', (event) => {
+      const button = event.currentTarget;
+      button.disabled = true;
+      saveQr(data).catch((error) => banner(error.message, true)).finally(() => { button.disabled = false; });
+    });
+    body.querySelector('[data-cancel]').addEventListener('click', async () => {
+      stop();
+      await post('/api/devices/new-link/cancel', { code: data.code }).catch(() => {});
+      finish('Ссылка отменена', 'По ней больше не войти. Если понадобится — создайте новую.');
+    });
+
+    // Раз в секунду — таймер, раз в три — не открыли ли ссылку.
+    const left = body.querySelector('[data-left]');
+    let tick = 0;
+    let asking = false;
+    timer = setInterval(async () => {
+      if (!body.isConnected) return stop();
+      const seconds = data.expires - Date.now() / 1000;
+      left.textContent = countdown(seconds);
+      if (seconds <= 0) return expired();
+      if (++tick % 3 || asking || document.hidden) return;
+      asking = true;
+      try {
+        const { data: status } = await post('/api/devices/new-link/status', { code: data.code });
+        if (!body.isConnected) return;
+        if (status.state === 'used') {
+          notify('success');
+          onConnected?.();
+          finish('Устройство подключено', `${status.label}. Оно уже в «Устройствах» — там его можно завершить.`, 'done');
+        } else if (status.state === 'expired') {
+          expired();
+        } else if (status.state === 'gone') {
+          finish('Ссылка отменена', 'Её отозвали — например, кнопкой «Завершить все другие сеансы». Создайте новую.');
+        }
+      } catch { /* сеть моргнула — спросим в следующий раз */ } finally {
+        asking = false;
+      }
+    }, 1000);
+  };
+
+  async function create() {
+    stop();
+    body.innerHTML = '<div class="card"><div class="muted">Готовим ссылку…</div></div>';
+    try {
+      show((await post('/api/devices/new-link')).data);
+    } catch (error) {
+      body.innerHTML = `<div class="card error-card"><p>${esc(error.message)}</p></div>`;
+    }
+  }
+  await create();
 }
 
 export function openDevices() {
@@ -137,7 +242,7 @@ export function openDevices() {
         banner(error.message, true);
       }
     }));
-    body.querySelector('[data-add]').addEventListener('click', openNewDevice);
+    body.querySelector('[data-add]').addEventListener('click', () => openNewDevice(load));
     body.querySelector('[data-clients]')?.addEventListener('click', () => {
       const links = items.find((entry) => entry.kind === 'links');
       openLinkClients(links, async (screen) => {
@@ -162,7 +267,9 @@ export function openDevices() {
       }
     });
   };
-  body.innerHTML = '<div class="card"><div class="muted">Загрузка…</div></div>';
-  api('/api/devices').then(({ data }) => draw(data.items))
+  // После входа нового устройства список обновляется, пока он под экраном ссылки.
+  const load = () => api('/api/devices').then(({ data }) => draw(data.items))
     .catch((error) => { body.innerHTML = `<div class="card error-card"><p>${esc(error.message)}</p></div>`; });
+  body.innerHTML = '<div class="card"><div class="muted">Загрузка…</div></div>';
+  load();
 }

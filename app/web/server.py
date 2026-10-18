@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
+import re
 from pathlib import Path
 
 import aiohttp_jinja2
@@ -254,6 +255,15 @@ def _base(request: web.Request) -> str:
     return request.app[CONTEXT].settings.web.miniapp_path.rstrip("/")
 
 
+# Превью ссылок в мессенджерах загружают страницу сами — одноразовую ссылку
+# с экрана «Добавить устройство» это погасило бы раньше, чем её откроет человек.
+LINK_PREVIEWS = re.compile(
+    r"TelegramBot|Twitterbot|facebookexternalhit|WhatsApp|vkShare|Slackbot|Discordbot|SkypeUriPreview"
+    r"|Viber|LinkedInBot|Googlebot|bingbot|YandexBot|Applebot|redditbot|curl/|python-|Go-http-client",
+    re.IGNORECASE,
+)
+
+
 @page_routes.get("/")
 async def index(request: web.Request) -> web.Response:
     """Страница приложения.
@@ -281,6 +291,16 @@ async def index(request: web.Request) -> web.Response:
             entered = request.cookies["netschool_token"]  # обновили страницу — токен уже есть
         else:
             entered = await context.miniapp.issue_token(telegram_id, device=True)
+    # Ссылка с экрана «Добавить устройство»: открывается один раз. Повторное
+    # открытие (обновили страницу) пускает по cookie, которую поставили сейчас.
+    if (
+        (device_code := request.query.get("device"))
+        and request.method == "GET"
+        and not LINK_PREVIEWS.search(request.headers.get("User-Agent", ""))
+        and (issued := await context.miniapp.use_device_code(device_code))
+    ):
+        entered = issued
+        await devices.touch(request, issued)
     # Ссылка с токеном важнее cookie, но отозванный токен в ссылке (старая
     # иконка на домашнем экране после «Выйти») не мешает войти по cookie.
     token, user = "", None

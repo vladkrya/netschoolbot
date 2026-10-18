@@ -774,6 +774,11 @@ MIGRATIONS: list[str] = [
     );
     CREATE INDEX idx_sgo_account_checks_bucket ON sgo_account_checks(bucket);
     """,
+    # «Добавить устройство»: одноразовая ссылка на час (kind='device') помнит
+    # выданный по ней токен — экран ждёт открытия и показывает, кто вошёл.
+    """
+    ALTER TABLE install_codes ADD COLUMN token TEXT;
+    """,
 ]
 
 
