@@ -2,7 +2,7 @@
 // Сервер — app/web/devices.py. Telegram — основной сеанс, его не завершить.
 'use strict';
 
-import { api, banner, esc, plural } from './core.js';
+import { api, banner, esc, initData, plural, tg } from './core.js';
 import { notify } from './haptics.js';
 import { ICONS } from './icons.js';
 import { pushScreen } from './screens.js';
@@ -98,6 +98,7 @@ async function openNewDevice() {
       <div class="device-new-actions">
         <button class="btn" data-copy>${ICONS.doc} Скопировать</button>
         ${navigator.share ? `<button class="btn outline" data-share>${ICONS.share} Поделиться</button>` : ''}
+        ${initData && tg?.openLink ? `<button class="btn outline device-open" data-open>${ICONS.external} Открыть в браузере</button>` : ''}
       </div>
       <p class="muted small">Ссылка действует сутки и открывает ваш дневник — не пересылайте её чужим. Каждое открытие появится в «Устройствах» отдельной строкой, и его можно будет завершить.</p>
     </div>`;
@@ -109,6 +110,10 @@ async function openNewDevice() {
   });
   body.querySelector('[data-share]')?.addEventListener('click', () => {
     navigator.share({ title: 'Дневник', url: data.url }).catch(() => {});
+  });
+  // Внешний браузер этого же телефона, а не встроенный в Telegram.
+  body.querySelector('[data-open]')?.addEventListener('click', () => {
+    tg.openLink(data.url, { try_instant_view: false });
   });
 }
 
