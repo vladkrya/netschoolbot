@@ -259,6 +259,9 @@ class StatusService:
     def targets(self) -> list[Target]:
         return self._targets
 
+    def region(self, host: str) -> str:
+        return next((t.region for t in self._targets if t.host == host), "")
+
     async def refresh_catalog(self) -> None:
         """Обновить список серверов из каталога приложения, если пора.
         Не вышло — работаем с прежним списком."""
@@ -405,7 +408,7 @@ class StatusService:
         return self._host_state(host, probes, await self._repo.host_ever_ok(host), version)
 
     def _host_state(self, host: str, probes: list[dict], ever_ok: bool, version: str) -> dict:
-        region = next((t.region for t in self._targets if t.host == host), "")
+        region = self.region(host)
         state = _state(probes)
         if not ever_ok and state != "up":
             state = "blocked"

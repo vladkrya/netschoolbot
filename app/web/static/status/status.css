@@ -224,6 +224,12 @@ footer { font-size: 12px; text-align: center; margin-top: 8px; }
   .host-row .state-label { display: none; }
   .host-row .strip { grid-column: 1 / -1; grid-row: 2; height: 16px; }
 }
+/* Внутри приложения: заголовок и подвал — у экрана приложения. */
+.embed .page { padding-top: 12px; }
+.embed .top h1, .embed .top p, .embed footer { display: none; }
+.embed .top { margin-bottom: 10px; }
+.embed .top .primary { width: 100%; }
+
 @media (forced-colors: active) {
   .cell, .sw, .badge i, .dot { forced-color-adjust: none; border: 1px solid CanvasText; }
 }
