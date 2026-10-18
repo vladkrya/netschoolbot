@@ -100,6 +100,10 @@ async def _signed_in(request: web.Request, telegram_id: int) -> web.Response:
     """Ответ с постоянным токеном в cookie — страница перезагрузится уже с ним."""
     # Свой токен на каждое устройство: «Выйти» отзывает только его.
     token = await context(request).miniapp.issue_token(telegram_id, device=True)
+    # Новый сеанс — в «Устройствах» на остальных; после сброса пароля
+    # отозванные устройства выходят сразу.
+    from .sync import publish
+    await publish(context(request), telegram_id, "devices")
     response = web.json_response({"ok": True, "data": {"token": token}})
     response.set_cookie(COOKIE, token, max_age=365 * 24 * 3600, httponly=True, samesite="Lax",
                         secure=request.url.scheme == "https")

@@ -88,6 +88,12 @@ function bindDoneToggles(body, items) {
     paintToggle(button, isDoneItem(items[Number(button.dataset.doneToggle)])));
   if (state.hwDone) paintAll();
   else loadDone().then(paintAll);
+  // Отметили в списке или на другом устройстве — кнопки здесь совпадут.
+  const repaint = () => {
+    if (body.isConnected) paintAll();
+    else window.removeEventListener('netschool:hwdone', repaint);
+  };
+  window.addEventListener('netschool:hwdone', repaint);
   buttons.forEach((button) => button.addEventListener('click', (event) => {
     event.stopPropagation();
     // Заливка расходится от точки нажатия (app.css, .hw-done-toggle.ripple).

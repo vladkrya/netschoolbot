@@ -183,7 +183,7 @@ systemctl stop netschoolbot && ./venv/bin/python -m app.tools.backup --restore F
 На vdsru `miniapp-mirror@yavds.ikrya.ru` (`deploy/systemd/miniapp-mirror@.service`)
 пробрасывает порт 8283 на yavds, там nginx из `deploy/nginx/ns.ikrya.ru.conf` и
 `deploy/nginx/yavds.ikrya.ru.conf`. `NETSCHOOL_MIRROR_URL` в `.env` добавляет
-кнопку «Резервный адрес» в `/app_install` и `/app_reset`.
+кнопку «Резервный адрес» в `/app_reset`.
 
 Приложение отдаётся с корня домена. Старые ссылки `/mini/netschool/...`
 переадресуются на те же пути от корня.
@@ -278,7 +278,7 @@ NETSCHOOL_SECRET_KEY=<вывод python -c "from cryptography.fernet import Fern
 | `/dz`, `/rasp` | домашние задания, расписание |
 | `/grades`, `/mystats`, `/weeksummary` | оценки и статистика |
 | `/app` | открыть дневник мини-приложением Telegram |
-| `/app_install` | ссылка для установки на домашний экран |
+| `/app_install` | установка на домашний экран: приложение с инструкцией и одноразовой ссылкой в браузер на 15 минут |
 | `/app_reset` | перевыпустить ссылку, отозвав старую |
 | `/settings`, `/interval` | настройки |
 | `/child` | переключение между детьми |

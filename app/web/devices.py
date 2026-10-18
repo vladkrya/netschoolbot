@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import base64
 import calendar
-import hashlib
 import time
 
 from aiogram.types import BufferedInputFile
@@ -25,6 +24,7 @@ from aiohttp import web
 
 from ..accounts import has_telegram
 from ..accounts.site_login import describe_browser, device_model, system_version
+from ..db.repositories import token_fingerprint as fingerprint
 from .api import BOT, context, current_user, json_error
 
 routes = web.RouteTableDef()
@@ -33,10 +33,6 @@ LINKS, CALENDAR = "links", "calendar"
 # Активность пишем не на каждый запрос: раз в 10 минут на токен.
 TOUCH_EVERY = 600
 _touched: dict[str, float] = {}
-
-
-def fingerprint(token: str) -> str:
-    return hashlib.sha256(token.encode()).hexdigest()[:16]
 
 
 def masked_ip(request: web.Request) -> str:
@@ -62,8 +58,12 @@ async def touch(request: web.Request, token: str) -> None:
     _touched[key] = now
     if len(_touched) > 50_000:
         _touched.clear()
-    await context(request).miniapp.touch_token(
+    app = context(request)
+    owner = await app.miniapp.touch_token(
         token, label, model=" · ".join(part for part in (model, version) if part), ip=masked_ip(request))
+    # «Активность» и название устройства — сразу на открытых «Устройствах».
+    if owner is not None:
+        await app.hub.publish_user(owner, {"t": "sync", "topic": "devices"})
 
 
 def request_token(request: web.Request) -> str:
@@ -94,6 +94,7 @@ def build(rows: list[dict], current: str, in_telegram: bool, clients: list[dict]
         if row["device"] and row["scope"] == "":
             items.append({
                 "id": fingerprint(row["token"]), "kind": "device", "label": row["label"] or "Браузер",
+                "name": row.get("name") or "",
                 "current": row["token"] == current, "created": _when(row["created_at"]),
                 "last_used": _when(row["last_used"]),
             })
@@ -146,6 +147,27 @@ async def revoke(request: web.Request) -> web.Response:
     return await devices(request)
 
 
+NAME_LIMIT = 40
+
+
+@routes.post("/api/devices/rename")
+async def rename(request: web.Request) -> web.Response:
+    """Своя подпись сеанса; пустая — снова название браузера."""
+    app, user = context(request), current_user(request)
+    try:
+        body = await request.json()
+    except ValueError:
+        body = {}
+    body = body if isinstance(body, dict) else {}
+    target = str(body.get("id") or "")
+    name = " ".join(str(body.get("name") or "").split())[:NAME_LIMIT]
+    tokens = [row["token"] for row in await app.miniapp.sessions(user.telegram_id)
+              if row["device"] and row["scope"] == "" and fingerprint(row["token"]) == target]
+    if not tokens or not await app.miniapp.set_token_name(user.telegram_id, tokens[0], name):
+        return json_error("Этот сеанс уже завершён", status=404)
+    return await devices(request)
+
+
 @routes.post("/api/devices/revoke-others")
 async def revoke_others(request: web.Request) -> web.Response:
     """Завершить все сеансы, кроме этого. Telegram и подписка на календарь
@@ -157,16 +179,33 @@ async def revoke_others(request: web.Request) -> web.Response:
     return await devices(request)
 
 
+@routes.post("/api/devices/own")
+async def own_token(request: web.Request) -> web.Response:
+    """Свой токен для иконки на экране «Домой» iPhone. При установке iOS
+    копирует в иконку cookie Safari — и токен у них оказывался общий: выход
+    или вход в другой аккаунт в Safari выкидывал и иконку. Иконка один раз
+    берёт себе новый токен, у Safari остаётся прежний."""
+    app, user = context(request), current_user(request)
+    current = "" if request.get("verified_telegram") else request_token(request)
+    if not current or not await app.miniapp.is_device_token(current):
+        return web.json_response({"ok": True, "data": {"token": ""}})
+    token = await app.miniapp.issue_token(user.telegram_id, device=True)
+    response = web.json_response({"ok": True, "data": {"token": token}})
+    response.set_cookie("netschool_token", token, max_age=365 * 24 * 3600, httponly=True, samesite="Lax",
+                        secure=request.url.scheme == "https")
+    return response
+
+
 def _device_url(app, code: str) -> str:
     return f"{app.settings.web.miniapp_url}/?device={code}&install=1"
 
 
 @routes.post("/api/devices/new-link")
 async def new_device_link(request: web.Request) -> web.Response:
-    """«Добавить устройство»: ссылка на час и одно открытие, QR-код для камеры
+    """«Добавить устройство»: ссылка на 15 минут и одно открытие, QR-код для камеры
     телефона. Метка install=1 — на телефоне сразу покажется, как поставить
-    дневник на экран «Домой». /app_install в боте по-прежнему даёт ссылку на
-    сутки: её открывают сначала в Telegram, потом в Safari."""
+    дневник на экран «Домой». Ту же ссылку даёт «Открыть в Safari» в
+    инструкции установки (/api/pwa-link, /app_install в боте)."""
     from .account import _render_qr
 
     app, user = context(request), current_user(request)

@@ -1960,11 +1960,13 @@ async def student_class(request: web.Request) -> web.Response:
 
 @routes.get("/api/pwa-link")
 async def pwa_link(request: web.Request) -> web.Response:
-    """Ссылка для установки на домашний экран (как /app_install): действует
-    сутки и даёт браузеру свой токен устройства, а не общий токен."""
+    """Ссылка «Открыть в Safari» из инструкции установки: та же, что
+    «Добавить устройство», — 15 минут, одно открытие, свой токен устройства."""
+    from .devices import _device_url
+
     app, user = context(request), current_user(request)
-    code = await app.miniapp.issue_enter_code(user.telegram_id)
-    return web.json_response({"ok": True, "data": {"url": f"{app.settings.web.miniapp_url}/?enter={code}"}})
+    code, _ = await app.miniapp.issue_device_code(user.telegram_id)
+    return web.json_response({"ok": True, "data": {"url": _device_url(app, code)}})
 
 
 @routes.get("/api/push/key")

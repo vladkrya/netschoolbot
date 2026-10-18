@@ -797,8 +797,8 @@ class TestNewFeatures:
     async def test_pwa_link_is_personal(self, client, token, app_context):
         response = await client.get(f"{BASE}/api/pwa-link", params={"token": token})
         url = (await response.json())["data"]["url"]
-        assert token not in url and "?enter=" in url
-        assert await app_context.miniapp.use_enter_code(url.split("enter=")[1]) == 1
+        assert token not in url and "?device=" in url and "install=1" in url
+        assert await app_context.miniapp.use_device_code(url.split("device=")[1].split("&")[0])
 
     async def test_install_link_puts_device_token_and_clean_icon(self, client, token, app_context):
         """Ссылка установки → свой токен устройства в cookie; в иконке вместо
@@ -824,7 +824,7 @@ class TestNewFeatures:
         icon = start.split("icon=")[1]
         client.session.cookie_jar.clear()
         response = await client.get(f"{BASE}/", params={"icon": icon}, allow_redirects=False)
-        assert response.status == 302 and response.headers["Location"] == f"{BASE}/"
+        assert response.status == 302 and response.headers["Location"] == f"{BASE}/#own"
         launched = response.cookies["netschool_token"].value
         assert await app_context.miniapp.resolve_token(launched) == 1 and launched not in (device, other)
         # Второй раз код ничего не открывает: «Поделиться» иконкой безопасно.

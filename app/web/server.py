@@ -25,7 +25,7 @@ from aiohttp import web
 
 from .. import __version__
 from ..context import AppContext
-from . import account, api, assistant, bugreport, caldav, captcha_proxy, chat, devices, extras, lock, status
+from . import account, api, assistant, bugreport, caldav, captcha_proxy, chat, devices, extras, lock, status, sync
 from .api import BOT, CONTEXT
 
 logger = logging.getLogger("netschoolbot.web")
@@ -104,7 +104,7 @@ async def security_headers(request: web.Request, handler):
 
 def create_app(context: AppContext, bot=None) -> web.Application:
     """Собрать сервер: подприложение под префиксом плюс проверка живости."""
-    inner = web.Application(middlewares=[security_headers, caldav.root_discovery, compress_static, api.error_middleware, api.auth_middleware])
+    inner = web.Application(middlewares=[security_headers, caldav.root_discovery, compress_static, api.error_middleware, api.auth_middleware, sync.sync_middleware])
     inner[CONTEXT] = context
     inner[BOT] = bot
     inner[chat.HUB] = context.hub
@@ -278,10 +278,12 @@ async def index(request: web.Request) -> web.Response:
     # Иконка на экране «Домой», первый запуск: код из start_url меняется на
     # свой токен устройства в cookie, и иконка открывает чистый адрес.
     if (icon := request.query.get("icon")) and (telegram_id := await context.miniapp.use_icon_code(icon)):
-        response = web.HTTPFound(f"{_base(request)}/")
+        # #own — токен уже свой, заводить его заново незачем (boot.js, ownToken).
+        response = web.HTTPFound(f"{_base(request)}/#own")
         _set_token_cookie(request, response, await context.miniapp.issue_token(telegram_id, device=True))
         raise response
-    # Ссылка установки из /app_install: адрес с кодом не меняем — из
+    # Ссылка установки прежнего /app_install (новых не выдаём, старые живут
+    # до суток): адрес с кодом не меняем — из
     # встроенного браузера Telegram его ещё откроют «в Safari», и там код
     # тоже должен сработать (сутки, каждый раз свой токен устройства).
     entered = ""
@@ -291,16 +293,19 @@ async def index(request: web.Request) -> web.Response:
             entered = request.cookies["netschool_token"]  # обновили страницу — токен уже есть
         else:
             entered = await context.miniapp.issue_token(telegram_id, device=True)
-    # Ссылка с экрана «Добавить устройство»: открывается один раз. Повторное
-    # открытие (обновили страницу) пускает по cookie, которую поставили сейчас.
+    # Ссылка с экрана «Добавить устройство»: открывается один раз — токен
+    # уходит в cookie, а адрес сразу чистый. Погасший код в адресе (обновили
+    # страницу, добавили на экран «Домой») больше нигде не остаётся.
     if (
         (device_code := request.query.get("device"))
         and request.method == "GET"
         and not LINK_PREVIEWS.search(request.headers.get("User-Agent", ""))
-        and (issued := await context.miniapp.use_device_code(device_code))
     ):
-        entered = issued
-        await devices.touch(request, issued)
+        response = web.HTTPFound(f"{_base(request)}/" + ("?install=1" if request.query.get("install") == "1" else ""))
+        if issued := await context.miniapp.use_device_code(device_code):
+            await devices.touch(request, issued)
+            _set_token_cookie(request, response, issued)
+        raise response
     # Ссылка с токеном важнее cookie, но отозванный токен в ссылке (старая
     # иконка на домашнем экране после «Выйти») не мешает войти по cookie.
     token, user = "", None

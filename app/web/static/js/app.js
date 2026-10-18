@@ -15,7 +15,7 @@ import {
   isNewDesign, navIcon, setHalloweenAccess,
 } from './appearance.js';
 import { ICONS } from './icons.js';
-import { dropInstallHints, initInstallPrompt } from './install.js';
+import { dropInstallHints, initInstallPrompt, openInstall } from './install.js';
 import {
   applyStoredTheme, closeDrawer, initStudentSwitch, isDrawerOpen, loadProfile, loadSettings, offerPushOnFirstLaunch, openDrawer,
   syncTimezone,
@@ -29,6 +29,8 @@ import { initSwipeBack } from './swipeback.js';
 import { initTrackpad } from './trackpad.js';
 import { initIosHaptics, notify, tap } from './haptics.js';
 import { getPref, setPref, syncPrefs } from './prefs.js';
+import { loadDone } from './details.js';
+import { loadNotes } from './notes.js';
 
 const TABS = {
   day: loadDay,
@@ -442,6 +444,62 @@ function initLiveDiary() {
   });
 }
 
+/** Настройки с сервера отличались от сохранённых здесь — применить заново. */
+function applySyncedPrefs() {
+  applyStoredTheme();
+  // Хеллоуин выключили или включили на другом устройстве.
+  applyHalloween();
+  applyAccent();
+  applyDesign();
+  renderNav();
+  window.dispatchEvent(new CustomEvent('netschool:design'));
+  // Правки расписания могли прийти с другого устройства.
+  window.dispatchEvent(new CustomEvent('netschool:edits'));
+}
+
+// Изменение с другого устройства (app/web/sync.py): что перечитать и какие
+// вкладки перерисовать. Отметки ДЗ перекрашивает событие netschool:hwdone.
+const SYNC_TABS = { notes: ['day', 'homework'], mail: ['mail'], settings: ['settings'], family: ['settings'] };
+
+async function applySync(topic) {
+  if (topic === 'account') {
+    // Сменили ученика или вышли из «Сетевого города» — всё приложение заново.
+    location.reload();
+    return;
+  }
+  if (topic === 'homework') {
+    await loadDone();
+    window.dispatchEvent(new CustomEvent('netschool:hwdone', { detail: { source: 'sync' } }));
+  } else if (topic === 'notes') {
+    await loadNotes(true);
+  } else if (topic === 'prefs') {
+    if (await syncPrefs()) applySyncedPrefs();
+  } else if (topic === 'settings' || topic === 'family') {
+    await loadProfile(true).catch(() => {});
+    if (isDrawerOpen()) await loadSettings();
+  }
+  // Открытые экраны (устройства, задание) слушают это событие сами.
+  window.dispatchEvent(new CustomEvent('netschool:sync', { detail: { topic } }));
+  const tabs = SYNC_TABS[topic] || [];
+  if (tabs.includes(state.tab) && !$('screens').childElementCount && !state.refreshing) quietly(() => TABS[state.tab]());
+}
+
+// Сокет переподключился (сеть, приложение вернули из фона): сигналы за это
+// время пропали — перечитываем то, что меняют чаще всего.
+const RESYNC_MS = 15000;
+function initLiveSync() {
+  let connectedOnce = false;
+  let resyncedAt = 0;
+  chatEvents.addEventListener('change', ({ detail }) => {
+    if (detail.t === 'sync') applySync(detail.topic).catch(() => {});
+    if (detail.t !== 'connected') return;
+    if (!connectedOnce) { connectedOnce = true; return; }
+    if (Date.now() - resyncedAt < RESYNC_MS) return;
+    resyncedAt = Date.now();
+    ['homework', 'notes', 'prefs'].forEach((topic) => applySync(topic).catch(() => {}));
+  });
+}
+
 // Какие вкладки показывают данные с этого адреса API.
 const FRESH_TABS = {
   '/api/diary': ['day', 'schedule'],
@@ -558,6 +616,7 @@ function initChrome() {
   initFresh();
   initResume();
   initLiveDiary();
+  initLiveSync();
   document.addEventListener('netschool:refresh', refreshCurrentTab);
   $('refreshBtn').addEventListener('click', () => refreshCurrentTab());
   $('menuBtn').addEventListener('click', openDrawer);
@@ -825,17 +884,7 @@ async function start() {
   // Тема, дизайн и цвет, выбранные в Telegram, — и на сайте (и наоборот).
   // Запрос ушёл ещё из boot.js, раньше дневника: своё — вперёд «Сетевого города».
   (state.prefsSync || syncPrefs()).then((changed) => {
-    if (changed) {
-      applyStoredTheme();
-      // Хеллоуин выключили или включили на другом устройстве.
-      applyHalloween();
-      applyAccent();
-      applyDesign();
-      renderNav();
-      window.dispatchEvent(new CustomEvent('netschool:design'));
-      // Правки расписания могли прийти с другого устройства.
-      window.dispatchEvent(new CustomEvent('netschool:edits'));
-    }
+    if (changed) applySyncedPrefs();
     // Флаг «видел» уже пришёл с сервера — окошко не повторится на другом устройстве.
     dropInstallHints();
     if (!isReadOnly()) showChatLaunchNotice().then(showHalloweenNotice).then(showKeepFilesNotice).then(showSurvey);
@@ -843,6 +892,7 @@ async function start() {
   });
   offerPushOnFirstLaunch();
   initInstallPrompt();
+  openRequestedInstall();
   renderNav();
   renderIcons();
   applyScheduleTab();
@@ -884,11 +934,26 @@ async function start() {
   }
 }
 
+/** /app_install в боте открывает приложение с ?open=install — сразу инструкция
+ *  с кнопкой «Открыть в Safari» (одноразовая ссылка на 15 минут). */
+function openRequestedInstall() {
+  const params = new URLSearchParams(location.search);
+  if (params.get('open') !== 'install') return;
+  params.delete('open');
+  const query = params.toString();
+  history.replaceState(history.state, '', `${location.pathname}${query ? `?${query}` : ''}${location.hash}`);
+  setTimeout(openInstall, 600);
+}
+
 /** Service worker вне Telegram: показ сохранённого без сети и push. */
 function registerWorker() {
   if (tg?.initData || demo || !token || !('serviceWorker' in navigator)) return;
   navigator.serviceWorker
-    .register(`${base}/sw.js?token=${encodeURIComponent(token)}`, { scope: `${base}/` })
+    // Адрес без токена: сервер его не читает, а новый адрес при каждом новом
+    // токене (вход по ссылке, иконка) переустанавливал worker, и на iPhone
+    // старый обрывал идущие запросы — «Не удалось подключиться к серверу
+    // приложения».
+    .register(`${base}/sw.js`, { scope: `${base}/` })
     .catch(() => { /* без worker приложение работает как раньше, только без офлайна */ });
 }
 

@@ -1205,6 +1205,14 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .install-note { font-size: 14px; line-height: 1.5; }
 .install-arrow { display: flex; justify-content: center; margin-top: 8px; color: var(--primary); animation: install-bounce 1.2s ease-in-out infinite; }
 .install-arrow svg { width: 28px; height: 28px; }
+/* Ссылка устройства с телефона: инструкция установки на весь экран (install.js). */
+.install-page { position: fixed; inset: 0; z-index: 9000; overflow: auto; background: var(--bg);
+  padding: calc(env(safe-area-inset-top, 0px) + 32px) 16px calc(env(safe-area-inset-bottom, 0px) + 24px); }
+.install-page-body { max-width: 440px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; text-align: center; }
+.install-page-body h1 { margin: 0; font-size: 26px; letter-spacing: -.4px; }
+.install-page-body p { margin: 0; line-height: 1.5; }
+.install-page-body .install-steps { text-align: left; }
+.install-page-icon { width: 88px; height: 88px; margin: 0 auto; border-radius: 20px; box-shadow: 0 4px 16px rgba(0, 0, 0, .2); }
 /* Карточка над уроками: у кого приложения на экране «Домой» ещё нет. */
 .install-card { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; padding: 12px 8px 12px 12px; border-radius: 16px; background: color-mix(in srgb, var(--head) 16%, var(--card)); border: 1px solid color-mix(in srgb, var(--head) 35%, transparent); cursor: pointer; }
 .install-card-icon { width: 40px; height: 40px; border-radius: 10px; flex: none; }
@@ -2399,6 +2407,11 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
 .device-end-all { width: 100%; margin-top: 4px; }
 .device-note { margin: 12px 4px; }
 .device-detail { margin: 0; font-size: 14px; }
+.device-rename { font-size: 13px; }
+.device-row.editing .device-title { flex: 1; min-width: 0; }
+.device-name-form { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; width: 100%; }
+.device-name-form .field { flex: 1 1 160px; min-width: 0; margin: 0; }
+.device-name-form .btn { width: auto; margin: 0; padding: 8px 14px; }
 .device-add { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; margin: 0 0 12px; }
 .device-add .icon, .device-new-actions .icon { width: 18px; height: 18px; }
 .device-new { display: flex; flex-direction: column; gap: 10px; }

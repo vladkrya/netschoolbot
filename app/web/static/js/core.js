@@ -3,7 +3,15 @@
 
 import { ICONS } from './icons.js';
 
-export const { base, token, pushEnabled, student, school, demo } = window.NETSCHOOL;
+export const { base, pushEnabled, student, school, demo } = window.NETSCHOOL;
+export let { token } = window.NETSCHOOL;
+/** Иконка на экране «Домой» завела свой токен (boot.js, ownToken). */
+export function setToken(value) {
+  token = value;
+  window.NETSCHOOL.token = value;
+}
+/** Эта вкладка: сервер не шлёт ей по сокету её же изменения (app/web/sync.py). */
+export const tabId = Math.random().toString(36).slice(2, 12);
 /** Есть ли ИИ-помощник: на сервере задан ключ, и это не демо. */
 export const assistantEnabled = Boolean(window.NETSCHOOL.assistant);
 
@@ -397,6 +405,7 @@ async function request(path, options = {}) {
   if (initData) headers['X-Telegram-Init-Data'] = initData;
   if (token) headers['X-Netschool-Token'] = token;
   if (unlockToken) headers['X-Netschool-Unlock'] = unlockToken;
+  headers['X-Netschool-Tab'] = tabId;
 
   // Без предела запрос к зависшему школьному серверу крутил загрузку
   // бесконечно. Сервер сам отвечает не дольше минуты при обновлении.
@@ -413,7 +422,7 @@ async function request(path, options = {}) {
   if (watched) sgoRequests.add(controller);
   const slow = watched && !down ? setTimeout(sgoHint, SGO_SLOW_MS) : 0;
   const stuck = watched && !down ? setTimeout(() => sgoHint(true, true), SGO_STUCK_MS) : 0;
-  const { onFresh, onDelta, retried, ...init } = options;
+  const { onFresh, onDelta, retried, networkRetried, ...init } = options;
   let response;
   try {
     response = await fetch(base + path, {
@@ -423,6 +432,13 @@ async function request(path, options = {}) {
     if (controller.sgoDown) {
       throw Object.assign(new Error('«Сетевой город» сейчас не отвечает — попробуйте позже.'),
         { reason: 'server', sgoDown: true });
+    }
+    // Соединение оборвалось сразу (iPhone после сна, смена сети) — чтение
+    // повторяем один раз, прежде чем говорить, что сервер недоступен.
+    if (error.name !== 'AbortError' && !init.method && !networkRetried) {
+      clearTimeout(timer);
+      await new Promise((resolve) => setTimeout(resolve, 700));
+      return request(path, { ...options, networkRetried: true });
     }
     const failure = new Error(error.name === 'AbortError'
       ? 'Сервер приложения не ответил вовремя. Проверьте интернет и повторите попытку.'
@@ -479,6 +495,7 @@ export async function apiBlob(path) {
   if (initData) headers['X-Telegram-Init-Data'] = initData;
   if (token) headers['X-Netschool-Token'] = token;
   if (unlockToken) headers['X-Netschool-Unlock'] = unlockToken;
+  headers['X-Netschool-Tab'] = tabId;
   let response;
   try {
     response = await fetch(base + path, { headers, cache: 'no-store' });

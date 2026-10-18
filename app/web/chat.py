@@ -1090,15 +1090,27 @@ def _ws_signature(app: Any, body: str) -> str:
     return hmac.new(_ticket_key(app), f"chat-ws|{body}".encode(), hashlib.sha256).hexdigest()[:32]
 
 
-def issue_ws_ticket(app: Any, telegram_id: int, now: float | None = None) -> str:
+def issue_ws_ticket(app: Any, telegram_id: int, now: float | None = None, device: str = "") -> str:
+    """device — отпечаток токена устройства: завершат сеанс — сокет закроется."""
     body = f"{telegram_id}.{int((now if now is not None else time.time()) + WS_TICKET_TTL)}"
+    if device:
+        body += f".{device}"
     return f"{body}.{_ws_signature(app, body)}"
+
+
+def ws_ticket_device(ticket: str) -> str:
+    """Отпечаток устройства из билета, уже проверенного verify_ws_ticket."""
+    parts = ticket.split(".")
+    return parts[2] if len(parts) == 4 else ""
 
 
 def verify_ws_ticket(app: Any, ticket: str, now: float | None = None) -> int | None:
     try:
-        telegram_id, expires, signature = ticket.split(".")
-        body = f"{int(telegram_id)}.{int(expires)}"
+        *head, signature = ticket.split(".")
+        telegram_id, expires, *device = head
+        if len(device) > 1:
+            return None
+        body = ".".join([str(int(telegram_id)), str(int(expires)), *device])
     except ValueError:
         return None
     if not hmac.compare_digest(_ws_signature(app, body), signature):
@@ -1110,8 +1122,10 @@ def verify_ws_ticket(app: Any, ticket: str, now: float | None = None) -> int | N
 
 @routes.post("/api/chat/ws-ticket")
 async def chat_ws_ticket(request: web.Request) -> web.Response:
-    return web.json_response({"ok": True, "data": {
-        "ticket": issue_ws_ticket(context(request), current_user(request).telegram_id)}})
+    from .devices import fingerprint, request_token
+    token = "" if request.get("verified_telegram") else request_token(request)
+    return web.json_response({"ok": True, "data": {"ticket": issue_ws_ticket(
+        context(request), current_user(request).telegram_id, device=fingerprint(token) if token else "")}})
 
 
 @routes.get("/api/chat/ws")
@@ -1122,7 +1136,8 @@ async def chat_ws(request: web.Request) -> web.StreamResponse:
     schools = set() if acting_admin else set(await repo(request).moderated_schools(uid))
     socket = web.WebSocketResponse(heartbeat=25)
     await socket.prepare(request)
-    listener = Listener(uid, {room.id for room in profile_rooms(profile)}, acting_admin, schools, socket=socket)
+    listener = Listener(uid, {room.id for room in profile_rooms(profile)}, acting_admin, schools, socket=socket,
+                        tab=request.query.get("tab", "")[:40], device=ws_ticket_device(request.query.get("ticket", "")))
     if acting_admin:
         listener.name = rules.ADMIN_NAME
     elif profile and profile["nick"] and not profile["banned"]:
