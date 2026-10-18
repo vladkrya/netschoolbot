@@ -15,7 +15,7 @@
     <header class="top">
       <div>
         <h1>Статус «Сетевого города»</h1>
-        <p class="muted">Проверяем веб и мобильное API отдельно с vdsru и yavds. Результаты обновляются автоматически.</p>
+        <p class="muted">Проверяем веб и мобильное API отдельно. Результаты обновляются автоматически.</p>
       </div>
       <button class="primary" type="button" data-report>Сообщить о сбое</button>
     </header>
@@ -31,19 +31,18 @@
         <button type="button" data-range="7d" aria-pressed="false">7 дней</button>
         <button type="button" data-range="30d" aria-pressed="false">30 дней</button>
       </div>
-      <input type="search" id="search" placeholder="Регион или адрес" aria-label="Поиск сервера">
+      <input type="search" id="search" placeholder="Регион" aria-label="Поиск региона">
       <button type="button" id="refresh-status">Обновить</button>
       <span class="muted" id="live-status" role="status">Подключаемся…</span>
     </div>
 
     <section class="card route-card" aria-labelledby="route-title">
-      <h2 id="route-title">Доступность с наших серверов</h2>
+      <h2 id="route-title">Доступность по регионам</h2>
       <p class="muted route-help">В каждой ячейке — результат последней проверки без входа в аккаунт. Адреса мобильного API берём из <a href="https://mobile.ir-tech.ru/api/v1/mobile/parent/end-points" target="_blank" rel="noopener">каталога ИРТех</a>. Ответ API не гарантирует загрузку дневника.</p>
       <div id="route-summary" class="route-summary" aria-live="polite"></div>
-      <div class="route-scroll" tabindex="0" role="region" aria-label="Сравнение vdsru и yavds">
+      <div class="route-scroll" tabindex="0" role="region" aria-label="Доступность веба и мобильного API">
         <table class="route-table">
-          <thead><tr><th rowspan="2" scope="col">Регион</th><th colspan="2" scope="colgroup">vdsru · напрямую</th><th colspan="2" scope="colgroup">yavds</th></tr>
-          <tr><th scope="col">Веб</th><th scope="col">Мобильное API</th><th scope="col">Веб</th><th scope="col">Мобильное API</th></tr></thead>
+          <thead><tr><th scope="col">Регион</th><th scope="col">Веб</th><th scope="col">Мобильное API</th></tr></thead>
           <tbody id="route-hosts"></tbody>
         </table>
       </div>
@@ -56,8 +55,8 @@
     </section>
 
     <section class="card">
-      <h2>История по маршруту бота</h2>
-      <p class="muted route-help">Графики и проценты ниже относятся к веб-API по настроенному маршруту бота. Результаты с каждого сервера показаны отдельно выше.</p>
+      <h2>История проверок</h2>
+      <p class="muted route-help">Графики и проценты относятся к веб-API. Работающий веб остаётся доступным, даже если мобильное API не отвечает.</p>
       <div class="hosts-head" aria-hidden="true">
         <span>Сервер</span><span></span>
         <span class="axis-row"><span id="strip-from">24 ч назад</span><span>сейчас</span></span>

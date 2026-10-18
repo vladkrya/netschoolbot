@@ -112,8 +112,6 @@ class Probe:
     # None — мобильное API не проверяли (региона нет в приложении).
     mobile: bool | None = None
     mobile_error: str = ""
-    # Последний результат каждого независимого маршрута, без резервного перехода.
-    routes: dict[str, Probe] | None = None
 
 
 Prober = Callable[[Target], Awaitable[Probe]]
@@ -230,35 +228,6 @@ class HttpProber:
         return False, f"http {response.status_code}"
 
 
-class RoutedHttpProber:
-    """Сравнивает прямой выход и yavds. История остаётся на маршруте бота."""
-
-    def __init__(self, proxy_for: Callable[[str], str | None], yavds_proxy: str = "") -> None:
-        self._proxy_for = proxy_for
-        self._yavds_proxy = yavds_proxy
-        self._probers = {"vdsru": HttpProber()}
-        if yavds_proxy:
-            self._probers["yavds"] = HttpProber(lambda _url: yavds_proxy)
-        self._primary = HttpProber(proxy_for)
-
-    async def __call__(self, target: Target) -> Probe:
-        web_proxy = self._proxy_for(target.url)
-        mobile_proxy = self._proxy_for(target.mobile_url) if target.mobile_url else web_proxy
-        primary_route = None
-        if web_proxy == mobile_proxy and not web_proxy:
-            primary_route = "vdsru"
-        elif web_proxy == mobile_proxy == self._yavds_proxy and self._yavds_proxy:
-            primary_route = "yavds"
-        probers = dict(self._probers)
-        if primary_route is None:
-            probers["bot"] = self._primary
-        keys = list(probers)
-        results = await asyncio.gather(*(probers[key](target) for key in keys))
-        routes = dict(zip(keys, results))
-        primary = routes.pop("bot") if primary_route is None else routes[primary_route]
-        return replace(primary, routes=routes)
-
-
 def _maintenance_page(response: httpx.Response) -> bool:
     text = html.unescape(re.sub(r"<[^>]*>", " ", response.text[:100_000])).lower()
     text = " ".join(text.split())
@@ -330,7 +299,7 @@ class StatusService:
         self._cache: dict[str, tuple[float, dict]] = {}
         self._alerted: dict[str, float] = {}
         self._live: dict[str, tuple[float, dict]] = {}
-        self._route_checks: dict[str, dict] = {}
+        self._latest_checks: dict[str, dict] = {}
         self._listeners: set[asyncio.Queue] = set()
         self._revision = 0
         # Сообщения в группы Telegram о простоях и обновлениях (status/groups.py).
@@ -414,17 +383,11 @@ class StatusService:
             (target.host, at, result.ok, result.latency_ms, result.error, result.mobile)
             for target, result in zip(targets, results)
         ])
-        self._route_checks = {
-            target.host: {
-                "checked_at": at,
-                "mobile_error": result.mobile_error,
-                "routes": {
-                    route: {"ok": check.ok, "latency_ms": check.latency_ms,
-                            "error": check.error, "mobile": check.mobile,
-                            "mobile_error": check.mobile_error}
-                    for route, check in (result.routes or {}).items()
-                },
-            } for target, result in zip(targets, results)
+        self._latest_checks = {
+            target.host: {"checked_at": at, "ok": result.ok,
+                          "latency_ms": result.latency_ms, "error": result.error,
+                          "mobile": result.mobile, "mobile_error": result.mobile_error}
+            for target, result in zip(targets, results)
         }
         changed: dict[str, tuple[str, str]] = {}
         for target, result in zip(targets, results):
@@ -654,7 +617,7 @@ class StatusService:
                 "version": version["version"] if version else "",
                 "version_changed_at": version["changed_at"] if version else None,
                 "mobile_url": target.mobile_url,
-                "route_checks": self._route_checks.get(target.host),
+                "latest_check": self._latest_checks.get(target.host),
                 "in_app": bool(target.mobile_url),
                 "app_disabled": target.unavailable,
                 "notice": target.notice,

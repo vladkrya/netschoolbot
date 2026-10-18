@@ -202,12 +202,13 @@ async def run(settings: Settings, args: argparse.Namespace) -> int:
     # Страница статуса: бот сам опрашивает все серверы «Сетевого города»,
     # отдельно от пользователей и проверок оценок.
     from .db.repositories import SgoStatusRepository
-    from .status.service import RoutedHttpProber, StatusService, catalog_fetcher
+    from .status.service import HttpProber, StatusService, catalog_fetcher
 
     proxy_for = settings.netschool.proxy_for
+    status_proxy_for = (lambda _url: settings.netschool.status_yavds_proxy) if settings.netschool.status_yavds_proxy else proxy_for
     context.status = StatusService(
-        SgoStatusRepository(context.db), prober=RoutedHttpProber(proxy_for, settings.netschool.status_yavds_proxy),
-        catalog=catalog_fetcher(proxy_for),
+        SgoStatusRepository(context.db), prober=HttpProber(status_proxy_for),
+        catalog=catalog_fetcher(status_proxy_for),
         notify=tell_admin if settings.telegram.admin_id else None, secret=settings.secret_key,
     )
     # Сообщения о простоях и обновлениях в группы Telegram (/groups у админа).
