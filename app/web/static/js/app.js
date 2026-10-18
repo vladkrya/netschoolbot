@@ -692,6 +692,35 @@ async function showHalloweenNotice() {
   });
 }
 
+/** Разовое окно: файлы заданий теперь сохраняются у всех — что это и где выключить. */
+async function showKeepFilesNotice() {
+  if (demo) return;
+  await sheetFree();
+  let data;
+  try {
+    ({ data } = await api('/api/notices/keep-files', { method: 'POST' }));
+  } catch { return; /* Без связи покажем при следующем открытии. */ }
+  if (!data.show) return;
+  await sheetFree();
+  const settings = isNewDesign() ? 'вкладке <b>Настройки</b>' : 'меню <b>☰</b>';
+  const body = openSheet('📎 Файлы заданий под рукой', `
+    <p>Теперь все файлы к домашним заданиям сохраняются заранее — за две недели назад и вперёд.</p>
+    <p>Они открываются сразу и даже тогда, когда «Сетевой город» не работает: например, вечером накануне, когда сервер школы чаще всего лежит.</p>
+    <p class="muted small">Выключить можно в ${settings} → <b>Файлы заданий</b>. Уже сохранённое останется доступным.</p>
+    <div class="chat-actions">
+      <button class="btn" id="keepFilesOk">Понятно</button>
+      <button class="btn outline" id="keepFilesSettings">Открыть настройки</button>
+    </div>`);
+  body.querySelector('#keepFilesOk').addEventListener('click', () => {
+    tap('light');
+    closeSheet();
+  });
+  body.querySelector('#keepFilesSettings').addEventListener('click', () => {
+    closeSheet();
+    openDrawer();
+  });
+}
+
 /** Ждать, пока закроется уже открытая панель (объявление, другой опрос). */
 async function sheetFree() {
   while (!$('sheet').hidden) {
@@ -809,7 +838,7 @@ async function start() {
     }
     // Флаг «видел» уже пришёл с сервера — окошко не повторится на другом устройстве.
     dropInstallHints();
-    if (!isReadOnly()) showChatLaunchNotice().then(showHalloweenNotice).then(showSurvey);
+    if (!isReadOnly()) showChatLaunchNotice().then(showHalloweenNotice).then(showKeepFilesNotice).then(showSurvey);
     reportVisit();
   });
   offerPushOnFirstLaunch();

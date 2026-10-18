@@ -215,16 +215,13 @@ const NOTIFY_NOTES = {
 // Отметки посещаемости есть только в мобильном API.
 const MOBILE_ONLY = new Set(['absences']);
 
-/** «Сохранять файлы заданий» (бета): тумблер есть у админа, а у остальных —
- *  когда админ открыл доступ всем (второй тумблер, виден только ему). */
+/** «Сохранять файлы заданий»: включено у всех, здесь можно выключить. */
 function keepFilesSection(keep) {
-  if (!keep?.available && !keep?.admin) return '';
-  return `<section class="drawer-section">
-      <div class="drawer-heading">Файлы заданий <span class="beta-badge">бета</span></div>
-      ${keep.available ? `<label class="switch-row"><span>Сохранять файлы заданий<span class="muted small switch-note">файлы к Д/З хранятся ${keep.days || 14} дней и открываются, даже когда «Сетевой город» не работает</span></span>
-        <input type="checkbox" switch class="switch" id="keepFiles" ${keep.on ? 'checked' : ''}></label>` : ''}
-      ${keep.admin ? `<label class="switch-row"><span>Открыть всем<span class="muted small switch-note">видно только вам: без этого тумблер «Сохранять файлы» есть только у вас</span></span>
-        <input type="checkbox" switch class="switch" id="keepFilesAll" ${keep.all ? 'checked' : ''}></label>` : ''}
+  if (!keep?.available) return '';
+  return `<section class="drawer-section" id="keepFilesSection">
+      <div class="drawer-heading">Файлы заданий</div>
+      <label class="switch-row"><span>Сохранять файлы заданий<span class="muted small switch-note">файлы к Д/З за 2 недели назад и вперёд скачиваются заранее и открываются, даже когда «Сетевой город» не работает</span></span>
+        <input type="checkbox" switch class="switch" id="keepFiles" ${keep.on ? 'checked' : ''}></label>
     </section>`;
 }
 
@@ -985,7 +982,7 @@ function bindDrawer() {
       }
     })
   );
-  for (const [id, key] of [['keepFiles', 'on'], ['keepFilesAll', 'all']]) {
+  for (const [id, key] of [['keepFiles', 'on']]) {
     $(id)?.addEventListener('change', async (event) => {
       select();
       const input = event.target;

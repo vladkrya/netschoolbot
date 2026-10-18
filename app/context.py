@@ -164,24 +164,11 @@ class AppContext:
             ),
         )
 
-    async def keep_attachments_access(self, user: User) -> bool:
-        """Есть ли у человека тумблер «Сохранять файлы заданий» (бета):
-        у админа — всегда, у остальных — когда админ открыл доступ всем."""
-        from .attachments.keeper import ALL_FLAG
-        from .db.repositories import AppFlagRepository
-
-        admin = self.settings.telegram.admin_id
-        if admin and user.telegram_id == admin:
-            return True
-        return await AppFlagRepository(self.db).get(ALL_FLAG)
-
     async def keep_attachments_wanted(self, user: User) -> bool:
-        """Сохранять ли файлы этого человека: доступ есть и тумблер включён."""
+        """Сохранять ли файлы этого человека: у всех включено, пока сам не выключил."""
         from .attachments.keeper import PREF
 
-        if not await self.keep_attachments_access(user):
-            return False
-        return bool((await self.miniapp.prefs(user.telegram_id)).get(PREF))
+        return (await self.miniapp.prefs(user.telegram_id)).get(PREF) is not False
 
     async def shutdown(self) -> None:
         """Аккуратно закрыть всё, что открыли. Порядок важен."""
