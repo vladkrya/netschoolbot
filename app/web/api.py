@@ -460,29 +460,16 @@ def _utc_iso(moment: dt.datetime | None) -> str | None:
 
 
 async def _keep_attachments_info(app: AppContext, user: User) -> dict:
-    """Тумблер «Сохранять файлы заданий»: есть ли он, включён ли и — для
-    админа — открыт ли доступ всем."""
-    from ..attachments.keeper import ALL_FLAG, PREF
-    from ..db.repositories import AppFlagRepository
-
+    """Тумблер «Сохранять файлы заданий»: есть ли он и включён ли."""
     if app.attachments is None or not app.attachments.enabled:
         return {"available": False}
-    admin = bool(app.settings.telegram.admin_id) and user.telegram_id == app.settings.telegram.admin_id
-    return {
-        "available": await app.keep_attachments_access(user),
-        "on": bool((await app.miniapp.prefs(user.telegram_id)).get(PREF)),
-        "admin": admin,
-        "all": await AppFlagRepository(app.db).get(ALL_FLAG) if admin else False,
-        "days": app.settings.netschool.keep_attachments_days,
-    }
+    return {"available": True, "on": await app.keep_attachments_wanted(user)}
 
 
 @routes.post("/api/settings/keep-attachments")
 async def keep_attachments_setting(request: web.Request) -> web.Response:
-    """Свой тумблер «Сохранять файлы заданий»; admin_all — админ открывает
-    бету всем пользователям."""
-    from ..attachments.keeper import ALL_FLAG, PREF
-    from ..db.repositories import AppFlagRepository
+    """Свой тумблер «Сохранять файлы заданий»: у всех включён, выключить можно."""
+    from ..attachments.keeper import PREF
 
     app, user = context(request), current_user(request)
     try:
@@ -491,13 +478,7 @@ async def keep_attachments_setting(request: web.Request) -> web.Response:
         body = None
     if not isinstance(body, dict):
         return json_error("Некорректный запрос")
-    if "all" in body:
-        if not app.settings.telegram.admin_id or user.telegram_id != app.settings.telegram.admin_id:
-            return json_error("Это может только админ", status=403)
-        await AppFlagRepository(app.db).set(ALL_FLAG, bool(body["all"]))
     if "on" in body:
-        if not await app.keep_attachments_access(user):
-            return json_error("Сохранение файлов пока в бете и вам недоступно", status=403)
         await app.miniapp.save_prefs(user.telegram_id, {PREF: bool(body["on"])})
     return web.json_response({"ok": True, "data": await _keep_attachments_info(app, user)})
 
@@ -1783,6 +1764,19 @@ async def halloween_notice(request: web.Request) -> web.Response:
         await app.miniapp.save_prefs(user.telegram_id, {"halloween_notice": True})
     data = {"show": show, "bug_report": bool(app.settings.web.captcha_url)}
     return web.json_response({"ok": True, "data": data}, headers={"Cache-Control": "no-store"})
+
+
+@routes.post("/api/notices/keep-files")
+async def keep_files_notice(request: web.Request) -> web.Response:
+    """Разовая карточка «файлы заданий теперь сохраняются у всех» — тем, у кого
+    сохранение есть и не выключено; флаг в общих настройках, как у хеллоуина."""
+    app, user = context(request), current_user(request)
+    prefs = await app.miniapp.prefs(user.telegram_id)
+    show = (app.attachments is not None and app.attachments.enabled
+            and not prefs.get("keep_files_notice") and await app.keep_attachments_wanted(user))
+    if show:
+        await app.miniapp.save_prefs(user.telegram_id, {"keep_files_notice": True})
+    return web.json_response({"ok": True, "data": {"show": show}}, headers={"Cache-Control": "no-store"})
 
 
 @routes.post("/api/notices/survey")
