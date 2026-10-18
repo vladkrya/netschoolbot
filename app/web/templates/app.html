@@ -25,7 +25,7 @@
     // «Анимации» выключены в настройках — до первой отрисовки, без мигания.
     if (localStorage.getItem('ns-motion') === 'off') document.documentElement.classList.add('no-motion');
     var bg = fresh ? (dark ? '#0f1217' : '#f3f4f8') : (dark ? '#141a22' : '#eef1f6');
-    // Хеллоуинское оформление (пока только у админа) — ночное, со своим цветом акцента.
+    // Хеллоуинское оформление (в сезон у всех) — ночное, со своим цветом акцента.
     if ({{ 'true' if token or demo else 'false' }} && localStorage.getItem('ns-halloween') === 'on'
         && localStorage.getItem('ns-signed-out') !== {{ token | tojson }}) {
       document.documentElement.setAttribute('data-holiday', 'halloween');
