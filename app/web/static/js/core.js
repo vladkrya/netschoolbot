@@ -230,7 +230,18 @@ function staleBanner(show, reason, source) {
   // Свежий ответ пришёл — плашка о сохранённых данных больше не правда.
   if (!show) clearNotices();
   else if (reason === 'auth') loginFailedNotice();
+  else if ($('sgoDown')) return;  // о простое школы уже сказано карточкой
   else showNotice(source === 'app' ? APP_SERVER_TEXT : reason === 'server' ? SERVER_TEXT : STALE_TEXT);
+  if (show && reason === 'server' && source !== 'app') sgoHint(true);
+}
+
+// Дневник грузится дольше этого — спрашиваем, не лежит ли сервер школы
+// (sgo.js): человеку лучше сразу узнать, что ждать бесполезно.
+const SGO_SLOW_MS = 8000;
+
+function sgoHint(failed = false) {
+  if (demo) return;
+  import('./sgo.js').then((module) => module.checkServer({ failed })).catch(() => {});
 }
 
 // «Сетевой город» не пускает с сохранённым паролем — скорее всего, его
@@ -287,6 +298,8 @@ async function request(path, options = {}) {
   // бесконечно. Сервер сам отвечает не дольше минуты при обновлении.
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), path.startsWith('/api/lock/') ? 10000 : REQUEST_TIMEOUT_MS);
+  const slow = path.startsWith('/api/lock/') || path.startsWith('/api/sgo/') || options.method
+    ? 0 : setTimeout(sgoHint, SGO_SLOW_MS);
   const { onFresh, retried, ...init } = options;
   let response;
   try {
@@ -302,6 +315,7 @@ async function request(path, options = {}) {
     throw failure;
   } finally {
     clearTimeout(timer);
+    clearTimeout(slow);
   }
 
   let payload;
@@ -319,6 +333,7 @@ async function request(path, options = {}) {
     error.reason = payload.reason;
     // Сохранённых данных нет — экран покажет ошибку, а уведомление даст войти.
     if (error.reason === 'auth') loginFailedNotice();
+    if (error.reason === 'server' && !path.startsWith('/api/sgo/')) sgoHint(true);
     throw error;
   }
   if (response.headers.get('X-Netschool-Offline')) {

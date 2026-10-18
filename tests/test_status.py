@@ -49,14 +49,16 @@ async def test_probes_build_states_incidents_and_versions(db):
     version = {"v": "5.40"}
 
     async def prober(target):
-        if target.host == DOWN:
+        if target.host == DOWN and rounds[0]:
             return Probe(False, 20000, error="timeout", mobile=False)
         return Probe(True, 300, version=version["v"], mobile=True if target.mobile_url else None)
 
+    rounds = [0]
     service, now = make_service(db, prober)
-    for _ in range(4):
+    for _ in range(5):
         await service.probe_all()
         now[0] += PROBE_EVERY_S
+        rounds[0] += 1
     version["v"] = "5.41"
     await service.probe_all()
 
@@ -64,9 +66,9 @@ async def test_probes_build_states_incidents_and_versions(db):
     hosts = {h["host"]: h for h in data["hosts"]}
     assert "sgo.new.ru" in hosts  # список — из каталога
     assert hosts[DOWN]["state"] == "down" and hosts[DOWN]["error"] == "timeout"
-    assert hosts[DOWN]["uptime"] == 0 and hosts[DOWN]["down_since"] == 1_000_000.0
+    assert hosts[DOWN]["uptime"] == round(100 / 6, 2) and hosts[DOWN]["down_since"] == 1_000_000.0 + PROBE_EVERY_S
     assert hosts[DOWN]["app_disabled"] and hosts[DOWN]["notice"]
-    assert hosts[DOWN]["mobile"] is False and hosts[DOWN]["mobile_uptime"] == 0
+    assert hosts[DOWN]["mobile"] is False
     assert hosts[MORDOVIA]["state"] == "up" and hosts[MORDOVIA]["uptime"] == 100
     assert hosts[MORDOVIA]["mobile"] is True and hosts[MORDOVIA]["in_app"]
     assert hosts["sgo.volganet.ru"]["mobile"] is None and not hosts["sgo.volganet.ru"]["in_app"]
@@ -217,3 +219,111 @@ async def test_migration_moves_version_history_from_shared_table(tmp_path):
         assert (await (await conn.execute("SELECT mobile FROM sgo_probes")).fetchone()) == (None,)
         tables = {row[0] for row in await (await conn.execute("SELECT name FROM sqlite_master")).fetchall()}
         assert "sgo_version_history" not in tables
+
+
+async def test_never_reachable_server_has_no_data_instead_of_down(db):
+    async def prober(target):
+        if target.host == MORDOVIA:
+            return Probe(False, 0, error="connect")  # с нашего сервера не открывается
+        if target.host == DOWN:
+            return Probe(True, 100) if service_round[0] == 0 else Probe(False, 0, error="timeout")
+        return Probe(True, 100)
+
+    service_round = [0]
+    service, now = make_service(db, prober)
+    for index in range(4):
+        service_round[0] = index
+        await service.probe_all()
+        now[0] += PROBE_EVERY_S
+    data = await service.summary("24h")
+    hosts = {h["host"]: h for h in data["hosts"]}
+    assert hosts[MORDOVIA]["state"] == "blocked" and hosts[MORDOVIA]["uptime"] is None
+    assert all(bar is None for bar in hosts[MORDOVIA]["bars"])
+    assert hosts[DOWN]["state"] == "down"  # отвечал раньше — значит, правда лёг
+    assert {i["host"] for i in data["incidents"]} == {DOWN}
+    assert data["overview"]["down"][-1] == 1
+
+
+async def test_app_alerts_when_server_is_back_and_on_update(db, users):
+    from app.domain.models import School
+    from app.status.alerts import SgoAlerts
+    from tests.test_repositories import make_user
+
+    await users.save(make_user(school=School(url=f"https://{DOWN}/", name="Школа")))
+    up = {"v": False, "version": "5.40"}
+
+    async def prober(target):
+        return Probe(True, 100, version=up["version"]) if up["v"] else Probe(False, 0, error="timeout")
+
+    sent: list[tuple] = []
+
+    async def deliver(telegram_id, text, title, body):
+        sent.append((telegram_id, text, title))
+
+    service, now = make_service(db, prober)
+    repo = SgoStatusRepository(db)
+    alerts = SgoAlerts(service, repo, deliver, clock=lambda: now[0])
+    # Сервер отвечал раньше, теперь лёг.
+    up["v"] = True
+    await service.probe_all()
+    now[0] += PROBE_EVERY_S
+    up["v"] = False
+    for _ in range(2):
+        await service.probe_all()
+        now[0] += PROBE_EVERY_S
+
+    info = await alerts.info(1, f"https://{DOWN}/")
+    assert info["state"] == "down" and info["region"] == "Челябинская область" and info["down_since"]
+    assert info["subscribed"] == {"up": False, "updates": False}
+    info = await alerts.subscribe(1, f"https://{DOWN}/", "up", True)
+    assert info["subscribed"]["up"]
+    await alerts.subscribe(1, f"https://{DOWN}/", "updates", True)
+
+    await alerts.check()
+    assert sent == []  # всё ещё лежит
+    up.update(v=True, version="5.41")
+    await service.probe_all()
+    await alerts.check()
+    texts = [text for _, text, _ in sent]
+    assert any("снова работает" in t and "Челябинская" in t for t in texts)
+    assert any("5.40 → 5.41" in t for t in texts)
+    assert (await alerts.info(1, f"https://{DOWN}/"))["subscribed"] == {"up": False, "updates": True}
+
+    sent.clear()
+    await alerts.check()
+    assert sent == []  # повторно не пишем
+    # Сервер работает — ждать нечего, подписка не нужна.
+    info = await alerts.subscribe(1, f"https://{DOWN}/", "up", True)
+    assert info["already_up"] and not info["subscribed"]["up"]
+
+
+async def test_live_state_probes_servers_outside_the_list(db):
+    calls = []
+
+    async def prober(target):
+        calls.append(target.url)
+        return Probe(False, 0, error="connect")
+
+    service, _ = make_service(db, prober)
+    state = await service.live_state("https://sgo.other.ru/some/path")
+    assert calls == ["https://sgo.other.ru"] and state["state"] == "blocked"
+    await service.live_state("https://sgo.other.ru/")
+    assert len(calls) == 1  # помним две минуты
+
+
+async def test_app_endpoints(client, app_context, users):
+    from app.domain.models import School
+    from tests.test_repositories import make_user
+
+    await users.save(make_user(school=School(url=f"https://{DOWN}", name="Школа")))
+    token = await app_context.miniapp.issue_token(1)
+    headers = {"X-Netschool-Token": token}
+    response = await client.get("/mini/api/sgo/server", headers=headers)
+    data = (await response.json())["data"]
+    assert data["state"] == "unknown" and data["subscribed"] == {"up": False, "updates": False}
+    response = await client.post("/mini/api/sgo/notify", headers=headers, json={"kind": "updates", "on": True})
+    assert (await response.json())["data"]["subscribed"]["updates"]
+    response = await client.get("/mini/api/profile", headers=headers)
+    assert (await response.json())["data"]["sgo_updates"] is True
+    response = await client.post("/mini/api/sgo/notify", headers=headers, json={"kind": "nope"})
+    assert response.status == 400

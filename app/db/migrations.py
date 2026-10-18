@@ -704,6 +704,20 @@ MIGRATIONS: list[str] = [
     SELECT host, version, previous, changed_at FROM sgo_version_history;
     DROP TABLE sgo_version_history;
     """,
+    # 43 — подписки из приложения: «сообщить, когда сервер «Сетевого города»
+    # заработает» (kind='up', разовая) и «об обновлениях сервера»
+    # (kind='updates', version — последняя, о которой уже знает человек).
+    """
+    CREATE TABLE sgo_alerts (
+        telegram_id INTEGER NOT NULL REFERENCES users(telegram_id) ON DELETE CASCADE,
+        host TEXT NOT NULL,
+        url TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        version TEXT NOT NULL DEFAULT '',
+        created_at REAL NOT NULL,
+        PRIMARY KEY (telegram_id, host, kind)
+    );
+    """,
 ]
 
 

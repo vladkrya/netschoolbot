@@ -62,3 +62,49 @@ async def status_report(request: web.Request) -> web.Response:
     if refused:
         return web.json_response({"ok": False, "error": refused}, status=400)
     return web.json_response({"ok": True})
+
+
+# ───────────────────────── из приложения (со входом) ─────────────────────────
+
+
+async def _school_url(request: web.Request) -> tuple[int, str]:
+    """Кому сообщать и о каком сервере: о школе открытого дневника — своего
+    или того, что приглашённый смотрит."""
+    from . import viewing
+    from .api import context, current_user
+
+    app, user = context(request), current_user(request)
+    owner = await viewing.target(app, user)
+    return user.telegram_id, (owner or user).school.url
+
+
+@routes.get("/api/sgo/server")
+async def sgo_server(request: web.Request) -> web.Response:
+    """Что с сервером «Сетевого города» школы — приложение спрашивает,
+    когда дневник грузится долго или школа не ответила."""
+    from .api import context, json_error
+
+    telegram_id, url = await _school_url(request)
+    if not url:
+        return json_error("Школа не выбрана")
+    data = await context(request).sgo_alerts.info(telegram_id, url)
+    return web.json_response({"ok": True, "data": data})
+
+
+@routes.post("/api/sgo/notify")
+async def sgo_notify(request: web.Request) -> web.Response:
+    """Подписка: «сообщить, когда заработает» (up) или «об обновлениях» (updates)."""
+    from ..status.alerts import KINDS
+    from .api import context, json_error
+
+    try:
+        body = await request.json()
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        body = None
+    if not isinstance(body, dict) or body.get("kind") not in KINDS:
+        return json_error("Некорректный запрос")
+    telegram_id, url = await _school_url(request)
+    if not url:
+        return json_error("Школа не выбрана")
+    data = await context(request).sgo_alerts.subscribe(telegram_id, url, body["kind"], bool(body.get("on", True)))
+    return web.json_response({"ok": True, "data": data})

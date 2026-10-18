@@ -205,6 +205,20 @@ async def run(settings: Settings, args: argparse.Namespace) -> int:
         SgoStatusRepository(context.db), prober=HttpProber(proxy_for), catalog=catalog_fetcher(proxy_for),
         notify=tell_admin if settings.telegram.admin_id else None, secret=settings.secret_key,
     )
+    from .accounts import has_telegram
+    from .status.alerts import SgoAlerts
+
+    async def deliver_sgo(telegram_id: int, text: str, title: str, body: str) -> None:
+        # Человек сам попросил — поэтому и в Telegram, и во все push, даже
+        # если обычные уведомления в Telegram у него выключены.
+        try:
+            await push.send(telegram_id, title, body, kind="sgo")
+        except Exception as exc:  # noqa: BLE001 — Telegram важнее
+            logger.info("Push о «Сетевом городе» для %s не ушёл: %s", telegram_id, exc)
+        if has_telegram(telegram_id):
+            await bot.send_message(telegram_id, text)
+
+    context.sgo_alerts = SgoAlerts(context.status, SgoStatusRepository(context.db), deliver_sgo)
 
     supervisor = Supervisor()
     tasks: list[asyncio.Task] = [
@@ -230,6 +244,9 @@ async def run(settings: Settings, args: argparse.Namespace) -> int:
     # Опрос серверов для страницы статуса: его сбой бота не роняет.
     tasks.append(
         supervisor.watch(asyncio.create_task(context.status.run(), name="sgo-status"), critical=False)
+    )
+    tasks.append(
+        supervisor.watch(asyncio.create_task(context.sgo_alerts.run(), name="sgo-alerts"), critical=False)
     )
     if settings.telegram.admin_id:
         tasks.append(

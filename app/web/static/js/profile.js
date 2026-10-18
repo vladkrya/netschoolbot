@@ -817,6 +817,8 @@ function render() {
         .filter(([key]) => key !== 'all_children' || data.students.length > 1)
         .map(([key, label]) => toggle(key, label, data.notifications[key]))
         .join('')}
+      <label class="switch-row"><span>Обновления «Сетевого города»<span class="muted small switch-note">новая версия на сервере вашего региона — в Telegram и push</span></span>
+        <input type="checkbox" switch class="switch" id="sgoUpdates" ${data.sgo_updates ? 'checked' : ''}></label>
       <label class="switch-row"><span>Время напоминания</span>
         <select class="field reminder-hour" id="reminderHour">${[15, 16, 17, 18, 19, 20, 21].map((hour) =>
           `<option value="${hour}" ${hour === (data.notifications.reminder_hour ?? 18) ? 'selected' : ''}>${hour}:00</option>`).join('')}</select></label>
@@ -968,6 +970,24 @@ function bindDrawer() {
       }
     })
   );
+  $('sgoUpdates')?.addEventListener('change', async (event) => {
+    select();
+    const input = event.target;
+    input.disabled = true;
+    try {
+      const { data } = await api('/api/sgo/notify', {
+        method: 'POST', body: JSON.stringify({ kind: 'updates', on: input.checked }),
+      });
+      state.profile.sgo_updates = Boolean(data.subscribed?.updates);
+      input.checked = state.profile.sgo_updates;
+    } catch (error) {
+      notify('error');
+      input.checked = !input.checked;
+      banner(error.message, true);
+    } finally {
+      input.disabled = false;
+    }
+  });
   $('reminderHour')?.addEventListener('change', async (event) => {
     select();
     try {
