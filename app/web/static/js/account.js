@@ -64,6 +64,7 @@ function heroHtml() {
         в одном красивом приложении. Работает в Telegram, в браузере и на домашнем экране телефона.</p>
       <div class="ld-actions">
         <a class="btn ld-demo" href="${base}/demo">▶ Демо-режим</a>
+        <a class="btn outline ld-status" href="${base}/status"><i class="ld-status-dot" aria-hidden="true"></i>Статус серверов</a>
       </div>
     </section>
     <div class="ld-preview" aria-hidden="true">

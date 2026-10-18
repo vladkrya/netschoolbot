@@ -2246,6 +2246,8 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
 .landing .ld-actions .btn.ld-demo { color: #fff; border: 0; background: linear-gradient(120deg, var(--head, #4a6fae), #8b5cf6);
   box-shadow: 0 8px 22px color-mix(in srgb, #8b5cf6 35%, transparent); animation: ld-glow 3s ease-in-out infinite; }
 @keyframes ld-glow { 50% { box-shadow: 0 8px 30px color-mix(in srgb, #8b5cf6 60%, transparent); } }
+.landing .ld-actions .btn.ld-status { color: var(--text); }
+.ld-status-dot { width: 8px; height: 8px; border-radius: 50%; background: #22c55e; box-shadow: 0 0 0 3px color-mix(in srgb, #22c55e 25%, transparent); }
 .landing .account-card .btn.ld-tg-login { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%;
   margin: 6px 0 0; padding: 12px; background: #2aabee; border-color: #2aabee; color: #fff; text-decoration: none; font-weight: 600; }
 .landing .account-card [data-landing-bot][hidden] { display: none; }
