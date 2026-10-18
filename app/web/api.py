@@ -586,6 +586,8 @@ async def diary(request: web.Request) -> web.Response:
     async def produce(app: AppContext, user: User):
         today = user.today() + dt.timedelta(weeks=offset)
         days = await app.diary.fetch_diary(user, weeks_back=0 if compact else 1, weeks_forward=0 if compact else 1, today=today)
+        # Обновление вручную — тоже успешная проверка: время в настройках не отстаёт.
+        await app.state.mark_watch_ok(user.telegram_id)
         if compact and user.effective_api_mode is not ApiMode.MOBILE:
             cached_teachers = await app.cache.get(user.telegram_id, "teachers")
             teachers = dict(cached_teachers[0]) if cached_teachers else {}
