@@ -1936,3 +1936,57 @@ class SgoStatusRepository:
     async def prune(self, probes_before: float, reports_before: float) -> None:
         await self._db.execute("DELETE FROM sgo_probes WHERE at < ?", (probes_before,))
         await self._db.execute("DELETE FROM sgo_reports WHERE created_at < ?", (reports_before,))
+
+
+class KeptAttachmentRepository:
+    """Вложения заданий, скачанные заранее: что лежит на диске и кому его отдавать."""
+
+    def __init__(self, db: Database) -> None:
+        self._db = db
+
+    async def saved(self, host: str, mode: str, attachment_id: int) -> dict | None:
+        row = await self._db.fetch_one(
+            "SELECT size, saved_at FROM kept_attachments WHERE host = ? AND mode = ? AND attachment_id = ?",
+            (host, mode, attachment_id),
+        )
+        return dict(row) if row else None
+
+    async def add(self, host: str, mode: str, attachment_id: int, size: int, now: float) -> None:
+        await self._db.execute(
+            "INSERT INTO kept_attachments (host, mode, attachment_id, size, saved_at) VALUES (?, ?, ?, ?, ?) "
+            "ON CONFLICT(host, mode, attachment_id) DO UPDATE SET size = excluded.size, saved_at = excluded.saved_at",
+            (host, mode, attachment_id, size, now),
+        )
+
+    async def grant(self, telegram_id: int, host: str, mode: str, ids: list[int]) -> None:
+        await self._db.execute_many(
+            "INSERT OR IGNORE INTO kept_attachment_access (telegram_id, host, mode, attachment_id) VALUES (?, ?, ?, ?)",
+            [(telegram_id, host, mode, attachment_id) for attachment_id in ids],
+        )
+
+    async def allowed(self, telegram_id: int, host: str, mode: str, attachment_id: int) -> bool:
+        row = await self._db.fetch_one(
+            "SELECT 1 FROM kept_attachment_access WHERE telegram_id = ? AND host = ? AND mode = ? AND attachment_id = ?",
+            (telegram_id, host, mode, attachment_id),
+        )
+        return row is not None
+
+    async def total_size(self) -> int:
+        row = await self._db.fetch_one("SELECT COALESCE(SUM(size), 0) FROM kept_attachments")
+        return int(row[0]) if row else 0
+
+    async def oldest(self, limit: int = 100) -> list[dict]:
+        rows = await self._db.fetch_all(
+            "SELECT host, mode, attachment_id, size, saved_at FROM kept_attachments ORDER BY saved_at LIMIT ?", (limit,))
+        return [dict(row) for row in rows]
+
+    async def expired(self, before: float) -> list[dict]:
+        rows = await self._db.fetch_all(
+            "SELECT host, mode, attachment_id FROM kept_attachments WHERE saved_at < ?", (before,))
+        return [dict(row) for row in rows]
+
+    async def remove(self, items: list[tuple[str, str, int]]) -> None:
+        await self._db.execute_many(
+            "DELETE FROM kept_attachments WHERE host = ? AND mode = ? AND attachment_id = ?", items)
+        await self._db.execute_many(
+            "DELETE FROM kept_attachment_access WHERE host = ? AND mode = ? AND attachment_id = ?", items)

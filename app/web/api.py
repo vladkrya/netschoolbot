@@ -1334,6 +1334,10 @@ async def attachment(request: web.Request) -> web.Response:
     cached = _attachment_cache(app, user.telegram_id, attachment_id)
     if cached.exists() and time.time() - cached.stat().st_mtime < ATTACHMENT_CACHE_S:
         payload = cached.read_bytes()
+    elif app.attachments is not None and (kept := await app.attachments.get(user, attachment_id)) is not None:
+        # Скачано заранее (attachments/keeper.py): открывается сразу и тогда,
+        # когда «Сетевой город» лежит.
+        payload = kept
     else:
         try:
             payload = await asyncio.wait_for(
@@ -1343,6 +1347,8 @@ async def attachment(request: web.Request) -> web.Response:
                 "«Сетевой город» не отдал файл за полторы минуты — сервер школы перегружен. "
                 "Попробуйте ещё раз позже.", status=504, reason="server")
         _store_attachment(cached, payload)
+        if app.attachments is not None:
+            await app.attachments.store(user, attachment_id, payload)
     if request.query.get("prepare"):
         # Страница ожидания сперва ждёт файл здесь, а потом открывает прямую
         # ссылку — она отдаётся из кэша сразу, и браузер сам решает, показать

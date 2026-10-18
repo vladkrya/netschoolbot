@@ -222,6 +222,9 @@ async def run(settings: Settings, args: argparse.Namespace) -> int:
     context.sgo_alerts = SgoAlerts(context.status, SgoStatusRepository(context.db), deliver_sgo,
                                    fetch=logindata_fetcher(context))
     context.watchers.outages.listen(context.sgo_alerts.record_check)
+    # Вложения заданий — на диск заранее, чтобы открывались при простое СГО.
+    if context.attachments.enabled:
+        context.watchers.homework_seen = context.attachments.offer
 
     supervisor = Supervisor()
     tasks: list[asyncio.Task] = [

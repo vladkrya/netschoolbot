@@ -133,6 +133,7 @@ async def test_run_exits_nonzero_when_web_crashes(monkeypatch, tmp_path):
     class FakeContext:
         watchers = FakeWatchers()
         miniapp = users = db = family = notes = None
+        attachments = types.SimpleNamespace(enabled=False)
 
         async def shutdown(self):
             stopped.append("context")

@@ -143,8 +143,11 @@ class UserWatcher:
         outages: OutageMonitor | None = None,
         live: Callable[[int, dict], Awaitable[None]] | None = None,
         notes: Any = None,
+        homework_seen: Callable[[User, list[HomeworkRecord]], None] | None = None,
     ) -> None:
         self._user_id = user_id
+        # Задания с вложениями — хранилищу файлов (attachments/keeper.py).
+        self._homework_seen = homework_seen
         # Свои задачи ученика — для вечернего напоминания (NotesRepository).
         self._notes = notes
         self._last_children_check: float | None = None
@@ -298,6 +301,11 @@ class UserWatcher:
             today=today,
         )
         self._note_full_sync(events)
+        if self._homework_seen is not None:
+            try:
+                self._homework_seen(user, homework)
+            except Exception as exc:  # noqa: BLE001 — файлы вторичны
+                logger.debug("Вложения заданий %s не переданы: %s", user.telegram_id, exc)
         # Открытое приложение обновит экраны сразу, не дожидаясь своего опроса.
         # Сообщаем о любых изменениях, даже если уведомления о них выключены.
         changed = [kind for kind, present in (
@@ -833,6 +841,8 @@ class WatcherRegistry:
         self.outages = OutageMonitor()
         # Сигнал открытому приложению о новом (задаёт веб-сервер).
         self.live: Callable[[int, dict], Awaitable[None]] | None = None
+        # Увиденные задания — хранилищу вложений (задаёт main.py).
+        self.homework_seen: Callable[[User, list[HomeworkRecord]], None] | None = None
         self._tasks: dict[int, asyncio.Task] = {}
         self._lock = asyncio.Lock()
 
@@ -868,6 +878,7 @@ class WatcherRegistry:
                 outages=self.outages,
                 live=self._signal,
                 notes=self._notes,
+                homework_seen=self.homework_seen,
             )
             task = asyncio.create_task(watcher.run(), name=f"watch-{user_id}")
             self._tasks[user_id] = task

@@ -258,6 +258,16 @@ class TestFirstRun:
         assert signals == [(1, {"t": "diary", "kinds": ["marks"]})]
         assert notifier.mark_events == []
 
+    async def test_seen_homework_goes_to_attachment_keeper(self, users, marks, diary, notifier):
+        """Задания из полной сверки — хранилищу вложений (attachments/keeper.py)."""
+        seen = []
+        await users.save(make_user())
+        watcher = UserWatcher(1, users=users, state=marks, diary=diary, notifier=notifier,
+                              homework_seen=lambda user, items: seen.append((user.telegram_id, list(items))))
+        diary.marks = [record(0)]
+        await watcher.run_once()
+        assert seen and seen[0][0] == 1
+
 
 class TestChanges:
     async def test_changed_mark(self, users, watcher, diary, notifier):

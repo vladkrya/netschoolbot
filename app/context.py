@@ -15,6 +15,7 @@ from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from .attachments.keeper import AttachmentKeeper
     from .caldav.service import CaldavService
     from .domain.models import User
     from .status.alerts import SgoAlerts
@@ -78,6 +79,8 @@ class AppContext:
     status: StatusService | None = None
     # Подписки из приложения: «когда заработает», «об обновлениях» (status/alerts.py).
     sgo_alerts: SgoAlerts | None = None
+    # Вложения заданий, скачанные заранее (attachments/keeper.py).
+    attachments: AttachmentKeeper | None = None
 
     def __post_init__(self) -> None:
         if self.family is None:
@@ -99,6 +102,16 @@ class AppContext:
             from .status.alerts import SgoAlerts
 
             self.sgo_alerts = SgoAlerts(self.status, SgoStatusRepository(self.db))
+        if self.attachments is None:
+            from .attachments.keeper import AttachmentKeeper
+            from .db.repositories import KeptAttachmentRepository
+
+            netschool = self.settings.netschool
+            self.attachments = AttachmentKeeper(
+                # Папка — по текущим настройкам: в тестах data_dir меняют после сборки.
+                KeptAttachmentRepository(self.db), self.diary, lambda: self.settings.data_dir / "attachments",
+                days=netschool.keep_attachments_days, max_bytes=netschool.keep_attachments_mb * 1024 * 1024,
+            )
 
     @classmethod
     async def create(cls, settings: Settings, notifier: Notifier | None = None) -> "AppContext":
