@@ -9,5 +9,6 @@ for (const [web, mobile, expected] of [[true,true,'up'],[true,false,'up'],[false
 }
 test('No mobile catalogue: web determines availability', () => assert.equal(availability(region(false,null,{in_app:false}),1010).state,'down'));
 test('Stale checks do not become an outage', () => assert.equal(availability(region(false,false),1200).state,'unknown'));
-test('Previously unreachable region is unavailable when both APIs fail', () => assert.equal(availability(region(false,false,{web_state:'blocked'}),1010).state,'down'));
+test('Region never reachable from our servers is not an outage', () => assert.equal(availability(region(false,false,{state:'blocked'}),1010).label,'Недоступен с наших серверов'));
+test('Blocked region with working mobile API is up', () => assert.equal(availability(region(false,true,{state:'blocked'}),1010).state,'up'));
 test('Altai web remains available', () => assert.equal(availability(region(true,false),1010).label,'Веб работает'));

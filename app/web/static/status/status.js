@@ -203,7 +203,7 @@ function matches(host) {
   return (host.region || '').toLowerCase().includes(query);
 }
 
-const BLOCKED_TEXT = 'Успешных проверок по маршруту бота ещё не было. Причина последней ошибки показана в таблице. Сайт может открываться из других сетей.';
+const BLOCKED_TEXT = 'Сервер не отвечает на запросы с наших серверов, поэтому бот не может его проверить и работать с ним. Это не обязательно сбой: из других сетей сайт может открываться.';
 
 function hostDetails(host) {
   const incidents = data.incidents.filter((i) => i.host === host.host).slice(0, 5);
@@ -295,7 +295,8 @@ function hostRow(host) {
 }
 
 function renderHosts() {
-  const order = { down: 0, up: 1, unknown: 2 };
+  // Недоступные с наших серверов — в самом конце: о самом регионе они ничего не говорят.
+  const order = { down: 0, up: 1, unknown: 2, blocked: 3 };
   const hosts = data.hosts.filter(matches)
     .sort((a, b) => (order[availability(a).state] - order[availability(b).state]) || name(a).localeCompare(name(b), 'ru'));
   $('#hosts').replaceChildren(...(hosts.length ? hosts.map(hostRow) : [el('div', { class: 'muted' }, 'Ничего не нашлось')]));
@@ -357,7 +358,7 @@ document.querySelectorAll('#feed-tabs button').forEach((button) => button.addEve
 
 function renderBanner() {
   const down = data.hosts.filter((h) => availability(h).state === 'down');
-  const checked = data.hosts.filter((h) => availability(h).state !== 'unknown');
+  const checked = data.hosts.filter((h) => !['unknown', 'blocked'].includes(availability(h).state));
   const banner = $('#banner');
   let cls = 'good', icon = '✓', title = 'Серверы доступны', sub = '';
   if (down.length) {
