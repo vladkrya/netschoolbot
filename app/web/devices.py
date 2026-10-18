@@ -49,6 +49,8 @@ def masked_ip(request: web.Request) -> str:
 async def touch(request: web.Request, token: str) -> None:
     ua = request.headers.get("User-Agent", "")
     label, model = describe_browser(ua), device_model(ua)
+    if request.headers.get('X-Netschool-Client') == 'pwa':
+        label = 'Веб-приложение · ' + label
     version = system_version(ua)
     key = f"{token}|{label}|{model}"
     now = time.monotonic()

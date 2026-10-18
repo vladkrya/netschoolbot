@@ -215,6 +215,7 @@ const REVALIDATE_AFTER_S = 60;
 const OFFLINE_TEXT = 'Нет связи — показаны сохранённые данные';
 const STALE_TEXT = 'Не удалось обновить дневник. Показаны сохранённые данные.';
 // Школьный сервер не отвечает (техработы, сбой): ничего делать не нужно.
+const APP_SERVER_TEXT = 'Не удалось подключиться к серверу приложения. Показаны сохранённые данные.';
 const SERVER_TEXT = 'Не удалось подключиться к серверу «Сетевого города». Показаны сохранённые данные.';
 // Пути, которые за этот запуск уже сверили со школьным сервером.
 const revalidated = new Set();
@@ -225,11 +226,11 @@ export function forgetRevalidated() {
   revalidated.clear();
 }
 
-function staleBanner(show, reason) {
+function staleBanner(show, reason, source) {
   // Свежий ответ пришёл — плашка о сохранённых данных больше не правда.
   if (!show) clearNotices();
   else if (reason === 'auth') loginFailedNotice();
-  else showNotice(reason === 'server' ? SERVER_TEXT : STALE_TEXT);
+  else showNotice(source === 'app' ? APP_SERVER_TEXT : reason === 'server' ? SERVER_TEXT : STALE_TEXT);
 }
 
 // «Сетевой город» не пускает с сохранённым паролем — скорее всего, его
@@ -276,6 +277,8 @@ async function request(path, options = {}) {
   const headers = { ...(isForm ? {} : { 'Content-Type': 'application/json' }), ...(options.headers || {}) };
   // initData подписана токеном бота — сервер доверяет ей больше, чем
   // токену из ссылки, поэтому шлём оба и приоритет отдаёт он.
+  headers['X-Netschool-Client'] = initData ? 'telegram'
+    : (window.matchMedia?.('(display-mode: standalone)').matches || navigator.standalone === true) ? 'pwa' : 'web';
   if (initData) headers['X-Telegram-Init-Data'] = initData;
   if (token) headers['X-Netschool-Token'] = token;
   if (unlockToken) headers['X-Netschool-Unlock'] = unlockToken;
@@ -292,9 +295,10 @@ async function request(path, options = {}) {
     });
   } catch (error) {
     const failure = new Error(error.name === 'AbortError'
-      ? 'Запрос выполняется слишком долго. Повторите попытку позже.'
-      : 'Нет связи с сервером. Проверьте интернет.');
+      ? 'Сервер приложения не ответил вовремя. Проверьте интернет и повторите попытку.'
+      : 'Не удалось подключиться к серверу приложения. Проверьте интернет и повторите попытку.');
     failure.reason = 'server';
+    failure.source = 'app';
     throw failure;
   } finally {
     clearTimeout(timer);
@@ -304,7 +308,7 @@ async function request(path, options = {}) {
   try {
     payload = await response.json();
   } catch {
-    throw new Error('Не удалось прочитать ответ сервера. Повторите попытку позже.');
+    throw Object.assign(new Error('Сервер приложения вернул некорректный ответ. Повторите попытку позже.'), { reason: 'server', source: 'app' });
   }
   if (!response.ok || !payload.ok) {
     if (payload.reason === 'locked' && lockedHandler && !retried && !path.startsWith('/api/lock/') &&
@@ -331,6 +335,8 @@ async function request(path, options = {}) {
 /** Файл с сервера (например, выгрузка оценок) с тем же удостоверением, что у API. */
 export async function apiBlob(path) {
   const headers = {};
+  headers['X-Netschool-Client'] = initData ? 'telegram'
+    : (window.matchMedia?.('(display-mode: standalone)').matches || navigator.standalone === true) ? 'pwa' : 'web';
   if (initData) headers['X-Telegram-Init-Data'] = initData;
   if (token) headers['X-Netschool-Token'] = token;
   if (unlockToken) headers['X-Netschool-Unlock'] = unlockToken;
@@ -338,7 +344,7 @@ export async function apiBlob(path) {
   try {
     response = await fetch(base + path, { headers, cache: 'no-store' });
   } catch {
-    throw new Error('Нет связи с сервером. Проверьте интернет.');
+    throw new Error('Не удалось подключиться к серверу приложения. Проверьте интернет и повторите попытку.');
   }
   if (!response.ok) {
     let message = `Ошибка ${response.status}`;
@@ -383,7 +389,7 @@ async function revalidateNow(path, shown, onFresh) {
     fresh = await request(withRefresh(path));
   } catch (error) {
     revalidated.delete(path);
-    staleBanner(true, error.reason);
+    staleBanner(true, error.reason, error.source);
     return;
   }
   // Сервер ещё ждёт школу (refreshing): обновление идёт у него в фоне и

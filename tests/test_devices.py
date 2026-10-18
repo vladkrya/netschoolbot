@@ -90,3 +90,36 @@ async def test_new_device_link(client, token, app_context):
     assert "?enter=" in url and token not in url and phone not in url
     assert await app_context.miniapp.use_enter_code(url.split("enter=")[1]) == 1
     assert body["data"]["qr"].startswith("data:image/png;base64,")
+
+
+async def test_pwa_and_safari_are_distinct_clients_of_legacy_link(client, token, app_context):
+    from app.web import devices as devices_web
+    devices_web._touched.clear()
+    ua = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit Version/27.2 Mobile/15E148 Safari/604.1"
+    for mode in ("web", "pwa"):
+        response = await client.get(f"{BASE}/api/prefs", headers={
+            "X-Netschool-Token": token, "User-Agent": ua, "X-Netschool-Client": mode})
+        assert response.status == 200
+    clients = await app_context.miniapp.link_clients(1)
+    assert {row["client"] for row in clients} == {"Safari на iPhone", "Веб-приложение · Safari на iPhone"}
+
+
+async def test_new_telegram_button_does_not_create_legacy_links(client, app_context, users):
+    from app.bot.handlers.menu import miniapp_url
+    from tests.test_repositories import make_user
+    user = await users.save(make_user(91))
+    assert await miniapp_url(app_context, user) == app_context.settings.web.miniapp_url + "/"
+    token = await app_context.miniapp.issue_token(91, device=True)
+    listed = await items(client, token)
+    assert not any(row["kind"] == "links" for row in listed)
+
+
+async def test_device_pwa_label_is_updated_from_first_browser_visit(client, app_context, token):
+    from app.web import devices as devices_web
+    devices_web._touched.clear()
+    device = await app_context.miniapp.issue_token(1, device=True)
+    await items(client, device)
+    response = await client.get(f"{BASE}/api/devices", headers={
+        "X-Netschool-Token": device, "User-Agent": "Mozilla/5.0 (iPhone) Safari", "X-Netschool-Client": "pwa"})
+    rows = (await response.json())["data"]["items"]
+    assert next(row for row in rows if row["current"])["label"].startswith("Веб-приложение")

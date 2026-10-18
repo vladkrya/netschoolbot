@@ -46,14 +46,13 @@ def next_school_days(start: dt.date, count: int = 3) -> list[dt.date]:
 async def miniapp_url(app: AppContext, user: User) -> str:
     """Адрес мини-приложения для этого пользователя.
 
-    Токен в адресе нужен не для входа внутри Telegram — там личность
-    подтверждает подписанная initData, — а чтобы приложение работало и
-    после установки на домашний экран, где initData уже нет.
+    В Telegram личность подтверждается подписанной initData. Для установки
+    вне Telegram выдаётся отдельная ссылка /app_install; старые общие токены
+    продолжают работать, но новые здесь больше не создаются.
     """
     if not user.school.configured:
         return ""
-    token = await app.miniapp.issue_token(user.telegram_id)
-    return f"{app.settings.web.miniapp_url}/?token={token}"
+    return app.settings.web.miniapp_url + "/"
 
 
 def mirror_url(app: AppContext, url: str) -> str:

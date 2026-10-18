@@ -522,6 +522,9 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .screen-title { font-size: 17px; font-weight: 600; }
 .screen-subtitle { font-size: 12px; opacity: .8; }
 .screen-body { padding: 12px; }
+.calendar-screen { overscroll-behavior-y: contain; }
+.calendar-screen .screen-body > * { animation: none; }
+.calendar-screen .card { -webkit-backdrop-filter: none; backdrop-filter: none; }
 
 .lesson-head .lesson-title { display: flex; align-items: center; gap: 8px; font-size: 18px; }
 .sched-lesson { display: flex; align-items: center; gap: 8px; }
@@ -1509,6 +1512,7 @@ main.leaving { transition: transform .22s var(--ease); box-shadow: -8px 0 24px r
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) .app-lock { --accent: var(--primary, #6f9be0); --key: rgba(255, 255, 255, .08); --key-press: rgba(255, 255, 255, .2); }
 }
+html.app-locked, html.app-locked body { overflow: hidden; overscroll-behavior: none; }
 html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
 /* Заставка — тоже .app-lock и остаётся под экраном PIN; у прозрачного
    экрана (Хеллоуин) «Открываем дневник…» просвечивала сквозь клавиши. */
@@ -1529,6 +1533,7 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
 
 /* PIN: мягкие клавиши, четыре светящихся точки, лёгкий отклик на касание. */
 .app-lock.pin-screen {
+  overflow: hidden; overscroll-behavior: none; touch-action: none;
   background: radial-gradient(ellipse at 50% 18%, color-mix(in srgb, var(--accent) 14%, transparent), transparent 60%), var(--bg, #eef1f6);
   padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
 }

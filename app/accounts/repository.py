@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import secrets
 import time
 from typing import Any
@@ -178,3 +179,53 @@ class AccountRepository:
                     await db.execute(f'UPDATE "{table}" SET "{column}" = ? WHERE "{column}" = ?', (new_id, old_id))
             for table in ("chat_messages", "chat_reads"):
                 await db.execute(f"UPDATE {table} SET room = ? WHERE room = ?", (f"support:{new_id}", f"support:{old_id}"))
+
+    async def merge_into(self, old_id: int, new_id: int) -> bool:
+        """Join a verified email account to Telegram, retaining Telegram's diary.
+
+        Independent rows (notes, tokens, history, messages) move with their ids.
+        For duplicate per-user keys, the existing Telegram row wins. Email is
+        moved only if Telegram does not already have an email account.
+        """
+        async with self._db.transaction() as db:
+            await db.execute("PRAGMA defer_foreign_keys = ON")
+            cursor = await db.execute("SELECT 1 FROM accounts WHERE telegram_id = ?", (new_id,))
+            if await cursor.fetchone():
+                return False
+            cursor = await db.execute("SELECT 1 FROM accounts WHERE telegram_id = ?", (old_id,))
+            if not await cursor.fetchone():
+                return False
+            # Web preferences may contain custom lessons; retain both sets of
+            # keys, with the current Telegram settings taking precedence.
+            cursor = await db.execute("SELECT telegram_id, payload FROM web_prefs WHERE telegram_id IN (?, ?)",
+                                      (old_id, new_id))
+            prefs = {row[0]: row[1] for row in await cursor.fetchall()}
+            if old_id in prefs and new_id in prefs:
+                old_prefs, new_prefs = json.loads(prefs[old_id]), json.loads(prefs[new_id])
+                merged = {**old_prefs, **new_prefs}
+                # Custom lessons have independent ids. Keep both collections;
+                # only edits with the same id use Telegram's current value.
+                edits = {edit["id"]: edit for prefs in (old_prefs, new_prefs)
+                         for edit in prefs.get("lessonEdits", [])}
+                if edits:
+                    merged["lessonEdits"] = list(edits.values())
+                await db.execute("UPDATE web_prefs SET payload = ? WHERE telegram_id = ?",
+                                 (json.dumps(merged, ensure_ascii=False), new_id))
+            cursor = await db.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")
+            for (table,) in await cursor.fetchall():
+                if table == "users":
+                    continue
+                cursor = await db.execute(f'PRAGMA table_info("{table}")')
+                columns = {row[1] for row in await cursor.fetchall()}
+                for column in USER_COLUMNS:
+                    if column in columns:
+                        await db.execute(f'UPDATE OR IGNORE "{table}" SET "{column}" = ? WHERE "{column}" = ?',
+                                         (new_id, old_id))
+                        # Conflicting composite keys are duplicates of the
+                        # destination record; remove only those left behind.
+                        await db.execute(f'DELETE FROM "{table}" WHERE "{column}" = ?', (old_id,))
+            for table in ("chat_messages", "chat_reads"):
+                await db.execute(f"UPDATE OR IGNORE {table} SET room = ? WHERE room = ?",
+                                 (f"support:{new_id}", f"support:{old_id}"))
+            await db.execute("DELETE FROM users WHERE telegram_id = ?", (old_id,))
+        return True

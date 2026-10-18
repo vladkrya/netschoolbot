@@ -165,6 +165,12 @@ class AppContext:
         if self.caldav is not None:
             await self.caldav.delete_user(telegram_id)
         await self.pool.invalidate(telegram_id, forget_saved=True)
+        account = await self.accounts.by_user(telegram_id)
+        if account:
+            await self.db.execute("DELETE FROM account_codes WHERE email = ?", (account["email"],))
+        await self.db.execute("DELETE FROM token_clients WHERE telegram_id = ?", (telegram_id,))
+        await self.hub.disconnect(telegram_id)
+        self.web_logins.pop(telegram_id, None)
         await self.users.delete(telegram_id)
 
     async def sign_out_netschool(self, user: "User") -> None:

@@ -1246,7 +1246,7 @@ class MiniappRepository:
         now = time.time()
         async with self._db.transaction() as db:
             await db.execute(
-                """UPDATE miniapp_tokens SET last_used = ?, label = CASE WHEN label = '' THEN ? ELSE label END
+                """UPDATE miniapp_tokens SET last_used = ?, label = ?
                    WHERE token = ? AND revoked_at IS NULL""",
                 (now, label, token),
             )

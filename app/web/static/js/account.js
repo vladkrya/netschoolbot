@@ -9,6 +9,7 @@ import { api, banner, base, esc, initData, tg } from './core.js';
 import { notify } from './haptics.js';
 import { ICONS } from './icons.js';
 import { pushScreen } from './screens.js';
+import { setHalloweenAccess } from './appearance.js';
 
 function screen(html) {
   document.getElementById('bootSplash')?.remove();
@@ -82,6 +83,7 @@ function heroHtml() {
  * карточка. При переходе между ними меняется только карточка, а описание с
  * анимациями остаётся на месте и не проигрывается заново. */
 function landing(html) {
+  setHalloweenAccess(false);
   document.getElementById('bootSplash')?.remove();
   let root = document.getElementById('accountScreen');
   if (!root?.classList.contains('landing')) {
@@ -132,7 +134,7 @@ function reload() {
 /** Вошли (по почте или через бота): прежний выход больше не действует. */
 function signedIn() {
   try { localStorage.removeItem('ns-signed-out'); } catch { /* приватный режим */ }
-  reload();
+  location.replace(`${base}/?refresh=1`);
 }
 
 /** Кнопка с ожиданием: пока идёт запрос, нажать второй раз нельзя. */
@@ -284,6 +286,7 @@ let botPoll = 0;
  * открытое после запроса браузеры блокируют как всплывающее. */
 async function startBotLogin(button) {
   const popup = window.open('', '_blank');
+  if (popup) popup.opener = null;
   let data;
   try {
     button.disabled = true;
@@ -295,38 +298,60 @@ async function startBotLogin(button) {
     return;
   }
   if (popup) popup.location.href = data.url;
+  const botUrl = new URL(data.url);
+  const nativeUrl = 'tg://resolve?' + new URLSearchParams({
+    domain: botUrl.pathname.slice(1), start: botUrl.searchParams.get('start') || '',
+  });
   const card = landing(`
     <h2>Подтвердите вход</h2>
     <p class="muted">В Telegram открылся бот — нажмите там <b>«✅ Войти»</b>. Эта страница откроет дневник сама.</p>
     <div class="account-wait"><span class="boot-spinner" aria-hidden="true"></span></div>
     <p class="account-error" hidden></p>
-    <a class="btn ld-tg-login" href="${esc(data.url)}" ${popup ? 'target="_blank" rel="noopener"' : ''}>Открыть бота ещё раз</a>
+    <a class="btn ld-tg-login" href="${esc(nativeUrl)}">Открыть Telegram</a>
+    <a class="link" href="${esc(data.url)}" target="_blank" rel="noopener">Если не открылось — открыть ссылку в браузере</a>
     <div class="account-links"><button class="link" data-go="login">Назад</button></div>`);
   bindLinks(card);
-  if (!popup) location.href = data.url;
+  // Ссылка остаётся на экране, даже если браузер запретил новое окно.
   waitForBot(card, data.code);
+  if (!popup && tg?.openTelegramLink) tg.openTelegramLink(data.url);
 }
 
 function waitForBot(card, code) {
   clearTimeout(botPoll);
+  const marker = card.querySelector('.account-wait');
+  let running = false;
+  const stop = () => {
+    clearTimeout(botPoll);
+    document.removeEventListener('visibilitychange', resume);
+    window.removeEventListener('pageshow', resume);
+    window.removeEventListener('focus', resume);
+  };
+  const resume = () => { if (!document.hidden) { clearTimeout(botPoll); tick(); } };
   const tick = async () => {
-    if (!card.isConnected) return;
+    if (!marker?.isConnected) { stop(); return; }
+    if (running) return;
+    running = true;
     try {
       const { data } = await api(`/api/account/tg-login?code=${encodeURIComponent(code)}`);
       if (data.status === 'pending') {
         botPoll = setTimeout(tick, BOT_POLL_MS);
       } else if (data.token) {
+        stop();
         notify('success');
         signedIn();
       } else {
-        card.querySelector('.account-wait')?.remove();
+        stop();
+        marker.remove();
         showError(card, data.status === 'declined' ? 'Вход отменён в боте.' : 'Время на подтверждение вышло — попробуйте ещё раз.');
       }
     } catch {
       botPoll = setTimeout(tick, BOT_POLL_MS * 2); // сеть моргнула — пробуем дальше
-    }
+    } finally { running = false; }
   };
-  botPoll = setTimeout(tick, BOT_POLL_MS);
+  document.addEventListener('visibilitychange', resume);
+  window.addEventListener('pageshow', resume);
+  window.addEventListener('focus', resume);
+  tick();
 }
 
 function bindLinks(card) {
@@ -416,6 +441,32 @@ export async function showInvite(code, signedIn) {
   return new Promise(() => {});
 }
 
+async function eraseAccount(password) {
+  await post('/api/account/delete', { password });
+  const { clearOffline } = await import('./lock.js');
+  await clearOffline().catch(() => {});
+  try { localStorage.setItem('ns-signed-out', window.NETSCHOOL.token || '1'); } catch { /* приватный режим */ }
+  reload();
+}
+
+function showDeleteAccount(back) {
+  const card = screen(`<h2>Удалить аккаунт</h2>
+    <p>Удалятся профиль, почта, записи, история, сессии и серверный календарь. Отменить удаление нельзя.</p>
+    <p class="muted">Данные в школе, сообщения Telegram и резервные копии останутся.</p>
+    <form class="account-form"><input class="field" type="password" name="password" autocomplete="current-password" placeholder="Пароль аккаунта" required>
+    <p class="account-error" hidden></p><button class="btn danger" type="submit">Удалить все мои данные</button></form>
+    <button class="link" data-back>Отмена</button>`);
+  card.querySelector('[data-back]').onclick = back;
+  card.querySelector('form').onsubmit = (event) => {
+    event.preventDefault();
+    if (!confirm('Удалить аккаунт и все данные без возможности отмены?')) return;
+    busy(event.currentTarget.querySelector('button'), async () => {
+      try { await eraseAccount(card.querySelector('[name="password"]').value); }
+      catch (error) { showError(card, error.message); }
+    });
+  };
+}
+
 /* ─────────────────── Вход в «Сетевой город» с сайта ─────────────────── */
 
 const METHODS = [
@@ -431,9 +482,10 @@ export function showSgoLogin(info = {}) {
   const footer = () => `
     <div class="account-links">
       ${info.needs_sgo ? '' : '<button class="link" data-act="close">Вернуться в дневник</button>'}
-      ${!info.telegram && info.needs_sgo ? '<button class="link" data-act="logout">Выйти из аккаунта</button>' : ''}
+      ${!info.telegram && info.needs_sgo ? '<button class="link" data-act="logout">Выйти из аккаунта</button><button class="link danger" data-act="delete">Удалить аккаунт</button>' : ''}
     </div>`;
   const bindFooter = (card) => {
+    card.querySelector('[data-act="delete"]')?.addEventListener('click', () => showDeleteAccount(regionStep));
     card.querySelector('[data-act="logout"]')?.addEventListener('click', async () => {
       await post('/api/account/logout', {}).catch(() => {});
       reload();
@@ -696,16 +748,20 @@ export async function openAccountSettings() {
               <button class="btn" type="submit">Подтвердить</button>
             </form>
             <button class="link" data-act="resend">Прислать код ещё раз</button>` : ''}`
-          : `<p class="muted">Задайте почту и пароль — и на сайт можно будет входить без Telegram.</p>${emailForm('Почта и пароль', false)}`}
+          : `<p class="muted">Задайте почту и пароль — и на сайт можно будет входить без Telegram. Если почта уже зарегистрирована, введите её текущий пароль: аккаунты объединятся с сохранением дневника Telegram и записей.</p>${emailForm('Почта и пароль', false)}`}
       </div>
       ${info.email ? `<div class="card">${emailForm('Сменить почту или пароль', true)}</div>` : ''}
       ${info.telegram ? '' : `
         <div class="card">
           <div class="card-title">Telegram</div>
-          <p class="muted">Привяжите Telegram — уведомления будут приходить и туда, а в дневник можно будет заходить из бота.</p>
+          <p class="muted">Привяжите Telegram — уведомления будут приходить и туда, а в дневник можно будет заходить из бота. Если там уже есть этот дневник, аккаунты объединятся: настройки Telegram останутся, записи и входы сохранятся.</p>
           <div class="account-link-code"></div>
           <button class="btn outline" data-act="link">Привязать Telegram</button>
         </div>`}
+      ${info.email ? `<div class="card"><div class="card-title">Удалить аккаунт</div>
+        <p class="muted">Удалятся профиль, почта, записи, сессии, история и серверный календарь. Данные в школе, сообщения Telegram и резервные копии останутся.</p>
+        <form class="account-form" data-form="delete"><input class="field" type="password" name="password" autocomplete="current-password" placeholder="Пароль аккаунта" required>
+        <p class="account-error" hidden></p><button class="btn outline danger" type="submit">Удалить все мои данные</button></form></div>` : ''}
       ${!tg?.initData ? '<button class="btn outline danger account-logout" data-act="logout">Выйти из аккаунта</button>' : ''}`;
     bind(info);
   };
@@ -732,6 +788,16 @@ export async function openAccountSettings() {
           notify('error');
           error(element, failure.message);
         }
+      });
+    });
+    form('delete')?.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const element = event.currentTarget;
+      if (!confirm('Удалить аккаунт и все данные без возможности отмены?')) return;
+      busy(element.querySelector('button'), async () => {
+        try {
+          await eraseAccount(element.password.value);
+        } catch (failure) { error(element, failure.message); }
       });
     });
     form('verify')?.addEventListener('submit', (event) => {

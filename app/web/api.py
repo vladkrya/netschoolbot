@@ -225,7 +225,9 @@ async def auth_middleware(request: web.Request, handler):
     # Регистрация, вход по почте и сброс пароля — до всякого входа.
     from .account import is_public
     if is_public(request.path):
-        return await handler(request)
+        response = await handler(request)
+        response.headers["Cache-Control"] = "no-store"
+        return response
 
     # Короткий билет выдан запросом, прошедшим обычную авторизацию и PIN.
     if request.path.rstrip('/').endswith('/api/chat/ws'):
@@ -279,7 +281,7 @@ async def auth_middleware(request: web.Request, handler):
 
     # Токен из ссылки переносим в cookie, чтобы он не тянулся в каждом URL
     # и не утекал в историю браузера и в заголовок Referer.
-    if method == "token" and request.query.get("token"):
+    if method == "token" and request.query.get("token") and "netschool_token" not in response.cookies:
         response.set_cookie(
             "netschool_token",
             request.query["token"],

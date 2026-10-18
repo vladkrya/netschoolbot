@@ -22,6 +22,7 @@ from typing import Any
 from aiohttp import web
 
 from ..accounts import has_telegram
+from ..accounts.service import connect_accounts
 from ..accounts.mailer import letter
 from ..accounts.site_login import PREFIX as SITE_LOGIN_PREFIX, describe_browser
 from ..accounts.passwords import check_password, hash_password, verify_password
@@ -313,6 +314,20 @@ async def attach(request: web.Request) -> web.Response:
     account = await app.accounts.by_user(user.telegram_id)
     if account and not verify_password(str(body.get("current") or ""), account["password_hash"]):
         return json_error("Неверный текущий пароль", status=403, reason="account")
+    owner = await app.accounts.by_email(email)
+    if owner and owner['telegram_id'] != user.telegram_id:
+        key = f"attach:{user.telegram_id}"
+        if LOGIN_FAILURES.blocked(key):
+            return json_error("Слишком много попыток — подождите 15 минут", status=429)
+        if not has_telegram(user.telegram_id) or has_telegram(owner['telegram_id']):
+            return json_error("Эта почта уже используется другим аккаунтом")
+        if not verify_password(password, owner['password_hash']):
+            LOGIN_FAILURES.hit(key)
+            return json_error("Почта уже зарегистрирована. Введите её текущий пароль для привязки", status=403)
+        if problem := await connect_accounts(app, owner['telegram_id'], user.telegram_id):
+            return json_error(problem)
+        LOGIN_FAILURES.reset(key)
+        return await account_info(request)
     if not await app.accounts.attach(user.telegram_id, email, hash_password(password)):
         return json_error("Эта почта уже используется другим аккаунтом")
     if not account or account["email"] != email:
@@ -399,6 +414,24 @@ async def logout(request: web.Request) -> web.Response:
     token = (request.headers.get("X-Netschool-Token") or request.cookies.get(COOKIE) or "").strip()
     revoked = await context(request).miniapp.revoke_device_token(token)
     response = web.json_response({"ok": True, "data": {"revoked": revoked}})
+    response.del_cookie(COOKIE)
+    return response
+
+
+@routes.post("/api/account/delete")
+async def delete_account(request: web.Request) -> web.Response:
+    app, user = context(request), current_user(request)
+    account = await app.accounts.by_user(user.telegram_id)
+    key = f"delete:{user.telegram_id}"
+    if LOGIN_FAILURES.blocked(key):
+        return json_error("Слишком много попыток — подождите 15 минут", status=429)
+    body = await _body(request)
+    if not account or not verify_password(str(body.get("password") or ""), account["password_hash"]):
+        LOGIN_FAILURES.hit(key)
+        return json_error("Неверный пароль аккаунта", status=403, reason="account")
+    await app.delete_user_data(user.telegram_id)
+    LOGIN_FAILURES.reset(key)
+    response = web.json_response({"ok": True})
     response.del_cookie(COOKIE)
     return response
 

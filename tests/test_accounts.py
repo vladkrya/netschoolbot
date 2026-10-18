@@ -135,11 +135,13 @@ class TestTelegramLink:
         assert (await app_context.miniapp.prefs(777)).get("theme") == "dark"
         assert "устарел" in await link_telegram(app_context, code, 777)
 
-    async def test_telegram_with_own_diary_is_not_merged(self, client, app_context, users):
+    async def test_telegram_with_own_diary_keeps_diary_when_linked(self, client, app_context, users):
         _, body, _ = await register(client)
         _, data, _ = await post(client, "/api/account/telegram-link", {}, body["data"]["token"])
         await users.save(make_user(778))
-        assert "уже вошёл" in await link_telegram(app_context, data["data"]["code"], 778)
+        assert (await link_telegram(app_context, data["data"]["code"], 778)).startswith("✅")
+        assert (await users.get(778)).school.configured
+        assert (await app_context.accounts.by_email("kid@example.com"))["telegram_id"] == 778
 
     async def test_telegram_after_logout_keeps_own_data(self, client, app_context, users):
         """После /logout школы нет, но заметки остались — перенос стёр бы их."""
@@ -147,7 +149,7 @@ class TestTelegramLink:
         _, data, _ = await post(client, "/api/account/telegram-link", {}, body["data"]["token"])
         await users.get_or_create(779)
         await app_context.notes.add(779, dt.date(2026, 10, 1), "Принести циркуль")
-        assert "свои данные" in await link_telegram(app_context, data["data"]["code"], 779)
+        assert (await link_telegram(app_context, data["data"]["code"], 779)).startswith("✅")
         assert len(await app_context.notes.between(779, dt.date(2026, 9, 1), dt.date(2026, 11, 1))) == 1
 
     async def test_bot_sends_nothing_to_web_users(self, app_context):
@@ -351,3 +353,130 @@ class TestSignOut:
         page = await response.text()
         assert f'"token": "{fresh}"' in page or f'token: "{fresh}"' in page
         assert device not in page
+
+
+async def test_attach_existing_email_merges_only_after_password_proof(client, app_context, users):
+    _, registration, _ = await register(client)
+    web_token = registration["data"]["token"]
+    web_id = await app_context.miniapp.resolve_token(web_token)
+    await users.save(make_user(42))
+    token = await app_context.miniapp.issue_token(42, device=True)
+    day = dt.date(2026, 10, 18)
+    await app_context.notes.add(web_id, day, "С сайта")
+    await app_context.notes.add(42, day, "Из Telegram")
+    wrong = {"email": "kid@example.com", "password": "неверный-пароль"}
+    assert (await post(client, "/api/account/attach", wrong, token))[0] == 403
+    assert await users.get(web_id) is not None
+    status, data, _ = await post(client, "/api/account/attach",
+                                {**wrong, "password": "длинный-пароль"}, token)
+    assert status == 200 and data["data"]["email"] == "kid@example.com"
+    assert await users.get(web_id) is None
+    assert await app_context.miniapp.resolve_token(web_token) == 42
+    assert await app_context.miniapp.resolve_token(token) == 42
+    assert (await users.get(42)).school.configured
+    notes = await app_context.notes.between(42, day, day)
+    assert len(notes) == 2
+    assert not await app_context.db.fetch_all("PRAGMA foreign_key_check")
+
+
+async def test_link_two_existing_same_diaries_preserves_sessions_and_notes(client, app_context, users):
+    _, body, _ = await register(client)
+    token = body["data"]["token"]
+    web_id = await app_context.miniapp.resolve_token(token)
+    await users.save(make_user(web_id))
+    await users.save(make_user(88))
+    day = dt.date(2026, 10, 18)
+    await app_context.notes.add(web_id, day, "С сайта")
+    await app_context.notes.add(88, day, "Из Telegram")
+    # Conflicting keys must retain the Telegram state.
+    await post(client, "/api/prefs", {"theme": "light"}, token)
+    tg_token = await app_context.miniapp.issue_token(88, device=True)
+    await post(client, "/api/prefs", {"theme": "dark"}, tg_token)
+    _, data, _ = await post(client, "/api/account/telegram-link", {}, token)
+    assert (await link_telegram(app_context, data["data"]["code"], 88)).startswith("✅")
+    assert await app_context.miniapp.resolve_token(token) == 88
+    assert await app_context.miniapp.resolve_token(tg_token) == 88
+    assert len(await app_context.notes.between(88, day, day)) == 2
+    assert (await app_context.miniapp.prefs(88))["theme"] == "dark"
+    assert not await app_context.db.fetch_all("PRAGMA foreign_key_check")
+
+
+async def test_link_different_diaries_does_not_delete_either(client, app_context, users):
+    from dataclasses import replace
+    _, body, _ = await register(client)
+    token = body["data"]["token"]
+    web_id = await app_context.miniapp.resolve_token(token)
+    await users.save(make_user(web_id))
+    await users.save(replace(make_user(89), selected_student_id=999))
+    _, data, _ = await post(client, "/api/account/telegram-link", {}, token)
+    assert "разные дневники" in await link_telegram(app_context, data["data"]["code"], 89)
+    assert await users.get(web_id) is not None and await users.get(89) is not None
+    assert await app_context.miniapp.resolve_token(token) == web_id
+
+
+async def test_delete_email_account_requires_password_and_revokes_all_sessions(client, app_context, users):
+    _, body, _ = await register(client)
+    token = body["data"]["token"]
+    uid = await app_context.miniapp.resolve_token(token)
+    another = await app_context.miniapp.issue_token(uid, device=True)
+    await app_context.notes.add(uid, dt.date(2026, 10, 18), "Личная заметка")
+    assert (await post(client, "/api/account/delete", {"password": "ошибка"}, token))[0] == 403
+    assert await users.get(uid) is not None
+    status, data, response = await post(client, "/api/account/delete", {"password": "длинный-пароль"}, token)
+    assert status == 200 and data["ok"]
+    assert response.cookies["netschool_token"]["max-age"] == "0"
+    assert await users.get(uid) is None
+    assert await app_context.accounts.by_email("kid@example.com") is None
+    assert await app_context.miniapp.resolve_token(token) is None
+    assert await app_context.miniapp.resolve_token(another) is None
+    assert not await app_context.db.fetch_all("SELECT * FROM user_notes WHERE telegram_id = ?", (uid,))
+
+
+async def test_link_never_replaces_an_existing_email_binding(client, app_context, users):
+    from app.accounts.passwords import hash_password
+    _, body, _ = await register(client)
+    web_token = body["data"]["token"]
+    web_id = await app_context.miniapp.resolve_token(web_token)
+    await users.save(make_user(92))
+    await app_context.accounts.attach(92, "telegram@example.com", hash_password("отдельный-пароль"))
+    _, data, _ = await post(client, "/api/account/telegram-link", {}, web_token)
+    assert "другая почта" in await link_telegram(app_context, data["data"]["code"], 92)
+    assert await users.get(web_id) is not None
+    assert (await app_context.accounts.by_email("telegram@example.com"))["telegram_id"] == 92
+    assert (await app_context.accounts.by_email("kid@example.com"))["telegram_id"] == web_id
+
+
+async def test_delete_also_removes_reset_codes_and_legacy_client_metadata(client, app_context):
+    _, body, _ = await register(client)
+    token = body["data"]["token"]
+    uid = await app_context.miniapp.resolve_token(token)
+    code = await app_context.accounts.issue_code("kid@example.com", "reset")
+    legacy = await app_context.miniapp.issue_token(uid)
+    await app_context.miniapp.touch_token(legacy, "Safari")
+    assert (await post(client, "/api/account/delete", {"password": "длинный-пароль"}, token))[0] == 200
+    assert not await app_context.accounts.check_code("kid@example.com", "reset", code)
+    assert not await app_context.db.fetch_all("SELECT * FROM token_clients WHERE telegram_id = ?", (uid,))
+
+
+async def test_query_token_logout_keeps_cookie_deleted(client, app_context):
+    _, body, _ = await register(client)
+    token = body["data"]["token"]
+    status, _, response = await post(client, "/api/account/logout", {}, token)
+    assert status == 200
+    assert response.cookies["netschool_token"]["max-age"] == "0"
+
+
+async def test_merge_retains_custom_lessons_from_both_accounts(client, app_context, users):
+    import json
+    _, body, _ = await register(client)
+    web_token = body["data"]["token"]
+    web_id = await app_context.miniapp.resolve_token(web_token)
+    await users.save(make_user(93))
+    for uid, edit_id in ((web_id, "web-lesson"), (93, "tg-lesson")):
+        payload = json.dumps({"lessonEdits": [{"id": edit_id, "kind": "add", "subject": "Кружок",
+                                              "weekday": 1, "start": "16:00", "end": "17:00"}]})
+        await app_context.db.execute("INSERT INTO web_prefs (telegram_id, payload) VALUES (?, ?)", (uid, payload))
+    _, data, _ = await post(client, "/api/account/telegram-link", {}, web_token)
+    assert (await link_telegram(app_context, data["data"]["code"], 93)).startswith("✅")
+    prefs = await app_context.miniapp.prefs(93)
+    assert {edit["id"] for edit in prefs["lessonEdits"]} == {"web-lesson", "tg-lesson"}

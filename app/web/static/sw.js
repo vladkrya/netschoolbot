@@ -105,10 +105,10 @@ async function networkFirst(request, event) {
     headers.set('X-Netschool-Offline', '1');
     return new Response(await saved.blob(), { status: saved.status, headers });
   };
-  const wait = navigate ? PAGE_TIMEOUT_MS
-    : new URL(request.url).searchParams.has('refresh') ? 0 : API_TIMEOUT_MS;
+  const wait = new URL(request.url).searchParams.has('refresh') ? 0
+    : navigate ? PAGE_TIMEOUT_MS : API_TIMEOUT_MS;
   if (!wait) return network.catch((error) => { markOffline(); return fromCache(error); });
-  if (seemsOffline()) {
+  if (seemsOffline() && wait) {
     event.waitUntil(network.catch(() => {}));
     try {
       return await fromCache(null);

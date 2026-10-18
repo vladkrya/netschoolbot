@@ -438,6 +438,7 @@ async function openFamily() {
 async function openCalendar() {
   closeDrawer();
   const screen = pushScreen('Расписание в календаре');
+  screen.closest('.screen').classList.add('calendar-screen');
   screen.innerHTML = '<div class="muted small">Загрузка…</div>';
   let password = '';
   const copy = async (value) => {
@@ -448,6 +449,7 @@ async function openCalendar() {
     } catch { prompt('Скопируйте значение', value); }
   };
   const render = (data) => {
+    const scroll = screen.closest('.screen').scrollTop;
     const field = (label, value, id) => `<label class="field-label">${label}
       <input class="field" readonly value="${esc(value)}" autocomplete="off" spellcheck="false"></label>
       <button class="btn outline" id="${id}">Скопировать ${label.toLowerCase()}</button>`;
@@ -484,6 +486,7 @@ async function openCalendar() {
         <p>Альтернативный способ: добавьте ссылку как подписной календарь. Простое открытие файла не создаёт подписку.</p>
         <button class="btn outline" id="calCopyIcs">Скопировать ссылку .ics</button>
       </details>`;
+    screen.closest('.screen').scrollTop = scroll;
     if (data.connected) {
       $('calServer').onclick = () => copy(data.server);
       $('calAccountUrl').onclick = () => copy(data.account_url);
