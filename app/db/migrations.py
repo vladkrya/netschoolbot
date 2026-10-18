@@ -657,6 +657,36 @@ MIGRATIONS: list[str] = [
     );
     INSERT INTO app_clients (telegram_id, client, first_seen_at, seen_at)
     SELECT telegram_id, client, first_seen_at, seen_at FROM app_visits;
+    """,    # 41 — страница статуса «Сетевого города»: проверки всех серверов,
+    # история версий (sgo_versions помнит только последнюю) и жалобы на сбои.
+    """
+    CREATE TABLE sgo_probes (
+        host TEXT NOT NULL,
+        at REAL NOT NULL,
+        ok INTEGER NOT NULL,
+        latency_ms INTEGER NOT NULL DEFAULT 0,
+        error TEXT NOT NULL DEFAULT ''
+    );
+    CREATE INDEX idx_sgo_probes_at ON sgo_probes(at);
+    CREATE INDEX idx_sgo_probes_host_at ON sgo_probes(host, at);
+    CREATE TABLE sgo_version_history (
+        host TEXT NOT NULL,
+        version TEXT NOT NULL,
+        previous TEXT NOT NULL DEFAULT '',
+        changed_at REAL NOT NULL
+    );
+    CREATE INDEX idx_sgo_version_history_at ON sgo_version_history(changed_at);
+    INSERT INTO sgo_version_history (host, version, previous, changed_at)
+    SELECT host, version, previous, changed_at FROM sgo_versions;
+    CREATE TABLE sgo_reports (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        host TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        comment TEXT NOT NULL DEFAULT '',
+        client TEXT NOT NULL DEFAULT '',
+        created_at REAL NOT NULL
+    );
+    CREATE INDEX idx_sgo_reports_at ON sgo_reports(created_at);
     """,
 ]
 

@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from .caldav.service import CaldavService
     from .domain.models import User
+    from .status.service import StatusService
 
 from .db.crypto import PasswordCipher
 from .db.engine import Database
@@ -72,6 +73,8 @@ class AppContext:
     # Второй родитель и свои заметки ученика.
     family: FamilyRepository | None = None
     notes: NotesRepository | None = None
+    # Страница статуса «Сетевого города» (status/service.py).
+    status: StatusService | None = None
 
     def __post_init__(self) -> None:
         if self.family is None:
@@ -82,6 +85,13 @@ class AppContext:
             self.accounts = AccountRepository(self.db)
         if self.mailer is None:
             self.mailer = Mailer(self.settings.mail, site=self.settings.web.miniapp_url)
+        if self.status is None:
+            # Без опроса серверов: сводка и жалобы. Опрос включает main.py.
+            from .db.repositories import SgoStatusRepository, SgoVersionRepository
+            from .status.service import StatusService
+
+            self.status = StatusService(SgoStatusRepository(self.db), SgoVersionRepository(self.db),
+                                        secret=self.settings.secret_key)
 
     @classmethod
     async def create(cls, settings: Settings, notifier: Notifier | None = None) -> "AppContext":

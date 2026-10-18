@@ -1762,6 +1762,10 @@ class SgoVersionRepository:
                 await conn.execute("UPDATE sgo_versions SET seen_at=? WHERE host=?", (now, host))
             else:
                 await conn.execute(
+                    "INSERT INTO sgo_version_history (host, version, previous, changed_at) VALUES (?, ?, ?, ?)",
+                    (host, version, previous, now),
+                )
+                await conn.execute(
                     "INSERT INTO sgo_versions (host, version, previous, changed_at, seen_at) "
                     "VALUES (?, ?, ?, ?, ?) ON CONFLICT(host) DO UPDATE SET "
                     "version=excluded.version, previous=excluded.previous, "
@@ -1773,3 +1777,97 @@ class SgoVersionRepository:
     async def all(self) -> list[dict]:
         rows = await self._db.fetch_all("SELECT * FROM sgo_versions ORDER BY host")
         return [dict(row) for row in rows]
+
+    async def history(self, since: float, limit: int = 200) -> list[dict]:
+        """Смены версий, новые первыми."""
+        rows = await self._db.fetch_all(
+            "SELECT host, version, previous, changed_at FROM sgo_version_history "
+            "WHERE changed_at >= ? ORDER BY changed_at DESC LIMIT ?",
+            (since, limit),
+        )
+        return [dict(row) for row in rows]
+
+
+class SgoStatusRepository:
+    """Проверки серверов «Сетевого города» и жалобы на сбои для страницы статуса.
+
+    Здесь нет личных данных: адрес сервера, время, итог. Клиент жалобы —
+    хэш адреса, только чтобы ограничить частоту.
+    """
+
+    def __init__(self, db: Database) -> None:
+        self._db = db
+
+    async def add_probes(self, rows: list[tuple[str, float, bool, int, str]]) -> None:
+        await self._db.execute_many(
+            "INSERT INTO sgo_probes (host, at, ok, latency_ms, error) VALUES (?, ?, ?, ?, ?)",
+            [(host, at, int(ok), latency, error) for host, at, ok, latency, error in rows],
+        )
+
+    async def recent_probes(self, since: float) -> list[dict]:
+        """Проверки с `since`, новые первыми — для текущего состояния."""
+        rows = await self._db.fetch_all(
+            "SELECT host, at, ok, latency_ms, error FROM sgo_probes WHERE at >= ? ORDER BY at DESC",
+            (since,),
+        )
+        return [dict(row) for row in rows]
+
+    async def totals(self, since: float) -> dict[str, dict]:
+        """По серверу: сколько проверок, сколько удачных, средний отклик удачных."""
+        rows = await self._db.fetch_all(
+            "SELECT host, COUNT(*) AS total, SUM(ok) AS good, "
+            "AVG(CASE WHEN ok THEN latency_ms END) AS latency "
+            "FROM sgo_probes WHERE at >= ? GROUP BY host",
+            (since,),
+        )
+        return {row["host"]: dict(row) for row in rows}
+
+    async def buckets(self, since: float, size: float) -> list[dict]:
+        """Проверки по отрезкам времени: (сервер, № отрезка, всего, удачных)."""
+        rows = await self._db.fetch_all(
+            "SELECT host, CAST((at - ?) / ? AS INTEGER) AS bucket, COUNT(*) AS total, SUM(ok) AS good "
+            "FROM sgo_probes WHERE at >= ? GROUP BY host, bucket",
+            (since, size, since),
+        )
+        return [dict(row) for row in rows]
+
+    async def failures(self, since: float) -> list[dict]:
+        """Неудачные проверки по порядку — из них складываются сбои."""
+        rows = await self._db.fetch_all(
+            "SELECT host, at, error FROM sgo_probes WHERE at >= ? AND ok = 0 ORDER BY host, at",
+            (since,),
+        )
+        return [dict(row) for row in rows]
+
+    async def add_report(self, host: str, kind: str, comment: str, client: str, now: float) -> None:
+        await self._db.execute(
+            "INSERT INTO sgo_reports (host, kind, comment, client, created_at) VALUES (?, ?, ?, ?, ?)",
+            (host, kind, comment, client, now),
+        )
+
+    async def reports(self, since: float) -> list[dict]:
+        rows = await self._db.fetch_all(
+            "SELECT host, kind, comment, created_at FROM sgo_reports WHERE created_at >= ? "
+            "ORDER BY created_at DESC",
+            (since,),
+        )
+        return [dict(row) for row in rows]
+
+    async def reports_from(self, client: str, since: float, host: str | None = None) -> int:
+        if host is None:
+            row = await self._db.fetch_one(
+                "SELECT COUNT(*) FROM sgo_reports WHERE client = ? AND created_at >= ?", (client, since))
+        else:
+            row = await self._db.fetch_one(
+                "SELECT COUNT(*) FROM sgo_reports WHERE client = ? AND host = ? AND created_at >= ?",
+                (client, host, since))
+        return int(row[0]) if row else 0
+
+    async def school_urls(self) -> list[str]:
+        """Адреса серверов, на которых есть наши пользователи."""
+        rows = await self._db.fetch_all("SELECT DISTINCT school_url FROM users WHERE school_url != ''")
+        return [row[0] for row in rows]
+
+    async def prune(self, probes_before: float, reports_before: float) -> None:
+        await self._db.execute("DELETE FROM sgo_probes WHERE at < ?", (probes_before,))
+        await self._db.execute("DELETE FROM sgo_reports WHERE created_at < ?", (reports_before,))

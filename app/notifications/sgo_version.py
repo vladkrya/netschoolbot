@@ -78,6 +78,12 @@ class VersionTracker:
             return "", ""
         if not version:
             return "", ""
+        return await self.observe(host, version, notify)
+
+    async def observe(self, host: str, version: str, notify: Notify | None = None) -> tuple[str, str]:
+        """Записать версию, которую уже узнали (страница статуса опрашивает
+        серверы сама). Возвращает (прежняя, текущая)."""
+        self._checked[host] = self._clock()
         try:
             previous = await self._repo.save(host, version, self._clock())
         except Exception as exc:  # noqa: BLE001
