@@ -1,0 +1,4 @@
+# Видео-превью (media/preview, ~700 МБ) не качаются при клонировании и
+# деплое. Скачать: git lfs pull --include="media/preview/*" --exclude=""
+[lfs]
+	fetchexclude = media/preview/*
