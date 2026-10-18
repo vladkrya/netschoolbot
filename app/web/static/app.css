@@ -500,6 +500,11 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
   z-index: 30;
   background: var(--bg);
   overflow-y: auto;
+  /* Прокрутка не уходит на «День» под экраном: иначе на коротком уроке
+     листалась страница снизу и справа ползла её полоса. Экран всегда
+     чуть выше окна, чтобы жест было на ком гасить (iOS не держит
+     overscroll-behavior у непрокручиваемого блока). */
+  overscroll-behavior-y: contain;
   animation: screen-in .2s ease;
 }
 @keyframes screen-in { from { transform: translateX(30%); opacity: 0; } }
@@ -521,7 +526,7 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .screen-titles { flex: 1; text-align: center; margin-right: 44px; padding-top: 6px; }
 .screen-title { font-size: 17px; font-weight: 600; }
 .screen-subtitle { font-size: 12px; opacity: .8; }
-.screen-body { padding: 12px; }
+.screen-body { padding: 12px; min-height: calc(100% + 1px); }
 .calendar-screen { overscroll-behavior-y: contain; }
 .calendar-screen .screen-body > * { animation: none; }
 .calendar-screen .card { -webkit-backdrop-filter: none; backdrop-filter: none; }
