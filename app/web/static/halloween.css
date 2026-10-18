@@ -108,8 +108,9 @@
 :root:not([data-design="new"]) :is(.hw-moon, .hw-web) { display: none; }
 .hw-web {
   position: absolute;
-  right: 0; top: 0;
-  width: 84px; height: 84px;
+  right: 0; top: var(--bar-top, 0px);
+  /* Вся паутина помещается в строку шапки и не обрезается .hw-decor. */
+  width: 52px; height: 52px;
   background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 160 160' fill='none' stroke='%23d9c8ee' stroke-opacity='.5' stroke-width='1.4'%3E%3Cpath d='M160 0L0 40M160 0L40 120M160 0L120 160M160 0L0 95M160 0L70 160'/%3E%3Cpath d='M132 7Q136 20 139 22Q146 26 152 30'/%3E%3Cpath d='M102 15Q110 38 117 43Q130 52 145 59'/%3E%3Cpath d='M70 23Q82 55 94 66Q114 82 138 89'/%3E%3Cpath d='M36 31Q54 72 71 88Q98 110 130 119'/%3E%3C/svg%3E") center / contain no-repeat;
   opacity: .55;
 }
