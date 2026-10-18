@@ -8,7 +8,7 @@
 ~700 МБ на сервер. Скачать их локально:
 
 ```bash
-git lfs pull --include="media/preview/*"
+git lfs pull --include="media/preview/*" --exclude=""
 ```
 
 ## Что получается
