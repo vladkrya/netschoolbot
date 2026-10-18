@@ -773,6 +773,8 @@ async function start() {
   (state.prefsSync || syncPrefs()).then((changed) => {
     if (changed) {
       applyStoredTheme();
+      // Хеллоуин выключили или включили на другом устройстве.
+      applyHalloween();
       applyAccent();
       applyDesign();
       renderNav();

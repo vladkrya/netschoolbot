@@ -1849,6 +1849,14 @@ async def save_prefs(request: web.Request) -> web.Response:
         if body["motion"] not in ("on", "off"):
             return json_error("Некорректная настройка анимаций")
         changes["motion"] = body["motion"]
+    if "halloween" in body:
+        if body["halloween"] not in ("on", "off"):
+            return json_error("Некорректная настройка Хеллоуина")
+        changes["halloween"] = body["halloween"]
+    if "halloweenAccent" in body:
+        if not isinstance(body["halloweenAccent"], str) or not ACCENT_RE.match(body["halloweenAccent"]):
+            return json_error("Некорректный цвет")
+        changes["halloweenAccent"] = body["halloweenAccent"].lower()
     if "confetti" in body:
         if body["confetti"] not in ("show", "hide"):
             return json_error("Некорректная настройка конфетти")

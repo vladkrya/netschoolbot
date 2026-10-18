@@ -98,12 +98,13 @@ export function saveDesign(on) {
 
 /*
  * Хеллоуинское оформление — у всех в праздничный сезон (флаг halloween в
- * профиле). Хранится только на устройстве, в ns-halloween: 'on' — включено и
- * разрешено, 'off' — выключили тумблером в настройках. Скрипт в <head> по 'on' ставит data-holiday до
- * отрисовки, правила — в halloween.css.
+ * профиле). Выбор тумблером — общая настройка halloween ('off' — выключили),
+ * одна на Telegram и сайт: раньше он жил только на устройстве, и в браузере
+ * тема могла остаться выключенной, когда в Telegram она есть. ns-halloween —
+ * копия итога для скрипта в <head>: по 'on' он ставит data-holiday до
+ * отрисовки. Правила — в halloween.css.
  */
 const HALLOWEEN_KEY = 'ns-halloween';
-const HALLOWEEN_ACCENT_KEY = 'ns-halloween-accent';
 let halloweenAllowed = null;
 
 /** Свои цвета акцента на Хеллоуин: в меню вместо обычных, пока тема включена. */
@@ -117,13 +118,12 @@ export const HALLOWEEN_ACCENTS = [
 ];
 
 export function halloweenAccent() {
-  let color = null;
-  try { color = localStorage.getItem(HALLOWEEN_ACCENT_KEY); } catch { /* приватный режим */ }
+  const color = getPref('halloweenAccent');
   return /^#[0-9a-f]{6}$/i.test(color || '') ? color : HALLOWEEN_ACCENTS[0][0];
 }
 
 export function saveHalloweenAccent(color) {
-  try { localStorage.setItem(HALLOWEEN_ACCENT_KEY, color); } catch { /* приватный режим */ }
+  setPref('halloweenAccent', color);
   applyAccent();
 }
 
@@ -136,10 +136,10 @@ function readHalloween() {
   try { return localStorage.getItem(HALLOWEEN_KEY); } catch { return null; }
 }
 
-function writeHalloween(value) {
+function writeHalloween(on) {
   try {
-    if (value == null) localStorage.removeItem(HALLOWEEN_KEY);
-    else localStorage.setItem(HALLOWEEN_KEY, value);
+    if (on) localStorage.setItem(HALLOWEEN_KEY, 'on');
+    else localStorage.removeItem(HALLOWEEN_KEY);
   } catch { /* приватный режим — продержится до перезагрузки */ }
 }
 
@@ -150,11 +150,12 @@ export function halloweenAvailable() {
 export function isHalloween() {
   // Пока профиль не пришёл — верим прошлому запуску, чтобы не мигать.
   if (halloweenAllowed === null) return readHalloween() === 'on';
-  return halloweenAllowed && readHalloween() !== 'off';
+  return halloweenAllowed && getPref('halloween') !== 'off';
 }
 
 export function applyHalloween() {
   const on = isHalloween();
+  if (halloweenAllowed !== null) writeHalloween(on);
   const root = document.documentElement;
   const was = root.getAttribute('data-holiday') === 'halloween';
   if (on) root.setAttribute('data-holiday', 'halloween');
@@ -231,13 +232,11 @@ function swoop() {
 /** Профиль сказал, доступно ли оформление этому человеку. */
 export function setHalloweenAccess(allowed) {
   halloweenAllowed = Boolean(allowed);
-  if (!halloweenAllowed) writeHalloween(null);
-  else if (readHalloween() !== 'off') writeHalloween('on');
   applyHalloween();
 }
 
 export function saveHalloween(on) {
-  writeHalloween(on ? 'on' : 'off');
+  setPref('halloween', on ? 'on' : 'off');
   applyHalloween();
 }
 
