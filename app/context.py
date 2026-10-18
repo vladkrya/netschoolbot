@@ -111,6 +111,7 @@ class AppContext:
                 # Папка — по текущим настройкам: в тестах data_dir меняют после сборки.
                 KeptAttachmentRepository(self.db), self.diary, lambda: self.settings.data_dir / "attachments",
                 days=netschool.keep_attachments_days, max_bytes=netschool.keep_attachments_mb * 1024 * 1024,
+                wanted=self.keep_attachments_wanted,
             )
 
     @classmethod
@@ -159,6 +160,25 @@ class AppContext:
                 notes=NotesRepository(db),
             ),
         )
+
+    async def keep_attachments_access(self, user: User) -> bool:
+        """Есть ли у человека тумблер «Сохранять файлы заданий» (бета):
+        у админа — всегда, у остальных — когда админ открыл доступ всем."""
+        from .attachments.keeper import ALL_FLAG
+        from .db.repositories import AppFlagRepository
+
+        admin = self.settings.telegram.admin_id
+        if admin and user.telegram_id == admin:
+            return True
+        return await AppFlagRepository(self.db).get(ALL_FLAG)
+
+    async def keep_attachments_wanted(self, user: User) -> bool:
+        """Сохранять ли файлы этого человека: доступ есть и тумблер включён."""
+        from .attachments.keeper import PREF
+
+        if not await self.keep_attachments_access(user):
+            return False
+        return bool((await self.miniapp.prefs(user.telegram_id)).get(PREF))
 
     async def shutdown(self) -> None:
         """Аккуратно закрыть всё, что открыли. Порядок важен."""

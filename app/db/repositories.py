@@ -1990,3 +1990,21 @@ class KeptAttachmentRepository:
             "DELETE FROM kept_attachments WHERE host = ? AND mode = ? AND attachment_id = ?", items)
         await self._db.execute_many(
             "DELETE FROM kept_attachment_access WHERE host = ? AND mode = ? AND attachment_id = ?", items)
+
+
+class AppFlagRepository:
+    """Переключатели на весь бот (app_flags): бета-возможности и т. п."""
+
+    def __init__(self, db: Database) -> None:
+        self._db = db
+
+    async def get(self, key: str) -> bool:
+        row = await self._db.fetch_one("SELECT value FROM app_flags WHERE key = ?", (key,))
+        return bool(row) and row["value"] == "1"
+
+    async def set(self, key: str, on: bool) -> None:
+        await self._db.execute(
+            "INSERT INTO app_flags (key, value) VALUES (?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (key, "1" if on else "0"),
+        )

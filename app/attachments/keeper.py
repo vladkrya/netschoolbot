@@ -10,6 +10,10 @@
 Файл к заданию у всего класса общий, поэтому на диске он один на сервер
 школы, режим API и номер вложения; отдаётся только тем, у кого это вложение
 было в заданиях (kept_attachment_access).
+
+Пока это бета: сохраняет только тот, кто включил тумблер в настройках, а
+тумблер есть у админа — и у всех, если админ открыл доступ (app_flags,
+ALL_FLAG). Уже сохранённое открывается и после выключения.
 """
 
 from __future__ import annotations
@@ -19,7 +23,7 @@ import datetime as dt
 import hashlib
 import logging
 import time
-from collections.abc import Callable, Iterable
+from collections.abc import Awaitable, Callable, Iterable
 from pathlib import Path
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
@@ -44,6 +48,10 @@ DOWNLOAD_TIMEOUT_S = 100
 # сервер не должен её заметить.
 PAUSE_S = 1.0
 PRUNE_EVERY_S = 3600
+# Админ открыл бету всем (app_flags); иначе тумблер есть только у админа.
+ALL_FLAG = "keep_attachments_all"
+# Личный тумблер — в настройках приложения (web_prefs).
+PREF = "keep_attachments"
 
 
 def _host(url: str) -> str:
@@ -52,8 +60,11 @@ def _host(url: str) -> str:
 
 class AttachmentKeeper:
     def __init__(self, repo: KeptAttachmentRepository, diary, root: Path | Callable[[], Path], *, days: int = 14,
-                 max_bytes: int = 3000 * 1024 * 1024, clock: Callable[[], float] = time.time) -> None:
+                 max_bytes: int = 3000 * 1024 * 1024, clock: Callable[[], float] = time.time,
+                 wanted: Callable[[User], Awaitable[bool]] | None = None) -> None:
         self._repo = repo
+        # Включено ли сохранение у человека (доступ и тумблер); None — у всех.
+        self._wanted = wanted
         self._diary = diary
         self._root = root
         self._ttl = days * 86400
@@ -102,6 +113,8 @@ class AttachmentKeeper:
             return
         key = self._key(user, attachment_id)
         try:
+            if self._wanted is not None and not await self._wanted(user):
+                return
             await self._save(key, payload)
             await self._repo.grant(user.telegram_id, key[0], key[1], [attachment_id])
         except Exception as exc:  # noqa: BLE001 — копия вторична
@@ -130,6 +143,8 @@ class AttachmentKeeper:
     async def _keep(self, user: User, ids: list[int]) -> None:
         host, mode = _host(user.school.url), user.effective_api_mode.value
         try:
+            if self._wanted is not None and not await self._wanted(user):
+                return
             # Уже скачанное кем-то из класса — просто открываем доступ.
             await self._repo.grant(user.telegram_id, host, mode, ids)
             saved = 0

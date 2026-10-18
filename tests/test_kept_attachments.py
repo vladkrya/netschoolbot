@@ -122,3 +122,62 @@ async def test_endpoint_serves_kept_copy_when_server_is_down(app_context, users,
         assert response.status == 200 and await response.read() == b"saved-file"
     finally:
         await client.close()
+
+
+async def test_keeper_saves_only_for_those_who_turned_it_on(db, users, tmp_path, monkeypatch):
+    monkeypatch.setattr("app.attachments.keeper.PAUSE_S", 0)
+    wanted = {1: False}
+
+    async def is_wanted(user):
+        return wanted.get(user.telegram_id, False)
+
+    diary = Diary()
+    keeper = AttachmentKeeper(KeptAttachmentRepository(db), diary, tmp_path, wanted=is_wanted)
+    user = make_user(1)
+    await users.save(user)
+    keeper.offer(user, [homework(1)])
+    await settle(keeper)
+    await keeper.store(user, 2, b"opened")
+    assert diary.calls == [] and await keeper.get(user, 2) is None  # тумблер выключен
+    wanted[1] = True
+    keeper.offer(user, [homework(1)])
+    await settle(keeper)
+    assert await keeper.get(user, 1) == b"pdf-1"
+
+
+async def test_beta_toggle_is_admin_only_until_opened_to_all(app_context, users):
+    """Тумблер есть у админа (admin_id=1 в тестовых настройках); остальным —
+    только когда админ открыл доступ."""
+    from aiohttp.test_utils import TestClient, TestServer
+
+    from app.web.server import create_app
+
+    await users.save(make_user(1))
+    await users.save(make_user(2))
+    admin = {"X-Netschool-Token": await app_context.miniapp.issue_token(1)}
+    other = {"X-Netschool-Token": await app_context.miniapp.issue_token(2)}
+    client = TestClient(TestServer(create_app(app_context)))
+    await client.start_server()
+    try:
+        profile = (await (await client.get("/mini/api/profile", headers=other)).json())["data"]
+        assert profile["keep_attachments"]["available"] is False
+        response = await client.post("/mini/api/settings/keep-attachments", headers=other, json={"on": True})
+        assert response.status == 403
+        response = await client.post("/mini/api/settings/keep-attachments", headers=other, json={"all": True})
+        assert response.status == 403  # открыть всем может только админ
+
+        profile = (await (await client.get("/mini/api/profile", headers=admin)).json())["data"]
+        assert profile["keep_attachments"] == {"available": True, "on": False, "admin": True, "all": False, "days": 14}
+        data = (await (await client.post("/mini/api/settings/keep-attachments", headers=admin,
+                                         json={"on": True})).json())["data"]
+        assert data["on"] is True
+        assert await app_context.keep_attachments_wanted(await users.get(1)) is True
+        assert await app_context.keep_attachments_wanted(await users.get(2)) is False
+
+        await client.post("/mini/api/settings/keep-attachments", headers=admin, json={"all": True})
+        response = await client.post("/mini/api/settings/keep-attachments", headers=other, json={"on": True})
+        assert (await response.json())["data"] == {"available": True, "on": True, "admin": False, "all": False,
+                                                    "days": 14}
+        assert await app_context.keep_attachments_wanted(await users.get(2)) is True
+    finally:
+        await client.close()

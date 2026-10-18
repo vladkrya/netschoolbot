@@ -453,6 +453,49 @@ def _utc_iso(moment: dt.datetime | None) -> str | None:
     return moment.isoformat(timespec="seconds") + "Z" if moment else None
 
 
+async def _keep_attachments_info(app: AppContext, user: User) -> dict:
+    """Тумблер «Сохранять файлы заданий»: есть ли он, включён ли и — для
+    админа — открыт ли доступ всем."""
+    from ..attachments.keeper import ALL_FLAG, PREF
+    from ..db.repositories import AppFlagRepository
+
+    if app.attachments is None or not app.attachments.enabled:
+        return {"available": False}
+    admin = bool(app.settings.telegram.admin_id) and user.telegram_id == app.settings.telegram.admin_id
+    return {
+        "available": await app.keep_attachments_access(user),
+        "on": bool((await app.miniapp.prefs(user.telegram_id)).get(PREF)),
+        "admin": admin,
+        "all": await AppFlagRepository(app.db).get(ALL_FLAG) if admin else False,
+        "days": app.settings.netschool.keep_attachments_days,
+    }
+
+
+@routes.post("/api/settings/keep-attachments")
+async def keep_attachments_setting(request: web.Request) -> web.Response:
+    """Свой тумблер «Сохранять файлы заданий»; admin_all — админ открывает
+    бету всем пользователям."""
+    from ..attachments.keeper import ALL_FLAG, PREF
+    from ..db.repositories import AppFlagRepository
+
+    app, user = context(request), current_user(request)
+    try:
+        body = await request.json()
+    except ValueError:
+        body = None
+    if not isinstance(body, dict):
+        return json_error("Некорректный запрос")
+    if "all" in body:
+        if not app.settings.telegram.admin_id or user.telegram_id != app.settings.telegram.admin_id:
+            return json_error("Это может только админ", status=403)
+        await AppFlagRepository(app.db).set(ALL_FLAG, bool(body["all"]))
+    if "on" in body:
+        if not await app.keep_attachments_access(user):
+            return json_error("Сохранение файлов пока в бете и вам недоступно", status=403)
+        await app.miniapp.save_prefs(user.telegram_id, {PREF: bool(body["on"])})
+    return web.json_response({"ok": True, "data": await _keep_attachments_info(app, user)})
+
+
 async def _sgo_updates(app: AppContext, telegram_id: int, url: str) -> bool:
     from ..db.repositories import SgoStatusRepository
     from ..status.service import host_of
@@ -486,6 +529,8 @@ async def profile(request: web.Request) -> web.Response:
                 "notifications": asdict(user.notifications),
                 # «Об обновлениях «Сетевого города»» — подписка на сервер школы (status/alerts.py).
                 "sgo_updates": await _sgo_updates(app, (viewer or user).telegram_id, user.school.url),
+                # «Сохранять файлы заданий» (бета, attachments/keeper.py).
+                "keep_attachments": await _keep_attachments_info(app, viewer or user),
                 # Тумблер пропусков показывается только там, где есть отметки посещаемости.
                 "api_mode": user.effective_api_mode.value,
                 "interval_minutes": user.check_interval // 60,

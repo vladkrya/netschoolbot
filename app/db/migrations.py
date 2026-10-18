@@ -738,6 +738,12 @@ MIGRATIONS: list[str] = [
         attachment_id INTEGER NOT NULL,
         PRIMARY KEY (telegram_id, host, mode, attachment_id)
     );
+    -- Переключатели на весь бот, которые админ меняет из приложения
+    -- (например, «сохранение файлов — всем»).
+    CREATE TABLE app_flags (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+    );
     """,
 ]
 
