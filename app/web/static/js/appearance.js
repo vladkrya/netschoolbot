@@ -186,6 +186,11 @@ export function applyHalloween() {
     document.querySelectorAll('.hw-decor, .hw-stars, .hw-fog, .hw-swoop').forEach((el) => el.remove());
   }
   if (on === was) return;
+  // Фон, который скрипт в <head> записал в style до загрузки стилей, —
+  // по прошлому запуску. Если Хеллоуин включился (или выключился) позже,
+  // он перебивал ночное небо: под прозрачным body светлел весь экран.
+  root.style.removeProperty('background');
+  root.style.removeProperty('--boot-bg');
   applyAccent();
   // Иконки панели и кнопки помощника меняются на месте — значки
   // непрочитанного остаются.
