@@ -36,29 +36,16 @@
       <span class="muted" id="live-status" role="status">Подключаемся…</span>
     </div>
 
-    <section class="card route-card" aria-labelledby="route-title">
-      <h2 id="route-title">Доступность по регионам</h2>
-      <p class="muted route-help">В каждой ячейке — результат последней проверки без входа в аккаунт. Адреса мобильного API берём из <a href="https://mobile.ir-tech.ru/api/v1/mobile/parent/end-points" target="_blank" rel="noopener">каталога ИРТех</a>. Ответ API не гарантирует загрузку дневника.</p>
-      <div id="route-summary" class="route-summary" aria-live="polite"></div>
-      <div class="route-scroll" tabindex="0" role="region" aria-label="Доступность веба и мобильного API">
-        <table class="route-table">
-          <thead><tr><th scope="col">Регион</th><th scope="col">Веб</th><th scope="col">Мобильное API</th></tr></thead>
-          <tbody id="route-hosts"></tbody>
-        </table>
-      </div>
-      <p class="muted route-help">401 без токена — API отвечает. 403 — доступ запрещён, 503 — сервис недоступен. Ошибка TLS — не удалось проверить сертификат. «Нет в каталоге» — мобильного адреса у ИРТех нет.</p>
-    </section>
-
     <section class="card charts">
       <div class="chart" id="chart-down" aria-label="Сколько серверов было недоступно"></div>
       <div class="chart" id="chart-reports" aria-label="Сколько пришло жалоб"></div>
     </section>
 
     <section class="card">
-      <h2>История проверок</h2>
+      <h2>Доступность по регионам</h2>
       <p class="muted route-help">Графики и проценты относятся к веб-API. Работающий веб остаётся доступным, даже если мобильное API не отвечает.</p>
       <div class="hosts-head" aria-hidden="true">
-        <span>Сервер</span><span></span>
+        <span>Регион</span><span></span>
         <span class="axis-row"><span id="strip-from">24 ч назад</span><span>сейчас</span></span>
         <span>доступн.</span><span></span>
       </div>
