@@ -409,7 +409,7 @@ async def history(message: Message, user: User, app: AppContext) -> None:
     await reply(message, formatting.mark_history(entries, tz=user.tz))
 
 
-@router.message(StateFilter(None))
+@router.message(StateFilter(None), F.chat.type == "private")
 async def unrecognized_message(message: Message, user: User) -> None:
     if hint := require_school(user):
         await reply(message, hint)
