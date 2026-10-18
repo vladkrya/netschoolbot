@@ -124,6 +124,52 @@ export function openInstallGuide() {
   });
 }
 
+/** Пришли по ссылке устройства (?install=1) с телефона: инструкция на весь
+ *  экран, а дневник — под кнопкой «Пользоваться в браузере». Показывается
+ *  каждый раз, даже если на другом устройстве приложение уже стоит. */
+function openInstallPage() {
+  const kind = browser();
+  const inapp = kind === 'ios-inapp' || kind === 'android-inapp';
+  const page = document.createElement('div');
+  page.className = 'install-page';
+  page.setAttribute('role', 'dialog');
+  page.setAttribute('aria-modal', 'true');
+  const draw = () => {
+    const where = kind === 'ios-inapp' ? 'Safari' : 'Chrome';
+    const list = inapp
+      ? `<p class="install-note">Это встроенный браузер — отсюда на экран «Домой» не добавить. Откройте ссылку в ${where}:
+          меню ⋯ → «Открыть в ${where === 'Safari' ? 'Safari' : 'браузере'}». Ссылка одноразовая — если не откроется,
+          создайте новую в Telegram: Настройки → Устройства.</p>`
+      : deferredPrompt ? '<button class="btn" data-install-now>Установить</button>'
+      : `<ol class="install-steps">${steps().map((step, index) => `
+          <li><span class="install-num">${index + 1}</span><span>${step}</span></li>`).join('')}</ol>`;
+    page.innerHTML = `<div class="install-page-body">
+        <img class="install-page-icon" src="${base}/static/apple-touch-icon.png" alt="" width="88" height="88">
+        <h1>Установите дневник</h1>
+        <p class="muted">Вы уже вошли. Добавьте дневник на экран «Домой» — он будет открываться с иконки,
+          как обычное приложение: во весь экран и с пуш-уведомлениями.</p>
+        ${list}
+        <p class="muted small">Потом запускайте дневник с иконки — там он останется в аккаунте, даже если в браузере выйти.</p>
+        <button class="btn outline" data-install-skip>Пользоваться в браузере</button>
+      </div>`;
+    page.querySelector('[data-install-skip]').addEventListener('click', () => { tap(); page.remove(); });
+    page.querySelector('[data-install-now]')?.addEventListener('click', async () => {
+      const prompt = deferredPrompt;
+      deferredPrompt = null;
+      try {
+        await prompt.prompt();
+        if ((await prompt.userChoice).outcome === 'accepted') page.remove();
+        else draw();
+      } catch { draw(); }
+    });
+  };
+  draw();
+  // Chrome присылает предложение установки чуть позже — тогда кнопка вместо шагов.
+  window.addEventListener('beforeinstallprompt', () => { if (page.isConnected) draw(); });
+  window.addEventListener('appinstalled', () => page.remove(), { once: true });
+  document.body.append(page);
+}
+
 /** Приложение с экрана «Домой» уже открывали — на этом или другом устройстве. */
 function appInstalled() {
   return installed() || getPref('pwa') === 'installed';
@@ -284,11 +330,11 @@ export function initInstallPrompt() {
     const query = params.toString();
     history.replaceState(history.state, '', `${location.pathname}${query ? `?${query}` : ''}${location.hash}`);
   }
-  if (!canInstall()) return;
-  if (asked) {
-    waitForSheet().then(() => { if (!installed()) openInstallGuide(); });
+  if (asked && !initData && !installed() && browser() !== 'desktop') {
+    openInstallPage();
     return;
   }
+  if (!canInstall()) return;
   // Chrome присылает событие не сразу — даём ему пару секунд.
   setTimeout(async () => {
     await waitForSheet();
