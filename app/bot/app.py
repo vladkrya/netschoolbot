@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import logging
 
-from aiogram import Bot, Dispatcher
+from aiogram import Bot, Dispatcher, F
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.types import BotCommand, MenuButtonCommands, MenuButtonWebApp, WebAppInfo
+from aiogram.types import (
+    BotCommand, BotCommandScopeAllGroupChats, BotCommandScopeAllPrivateChats,
+    MenuButtonCommands, MenuButtonWebApp, WebAppInfo,
+)
 
 from ..context import AppContext
 from ..settings import Settings
@@ -61,6 +64,11 @@ def create_bot(settings: Settings) -> Bot:
 def create_dispatcher(context: AppContext) -> Dispatcher:
     dispatcher = Dispatcher(storage=MemoryStorage())
 
+    # В группах бот только публикует служебные уведомления. Отсекаем
+    # сообщения и старые кнопки до обработчиков и создания пользователя.
+    dispatcher.message.filter(F.chat.type == "private")
+    dispatcher.callback_query.filter(F.message.chat.type == "private")
+
     middleware = ContextMiddleware(context)
     dispatcher.message.middleware(middleware)
     dispatcher.callback_query.middleware(middleware)
@@ -80,7 +88,9 @@ def create_dispatcher(context: AppContext) -> Dispatcher:
 
 
 async def run_bot(bot: Bot, dispatcher: Dispatcher, miniapp_url: str) -> None:
-    await bot.set_my_commands(COMMANDS)
+    await bot.delete_my_commands()
+    await bot.delete_my_commands(scope=BotCommandScopeAllGroupChats())
+    await bot.set_my_commands(COMMANDS, scope=BotCommandScopeAllPrivateChats())
     await bot.set_chat_menu_button(
         menu_button=(
             MenuButtonWebApp(text="Дневник", web_app=WebAppInfo(url=f"{miniapp_url.rstrip('/')}/"))
