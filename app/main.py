@@ -195,15 +195,15 @@ async def run(settings: Settings, args: argparse.Namespace) -> int:
     except Exception as exc:  # noqa: BLE001 — без истории версий бот работает
         logger.warning("Версии «Сетевого города» не загружены: %s", exc)
     context.watchers.outages.track_versions(versions)
-    # Страница статуса: все серверы «Сетевого города» опрашиваются сами.
+    # Страница статуса: бот сам опрашивает все серверы «Сетевого города»,
+    # отдельно от пользователей и проверок оценок.
     from .db.repositories import SgoStatusRepository
-    from .status.service import StatusService
+    from .status.service import HttpProber, StatusService, catalog_fetcher
 
+    proxy_for = settings.netschool.proxy_for
     context.status = StatusService(
-        SgoStatusRepository(context.db), SgoVersionRepository(context.db),
-        fetch=logindata_fetcher(context), versions=versions,
-        notify=tell_admin if settings.telegram.admin_id else None,
-        secret=settings.secret_key,
+        SgoStatusRepository(context.db), prober=HttpProber(proxy_for), catalog=catalog_fetcher(proxy_for),
+        notify=tell_admin if settings.telegram.admin_id else None, secret=settings.secret_key,
     )
 
     supervisor = Supervisor()

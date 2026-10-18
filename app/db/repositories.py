@@ -1762,10 +1762,6 @@ class SgoVersionRepository:
                 await conn.execute("UPDATE sgo_versions SET seen_at=? WHERE host=?", (now, host))
             else:
                 await conn.execute(
-                    "INSERT INTO sgo_version_history (host, version, previous, changed_at) VALUES (?, ?, ?, ?)",
-                    (host, version, previous, now),
-                )
-                await conn.execute(
                     "INSERT INTO sgo_versions (host, version, previous, changed_at, seen_at) "
                     "VALUES (?, ?, ?, ?, ?) ON CONFLICT(host) DO UPDATE SET "
                     "version=excluded.version, previous=excluded.previous, "
@@ -1778,36 +1774,29 @@ class SgoVersionRepository:
         rows = await self._db.fetch_all("SELECT * FROM sgo_versions ORDER BY host")
         return [dict(row) for row in rows]
 
-    async def history(self, since: float, limit: int = 200) -> list[dict]:
-        """Смены версий, новые первыми."""
-        rows = await self._db.fetch_all(
-            "SELECT host, version, previous, changed_at FROM sgo_version_history "
-            "WHERE changed_at >= ? ORDER BY changed_at DESC LIMIT ?",
-            (since, limit),
-        )
-        return [dict(row) for row in rows]
-
 
 class SgoStatusRepository:
-    """Проверки серверов «Сетевого города» и жалобы на сбои для страницы статуса.
+    """Страница статуса «Сетевого города»: свои проверки серверов, своя история
+    версий и жалобы. С пользователями и проверками оценок не связано.
 
-    Здесь нет личных данных: адрес сервера, время, итог. Клиент жалобы —
-    хэш адреса, только чтобы ограничить частоту.
+    Личных данных нет: адрес сервера, время, итог. Клиент жалобы — хэш
+    адреса, только чтобы ограничить частоту.
     """
 
     def __init__(self, db: Database) -> None:
         self._db = db
 
-    async def add_probes(self, rows: list[tuple[str, float, bool, int, str]]) -> None:
+    async def add_probes(self, rows: list[tuple[str, float, bool, int, str, bool | None]]) -> None:
         await self._db.execute_many(
-            "INSERT INTO sgo_probes (host, at, ok, latency_ms, error) VALUES (?, ?, ?, ?, ?)",
-            [(host, at, int(ok), latency, error) for host, at, ok, latency, error in rows],
+            "INSERT INTO sgo_probes (host, at, ok, latency_ms, error, mobile) VALUES (?, ?, ?, ?, ?, ?)",
+            [(host, at, int(ok), latency, error, None if mobile is None else int(mobile))
+             for host, at, ok, latency, error, mobile in rows],
         )
 
     async def recent_probes(self, since: float) -> list[dict]:
         """Проверки с `since`, новые первыми — для текущего состояния."""
         rows = await self._db.fetch_all(
-            "SELECT host, at, ok, latency_ms, error FROM sgo_probes WHERE at >= ? ORDER BY at DESC",
+            "SELECT host, at, ok, latency_ms, error, mobile FROM sgo_probes WHERE at >= ? ORDER BY at DESC",
             (since,),
         )
         return [dict(row) for row in rows]
@@ -1816,7 +1805,8 @@ class SgoStatusRepository:
         """По серверу: сколько проверок, сколько удачных, средний отклик удачных."""
         rows = await self._db.fetch_all(
             "SELECT host, COUNT(*) AS total, SUM(ok) AS good, "
-            "AVG(CASE WHEN ok THEN latency_ms END) AS latency "
+            "AVG(CASE WHEN ok THEN latency_ms END) AS latency, "
+            "COUNT(mobile) AS mobile_total, SUM(mobile) AS mobile_good "
             "FROM sgo_probes WHERE at >= ? GROUP BY host",
             (since,),
         )
@@ -1836,6 +1826,36 @@ class SgoStatusRepository:
         rows = await self._db.fetch_all(
             "SELECT host, at, error FROM sgo_probes WHERE at >= ? AND ok = 0 ORDER BY host, at",
             (since,),
+        )
+        return [dict(row) for row in rows]
+
+    async def versions(self) -> dict[str, dict]:
+        """Текущая версия каждого сервера и когда она появилась."""
+        rows = await self._db.fetch_all(
+            "SELECT host, version, previous, MAX(changed_at) AS changed_at FROM sgo_status_versions GROUP BY host"
+        )
+        return {row["host"]: dict(row) for row in rows}
+
+    async def save_version(self, host: str, version: str, now: float) -> str:
+        """Записать увиденную версию. Возвращает прежнюю ('' — сервер новый)."""
+        async with self._db.transaction() as conn:
+            cursor = await conn.execute(
+                "SELECT version FROM sgo_status_versions WHERE host = ? ORDER BY changed_at DESC LIMIT 1", (host,))
+            row = await cursor.fetchone()
+            previous = row[0] if row else ""
+            if previous != version:
+                await conn.execute(
+                    "INSERT INTO sgo_status_versions (host, version, previous, changed_at) VALUES (?, ?, ?, ?)",
+                    (host, version, previous, now),
+                )
+        return previous
+
+    async def version_history(self, since: float, limit: int = 200) -> list[dict]:
+        """Смены версий, новые первыми."""
+        rows = await self._db.fetch_all(
+            "SELECT host, version, previous, changed_at FROM sgo_status_versions "
+            "WHERE changed_at >= ? ORDER BY changed_at DESC LIMIT ?",
+            (since, limit),
         )
         return [dict(row) for row in rows]
 
@@ -1862,11 +1882,6 @@ class SgoStatusRepository:
                 "SELECT COUNT(*) FROM sgo_reports WHERE client = ? AND host = ? AND created_at >= ?",
                 (client, host, since))
         return int(row[0]) if row else 0
-
-    async def school_urls(self) -> list[str]:
-        """Адреса серверов, на которых есть наши пользователи."""
-        rows = await self._db.fetch_all("SELECT DISTINCT school_url FROM users WHERE school_url != ''")
-        return [row[0] for row in rows]
 
     async def prune(self, probes_before: float, reports_before: float) -> None:
         await self._db.execute("DELETE FROM sgo_probes WHERE at < ?", (probes_before,))

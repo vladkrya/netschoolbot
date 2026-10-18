@@ -1,11 +1,16 @@
 """Статус серверов «Сетевого города» по всем регионам.
 
-Проверки оценок знают только о серверах, где есть наши пользователи, и только
-в своём ритме. Здесь все серверы из справочника регионов (и серверы наших
-пользователей вне его) опрашиваются раз в несколько минут одним и тем же
-запросом — `/webapi/logindata` без входа: он же отдаёт версию. Из проверок
-складываются состояние, доступность за период и список сбоев; люди могут
-пожаловаться на сбой, который проверка не видит (вход, пустые данные).
+Отдельно от всего остального бота: ни пользователи, ни проверки оценок здесь
+не участвуют. Бот сам раз в несколько минут ходит на каждый сервер из каталога
+мобильного приложения NetSchool и из справочника регионов `netschoolpy`:
+
+* веб — `/webapi/logindata` без входа: отвечает ли сайт и какая версия;
+* мобильное API — `/api/mobile/users` без токена: 401 значит «живо» (данных
+  без токена не получить, но сервер принял запрос и ответил как положено).
+
+Из каталога берутся и официальные пометки ИРТех: регион отключён в
+приложении и почему. Люди могут пожаловаться на сбой, который проверка не
+видит (вход, пустые данные).
 """
 
 from __future__ import annotations
@@ -22,15 +27,23 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
+import httpx
+
 if TYPE_CHECKING:
-    from ..db.repositories import SgoStatusRepository, SgoVersionRepository
-    from ..notifications.sgo_version import VersionTracker
+    from ..db.repositories import SgoStatusRepository
 
 logger = logging.getLogger("netschoolbot.status")
 
 PROBE_EVERY_S = 5 * 60
 PROBE_TIMEOUT_S = 20
-PROBE_CONCURRENCY = 6
+MOBILE_TIMEOUT_S = 10
+# Каталог регионов мобильного приложения меняется редко.
+CATALOG_EVERY_S = 6 * 3600
+CATALOG_URL = "https://mobile.ir-tech.ru/api/v1/mobile/parent/end-points"
+# Тестовые и демо-серверы ИРТех в каталоге — не регионы.
+SERVICE_HOSTS = ("ir-tech.ru",)
+USER_AGENT = "netschoolbot-status (+https://ns.ikrya.ru/status)"
+PROBE_CONCURRENCY = 10
 # Ответ дольше — «медленно»: logindata маленький, обычно это доли секунды.
 SLOW_MS = 5000
 # Неудачи с таким разрывом — один сбой: между ними удачной проверки не было.
@@ -63,7 +76,6 @@ REPORT_ALERT_COUNT = 3
 REPORT_ALERT_WINDOW_S = 30 * 60
 REPORT_ALERT_EVERY_S = 3600
 
-Fetch = Callable[[str], Awaitable[str]]
 Notify = Callable[[str], Awaitable[None]]
 
 
@@ -76,6 +88,130 @@ class Target:
     host: str
     url: str
     region: str
+    # Адрес мобильного API; '' — региона нет в приложении NetSchool.
+    mobile_url: str = ""
+    # Пометка ИРТех в каталоге: регион отключён в приложении, и почему.
+    unavailable: bool = False
+    notice: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class Probe:
+    ok: bool
+    latency_ms: int
+    version: str = ""
+    error: str = ""
+    # None — мобильное API не проверяли (региона нет в приложении).
+    mobile: bool | None = None
+
+
+Prober = Callable[[Target], Awaitable[Probe]]
+Catalog = Callable[[], Awaitable[list[dict]]]
+
+
+def merge_targets(catalog: list[dict]) -> list[Target]:
+    """Серверы из каталога приложения и справочника регионов, по хосту.
+
+    Название и веб-адрес — из справочника (там полные названия и адреса
+    веб-версии, у Сахалина — с портом), мобильный адрес и пометки — из
+    каталога. Волгограда в каталоге нет — он остаётся из справочника.
+    """
+    from netschoolpy import REGIONS
+
+    targets: dict[str, Target] = {}
+    for region, url in REGIONS.items():
+        host = host_of(url)
+        targets[host] = Target(host, url.rstrip("/"), region)
+    for item in catalog:
+        api = (item.get("url") or "").rstrip("/")
+        host = host_of(api)
+        if not api or not host or host.endswith(SERVICE_HOSTS):
+            continue
+        known = targets.get(host)
+        site = api.removesuffix("/api/mobile")
+        targets[host] = Target(
+            host,
+            known.url if known else site,
+            known.region if known else (item.get("name") or host),
+            mobile_url=api,
+            unavailable=bool(item.get("unavailable")),
+            notice=" ".join((item.get("comment") or "").split())[:500],
+        )
+    return sorted(targets.values(), key=lambda t: t.region)
+
+
+class HttpProber:
+    """Запросы бота к серверам — своим клиентом, не тем, что ходит за оценками.
+
+    Маршрут тот же, что у входа (прокси по хосту, сертификаты Минцифры):
+    иначе страница показывала бы «недоступен» там, где бот работает.
+    """
+
+    def __init__(self, proxy_for: Callable[[str], str | None] = lambda _url: None) -> None:
+        self._proxy_for = proxy_for
+
+    def _client(self, url: str, timeout: float) -> httpx.AsyncClient:
+        from ..netschool.patches.http import school_ssl_context
+
+        return httpx.AsyncClient(
+            proxy=self._proxy_for(url), verify=school_ssl_context(), timeout=timeout,
+            headers={"User-Agent": USER_AGENT},
+            # В справочнике бывают адреса http://, а сайт уводит на https.
+            follow_redirects=True, max_redirects=3,
+        )
+
+    async def __call__(self, target: Target) -> Probe:
+        started = time.monotonic()
+        try:
+            async with self._client(target.url, PROBE_TIMEOUT_S) as client:
+                response = await client.get(f"{target.url}/webapi/logindata")
+            ms = int((time.monotonic() - started) * 1000)
+            if response.status_code != 200:
+                web = Probe(False, ms, error=f"http {response.status_code}")
+            else:
+                try:
+                    payload = response.json()
+                except ValueError:
+                    payload = None
+                if isinstance(payload, dict) and payload.get("version"):
+                    web = Probe(True, ms, version=str(payload["version"]).strip()[:40])
+                else:
+                    # 200 со страницей вместо данных — обычно заглушка техработ.
+                    web = Probe(False, ms, error="maintenance")
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001 — недоступность и есть результат
+            web = Probe(False, int((time.monotonic() - started) * 1000), error=error_name(exc))
+        if not target.mobile_url:
+            return web
+        return Probe(web.ok, web.latency_ms, web.version, web.error, await self._mobile(target))
+
+    async def _mobile(self, target: Target) -> bool:
+        try:
+            async with self._client(target.mobile_url, MOBILE_TIMEOUT_S) as client:
+                response = await client.get(f"{target.mobile_url}/users")
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # noqa: BLE001
+            return False
+        # Без токена живой сервер отвечает 401: запрос дошёл до API.
+        return response.status_code in (200, 401, 403)
+
+
+def catalog_fetcher(proxy_for: Callable[[str], str | None] = lambda _url: None) -> Catalog:
+    """Каталог регионов мобильного приложения — открытый, без входа."""
+    async def fetch() -> list[dict]:
+        from netschoolpy.mobile import APP_USER_AGENT, APP_VERSION
+
+        async with httpx.AsyncClient(proxy=proxy_for(CATALOG_URL), timeout=PROBE_TIMEOUT_S) as client:
+            response = await client.get(
+                CATALOG_URL, params={"lng": "ru", "appVersion": APP_VERSION},
+                headers={"User-Agent": APP_USER_AGENT},
+            )
+        response.raise_for_status()
+        return list(response.json()["items"])
+
+    return fetch
 
 
 def error_name(exc: BaseException) -> str:
@@ -100,70 +236,74 @@ def error_name(exc: BaseException) -> str:
 
 
 class StatusService:
-    def __init__(self, repo: SgoStatusRepository, version_repo: SgoVersionRepository, *,
-                 fetch: Fetch | None = None, versions: VersionTracker | None = None,
-                 notify: Notify | None = None, secret: str = "",
+    def __init__(self, repo: SgoStatusRepository, *, prober: Prober | None = None,
+                 catalog: Catalog | None = None, notify: Notify | None = None, secret: str = "",
                  clock: Callable[[], float] = time.time) -> None:
         self._repo = repo
-        self._version_repo = version_repo
-        self._fetch = fetch
-        self._versions = versions
+        self._prober = prober
+        self._catalog = catalog
         self._notify = notify
         self._secret = secret.encode()
         self._clock = clock
+        self._targets = merge_targets([])
+        self._catalog_at: float | None = None
         self._cache: dict[str, tuple[float, dict]] = {}
         self._alerted: dict[str, float] = {}
 
     # ───────────────────────────── серверы ─────────────────────────────
 
-    async def targets(self) -> tuple[list[Target], set[str]]:
-        """Все серверы и хосты, на которых есть наши пользователи."""
-        from netschoolpy import REGIONS
+    def targets(self) -> list[Target]:
+        return self._targets
 
-        targets: dict[str, Target] = {}
-        for region, url in sorted(REGIONS.items()):
-            targets.setdefault(host_of(url), Target(host_of(url), url.rstrip("/"), region))
-        ours: set[str] = set()
-        for url in await self._repo.school_urls():
-            host = host_of(url)
-            ours.add(host)
-            if host not in targets:
-                parsed = urlparse(url)
-                targets[host] = Target(host, f"{parsed.scheme}://{parsed.netloc}", "")
-        return sorted(targets.values(), key=lambda t: (not t.region, t.region or t.host)), ours
+    async def refresh_catalog(self) -> None:
+        """Обновить список серверов из каталога приложения, если пора.
+        Не вышло — работаем с прежним списком."""
+        now = self._clock()
+        if self._catalog is None or (self._catalog_at is not None and now - self._catalog_at < CATALOG_EVERY_S):
+            return
+        self._catalog_at = now
+        try:
+            self._targets = merge_targets(await self._catalog())
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001 — есть справочник регионов
+            logger.info("Каталог регионов NetSchool не получен: %s", type(exc).__name__)
+            # Повторить через полчаса, а не через 6 часов.
+            self._catalog_at = now - CATALOG_EVERY_S + 1800
 
     # ───────────────────────────── проверки ─────────────────────────────
 
     async def probe_all(self) -> int:
         """Один круг проверок. Возвращает, сколько серверов ответили."""
-        if self._fetch is None:
+        if self._prober is None:
             return 0
-        targets, ours = await self.targets()
+        await self.refresh_catalog()
+        targets = self._targets
         at = self._clock()
         semaphore = asyncio.Semaphore(PROBE_CONCURRENCY)
 
-        async def probe(target: Target) -> tuple[tuple, str]:
+        async def probe(target: Target) -> Probe:
             async with semaphore:
-                started = time.monotonic()
                 try:
-                    version = await asyncio.wait_for(self._fetch(target.url), PROBE_TIMEOUT_S)
+                    return await asyncio.wait_for(self._prober(target), PROBE_TIMEOUT_S + MOBILE_TIMEOUT_S + 5)
                 except asyncio.CancelledError:
                     raise
                 except Exception as exc:  # noqa: BLE001 — недоступность и есть результат
-                    ms = int((time.monotonic() - started) * 1000)
-                    return (target.host, at, False, ms, error_name(exc)), ""
-                ms = int((time.monotonic() - started) * 1000)
-                return (target.host, at, True, ms, ""), (version or "").strip()
+                    return Probe(False, 0, error=error_name(exc))
 
         results = await asyncio.gather(*(probe(target) for target in targets))
-        await self._repo.add_probes([row for row, _ in results])
-        if self._versions is not None:
-            for row, version in results:
-                if version:
-                    host = row[0]
-                    await self._versions.observe(host, version, self._notify if host in ours else None)
+        await self._repo.add_probes([
+            (target.host, at, result.ok, result.latency_ms, result.error, result.mobile)
+            for target, result in zip(targets, results)
+        ])
+        for target, result in zip(targets, results):
+            if result.version:
+                previous = await self._repo.save_version(target.host, result.version, at)
+                if previous and previous != result.version:
+                    logger.info("«Сетевой город» %s: версия %s → %s", target.host, previous, result.version,
+                                extra={"public": True})
         self._cache.clear()
-        good = sum(1 for row, _ in results if row[2])
+        good = sum(1 for result in results if result.ok)
         logger.debug("Статус «Сетевого города»: ответили %s из %s", good, len(results))
         return good
 
@@ -190,8 +330,7 @@ class StatusService:
 
     async def report(self, host: str, kind: str, comment: str, ip: str) -> str | None:
         """Принять жалобу. Возвращает текст отказа или None."""
-        targets, _ = await self.targets()
-        names = {target.host: target for target in targets}
+        names = {target.host: target for target in self._targets}
         if host not in names:
             return "Неизвестный сервер"
         if kind not in REPORT_KINDS:
@@ -245,7 +384,7 @@ class StatusService:
         length, size = RANGES[range_key]
         count = int(length // size)
         since = (math.floor(now / size) - count + 1) * size
-        targets, _ = await self.targets()
+        targets = self._targets
         regions = {t.host: t.region for t in targets}
 
         recent: dict[str, list[dict]] = {}
@@ -280,7 +419,7 @@ class StatusService:
 
         incidents = self._incidents(await self._repo.failures(now - KEEP_PROBES_S), recent, regions)
         ongoing = {i["host"]: i["start"] for i in incidents if i["ongoing"]}
-        versions = {row["host"]: row for row in await self._version_repo.all()}
+        versions = await self._repo.versions()
 
         hosts = []
         for target in targets:
@@ -288,6 +427,7 @@ class StatusService:
             state = _state(probes)
             last = probes[0] if probes else None
             last_ok = next((p["at"] for p in probes if p["ok"]), None)
+            mobile = next((p["mobile"] for p in probes if p["mobile"] is not None), None)
             version = versions.get(target.host)
             hosts.append({
                 "host": target.host,
@@ -301,6 +441,11 @@ class StatusService:
                 "down_since": ongoing.get(target.host),
                 "version": version["version"] if version else "",
                 "version_changed_at": version["changed_at"] if version else None,
+                "in_app": bool(target.mobile_url),
+                "app_disabled": target.unavailable,
+                "notice": target.notice,
+                "mobile": None if mobile is None else bool(mobile),
+                "mobile_uptime": _share(period.get(target.host), "mobile_total", "mobile_good"),
                 "uptime": _share(period.get(target.host)),
                 "uptime_24h": _share(day.get(target.host)),
                 "avg_latency_ms": _latency(day.get(target.host)),
@@ -309,7 +454,7 @@ class StatusService:
                 "report_bars": report_bars[target.host],
             })
 
-        history = await self._version_repo.history(now - 365 * 86400)
+        history = await self._repo.version_history(now - 365 * 86400)
         return {
             "generated_at": now,
             "range": range_key,
@@ -383,10 +528,10 @@ def _state(probes: list[dict]) -> str:
     return "up"
 
 
-def _share(row: dict | None) -> float | None:
-    if not row or not row["total"]:
+def _share(row: dict | None, total: str = "total", good: str = "good") -> float | None:
+    if not row or not row[total]:
         return None
-    return round(100 * (row["good"] or 0) / row["total"], 2)
+    return round(100 * (row[good] or 0) / row[total], 2)
 
 
 def _latency(row: dict | None) -> int | None:

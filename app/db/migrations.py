@@ -688,6 +688,22 @@ MIGRATIONS: list[str] = [
     );
     CREATE INDEX idx_sgo_reports_at ON sgo_reports(created_at);
     """,
+    # 42 — страница статуса отдельно от проверок оценок: мобильное API в
+    # проверках и своя история версий. Общую sgo_version_history писал
+    # VersionTracker проверок оценок — данные переносятся, таблица больше не нужна.
+    """
+    ALTER TABLE sgo_probes ADD COLUMN mobile INTEGER;
+    CREATE TABLE sgo_status_versions (
+        host TEXT NOT NULL,
+        version TEXT NOT NULL,
+        previous TEXT NOT NULL DEFAULT '',
+        changed_at REAL NOT NULL
+    );
+    CREATE INDEX idx_sgo_status_versions_host ON sgo_status_versions(host, changed_at);
+    INSERT INTO sgo_status_versions (host, version, previous, changed_at)
+    SELECT host, version, previous, changed_at FROM sgo_version_history;
+    DROP TABLE sgo_version_history;
+    """,
 ]
 
 

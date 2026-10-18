@@ -16,6 +16,7 @@ const ERRORS = {
   connect: 'нет соединения',
   ssl: 'ошибка сертификата',
   unavailable: 'сервер недоступен',
+  maintenance: 'заглушка вместо ответа (техработы?)',
 };
 
 let data = null;
@@ -219,7 +220,7 @@ function hostDetails(host) {
       ? el('ul', {}, versions.map((v) => el('li', {}, `${when(v.changed_at)}: `, el('code', {}, v.version),
           v.previous ? el('span', { class: 'muted' }, ` (была ${v.previous})`) : '')))
       : el('div', { class: 'muted' }, host.version ? `Текущая ${host.version}, смен не было` : 'Неизвестно'),
-    el('h3', {}, 'Последняя проверка'),
+    el('h3', {}, 'Последняя проверка сайта'),
     el('div', {}, host.checked_at ? `${when(host.checked_at)}: ${host.error ? errorText(host.error) : `ответ за ${host.latency_ms} мс`}` : 'Не проверялся'),
     host.last_ok_at && host.state !== 'up' ? el('div', { class: 'muted' }, `Последний удачный ответ ${when(host.last_ok_at)}`) : '',
   );
@@ -263,6 +264,7 @@ function hostRow(host) {
       host.version ? el('span', {}, 'Версия ', el('code', {}, host.version)) : el('span', {}, 'Версия неизвестна'),
       host.version_changed_at ? el('span', {}, `обновлён ${when(host.version_changed_at)}`) : '',
       statusLine ? el('span', {}, statusLine) : '',
+      mobileBadge(host),
       host.reports_24h ? el('span', {}, `${host.reports_24h} ${plural(host.reports_24h, 'жалоба', 'жалобы', 'жалоб')} за сутки`) : '',
       el('button', { class: 'expand', type: 'button', 'aria-expanded': String(isOpen), onclick: () => {
         if (expanded.has(host.host)) expanded.delete(host.host); else expanded.add(host.host);
@@ -270,8 +272,18 @@ function hostRow(host) {
       } }, isOpen ? 'Скрыть' : 'Подробнее'),
       el('button', { class: 'expand', type: 'button', onclick: () => openReport(host.host) }, 'Пожаловаться'),
     ),
+    host.notice ? el('div', { class: 'notice' }, el('b', {}, host.app_disabled ? 'ИРТех: регион отключён в приложении NetSchool. ' : 'ИРТех: '), host.notice) : '',
     isOpen ? hostDetails(host) : '',
   );
+}
+
+function mobileBadge(host) {
+  if (!host.in_app) return el('span', { class: 'muted' }, 'Нет в приложении NetSchool');
+  const label = host.app_disabled ? 'отключено' : host.mobile == null ? 'нет данных' : host.mobile ? 'отвечает' : 'не отвечает';
+  const cls = host.app_disabled || host.mobile === false ? 'down' : host.mobile ? 'up' : 'unknown';
+  return el('span', { class: 'mobile' }, 'Мобильное API ',
+    el('span', { class: `badge ${cls}` }, el('i', { 'aria-hidden': 'true' }), label),
+    host.mobile_uptime != null && !host.app_disabled ? el('span', { class: 'muted' }, ` ${pct(host.mobile_uptime)}`) : '');
 }
 
 function renderHosts() {
