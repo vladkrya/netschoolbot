@@ -97,6 +97,20 @@ class TestApi:
         third = await client.post(f"{BASE}/api/assistant", params={"token": token}, json=body)
         assert third.status == 429
 
+    @pytest.mark.parametrize(("on", "season", "styled"), [(True, True, True), (False, True, False), (True, False, False)])
+    async def test_halloween_style(self, client, token, enabled, monkeypatch, on, season, styled):
+        seen = []
+
+        async def fake(settings, messages):
+            seen.append(messages[0]["content"])
+            return "Ответ"
+
+        monkeypatch.setattr(assistant, "complete", fake)
+        monkeypatch.setattr(assistant, "halloween_season", lambda today: season)
+        body = {"messages": [{"role": "user", "content": "Что задали?"}], "ui": {"halloween": on}}
+        await client.post(f"{BASE}/api/assistant", params={"token": token}, json=body)
+        assert (assistant.HALLOWEEN_STYLE in seen[0]) is styled
+
     async def test_failure_does_not_spend_quota(self, client, token, enabled, monkeypatch):
         async def broken(settings, messages):
             raise assistant.AssistantError("нет", status=503, reason="busy")
