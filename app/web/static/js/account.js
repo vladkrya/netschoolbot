@@ -477,6 +477,55 @@ function showDeleteAccount(back) {
   };
 }
 
+/* ─────────────────────── Подтверждение почты ─────────────────────── */
+
+/** Сразу после регистрации: без кода из письма дальше не пускаем. */
+export function showVerify(info = {}) {
+  const card = screen(`<h2>Подтвердите почту</h2>
+    <p>Мы отправили код на <b>${esc(info.email || '')}</b>. Введите его, чтобы продолжить.</p>
+    <p class="muted">Письма нет — проверьте «Спам» или пришлите код ещё раз.</p>
+    <form class="account-form">
+      <input class="field" name="code" inputmode="numeric" autocomplete="one-time-code" placeholder="Код из письма" required>
+      <p class="account-error" hidden></p>
+      <button class="btn" type="submit">Подтвердить</button>
+    </form>
+    <div class="account-links">
+      <button class="link" data-act="resend">Прислать код ещё раз</button>
+      <button class="link" data-act="logout">Выйти из аккаунта</button>
+    </div>`);
+  const form = card.querySelector('form');
+  form.addEventListener('submit', (event) => {
+    event.preventDefault();
+    busy(form.querySelector('button'), async () => {
+      try {
+        await post('/api/account/verify', { code: form.code.value.trim() });
+        notify('success');
+        reload();
+      } catch (error) {
+        notify('error');
+        showError(card, error.message);
+      }
+    });
+  });
+  card.querySelector('[data-act="resend"]').addEventListener('click', (event) => {
+    busy(event.currentTarget, async () => {
+      try {
+        await post('/api/account/verify/send', {});
+        showError(card, '');
+        banner('Письмо с кодом отправлено');
+        setTimeout(() => banner(''), 2500);
+      } catch (error) {
+        showError(card, error.message);
+      }
+    });
+  });
+  card.querySelector('[data-act="logout"]').addEventListener('click', async () => {
+    await post('/api/account/logout', {}).catch(() => {});
+    reload();
+  });
+  return new Promise(() => {}); // страница перезагрузится после подтверждения
+}
+
 /* ─────────────────── Вход в «Сетевой город» с сайта ─────────────────── */
 
 const METHODS = [
@@ -838,9 +887,22 @@ export async function openAccountSettings() {
       busy(button, async () => {
         try {
           const { data } = await post('/api/account/telegram-link', {});
-          body.querySelector('.account-link-code').innerHTML = `
-            <p>Отправьте боту команду <code>/link ${esc(data.code)}</code> — код действует 15 минут.</p>
-            ${data.url ? `<a class="btn" href="${esc(data.url)}" target="_blank" rel="noopener">Открыть бота</a>` : ''}`;
+          const command = `/link ${data.code}`;
+          const box = body.querySelector('.account-link-code');
+          box.innerHTML = `
+            <p>${data.url ? 'Нажмите кнопку — бот откроется и сам привяжет аккаунт. Если не вышло, отправьте ему' : 'Отправьте боту'}
+              команду <code>${esc(command)}</code> — код действует 15 минут.</p>
+            ${data.url ? `<a class="btn" href="${esc(data.url)}" target="_blank" rel="noopener" data-act="open-bot">Скопировать и открыть Telegram</a>` : ''}
+            <button class="btn outline" type="button" data-act="copy-link">Скопировать команду</button>`;
+          // Команда в буфере на случай, если ссылка t.me откроется без старта.
+          const copyCommand = () => navigator.clipboard?.writeText(command).catch(() => {});
+          box.querySelector('[data-act="open-bot"]')?.addEventListener('click', copyCommand);
+          box.querySelector('[data-act="copy-link"]').addEventListener('click', async () => {
+            await copyCommand();
+            notify('success');
+            banner('Команда скопирована');
+            setTimeout(() => banner(''), 2000);
+          });
           button.hidden = true;
         } catch (failure) {
           banner(failure.message, true);

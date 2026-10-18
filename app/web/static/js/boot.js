@@ -50,6 +50,8 @@ function signedOut() {
 }
 
 async function boot() {
+  // В браузере жест вниз — наше обновление дневника, а не перезагрузка страницы.
+  if (!tg?.initData) document.documentElement.classList.add('in-browser');
   tg?.ready();
   tg?.expand();
   initIosHaptics();
@@ -78,6 +80,12 @@ async function boot() {
     const info = await accountInfo();
     // Дневник ученика, пригласившего на просмотр: только чтение, без почты и чатов.
     document.documentElement.classList.toggle('view-mode', Boolean(info?.viewing));
+    // Зарегистрировались по почте — сначала код из письма, потом всё остальное.
+    if (info?.needs_verify) {
+      const { showVerify } = await import('./account.js');
+      await showVerify(info);
+      return;
+    }
     if (info?.needs_sgo) {
       const { showSgoLogin } = await import('./account.js');
       await showSgoLogin(info);

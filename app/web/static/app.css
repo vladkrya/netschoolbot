@@ -119,6 +119,8 @@
 main, .app-header { overflow-x: clip; }
 /* Свайп вбок по трекпаду — наш жест (trackpad.js), а не история браузера. */
 html { background: var(--bg); overscroll-behavior-x: none; }
+/* Safari сам перезагружал страницу по жесту вниз и перебивал обновление дневника. */
+html.in-browser { overscroll-behavior-y: none; }
 
 body {
   background: var(--bg);
