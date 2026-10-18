@@ -323,7 +323,17 @@ function mount(body, { tab = false } = {}) {
       await waitForContext();
       const { data } = await api('/api/assistant', {
         method: 'POST',
+        onDelta: (text) => {
+          typing.classList.remove('typing');
+          typing.replaceChildren();
+          const content = document.createElement('div');
+          content.className = 'ai-text';
+          content.textContent = text;
+          typing.appendChild(content);
+          scroll();
+        },
         body: JSON.stringify({
+          stream: true,
           messages: chat.messages.slice(-12).map(({ role, content }) => ({ role, content })),
           // Что у человека на экране: без этого помощник отправлял искать
           // меню ☰, которого в новом дизайне нет.

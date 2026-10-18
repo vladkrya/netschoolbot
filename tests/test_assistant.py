@@ -182,3 +182,72 @@ def test_mixed_script_words_become_cyrillic():
     assert fix_mixed_script("ПРИВЕТ МИР, ПРИВEТ") == "ПРИВЕТ МИР, ПРИВЕТ"
     # Чисто латинские слова и слова через дефис остаются как есть.
     assert fix_mixed_script("Откройте Gmail, PDF-файл и e-mail") == "Откройте Gmail, PDF-файл и e-mail"
+
+
+class TestStreaming:
+    async def test_text_arrives_before_generation_finishes(self, client, token, enabled, monkeypatch):
+        import asyncio
+        import json
+        release = asyncio.Event()
+
+        async def fake(settings, messages):
+            yield "Первая часть "
+            await release.wait()
+            yield "ответа"
+
+        monkeypatch.setattr(assistant, "stream_complete", fake)
+        response = await client.post(f"{BASE}/api/assistant", params={"token": token},
+            json={"stream": True, "messages": [{"role": "user", "content": "Что задали?"}]})
+        try:
+            assert response.headers["X-Accel-Buffering"] == "no"
+            assert response.headers["Cache-Control"] == "no-store"
+            assert json.loads(await response.content.readline())["type"] == "start"
+            event = json.loads(await asyncio.wait_for(response.content.readline(), 2))
+            assert event == {"type": "delta", "text": "Первая часть "}
+        finally:
+            release.set()
+        events = [json.loads(line) for line in (await response.read()).splitlines()]
+        assert events[-1] == {"ok": True, "data": {"reply": "Первая часть ответа", "left": 1}}
+        assert enabled.assistant_usage[1][1] == 1
+
+    async def test_interrupted_generation_refunds_quota(self, client, token, enabled, monkeypatch):
+        import json
+        async def fake(settings, messages):
+            yield "Начало"
+            raise assistant.AssistantError("Ответ прервался", reason="busy")
+        monkeypatch.setattr(assistant, "stream_complete", fake)
+        for _ in range(3):
+            response = await client.post(f"{BASE}/api/assistant", params={"token": token},
+                json={"stream": True, "messages": [{"role": "user", "content": "?"}]})
+            events = [json.loads(line) for line in (await response.read()).splitlines()]
+            assert events[-1] == {"ok": False, "error": "Ответ прервался", "reason": "busy"}
+        assert enabled.assistant_usage[1][1] == 0
+
+    async def test_provider_stream_and_truncation(self):
+        from aiohttp import web
+        from aiohttp.test_utils import TestServer
+        import json
+        truncated = False
+        async def handle(request):
+            body = await request.json()
+            assert body["stream"] is True
+            response = web.StreamResponse(headers={"Content-Type": "text/event-stream"})
+            await response.prepare(request)
+            for text in ("При", "вет"):
+                data = json.dumps({"choices": [{"delta": {"content": text}}]}, ensure_ascii=False)
+                # В том числе сетевой разрыв посередине UTF-8 символа.
+                for byte in ("data: " + data + "\n\n").encode():
+                    await response.write(bytes([byte]))
+            if not truncated:
+                await response.write(b"data: [DONE]\n\n")
+            await response.write_eof()
+            return response
+        app = web.Application()
+        app.router.add_post("/chat/completions", handle)
+        async with TestServer(app) as server:
+            settings = AssistantSettings(api_key="test", base_url=str(server.make_url("/")).rstrip("/"))
+            assert "".join([chunk async for chunk in assistant.stream_complete(settings, [])]) == "Привет"
+            truncated = True
+            with pytest.raises(assistant.AssistantError, match="прервался"):
+                async for _ in assistant.stream_complete(settings, []):
+                    pass

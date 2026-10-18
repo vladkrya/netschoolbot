@@ -324,6 +324,45 @@ document.addEventListener('click', (event) => {
   if (event.target.closest?.('[data-sgo-relogin]')) relogin();
 });
 
+/** NDJSON может разрезаться посередине строки и даже UTF-8 символа. */
+async function readAssistantStream(response, onDelta) {
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '', text = '', result = null;
+  const timer = setTimeout(() => reader.cancel(), 100000);
+  const line = (raw) => {
+    if (!raw.trim()) return;
+    const event = JSON.parse(raw);
+    if (result) throw new Error('Данные после конца ответа');
+    if (event.type === 'delta') {
+      text += event.text;
+      onDelta?.(text);
+    } else if (event.type === 'reset') {
+      text = '';
+      onDelta?.(text);
+    } else if ('ok' in event) result = event;
+  };
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      buffer += decoder.decode(value, { stream: !done });
+      let end;
+      while ((end = buffer.indexOf('\n')) >= 0) {
+        line(buffer.slice(0, end));
+        buffer = buffer.slice(end + 1);
+      }
+      if (done) break;
+    }
+    if (buffer.trim()) line(buffer);
+    if (!result) throw new Error('Ответ прервался');
+    return result;
+  } finally {
+    clearTimeout(timer);
+    await reader.cancel().catch(() => {});
+    reader.releaseLock();
+  }
+}
+
 /** Запрос к API с удостоверением личности и разбором ошибки. */
 async function request(path, options = {}) {
   // Для FormData браузер сам ставит Content-Type с границей частей.
@@ -350,7 +389,7 @@ async function request(path, options = {}) {
   if (watched) sgoRequests.add(controller);
   const slow = watched && !down ? setTimeout(sgoHint, SGO_SLOW_MS) : 0;
   const stuck = watched && !down ? setTimeout(() => sgoHint(true, true), SGO_STUCK_MS) : 0;
-  const { onFresh, retried, ...init } = options;
+  const { onFresh, onDelta, retried, ...init } = options;
   let response;
   try {
     response = await fetch(base + path, {
@@ -376,7 +415,9 @@ async function request(path, options = {}) {
 
   let payload;
   try {
-    payload = await response.json();
+    payload = response.headers.get('Content-Type')?.includes('application/x-ndjson')
+      ? await readAssistantStream(response, onDelta)
+      : await response.json();
   } catch {
     throw Object.assign(new Error('Сервер приложения вернул некорректный ответ. Повторите попытку позже.'), { reason: 'server', source: 'app' });
   }

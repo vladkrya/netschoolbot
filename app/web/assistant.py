@@ -16,9 +16,11 @@
 from __future__ import annotations
 
 import datetime as dt
+import json
 import logging
 import re
 from typing import Any
+from contextlib import aclosing
 
 import aiohttp
 from aiohttp import web
@@ -341,6 +343,88 @@ async def complete(settings: AssistantSettings, messages: list[dict[str, str]]) 
     return text.strip()
 
 
+async def stream_complete(settings: AssistantSettings, messages: list[dict[str, str]]):
+    """Настоящий поток от провайдера: выдаём только текст, без рассуждений."""
+    connector = None
+    if settings.proxy:
+        from aiohttp_socks import ProxyConnector
+        connector = ProxyConnector.from_url(settings.proxy, rdns=True)
+    body = {"model": settings.model, "messages": messages, "max_tokens": MAX_TOKENS,
+            "temperature": 0.3, "stream": True}
+    try:
+        async with aiohttp.ClientSession(connector=connector, timeout=aiohttp.ClientTimeout(total=TIMEOUT)) as session:
+            async with session.post(f"{settings.base_url}/chat/completions", json=body,
+                                    headers={"Authorization": f"Bearer {settings.api_key}"}) as response:
+                if response.status == 429:
+                    raise AssistantError("Модель сейчас перегружена. Попробуйте через минуту.", status=503, reason="busy")
+                if response.status >= 400:
+                    raise AssistantError("Помощник сейчас недоступен. Попробуйте чуть позже.")
+                finished = False
+                async for raw in response.content:
+                    line = raw.decode("utf-8").strip()
+                    if not line.startswith("data:"):
+                        continue
+                    data = line[5:].strip()
+                    if data == "[DONE]":
+                        finished = True
+                        break
+                    payload = json.loads(data)
+                    if payload.get("error"):
+                        raise AssistantError("Помощник сейчас недоступен. Попробуйте чуть позже.")
+                    for choice in payload.get("choices", []):
+                        text = choice.get("delta", {}).get("content")
+                        if isinstance(text, str) and text:
+                            yield text
+                if not finished:
+                    raise AssistantError("Ответ прервался. Попробуйте ещё раз.")
+    except (aiohttp.ClientError, TimeoutError, ValueError, UnicodeError, AttributeError, TypeError) as exc:
+        logger.warning("Поток ИИ прервался: %s", type(exc).__name__)
+        raise AssistantError("Ответ прервался. Попробуйте ещё раз.") from exc
+
+
+async def stream_reply(request, app, user, messages, left):
+    response = web.StreamResponse(headers={
+        "Content-Type": "application/x-ndjson; charset=utf-8",
+        "Cache-Control": "no-store", "X-Accel-Buffering": "no",
+    })
+    # Поток отправляет заголовки до возврата из middleware.
+    from .server import _secure
+    _secure(request, response.headers)
+    async def send(payload):
+        await response.write((json.dumps(payload, ensure_ascii=False) + "\n").encode())
+
+    succeeded = False
+    try:
+        await response.prepare(request)
+        await send({"type": "start"})
+        for _ in range(ATTEMPTS):
+            reply = ""
+            async with aclosing(stream_complete(app.settings.assistant, messages)) as chunks:
+                async for chunk in chunks:
+                    reply += chunk
+                    await send({"type": "delta", "text": chunk})
+            if reply.strip() and not is_moderation_verdict(reply):
+                break
+            await send({"type": "reset"})
+        else:
+            raise AssistantError("Помощник не придумал ответ. Попробуйте ещё раз.")
+        await send({"ok": True, "data": {"reply": fix_mixed_script(reply.strip()), "left": left}})
+        succeeded = True
+        await response.write_eof()
+    except AssistantError as exc:
+        try:
+            await send({"ok": False, "error": str(exc), "reason": exc.reason})
+            await response.write_eof()
+        except (ConnectionError, RuntimeError):
+            pass
+    except (ConnectionError, RuntimeError):
+        pass  # Пользователь закрыл чат; upstream закрывается вместе с генератором.
+    finally:
+        if not succeeded:
+            _refund_quota(app, user)
+    return response
+
+
 # Бесплатные модели иногда пишут русское слово наполовину латиницей
 # («Зdesь»). Слово, где есть и кириллица, и латиница, переводится в кириллицу.
 _LATIN_TO_CYRILLIC = str.maketrans({
@@ -422,6 +506,8 @@ async def ask(request: web.Request) -> web.Response:
     if ui.get("halloween") is True and halloween_season(user.today()):
         rules = f"{RULES}\n\n{HALLOWEEN_STYLE}"
     system = f"{rules}\n\n{guide}\n\nДанные ученика:\n{await build_context(app, user)}"
+    if body.get("stream") is True:
+        return await stream_reply(request, app, user, [{"role": "system", "content": system}, *history], left)
     try:
         for _ in range(ATTEMPTS):
             reply = await complete(app.settings.assistant, [{"role": "system", "content": system}, *history])
