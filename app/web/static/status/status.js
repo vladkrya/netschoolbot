@@ -1,19 +1,11 @@
 // Страница статуса «Сетевого города»: данные — /status/data, жалобы — /status/report.
 import { watchStatus } from './live.js';
+import { availability } from './availability.js';
 
 const base = document.body.dataset.base || '';
 const $ = (selector) => document.querySelector(selector);
 const SVG = 'http://www.w3.org/2000/svg';
 
-const STATES = {
-  up: { label: 'Работает', tone: 'good' },
-  slow: { label: 'Медленно', tone: 'warning' },
-  unstable: { label: 'Сбои', tone: 'serious' },
-  down: { label: 'Недоступен', tone: 'critical' },
-  unknown: { label: 'Нет данных', tone: 'none' },
-  // Ни разу не ответил боту: с нашего сервера не открывается.
-  blocked: { label: 'Нет данных', tone: 'none' },
-};
 const ERRORS = {
   timeout: 'таймаут',
   connect: 'нет соединения',
@@ -225,13 +217,14 @@ function hostDetails(host) {
       'Это обезличенные результаты фоновых проверок. Ошибки входа не учитываются.') : '',
     host.error === 'maintenance' ? el('div', { class: 'notice' },
       el('b', {}, 'Технические работы. '), 'Сервер показывает объявление о техническом обслуживании. Срок завершения неизвестен.')
-      : host.state === 'down' ? el('div', { class: 'notice' },
+      : availability(host).state === 'down' ? el('div', { class: 'notice' },
         'Сервер временно недоступен. Возможны технические работы или сбой; причина не подтверждена.') : '',
     host.state === 'blocked' ? el('p', { class: 'muted' }, BLOCKED_TEXT) : '',
     host.notice ? el('div', { class: 'notice' },
       el('b', {}, host.app_disabled ? 'ИРТех: регион отключён в приложении NetSchool. ' : 'ИРТех: '), host.notice) : '',
     host.latest_check?.mobile_error ? el('p', { class: 'notice' }, `Мобильное API: ${errorText(host.latest_check.mobile_error)}.`) : '',
     el('dl', { class: 'facts' },
+      el('dt', {}, 'Адрес'), el('dd', {}, el('a', { href: host.url, target: '_blank', rel: 'noopener' }, host.url)),
       el('dt', {}, 'Версия'), el('dd', {}, host.version ? [el('code', {}, host.version), host.version_changed_at ? ` · с ${when(host.version_changed_at)}` : ''] : 'неизвестна'),
       el('dt', {}, 'Мобильное API'), el('dd', {}, mobileText(host)),
       el('dt', {}, 'Отклик'), el('dd', {}, host.avg_latency_ms == null ? '—' : `${(host.avg_latency_ms / 1000).toFixed(1)} с в среднем за сутки`),
@@ -257,14 +250,12 @@ function mobileText(host) {
 }
 
 function hostRow(host) {
-  const state = host.error === 'maintenance' ? { label: 'Техработы', tone: 'warning' }
-    : host.diary_issues && host.state !== 'down' ? { label: 'Проблемы с дневниками', tone: 'serious' }
-      : host.web_state === 'up' && host.in_app && host.mobile === false ? { label: 'Веб работает', tone: 'good' } : STATES[host.state] || STATES.unknown;
+  const state = availability(host);
   const blocked = host.state === 'blocked';
   const strip = el('div', { class: `strip${blocked ? ' blocked' : ''}`, role: 'img',
-    'aria-label': blocked ? `${name(host)}: нет данных` : `Доступность ${name(host)}: ${pct(host.uptime)}` });
+    'aria-label': blocked ? `${name(host)}: пока нет истории проверок` : `Доступность ${name(host)}: ${pct(host.uptime)}` });
   if (blocked) {
-    strip.append(el('span', {}, 'нет данных — с нашей стороны не открывается'));
+    strip.append(el('span', {}, 'пока нет истории проверок'));
   } else {
     host.bars.forEach((share, i) => {
       const reports = host.report_bars[i];
@@ -281,10 +272,9 @@ function hostRow(host) {
   const isOpen = expanded.has(host.host);
   const sub = [];
   if (host.error === 'maintenance') sub.push('технические работы');
-  else if (host.state === 'down' && host.down_since) sub.push(`текущий сбой ~${duration(Date.now() / 1000 - host.down_since)}`);
+  else if (state.state === 'down' && host.down_since) sub.push(`текущий сбой ~${duration(Date.now() / 1000 - host.down_since)}`);
   else if (host.version) sub.push(host.version);
   if (host.app_disabled) sub.push('отключён в приложении');
-  else if (host.in_app && host.mobile === false) sub.push('мобильное API не отвечает');
   const toggle = () => {
     if (expanded.has(host.host)) expanded.delete(host.host); else expanded.add(host.host);
     renderHosts();
@@ -299,14 +289,15 @@ function hostRow(host) {
       el('span', { class: 'num', title: 'Доля успешных проверок за выбранный период' }, blocked ? '—' : pct(host.uptime)),
       el('span', { class: 'chevron', 'aria-hidden': 'true' }, isOpen ? '▴' : '▾'),
     ),
+    el('a', { class: 'region-url', href: host.url, target: '_blank', rel: 'noopener' }, host.url.replace(/^https?:\/\//, '')),
     isOpen ? hostDetails(host) : '',
   );
 }
 
 function renderHosts() {
-  const order = { down: 0, unstable: 1, slow: 2, up: 3, unknown: 4, blocked: 5 };
+  const order = { down: 0, up: 1, unknown: 2 };
   const hosts = data.hosts.filter(matches)
-    .sort((a, b) => (order[a.state] - order[b.state]) || name(a).localeCompare(name(b), 'ru'));
+    .sort((a, b) => (order[availability(a).state] - order[availability(b).state]) || name(a).localeCompare(name(b), 'ru'));
   $('#hosts').replaceChildren(...(hosts.length ? hosts.map(hostRow) : [el('div', { class: 'muted' }, 'Ничего не нашлось')]));
   $('#strip-from').textContent = data.range === '24h' ? '24 ч назад' : data.range === '7d' ? '7 дней назад' : '30 дней назад';
 }
@@ -365,33 +356,20 @@ document.querySelectorAll('#feed-tabs button').forEach((button) => button.addEve
 }));
 
 function renderBanner() {
-  const known = data.hosts.filter((h) => h.state !== 'unknown' && h.state !== 'blocked');
-  const blocked = data.hosts.filter((h) => h.state === 'blocked');
-  const down = known.filter((h) => h.state === 'down');
-  const shaky = known.filter((h) => h.state === 'unstable' || h.state === 'slow');
-  const mobileDown = data.hosts.filter((h) => h.in_app && h.mobile === false);
+  const down = data.hosts.filter((h) => availability(h).state === 'down');
+  const checked = data.hosts.filter((h) => availability(h).state !== 'unknown');
   const banner = $('#banner');
-  let cls = 'good', icon = '✓', title, sub;
-  if (!known.length) {
-    cls = ''; icon = '?'; title = 'Проверок ещё не было';
-    sub = 'Первые результаты появятся в течение нескольких минут.';
-  } else if (down.length) {
+  let cls = 'good', icon = '✓', title = 'Серверы доступны', sub = '';
+  if (down.length) {
     cls = 'critical'; icon = '!';
     title = `${down.length} ${plural(down.length, 'сервер недоступен', 'сервера недоступны', 'серверов недоступны')}`;
     sub = down.map(name).join(', ');
-  } else if (shaky.length) {
-    cls = 'warning'; icon = '!';
-    title = `Сбои на ${shaky.length} ${plural(shaky.length, 'сервере', 'серверах', 'серверах')}`;
-    sub = shaky.map(name).join(', ');
-  } else if (mobileDown.length) {
-    cls = 'warning'; icon = '!'; title = 'Есть проблемы с мобильным API';
-    sub = mobileDown.map(name).join(', ');
+  } else if (!checked.length) {
+    cls = ''; icon = '…'; title = 'Проверяем серверы';
+    sub = 'Результаты появятся после проверки.';
   } else {
-    title = 'Проверенные веб-серверы отвечают';
-    sub = `${known.length} ${plural(known.length, 'сервер', 'сервера', 'серверов')} отвечают`;
+    sub = `${checked.length} ${plural(checked.length, 'регион доступен', 'региона доступны', 'регионов доступны')}`;
   }
-  if (mobileDown.length && (down.length || shaky.length)) sub += `. Мобильное API не отвечает: ${mobileDown.map(name).join(', ')}`;
-  if (blocked.length) sub += `. Нет данных: ${blocked.map(name).join(', ')}`;
   banner.className = `banner ${cls}`;
   banner.querySelector('.banner-icon').textContent = icon;
   $('#banner-title').textContent = title;
