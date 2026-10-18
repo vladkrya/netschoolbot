@@ -14,14 +14,14 @@ import time
 
 from aiogram import Bot
 from aiogram.exceptions import TelegramForbiddenError, TelegramRetryAfter
-from aiogram.types import ReplyKeyboardRemove
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardRemove
 
 from ..accounts import has_telegram
 from ..db.repositories import UserRepository
 from ..domain import formatting
 from ..domain.models import User
 from ..domain.records import AbsenceRecord, HomeworkRecord, MarkEvent
-from ..netschool.errors import NetSchoolError
+from ..netschool.errors import NetSchoolError, Reason
 
 logger = logging.getLogger("netschoolbot.notifier")
 
@@ -185,20 +185,39 @@ class TelegramNotifier:
                 logger.info("Копия для %s не ушла: %s", follower["id"], exc)
 
     async def send_error(self, user: User, error: NetSchoolError) -> None:
-        await self._send(user, f"⚠️ {formatting.esc(error.user_message)}")
+        # Без человека дальше никак (пароль сменили, вход истёк, нужен код) —
+        # кнопка сразу ведёт ко входу. «Продолжить так» оставляет дневник
+        # с сохранёнными данными, как на сайте.
+        markup = None
+        if error.reason.needs_relogin or error.reason is Reason.MFA:
+            markup = InlineKeyboardMarkup(inline_keyboard=[[
+                InlineKeyboardButton(text="🔑 Войти заново", callback_data="relogin:start"),
+                InlineKeyboardButton(text="Продолжить так", callback_data="relogin:keep"),
+            ]])
+        text = f"⚠️ {formatting.esc(error.user_message.removesuffix(' Войти заново: /login'))}"
+        if error.reason is Reason.SERVER_UNAVAILABLE:
+            # Watcher шлёт это, только если сервер молчит дольше часа.
+            text = ("⚠️ Сервер «Сетевого города» не отвечает уже больше часа. Бот сам "
+                    "подключится, когда он заработает, и пришлёт пропущенное — ничего делать не нужно.")
+        if markup is None:
+            await self._send(user, text)
+        else:
+            await self._send_part(user, text, markup=markup)
 
     async def _send(self, user: User, text: str) -> None:
         """Отправить, разбив длинный текст и пережив ограничение частоты."""
         for part in formatting.split_message(text):
             await self._send_part(user, part)
 
-    async def _send_part(self, user: User, text: str, *, retry: bool = True) -> None:
+    async def _send_part(
+        self, user: User, text: str, *, retry: bool = True, markup: InlineKeyboardMarkup | None = None,
+    ) -> None:
         if not has_telegram(user.telegram_id):
             # Вошёл по почте без Telegram: уведомления — только push в браузер.
             return
         try:
             await self._bot.send_message(
-                user.telegram_id, text, parse_mode="HTML", reply_markup=ReplyKeyboardRemove()
+                user.telegram_id, text, parse_mode="HTML", reply_markup=markup or ReplyKeyboardRemove()
             )
         except TelegramRetryAfter as exc:
             if not retry:
@@ -206,7 +225,7 @@ class TelegramNotifier:
                 logger.warning("Повторное ограничение частоты для %s", user.telegram_id)
                 raise
             await asyncio.sleep(exc.retry_after + 1)
-            await self._send_part(user, text, retry=False)
+            await self._send_part(user, text, retry=False, markup=markup)
         except TelegramForbiddenError:
             # Пользователь заблокировал бота: продолжать проверять его оценки
             # бессмысленно. Раньше такие пользователи оставались в цикле

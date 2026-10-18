@@ -57,6 +57,9 @@ BULK_THRESHOLD = 5
 
 # После ошибки проверки следующий заход откладывается, но не дольше этого.
 MAX_BACKOFF = 1800
+# Сервер школы молчит дольше этого — пишем человеку, что знаем и ждём.
+# Короткие сбои проходят сами, и сообщать о каждом было бы шумом.
+SERVER_DOWN_NOTICE_AFTER = 3600
 
 # В мобильном режиме каждый проход смотрит лёгкую ленту событий, а полный
 # дневник сверяет только при новых событиях и не реже этого срока: лента не
@@ -158,6 +161,8 @@ class UserWatcher:
         self._diary = diary
         self._notifier = notifier
         self._backoff = 0.0
+        # С какого момента подряд не отвечает сервер школы (часы self._clock).
+        self._down_since: float | None = None
         # Что уже видели в ленте событий и когда в последний раз сверяли
         # дневник целиком. В памяти: после перезапуска первая проверка
         # просто пройдёт полным путём.
@@ -221,6 +226,7 @@ class UserWatcher:
         await self._send_digests(user)
 
         self._backoff = 0.0
+        self._down_since = None
         if self._outages is not None:
             await self._outages.record(user.school.url, ok=True)
         await self._record_status(ok=True, delay=float(user.check_interval))
@@ -797,6 +803,13 @@ class UserWatcher:
         # не должны снова слать просьбу войти при той же неисправности.
         esia_expired = user.credentials.login_type.is_gosuslugi and error.reason.needs_relogin
         should_notify = not esia_expired and (error.reason.needs_relogin or not error.reason.is_retryable)
+        if error.reason is Reason.SERVER_UNAVAILABLE:
+            now = self._clock()
+            if self._down_since is None:
+                self._down_since = now
+            should_notify = now - self._down_since >= SERVER_DOWN_NOTICE_AFTER
+        else:
+            self._down_since = None
         if should_notify and await self._state.claim_error_notice(user.telegram_id, error.reason.value):
             try:
                 await self._notifier.send_error(user, error)

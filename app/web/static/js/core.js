@@ -222,6 +222,19 @@ const STALE_TEXT = 'Не удалось обновить дневник. Пок�
 // Школьный сервер не отвечает (техработы, сбой): ничего делать не нужно.
 const APP_SERVER_TEXT = 'Не удалось подключиться к серверу приложения. Показаны сохранённые данные.';
 const SERVER_TEXT = 'Не удалось подключиться к серверу «Сетевого города». Показаны сохранённые данные.';
+// Причина неудачного обновления (reason от сервера) → текст плашки.
+// Сюда — то, что пройдёт само: человеку делать ничего не нужно.
+const WAIT_TEXTS = {
+  server: 'Сервер «Сетевого города» недоступен. Показаны сохранённые данные — приложение само попробует подключиться позже.',
+  esia: 'Госуслуги сейчас недоступны. Показаны сохранённые данные — приложение попробует позже.',
+  rate_limit: '«Сетевой город» временно не пускает. Показаны сохранённые данные — приложение попробует позже.',
+};
+// А здесь без человека не обойтись: плашка с «Войти заново» и «Продолжить так».
+const LOGIN_TEXTS = {
+  credentials: '«Сетевой город» не принял логин или пароль — возможно, их сменили.',
+  auth: 'Вход в «Сетевой город» истёк — нужно войти заново.',
+  mfa: 'Нужно подтвердить вход в «Сетевой город».',
+};
 // Пути, которые за этот запуск уже сверили со школьным сервером.
 const revalidated = new Set();
 
@@ -236,9 +249,9 @@ function staleBanner(show, reason, source) {
   if (!show) {
     clearNotices();
   }
-  else if (reason === 'auth') loginFailedNotice();
+  else if (LOGIN_TEXTS[reason]) loginFailedNotice(reason);
   else if ($('sgoDown')) return;  // о простое школы уже сказано карточкой
-  else showNotice(source === 'app' ? APP_SERVER_TEXT : reason === 'server' ? SERVER_TEXT : STALE_TEXT);
+  else showNotice(source === 'app' ? APP_SERVER_TEXT : WAIT_TEXTS[reason] || STALE_TEXT);
   if (show && reason === 'server' && source !== 'app') sgoHint(true);
 }
 
@@ -301,14 +314,14 @@ function sgoHint(failed = false, slow = false) {
 // с сохранёнными данными. «Продолжить так» — до закрытия приложения.
 const LOGIN_FAILED_KEY = 'ns-login-failed-dismissed';
 
-function loginFailedNotice() {
+function loginFailedNotice(reason) {
   if ($('loginFailed') || $('accountScreen')) return;
   try { if (sessionStorage.getItem(LOGIN_FAILED_KEY)) return; } catch { /* приватный режим */ }
   const el = document.createElement('div');
   el.id = 'loginFailed';
   el.className = 'banner error login-failed';
   el.setAttribute('role', 'alert');
-  el.innerHTML = `<p>Не удалось войти в «Сетевой город». Возможно, сменился пароль или школа.</p>
+  el.innerHTML = `<p>${LOGIN_TEXTS[reason] || 'Не удалось войти в «Сетевой город». Возможно, сменился пароль или школа.'}</p>
     <div class="login-failed-actions">
       <button class="btn" data-sgo-relogin>Войти заново</button>
       <button class="btn outline" data-act="continue">Продолжить так</button>
@@ -440,7 +453,7 @@ async function request(path, options = {}) {
     const error = new Error(payload.error || `Ошибка ${response.status}`);
     error.reason = payload.reason;
     // Сохранённых данных нет — экран покажет ошибку, а уведомление даст войти.
-    if (error.reason === 'auth') loginFailedNotice();
+    if (LOGIN_TEXTS[error.reason]) loginFailedNotice(error.reason);
     if (error.reason === 'server' && !path.startsWith('/api/sgo/')) sgoHint(true);
     throw error;
   }
@@ -672,9 +685,9 @@ export function attachmentsHtml(items) {
 }
 
 export function errorCard(error, retryId) {
-  const needsLogin = error.reason === 'login' || error.reason === 'auth';
+  const needsLogin = error.reason === 'login' || Boolean(LOGIN_TEXTS[error.reason]);
   return `<div class="card error-card">
-      <p>${esc(error.message)}</p>
+      <p>${esc(String(error.message).replace(/\s*Войти заново: \/login$/, ''))}</p>
       ${needsLogin ? '<button class="btn outline" data-sgo-relogin>Войти заново</button>' : ''}
       ${retryId ? `<button class="btn" id="${retryId}">Повторить</button>` : ''}
     </div>`;

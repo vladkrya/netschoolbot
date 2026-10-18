@@ -22,6 +22,7 @@ class Reason(str, Enum):
     """Почему запрос к «Сетевому городу» не удался."""
 
     AUTH = "auth"                # сессия протухла, нужен повторный вход
+    CREDENTIALS = "credentials"  # школа не приняла логин или пароль: их сменили
     SERVER_UNAVAILABLE = "server"  # школьный сервер недоступен, стоит повторить
     ESIA = "esia"                # проблема на стороне Госуслуг
     MFA = "mfa"                  # нужен шаг от пользователя (код, «МАКС»)
@@ -35,7 +36,7 @@ class Reason(str, Enum):
 
     @property
     def needs_relogin(self) -> bool:
-        return self is Reason.AUTH
+        return self in (Reason.AUTH, Reason.CREDENTIALS)
 
 
 class NetSchoolError(Exception):
@@ -74,8 +75,11 @@ _ESIA_MARKERS = ("esia", "gosuslugi", "госуслуг")
 _RATE_MARKERS = ("429", "too many requests")
 
 _USER_MESSAGES = {
-    Reason.AUTH: "Не удалось войти в «Сетевой город» — возможно, сменился пароль. Войти заново: /login",
-    Reason.SERVER_UNAVAILABLE: "Не удалось подключиться к серверу «Сетевого города». Попробуйте позже.",
+    Reason.AUTH: "Вход в «Сетевой город» истёк, а повторить его без вас нельзя. Войти заново: /login",
+    Reason.CREDENTIALS: "«Сетевой город» не принял логин или пароль — возможно, их сменили. Войти заново: /login",
+    Reason.SERVER_UNAVAILABLE: (
+        "Сервер «Сетевого города» недоступен. Попробуем подключиться позже — ничего делать не нужно."
+    ),
     Reason.ESIA: "Госуслуги сейчас недоступны. Попробуйте войти чуть позже.",
     Reason.MFA: "Нужно подтвердить вход — проверьте телефон или приложение «Госуслуги».",
     Reason.RATE_LIMIT: "«Сетевой город» ограничил частоту запросов. Попробуйте позже.",
@@ -109,27 +113,62 @@ def classify(exc: BaseException) -> Reason:
 
 
 def _classify_by_type(exc: BaseException) -> Reason | None:
-    """Классификация по классу исключения netschoolpy, если он доступен."""
-    try:
-        from netschoolpy import exceptions as ns
-    except ImportError:
-        return None
+    """Классификация по классу исключения netschoolpy.
 
-    for attr, reason in (
-        ("MFAError", Reason.MFA),
-        ("AuthError", Reason.AUTH),
-        # В netschoolpy 3.3.3 класса AuthError нет — протухшая сессия
-        # приходит как SessionExpired.
-        ("SessionExpired", Reason.AUTH),
-        ("ESIAError", Reason.ESIA),
-        ("ServerUnavailable", Reason.SERVER_UNAVAILABLE),
-    ):
-        exc_class = getattr(ns, attr, None)
-        if exc_class is not None and isinstance(exc, exc_class):
-            if attr == "SessionExpired" and any(marker in str(exc).lower() for marker in _SERVER_MARKERS):
-                return Reason.SERVER_UNAVAILABLE
-            return reason
+    С 9.6.0 библиотека называет причину неудачного входа классом. Подклассы
+    проверяются раньше родителей: ESIAInvalidCredentials — это и ESIAError,
+    но человеку важнее, что не подошёл пароль.
+    """
+    from netschoolpy import exceptions as ns
+
+    if isinstance(exc, ns.RefreshTokenRejected):
+        # Истёк refresh-токен мобильного API: нужен новый вход, как при
+        # протухшей сессии, хотя это и LoginRejected.
+        return Reason.AUTH
+    if isinstance(exc, ns.MFAError):
+        return Reason.MFA
+    if isinstance(exc, (ns.InvalidCredentials, ns.SchoolNotFound)):
+        return Reason.CREDENTIALS
+    if isinstance(exc, ns.AccountLocked):
+        # Блокировка после неудачных попыток: с верным паролем тоже не
+        # пускает, поэтому ждём, а не просим новый пароль.
+        return Reason.RATE_LIMIT
+    if isinstance(exc, ns.SessionExpired):
+        if any(marker in str(exc).lower() for marker in _SERVER_MARKERS):
+            return Reason.SERVER_UNAVAILABLE
+        return Reason.AUTH
+    if isinstance(exc, ns.ESIAError):
+        return Reason.ESIA
+    if isinstance(exc, ns.ServerUnavailable):
+        return Reason.SERVER_UNAVAILABLE
     return None
+
+
+def _special_message(exc: BaseException, reason: Reason) -> str | None:
+    """Текст для человека, когда общий текст причины неточен."""
+    from netschoolpy import exceptions as ns
+
+    if isinstance(exc, ns.ESIAInvalidCredentials):
+        return "Госуслуги не приняли логин или пароль — возможно, их сменили. Войти заново: /login"
+    if isinstance(exc, ns.SchoolNotFound):
+        return "«Сетевой город» не нашёл школу — возможно, её переименовали. Войти заново: /login"
+    if isinstance(exc, ns.ESIAAccountLocked):
+        return "Госуслуги временно не пускают: много попыток входа или нужна капча. Попробуем позже."
+    if isinstance(exc, ns.AccountLocked):
+        return "«Сетевой город» временно не пускает после неудачных попыток входа. Попробуем позже."
+    if isinstance(exc, ns.LoginRejected) and reason is Reason.UNKNOWN and str(exc):
+        # Причину отказа пишет сервер школы — без неё непонятно, что не так.
+        return f"«Сетевой город» отказал во входе: {str(exc)[:200]}"
+    return None
+
+
+def login_message(error: NetSchoolError) -> str:
+    """Текст ошибки, когда человек сам только что ввёл логин и пароль:
+    «возможно, их сменили» и «войти заново» тут не к месту."""
+    if error.reason is Reason.CREDENTIALS and "школ" not in error.user_message:
+        source = "Госуслуг" if "Госуслуги" in error.user_message else "«Сетевого города»"
+        return f"Неверный логин или пароль от {source}."
+    return error.user_message.removesuffix(" Войти заново: /login")
 
 
 def wrap(exc: Exception, *, context: str = "") -> NetSchoolError:
@@ -137,7 +176,7 @@ def wrap(exc: Exception, *, context: str = "") -> NetSchoolError:
     if isinstance(exc, NetSchoolError):
         return exc
     reason = classify(exc)
-    message = _USER_MESSAGES[reason]
+    message = _special_message(exc, reason) or _USER_MESSAGES[reason]
     if reason is Reason.MFA and str(exc):
         # У MFA-ошибок текст библиотеки уже написан для человека.
         message = str(exc)

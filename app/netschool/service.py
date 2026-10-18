@@ -700,6 +700,11 @@ class DiaryService:
             except Exception as exc:
                 last = wrap(exc, context=f"пользователь {user.telegram_id}")
 
+            if last.reason is Reason.CREDENTIALS:
+                # Школа не приняла пароль. Повтор не поможет, а лишняя
+                # неудачная попытка приближает блокировку входа на минуту.
+                await self._pool.invalidate(user.telegram_id)
+                raise last
             if last.reason.needs_relogin:
                 # Сессия протухла: сбрасываем клиент и даём одну попытку войти
                 # заново. Сохранённую сессию не стираем — пул сам проверит её

@@ -36,7 +36,7 @@ from aiogram.types import (
 from ...context import AppContext
 from ...domain import formatting
 from ...domain.models import ApiMode, Credentials, LoginType, School, User
-from ...netschool.errors import NetSchoolError, Reason, wrap
+from ...netschool.errors import NetSchoolError, Reason, login_message, wrap
 from ...netschool import login as login_flow
 from ...netschool.patches import http as http_patch
 from .. import keyboards
@@ -132,6 +132,28 @@ async def start_login(message: Message, state: FSMContext) -> None:
         "Школы по умолчанию нет — вы выбираете её сами.",
         reply_markup=_regions_keyboard(regions, 0),
     )
+
+
+@router.callback_query(F.data == "relogin:start")
+async def relogin_from_notice(callback: CallbackQuery, state: FSMContext) -> None:
+    """Кнопка «Войти заново» под уведомлением, что вход не удался."""
+    await callback.answer()
+    await _drop_buttons(callback)
+    await start_login(callback.message, state)
+
+
+@router.callback_query(F.data == "relogin:keep")
+async def keep_without_login(callback: CallbackQuery) -> None:
+    """«Продолжить так»: в приложении остаются сохранённые данные."""
+    await callback.answer("Хорошо. Войти можно в любой момент: /login")
+    await _drop_buttons(callback)
+
+
+async def _drop_buttons(callback: CallbackQuery) -> None:
+    try:
+        await callback.message.edit_reply_markup(reply_markup=None)
+    except Exception:  # noqa: BLE001 — старое сообщение могли удалить
+        pass
 
 
 @router.callback_query(F.data == "login:cancel")
@@ -411,10 +433,10 @@ async def _password_attempt(message, state, user, app, password: str) -> None:
         await notice.delete()
         hint = (
             "\n\nПроверьте логин и пароль или начните заново: /login"
-            if exc.reason in (Reason.AUTH, Reason.UNKNOWN)
+            if exc.reason in (Reason.AUTH, Reason.CREDENTIALS, Reason.UNKNOWN)
             else "\n\nПопробуйте ещё раз чуть позже: /login"
         )
-        await reply(message, f"❌ {formatting.esc(exc.user_message)}{hint}")
+        await reply(message, f"❌ {formatting.esc(login_message(exc))}{hint}")
         await state.clear()
         return
 

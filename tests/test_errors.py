@@ -79,3 +79,49 @@ def test_maintenance_is_not_expired_session(text):
     from netschoolpy.exceptions import SessionExpired
     assert classify(Exception(text)) is Reason.SERVER_UNAVAILABLE
     assert classify(SessionExpired(f'Сессия истекла или невалидна: {text}')) is Reason.SERVER_UNAVAILABLE
+
+
+class TestLoginErrorClasses:
+    """С netschoolpy 9.6.0 причина неудачного входа видна по классу."""
+
+    @pytest.mark.parametrize(
+        "name,expected",
+        [
+            ("InvalidCredentials", Reason.CREDENTIALS),
+            ("ESIAInvalidCredentials", Reason.CREDENTIALS),
+            ("SchoolNotFound", Reason.CREDENTIALS),
+            ("AccountLocked", Reason.RATE_LIMIT),
+            ("ESIAAccountLocked", Reason.RATE_LIMIT),
+            ("RefreshTokenRejected", Reason.AUTH),
+            ("LoginRejected", Reason.UNKNOWN),
+            ("ServerUnavailable", Reason.SERVER_UNAVAILABLE),
+            ("ESIAError", Reason.ESIA),
+        ],
+    )
+    def test_class_gives_reason(self, name, expected):
+        from netschoolpy import exceptions as ns
+
+        assert classify(getattr(ns, name)("текст сервера")) is expected
+
+    def test_wrong_password_needs_relogin_but_is_not_retried(self):
+        from netschoolpy import exceptions as ns
+
+        error = wrap(ns.InvalidCredentials("Неправильный пароль или логин"))
+        assert error.reason.needs_relogin and not error.reason.is_retryable
+        assert "не принял логин или пароль" in error.user_message
+
+    def test_login_message_for_typed_password(self):
+        from netschoolpy import exceptions as ns
+
+        from app.netschool.errors import login_message
+
+        assert login_message(wrap(ns.InvalidCredentials("x"))) == "Неверный логин или пароль от «Сетевого города»."
+        assert login_message(wrap(ns.ESIAInvalidCredentials("x"))) == "Неверный логин или пароль от Госуслуг."
+        assert "не нашёл школу" in login_message(wrap(ns.SchoolNotFound("x")))
+        assert "/login" not in login_message(wrap(ns.SchoolNotFound("x")))
+
+    def test_rejected_login_keeps_server_text(self):
+        from netschoolpy import exceptions as ns
+
+        assert wrap(ns.LoginRejected("Нет доступа")).user_message.endswith("Нет доступа")
+

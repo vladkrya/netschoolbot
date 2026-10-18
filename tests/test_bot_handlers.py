@@ -600,6 +600,21 @@ class TestTelegramNotifier:
         await notifier.send_error(user, NetSchoolError(Reason.AUTH, "нет входа"))
         assert len(bot.sent) == 1
 
+    async def test_relogin_notice_has_buttons(self, users):
+        sent = []
+
+        class Bot:
+            async def send_message(self, chat_id, text, **kwargs):
+                sent.append(kwargs.get("reply_markup"))
+
+        user = await users.save(make_user())
+        notifier = TelegramNotifier(Bot(), users)
+        await notifier.send_error(user, NetSchoolError(Reason.CREDENTIALS, "Пароль сменили. Войти заново: /login"))
+        await notifier.send_error(user, NetSchoolError(Reason.SERVER_UNAVAILABLE, "нет связи"))
+        buttons = [b.callback_data for row in sent[0].inline_keyboard for b in row]
+        assert buttons == ["relogin:start", "relogin:keep"]
+        assert not hasattr(sent[1], "inline_keyboard")
+
 
 async def _no_sleep(_seconds):
     return None

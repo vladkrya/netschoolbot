@@ -993,3 +993,26 @@ async def test_failed_error_notice_can_be_retried(users, marks, watcher, diary, 
     notifier.send_error = original
     await watcher.run_once()
     assert len(notifier.errors) == 1
+
+
+async def test_server_down_noticed_only_after_an_hour(users, marks, diary, notifier):
+    await users.save(make_user())
+    now = [0.0]
+    watcher = UserWatcher(1, users=users, state=marks, diary=diary, notifier=notifier, clock=lambda: now[0])
+    diary.error = NetSchoolError(Reason.SERVER_UNAVAILABLE, 'Технические работы')
+    await watcher.run_once()
+    now[0] = 3500
+    await watcher.run_once()
+    assert notifier.errors == []
+    now[0] = 3700
+    await watcher.run_once()
+    now[0] = 5000
+    await watcher.run_once()
+    assert [e.reason for e in notifier.errors] == [Reason.SERVER_UNAVAILABLE]
+    # Сервер ожил и снова упал — отсчёт часа начинается заново.
+    diary.error = None
+    await watcher.run_once()
+    diary.error = NetSchoolError(Reason.SERVER_UNAVAILABLE, 'Технические работы')
+    now[0] = 6000
+    await watcher.run_once()
+    assert len(notifier.errors) == 1

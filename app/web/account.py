@@ -28,7 +28,7 @@ from ..accounts.site_login import PREFIX as SITE_LOGIN_PREFIX, describe_browser
 from ..accounts.passwords import check_password, hash_password, verify_password
 from ..domain.models import Credentials, LoginType, School
 from ..netschool import login as login_flow
-from ..netschool.errors import NetSchoolError, Reason, wrap
+from ..netschool.errors import NetSchoolError, Reason, login_message, wrap
 from . import viewing
 from .api import BOT, context, current_user, json_error
 
@@ -601,11 +601,11 @@ async def _run_login(app: Any, candidate: Any, attempt: WebLogin) -> None:
     except asyncio.TimeoutError:
         attempt.status, attempt.message, attempt.retry = "error", "QR-код истёк — получите новый", True
     except NetSchoolError as exc:
-        attempt.status, attempt.message = "error", exc.user_message
+        attempt.status, attempt.message = "error", login_message(exc)
         attempt.retry = attempt.method == "qr"
     except Exception as exc:  # noqa: BLE001 — попытка должна закончиться понятной ошибкой
         logger.warning("Вход с сайта не удался: %s", type(exc).__name__)
-        attempt.status, attempt.message = "error", wrap(exc, context="вход").user_message
+        attempt.status, attempt.message = "error", login_message(wrap(exc, context="вход"))
 
 
 @routes.get("/api/sgo/login")
