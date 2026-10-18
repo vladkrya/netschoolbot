@@ -68,7 +68,7 @@ async def test_outage_and_update_reach_only_matching_groups(db):
     texts = "\n".join(text for _, text in sent)
     assert [chat for chat, _ in sent] == [CHAT, CHAT]
     assert "🆕 <b>Челябинская область</b>: 5.40 → 5.41" in texts
-    assert "снова работает (не отвечал ~20 мин)" in texts
+    assert f"снова работает (не отвечал ~{4 * PROBE_EVERY_S // 60} мин)" in texts
 
     # Мордовия обновилась — уходит и в группу с одной Мордовией.
     sent.clear()

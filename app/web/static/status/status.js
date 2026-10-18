@@ -1,4 +1,5 @@
 // Страница статуса «Сетевого города»: данные — /status/data, жалобы — /status/report.
+import { watchStatus } from './live.js';
 
 const base = document.body.dataset.base || '';
 const $ = (selector) => document.querySelector(selector);
@@ -18,7 +19,8 @@ const ERRORS = {
   connect: 'нет соединения',
   ssl: 'ошибка сертификата',
   unavailable: 'сервер недоступен',
-  maintenance: 'заглушка вместо ответа (техработы?)',
+  maintenance: 'технические работы — объявление на сервере',
+  invalid_response: 'сервер вернул неожиданный ответ',
 };
 
 let data = null;
@@ -215,6 +217,14 @@ function hostDetails(host) {
   const lastCheck = host.checked_at
     ? `${when(host.checked_at)}: ${host.error ? errorText(host.error) : `ответ за ${host.latency_ms} мс`}` : 'не проверялся';
   return el('div', { class: 'host-details' },
+    host.account_checks ? el('div', { class: 'notice' },
+      el('b', {}, host.diary_issues && host.state !== 'down' ? 'Проблемы с дневниками. ' : 'Проверки дневников. '),
+      `За последние 30 минут: ${host.account_checks.good} успешных, ${host.account_checks.total - host.account_checks.good} с ошибкой сервера. `,
+      'Это обезличенные результаты фоновых проверок. Ошибки входа не учитываются.') : '',
+    host.error === 'maintenance' ? el('div', { class: 'notice' },
+      el('b', {}, 'Технические работы. '), 'Сервер показывает объявление о техническом обслуживании. Срок завершения неизвестен.')
+      : host.state === 'down' ? el('div', { class: 'notice' },
+        'Сервер временно недоступен. Возможны технические работы или сбой; причина не подтверждена.') : '',
     host.state === 'blocked' ? el('p', { class: 'muted' }, BLOCKED_TEXT) : '',
     host.notice ? el('div', { class: 'notice' },
       el('b', {}, host.app_disabled ? 'ИРТех: регион отключён в приложении NetSchool. ' : 'ИРТех: '), host.notice) : '',
@@ -224,10 +234,12 @@ function hostDetails(host) {
       el('dt', {}, 'Мобильное API'), el('dd', {}, mobileText(host)),
       el('dt', {}, 'Отклик'), el('dd', {}, host.avg_latency_ms == null ? '—' : `${(host.avg_latency_ms / 1000).toFixed(1)} с в среднем за сутки`),
       el('dt', {}, 'Проверка'), el('dd', {}, lastCheck),
+      el('dt', {}, 'Последний ответ'), el('dd', {}, when(host.last_ok_at)),
+      el('dt', {}, 'Успешных проверок'), el('dd', {}, `${pct(host.uptime)} за выбранный период`),
       host.reports_24h ? [el('dt', {}, 'Жалобы'), el('dd', {}, `${host.reports_24h} за сутки`)] : '',
     ),
     incidents.length ? [el('h3', {}, 'Сбои за период'), el('ul', {}, incidents.map((i) => el('li', {},
-      `${when(i.start)} — ${i.ongoing ? 'продолжается' : duration((i.end - i.start) + data.probe_every_s)}`,
+      `${when(i.start)} — ${i.ongoing ? 'продолжается' : `~${duration(i.end - i.start)}`}`,
       i.error ? `, ${errorText(i.error)}` : '')))] : '',
     versions.length > 1 || versions[0]?.previous ? [el('h3', {}, 'Обновления'), el('ul', {}, versions.map((v) => el('li', {},
       `${when(v.changed_at)}: `, el('code', {}, v.version), v.previous ? el('span', { class: 'muted' }, ` (была ${v.previous})`) : '')))] : '',
@@ -243,7 +255,8 @@ function mobileText(host) {
 }
 
 function hostRow(host) {
-  const state = STATES[host.state] || STATES.unknown;
+  const state = host.error === 'maintenance' ? { label: 'Техработы', tone: 'warning' }
+    : host.diary_issues && host.state !== 'down' ? { label: 'Проблемы с дневниками', tone: 'serious' } : STATES[host.state] || STATES.unknown;
   const blocked = host.state === 'blocked';
   const strip = el('div', { class: `strip${blocked ? ' blocked' : ''}`, role: 'img',
     'aria-label': blocked ? `${name(host)}: нет данных` : `Доступность ${name(host)}: ${pct(host.uptime)}` });
@@ -264,7 +277,8 @@ function hostRow(host) {
   }
   const isOpen = expanded.has(host.host);
   const sub = [host.host];
-  if (host.state === 'down' && host.down_since) sub.push(`не отвечает ${duration(Date.now() / 1000 - host.down_since)}`);
+  if (host.error === 'maintenance') sub.push('технические работы');
+  else if (host.state === 'down' && host.down_since) sub.push(`текущий сбой ~${duration(Date.now() / 1000 - host.down_since)}`);
   else if (host.version) sub.push(host.version);
   if (host.app_disabled) sub.push('отключён в приложении');
   else if (host.in_app && host.mobile === false) sub.push('мобильное API не отвечает');
@@ -279,7 +293,7 @@ function hostRow(host) {
         el('span', { class: 'addr' }, sub.join(' · '))),
       el('span', { class: 'state-label' }, state.label),
       strip,
-      el('span', { class: 'num' }, blocked ? '—' : pct(host.uptime)),
+      el('span', { class: 'num', title: 'Доля успешных проверок за выбранный период' }, blocked ? '—' : pct(host.uptime)),
       el('span', { class: 'chevron', 'aria-hidden': 'true' }, isOpen ? '▴' : '▾'),
     ),
     isOpen ? hostDetails(host) : '',
@@ -320,7 +334,7 @@ function renderLists() {
       el('div', {},
         el('div', {}, el('b', {}, i.region || i.host), i.ongoing
           ? ` — недоступен уже ${duration(Date.now() / 1000 - i.start)}`
-          : ` — не отвечал ~${duration((i.end - i.start) + data.probe_every_s)}`),
+          : ` — не отвечал ~${duration(i.end - i.start)}`),
         el('div', { class: 'when' }, `${when(i.start)}${i.error ? ` · ${errorText(i.error)}` : ''}`))),
       'За этот период сбоев не было');
   } else if (tab === 'versions') {
@@ -387,19 +401,34 @@ function render() {
 
 // ───────────────────────────── данные ─────────────────────────────
 
+let loading = false, loadAgain = false, connected = false;
 async function load() {
+  if (loading) { loadAgain = true; return; }
+  loading = true;
+  const requestedRange = range;
+  $('#refresh-status').disabled = true;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
   try {
-    const response = await fetch(`${base}/status/data?range=${range}`, { cache: 'no-store' });
+    const response = await fetch(`${base}/status/data?range=${requestedRange}`, { cache: 'no-store', signal: controller.signal });
     if (!response.ok) throw new Error(response.status);
-    data = await response.json();
+    const result = await response.json();
+    if (requestedRange !== range) { loadAgain = true; return; }
+    data = result;
     render();
   } catch (error) {
     if (!data) {
       $('#banner-title').textContent = 'Не удалось загрузить статус';
       $('#banner-sub').textContent = 'Обновите страницу через минуту.';
     }
+  } finally {
+    clearTimeout(timeout);
+    loading = false;
+    $('#refresh-status').disabled = false;
+    if (loadAgain) { loadAgain = false; load(); }
   }
 }
+$('#refresh-status').addEventListener('click', load);
 
 document.querySelectorAll('#range button').forEach((button) => {
   button.setAttribute('aria-pressed', String(button.dataset.range === range));
@@ -480,4 +509,10 @@ form.addEventListener('submit', async (event) => {
 });
 
 load();
-setInterval(() => { if (!document.hidden) load(); }, 60_000);
+const stopLive = watchStatus(base, load, (online) => {
+  connected = online;
+  $('#live-status').textContent = online ? 'В реальном времени' : 'Переподключаемся…';
+});
+// Запасной путь для сетей, где WebSocket закрыт.
+setInterval(() => { if (!document.hidden && !connected) load(); }, 30000);
+window.addEventListener('pagehide', (event) => { if (!event.persisted) stopLive(); });

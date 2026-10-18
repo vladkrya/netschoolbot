@@ -110,6 +110,7 @@ def create_app(context: AppContext, bot=None) -> web.Application:
     # Проверка оценок сообщает открытому приложению о новом сразу, по сокету.
     context.watchers.live = context.hub.publish_user
     async def stop_refreshes(app):
+        context.status.close_listeners()
         await app[chat.HUB].close()
         await context.stop_cache_refreshes()
 

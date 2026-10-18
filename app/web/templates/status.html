@@ -15,7 +15,7 @@
     <header class="top">
       <div>
         <h1>Статус «Сетевого города»</h1>
-        <p class="muted">Бот сам проверяет каждый сервер раз в 5 минут: сайт и мобильное API.</p>
+        <p class="muted">Бот проверяет серверы каждую минуту. Результаты приходят без перезагрузки страницы.</p>
       </div>
       <button class="primary" type="button" data-report>Сообщить о сбое</button>
     </header>
@@ -32,6 +32,8 @@
         <button type="button" data-range="30d" aria-pressed="false">30 дней</button>
       </div>
       <input type="search" id="search" placeholder="Регион или адрес" aria-label="Поиск сервера">
+      <button type="button" id="refresh-status">Обновить</button>
+      <span class="muted" id="live-status" role="status">Подключаемся…</span>
     </div>
 
     <section class="card charts">
@@ -46,6 +48,10 @@
         <span>доступн.</span><span></span>
       </div>
       <div id="hosts" class="hosts"></div>
+      <details class="status-help muted">
+        <summary>Как считаем статус</summary>
+        <p>Проценты и график — результаты проверок страницы входа без авторизации. Мобильное API проверяем отдельно. Успешный ответ не гарантирует загрузку дневника. В карточках также учитываются обезличенные итоги фоновых проверок дневников за 30 минут, без ошибок входа. Начало сбоя — первая неудача в текущей серии; разрыв между проверками не означает восстановление.</p>
+      </details>
       <div class="legend" aria-label="Обозначения">
         <span><i class="sw good"></i>работал</span>
         <span><i class="sw warning"></i>сбои до 10%</span>

@@ -152,6 +152,7 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
   display: flex;
   align-items: center;
 }
+.topbar-refresh { font-size: 26px; }
 .subbar { animation: fade .2s ease; }
 .topbar-title {
   flex: 1;

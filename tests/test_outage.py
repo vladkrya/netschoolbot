@@ -40,6 +40,22 @@ async def test_login_errors_do_not_count_and_other_school_is_separate():
     assert sent == []
 
 
+async def test_status_storage_failure_does_not_interrupt_monitoring():
+    sent = []
+
+    async def send(text):
+        sent.append(text)
+
+    async def broken(url, ok):
+        raise RuntimeError("database unavailable")
+
+    monitor = OutageMonitor(send)
+    monitor.check_observer = broken
+    for _ in range(5):
+        await monitor.record("https://a.example.ru", ok=False, server_down=True)
+    assert len(sent) == 1 and "не отвечает" in sent[0]
+
+
 def test_healthcheck_alerts_after_two_failures_and_on_recovery():
     from app.tools.healthcheck import step
 

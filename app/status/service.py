@@ -1,12 +1,14 @@
 """Статус серверов «Сетевого города» по всем регионам.
 
-Отдельно от всего остального бота: ни пользователи, ни проверки оценок здесь
-не участвуют. Бот сам раз в несколько минут ходит на каждый сервер из каталога
+Бот сам раз в несколько минут ходит на каждый сервер из каталога
 мобильного приложения NetSchool и из справочника регионов `netschoolpy`:
 
 * веб — `/webapi/logindata` без входа: отвечает ли сайт и какая версия;
 * мобильное API — `/api/mobile/users` без токена: 401 значит «живо» (данных
   без токена не получить, но сервер принял запрос и ответил как положено).
+
+Отдельно учитываются обезличенные итоги фоновых проверок аккаунтов: только
+счётчики успехов и ошибок сервера, без ошибок входа и пользовательских данных.
 
 Из каталога берутся и официальные пометки ИРТех: регион отключён в
 приложении и почему. Люди могут пожаловаться на сбой, который проверка не
@@ -21,6 +23,7 @@ import hmac
 import html
 import logging
 import math
+import re
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -35,7 +38,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("netschoolbot.status")
 
-PROBE_EVERY_S = 5 * 60
+PROBE_EVERY_S = 60
 PROBE_TIMEOUT_S = 20
 MOBILE_TIMEOUT_S = 10
 # Каталог регионов мобильного приложения меняется редко.
@@ -47,14 +50,13 @@ USER_AGENT = "netschoolbot-status (+https://ns.ikrya.ru/status)"
 PROBE_CONCURRENCY = 10
 # Ответ дольше — «медленно»: logindata маленький, обычно это доли секунды.
 SLOW_MS = 5000
-# Неудачи с таким разрывом — один сбой: между ними удачной проверки не было.
-RUN_GAP_S = PROBE_EVERY_S * 1.5
 KEEP_PROBES_S = 31 * 86400
 KEEP_REPORTS_S = 90 * 86400
 PRUNE_EVERY_S = 6 * 3600
 SUMMARY_TTL_S = 60
+ACCOUNT_WINDOW_S = 30 * 60
 # Для приложения: проверка из круга моложе этого — свежая; своя — помнится.
-LIVE_FRESH_S = 3 * 3600
+LIVE_FRESH_S = 3 * PROBE_EVERY_S
 LIVE_CACHE_S = 120
 
 # Период графика: (длина, размер столбика).
@@ -169,8 +171,17 @@ class HttpProber:
         try:
             async with self._client(target.url, PROBE_TIMEOUT_S) as client:
                 response = await client.get(f"{target.url}/webapi/logindata")
+                maintenance = _maintenance_page(response)
+                # API иногда отдаёт только 503, а объявление размещено на сайте.
+                if response.status_code == 503 and not maintenance:
+                    try:
+                        maintenance = _maintenance_page(await client.get(f"{target.url}/", timeout=5))
+                    except httpx.HTTPError:
+                        pass
             ms = int((time.monotonic() - started) * 1000)
-            if response.status_code != 200:
+            if maintenance:
+                web = Probe(False, ms, error="maintenance")
+            elif response.status_code != 200:
                 web = Probe(False, ms, error=f"http {response.status_code}")
             else:
                 try:
@@ -180,8 +191,7 @@ class HttpProber:
                 if isinstance(payload, dict) and payload.get("version"):
                     web = Probe(True, ms, version=str(payload["version"]).strip()[:40])
                 else:
-                    # 200 со страницей вместо данных — обычно заглушка техработ.
-                    web = Probe(False, ms, error="maintenance")
+                    web = Probe(False, ms, error="invalid_response")
         except asyncio.CancelledError:
             raise
         except Exception as exc:  # noqa: BLE001 — недоступность и есть результат
@@ -200,6 +210,15 @@ class HttpProber:
             return False
         # Без токена живой сервер отвечает 401: запрос дошёл до API.
         return response.status_code in (200, 401, 403)
+
+
+def _maintenance_page(response: httpx.Response) -> bool:
+    text = html.unescape(re.sub(r"<[^>]*>", " ", response.text[:100_000])).lower()
+    text = " ".join(text.split())
+    return any(marker in text for marker in (
+        "техническое обслуживание", "технические работы", "регламентные работы",
+        "регламентных работ", "технических работ", "scheduled maintenance", "under maintenance",
+    ))
 
 
 def catalog_fetcher(proxy_for: Callable[[str], str | None] = lambda _url: None) -> Catalog:
@@ -254,6 +273,8 @@ class StatusService:
         self._cache: dict[str, tuple[float, dict]] = {}
         self._alerted: dict[str, float] = {}
         self._live: dict[str, tuple[float, dict]] = {}
+        self._listeners: set[asyncio.Queue] = set()
+        self._revision = 0
         # Сообщения в группы Telegram о простоях и обновлениях (status/groups.py).
         self.groups: GroupBroadcast | None = None
 
@@ -262,8 +283,37 @@ class StatusService:
     def targets(self) -> list[Target]:
         return self._targets
 
+    def subscribe(self) -> asyncio.Queue:
+        queue = asyncio.Queue(maxsize=1)
+        self._listeners.add(queue)
+        queue.put_nowait(self._revision)
+        return queue
+
+    def unsubscribe(self, queue: asyncio.Queue) -> None:
+        self._listeners.discard(queue)
+
+    def close_listeners(self) -> None:
+        for queue in self._listeners:
+            if queue.full():
+                queue.get_nowait()
+            queue.put_nowait(None)
+        self._listeners.clear()
+
+    def _changed(self, *, invalidate: bool = True) -> None:
+        if invalidate:
+            self._cache.clear()
+        self._revision += 1
+        for queue in self._listeners:
+            if not queue.full():
+                queue.put_nowait(self._revision)
+
     def region(self, host: str) -> str:
         return next((t.region for t in self._targets if t.host == host), "")
+
+    async def record_account_check(self, url: str, ok: bool) -> None:
+        """Обезличенный итог проверки; ошибки входа отсекает OutageMonitor."""
+        await self._repo.add_account_check(host_of(url), self._clock(), ok)
+        self._changed(invalidate=False)
 
     async def refresh_catalog(self) -> None:
         """Обновить список серверов из каталога приложения, если пора.
@@ -314,7 +364,7 @@ class StatusService:
                     changed[target.host] = (previous, result.version)
                     logger.info("«Сетевой город» %s: версия %s → %s", target.host, previous, result.version,
                                 extra={"public": True})
-        self._cache.clear()
+        self._changed()
         if self.groups is not None:
             try:
                 await self.groups.observe(list(zip(targets, results)), changed, at)
@@ -360,7 +410,7 @@ class StatusService:
         if await self._repo.reports_from(client, now - 3600) >= REPORTS_PER_HOUR:
             return "Слишком много жалоб с вашего адреса — попробуйте через час."
         await self._repo.add_report(host, kind, comment, client, now)
-        self._cache.clear()
+        self._changed()
         logger.info("Жалоба на «Сетевой город» %s: %s", host, kind, extra={"public": True})
         await self._maybe_alert(names[host], kind, comment, now)
         return None
@@ -393,10 +443,11 @@ class StatusService:
         host = host_of(url)
         now = self._clock()
         probes = await self._repo.host_probes(host, now - LIVE_FRESH_S)
+        accounts = (await self._repo.account_checks(now - ACCOUNT_WINDOW_S)).get(host)
         if not probes:
             cached = self._live.get(host)
             if cached and now - cached[0] < LIVE_CACHE_S:
-                return cached[1]
+                return {**cached[1], "account_checks": accounts}
             if self._prober is None:
                 return {"host": host, "state": "unknown"}
             parsed = urlparse(url)
@@ -412,10 +463,15 @@ class StatusService:
             data = self._host_state(host, probes, await self._repo.host_ever_ok(host) or result.ok,
                                     result.version)
             self._live[host] = (now, data)
-            return data
+            return {**data, "account_checks": accounts}
         versions = await self._repo.versions()
         version = versions.get(host, {}).get("version", "")
-        return self._host_state(host, probes, await self._repo.host_ever_ok(host), version)
+        history = await self._repo.host_check_history(host)
+        data = self._host_state(host, probes, history["last_ok_at"] is not None, version)
+        data["last_ok_at"] = history["last_ok_at"]
+        if data["state"] == "down":
+            data["down_since"] = history["down_since"]
+        return {**data, "account_checks": accounts}
 
     def _host_state(self, host: str, probes: list[dict], ever_ok: bool, version: str) -> dict:
         region = self.region(host)
@@ -431,6 +487,7 @@ class StatusService:
             # Последняя проверка удалась: сервер отвечает, даже если недавно сбоил.
             "ok": bool(probes[0]["ok"]),
             "checked_at": probes[0]["at"],
+            "error": probes[0]["error"] if not probes[0]["ok"] else "",
             "last_ok_at": last_ok,
             # Сколько не отвечает — по проверкам за последние часы.
             "down_since": min((at for at in failing if last_ok is None or at > last_ok), default=None)
@@ -446,7 +503,12 @@ class StatusService:
         now = self._clock()
         cached = self._cache.get(range_key)
         if cached and now - cached[0] < SUMMARY_TTL_S:
-            return cached[1]
+            # Счётчики аккаунтов меняются часто; ради них не пересчитываем
+            # месячную историю всех регионов после каждой фоновой проверки.
+            accounts = await self._repo.account_checks(now - ACCOUNT_WINDOW_S)
+            return {**cached[1], "generated_at": now, "hosts": [
+                _account_view(host, accounts.get(host["host"])) for host in cached[1]["hosts"]
+            ]}
         data = await self._build(range_key, now)
         self._cache[range_key] = (now, data)
         return data
@@ -492,25 +554,28 @@ class StatusService:
                 report_bars[report["host"]][index] += 1
                 reports_total[index] += 1
 
-        incidents = self._incidents(await self._repo.failures(now - KEEP_PROBES_S), recent, regions)
+        incidents = self._incidents(await self._repo.failures(now - KEEP_PROBES_S), regions)
         regions = {t.host: t.region for t in targets}
         ongoing = {i["host"]: i["start"] for i in incidents if i["ongoing"]}
         versions = await self._repo.versions()
 
+        last_successes = await self._repo.latest_successes()
+        accounts = await self._repo.account_checks(now - ACCOUNT_WINDOW_S)
         hosts = []
         for target in targets:
             probes = recent.get(target.host, [])
             blocked = target.host not in reachable
             state = "blocked" if blocked and probes else _state(probes)
             last = probes[0] if probes else None
-            last_ok = next((p["at"] for p in probes if p["ok"]), None)
+            last_ok = last_successes.get(target.host)
             mobile = next((p["mobile"] for p in probes if p["mobile"] is not None), None)
             version = versions.get(target.host)
-            hosts.append({
+            hosts.append(_account_view({
                 "host": target.host,
                 "url": target.url,
                 "region": target.region,
                 "state": state,
+                "web_state": state,
                 "checked_at": last["at"] if last else None,
                 "latency_ms": last["latency_ms"] if last and last["ok"] else None,
                 "error": last["error"] if last and not last["ok"] else "",
@@ -529,7 +594,7 @@ class StatusService:
                 "reports_24h": reports_day.get(target.host, 0),
                 "bars": bars[target.host],
                 "report_bars": report_bars[target.host],
-            })
+            }, accounts.get(target.host)))
 
         history = await self._repo.version_history(now - 365 * 86400)
         return {
@@ -555,38 +620,47 @@ class StatusService:
         }
 
     @staticmethod
-    def _incidents(failures: list[dict], recent: dict[str, list[dict]], regions: dict[str, str]) -> list[dict]:
+    def _incidents(failures: list[dict], regions: dict[str, str]) -> list[dict]:
         """Сбои — подряд идущие неудачные проверки (одна — не сбой, а случайность)."""
         runs: list[dict] = []
         current: dict | None = None
         for row in failures:
             if row["host"] not in regions:
                 continue
-            if current and current["host"] == row["host"] and row["at"] - current["end"] <= RUN_GAP_S:
+            if current and current["host"] == row["host"] and row["previous_ok"] == 0:
                 current["end"] = row["at"]
+                current["recovered_at"] = row["next_at"] if row["next_ok"] else None
                 current["probes"] += 1
                 current["errors"][row["error"]] = current["errors"].get(row["error"], 0) + 1
                 continue
             current = {"host": row["host"], "start": row["at"], "end": row["at"], "probes": 1,
+                       "recovered_at": row["next_at"] if row["next_ok"] else None,
                        "errors": {row["error"]: 1}}
             runs.append(current)
         incidents = []
         for run in runs:
             if run["probes"] < 2:
                 continue
-            probes = recent.get(run["host"], [])
-            ongoing = bool(probes) and not probes[0]["ok"] and probes[0]["at"] == run["end"]
+            ongoing = run["recovered_at"] is None
             incidents.append({
                 "host": run["host"],
                 "region": regions.get(run["host"], ""),
                 "start": run["start"],
-                "end": None if ongoing else run["end"],
+                "end": None if ongoing else (run["recovered_at"] or run["end"]),
                 "ongoing": ongoing,
                 "probes": run["probes"],
                 "error": max(run["errors"], key=run["errors"].get),
             })
         incidents.sort(key=lambda i: i["start"], reverse=True)
         return incidents
+
+
+def _account_view(host: dict, account: dict | None) -> dict:
+    state = host["web_state"]
+    issues = bool(account and account["total"] >= 3 and account["good"] / account["total"] < 0.5)
+    if issues and state in ("up", "slow", "blocked", "unknown"):
+        state = "unstable"
+    return {**host, "state": state, "account_checks": account, "diary_issues": issues}
 
 
 def _state(probes: list[dict]) -> str:

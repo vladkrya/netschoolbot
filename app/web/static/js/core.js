@@ -232,11 +232,9 @@ export function forgetRevalidated() {
 }
 
 function staleBanner(show, reason, source) {
-  // Свежий ответ пришёл — плашка о сохранённых данных больше не правда, и
-  // карточка «долго не отвечает» тоже.
+  // Карточку простоя снимает только markSgoUp после ответа самой школы.
   if (!show) {
     clearNotices();
-    if ($('sgoDown')?.dataset.slow) $('sgoDown').remove();
   }
   else if (reason === 'auth') loginFailedNotice();
   else if ($('sgoDown')) return;  // о простое школы уже сказано карточкой
@@ -267,9 +265,17 @@ const touchesSgo = (path) => !OWN_PATHS.some((prefix) => path.startsWith(prefix)
 const SGO_DOWN_MS = 120000;
 const SGO_DOWN_WAIT_MS = 10000;
 let sgoDownUntil = 0;
+let sgoRecoveryGeneration = 0;
 const sgoRequests = new Set();
 
 export const sgoDown = () => Date.now() < sgoDownUntil;
+
+export function markSgoUp() {
+  sgoDownUntil = 0;
+  sgoRecoveryGeneration += 1;
+  $('sgoDown')?.remove();
+  document.dispatchEvent(new CustomEvent('netschool:sgo-up'));
+}
 
 export function markSgoDown() {
   sgoDownUntil = Date.now() + SGO_DOWN_MS;
@@ -284,7 +290,10 @@ const withoutRefresh = (path) => path.replace(/([?&])refresh=1(&|$)/, (_, lead, 
 
 function sgoHint(failed = false, slow = false) {
   if (demo) return;
-  import('./sgo.js').then((module) => module.checkServer({ failed, slow })).catch(() => {});
+  const generation = sgoRecoveryGeneration;
+  import('./sgo.js').then((module) => {
+    if (generation === sgoRecoveryGeneration) module.checkServer({ failed, slow });
+  }).catch(() => {});
 }
 
 // «Сетевой город» не пускает с сохранённым паролем — скорее всего, его
@@ -380,6 +389,8 @@ async function request(path, options = {}) {
   // бесконечно. Сервер сам отвечает не дольше минуты при обновлении.
   const controller = new AbortController();
   const watched = !options.method && touchesSgo(path);
+  // Явный жест обновления должен проверить школу даже сразу после сбоя.
+  if (watched && path.includes('refresh=1')) sgoDownUntil = 0;
   const down = watched && sgoDown();
   if (down) path = withoutRefresh(path);
   const timer = setTimeout(() => {
@@ -438,6 +449,9 @@ async function request(path, options = {}) {
     showNotice(OFFLINE_TEXT);
     return { ...payload, offline: true, stale: false };
   }
+  // У кэшированного ответа есть age. Только ответ самой школы снимает
+  // сообщение о простое; /profile и сохранённая копия ничего не доказывают.
+  if (watched && payload.stale === false && payload.age == null) markSgoUp();
   // Ответ пришёл по сети — связь вернулась.
   if (notice === OFFLINE_TEXT) banner('');
   if (dismissedNotice === OFFLINE_TEXT) dismissedNotice = '';
@@ -496,6 +510,7 @@ async function revalidate(path, shown, onFresh) {
 }
 
 async function revalidateNow(path, shown, onFresh) {
+  const startedAt = Date.now();
   let fresh;
   try {
     fresh = await request(withRefresh(path));
@@ -525,6 +540,9 @@ async function revalidateNow(path, shown, onFresh) {
     if (fresh.stale && fresh.reason !== 'server' && fresh.reason !== 'auth') sgoHint(true);
     return;
   }
+  // После фонового обновления сервер может вернуть уже свежий кэш.
+  // Он подтверждает восстановление, только если записан после нашей попытки.
+  if (touchesSgo(path) && (fresh.age == null || fresh.age <= Math.floor((Date.now() - startedAt) / 1000) + 1)) markSgoUp();
   staleBanner(false);
   if (JSON.stringify(fresh.data) === JSON.stringify(shown.data)) return;
   onFresh(fresh);

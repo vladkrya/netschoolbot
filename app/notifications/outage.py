@@ -48,6 +48,7 @@ class OutageMonitor:
         self._hosts: dict[str, _Host] = {}
         self._versions: VersionTracker | None = None
         self._db: Database | None = None
+        self.check_observer: Callable[[str, bool], Awaitable[None]] | None = None
 
     async def persist(self, db: Database) -> None:
         """Хранить «лежит с …» в базе и поднять то, что было до перезапуска."""
@@ -85,6 +86,11 @@ class OutageMonitor:
         """Итог проверки. Ошибки не про сервер (вход, неизвестные) не считаем."""
         if not ok and not server_down:
             return
+        if self.check_observer is not None:
+            try:
+                await self.check_observer(school_url, ok)
+            except Exception as exc:  # noqa: BLE001 — статус не должен ломать проверку дневника
+                logger.warning("Не удалось учесть проверку в статусе: %s", type(exc).__name__)
         host = urlparse(school_url).hostname or school_url
         state = self._hosts.setdefault(host, _Host())
         now = self._clock()

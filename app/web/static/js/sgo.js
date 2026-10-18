@@ -6,6 +6,7 @@
 import { $, api, banner, base, demo, esc, markSgoDown } from './core.js';
 import { notify as haptic, tap } from './haptics.js';
 import { pushScreen } from './screens.js';
+import { watchStatus } from '../status/live.js';
 
 const DISMISSED_KEY = 'ns-sgo-down-dismissed';
 // «Долго грузится» спрашиваем не чаще раза в минуту. Настоящая неудача
@@ -14,8 +15,42 @@ const DISMISSED_KEY = 'ns-sgo-down-dismissed';
 const SLOW_EVERY_MS = 60000;
 let slowCheckedAt = 0;
 let checking = null;
+let recoveryGeneration = 0;
+let stopLive = null;
+let lastRecoveryCheck = 0;
+
+function stopRecovery() {
+  stopLive?.();
+  stopLive = null;
+}
+
+function retryDiary() {
+  return new Promise((done) => document.dispatchEvent(new CustomEvent('netschool:refresh', { detail: { done } })));
+}
+
+function watchRecovery() {
+  if (stopLive) return;
+  lastRecoveryCheck = 0;
+  stopLive = watchStatus(base, async () => {
+    if (!$('sgoDown') || Date.now() - lastRecoveryCheck < 30000) return;
+    lastRecoveryCheck = Date.now();
+    try {
+      const { data } = await api('/api/sgo/server');
+      if (data.ok && $('sgoDown')) await retryDiary();
+    } catch { /* следующий круг мониторинга повторит попытку */ }
+  });
+}
+
+document.addEventListener('netschool:sgo-up', () => {
+  recoveryGeneration += 1;
+  stopRecovery();
+  slowCheckedAt = 0;
+  $('sgoDown')?.remove();
+  try { sessionStorage.removeItem(DISMISSED_KEY); } catch { /* приватный режим */ }
+});
 
 const timeFmt = new Intl.DateTimeFormat('ru-RU', { hour: '2-digit', minute: '2-digit' });
+const dateFmt = new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 
 function dismissed() {
   try { return Boolean(sessionStorage.getItem(DISMISSED_KEY)); } catch { return false; }
@@ -25,6 +60,7 @@ function dismissed() {
  *  карточку. failed — запрос к школе уже не удался: тогда карточка
  *  показывается, что бы ни говорили проверки, — дневник не загрузился. */
 export async function checkServer({ failed = false, slow = false } = {}) {
+  const generation = recoveryGeneration;
   // Долгая загрузка кончилась неудачей — карточка остаётся и после неё.
   if (failed && !slow && $('sgoDown')?.dataset.slow) delete $('sgoDown').dataset.slow;
   if (demo || $('sgoDown') || dismissed()) return;
@@ -34,12 +70,13 @@ export async function checkServer({ failed = false, slow = false } = {}) {
   }
   if (checking) {
     const result = await checking.catch(() => null);
-    if (failed && result && !$('sgoDown') && !dismissed()) show(result, slow);
+    if (generation === recoveryGeneration && failed && result && !$('sgoDown') && !dismissed()) show(result, slow);
     return;
   }
   checking = api('/api/sgo/server').then(({ data }) => data);
   try {
     const data = await checking;
+    if (generation !== recoveryGeneration) return;
     if (!failed && data.state !== 'down') return;
     show(data, slow && data.state !== 'down');
   } catch {
@@ -51,10 +88,17 @@ export async function checkServer({ failed = false, slow = false } = {}) {
 
 function headline(data, slow) {
   const where = data.region ? ` (${esc(data.region)})` : '';
+  if (data.error === 'maintenance') {
+    return `<b>На сервере «Сетевого города»${where} идут технические работы.</b> Дневник временно недоступен.`;
+  }
   if (data.state === 'down') {
     const minutes = data.down_since ? Math.round((Date.now() / 1000 - data.down_since) / 60) : 0;
-    const since = minutes >= 10 ? ` — не отвечает с ${timeFmt.format(new Date(data.down_since * 1000))}` : '';
-    return `<b>Сервер «Сетевого города»${where} сейчас недоступен</b>${esc(since)}.`;
+    const date = new Date(data.down_since * 1000);
+    const since = minutes >= 10 ? ` Мониторинг фиксирует текущий сбой с ${(date.toDateString() === new Date().toDateString() ? timeFmt : dateFmt).format(date)}.` : '';
+    return `<b>Сервер «Сетевого города»${where} сейчас недоступен.</b>${esc(since)} Возможны технические работы или сбой.`;
+  }
+  if (data.account_checks?.total >= 3 && data.account_checks.good / data.account_checks.total < 0.5) {
+    return `<b>Проблемы с загрузкой дневников${where}.</b> Страница входа может отвечать, но фоновые проверки дневников завершаются ошибками сервера.`;
   }
   // Дневник не загрузился, а проверка страницы входа прошла: сервер жив, но
   // журнал отдаёт медленно. Раньше здесь было «долго не отвечает», а в
@@ -77,6 +121,7 @@ function show(data, slow) {
   const el = document.createElement('div');
   el.id = 'sgoDown';
   el.className = 'sgo-down';
+  if (slow) el.dataset.slow = '1';
   el.setAttribute('role', 'alert');
   // Уже попросил сообщить — второй раз не предлагаем: только говорим, что
   // сервер лежит и что сообщим, и даём закрыть.
@@ -84,6 +129,7 @@ function show(data, slow) {
     el.innerHTML = `<p class="sgo-down-text">${headline(data, slow)} Мы сообщим, когда заработает.</p>
       <div class="sgo-down-actions">
         <button class="sgo-down-btn primary" data-act="close">Закрыть</button>
+        <button class="sgo-down-btn" data-act="status">Статус</button>
       </div>`;
   } else {
     el.innerHTML = `<button class="sgo-down-x" data-act="close" aria-label="Закрыть">×</button>
@@ -96,9 +142,20 @@ function show(data, slow) {
   const text = el.querySelector('.sgo-down-text');
   const actions = el.querySelector('.sgo-down-actions');
   const close = () => {
+    stopRecovery();
     el.classList.add('leaving');
     setTimeout(() => el.remove(), 250);
   };
+  const retry = document.createElement('button');
+  retry.className = 'sgo-down-btn';
+  retry.textContent = 'Проверить снова';
+  retry.addEventListener('click', async () => {
+    retry.disabled = true;
+    retry.textContent = 'Проверяем…';
+    try { await retryDiary(); }
+    finally { retry.disabled = false; retry.textContent = 'Проверить снова'; }
+  });
+  actions.append(retry);
   const notify = el.querySelector('[data-act="notify"]');
   const label = notify?.textContent;
   notify?.addEventListener('click', async () => {
@@ -127,12 +184,14 @@ function show(data, slow) {
     close();
   });
   el.querySelector('[data-act="status"]')?.addEventListener('click', () => {
+    stopRecovery();
     dismiss();
     el.remove();
     openStatus();
   });
   banner('');  // общая плашка «не удалось подключиться» — лишняя рядом
   document.body.append(el);
+  watchRecovery();
 }
 
 /** Статус серверов — экраном внутри приложения, со стрелкой «назад» в

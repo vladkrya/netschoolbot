@@ -1,5 +1,7 @@
 """Страница статуса «Сетевого города»: свои проверки всех серверов, версии, жалобы."""
 
+import asyncio
+
 import httpx
 import pytest
 from aiohttp.test_utils import TestClient, TestServer
@@ -73,7 +75,7 @@ async def test_probes_build_states_incidents_and_versions(db):
     assert hosts[MORDOVIA]["mobile"] is True and hosts[MORDOVIA]["in_app"]
     assert hosts["sgo.volganet.ru"]["mobile"] is None and not hosts["sgo.volganet.ru"]["in_app"]
     assert hosts[MORDOVIA]["version"] == "5.41"
-    assert hosts[MORDOVIA]["bars"][-1] == 1 and hosts[DOWN]["bars"][-1] == 0
+    assert hosts[MORDOVIA]["bars"][-1] == 1 and hosts[DOWN]["bars"][-1] == round(1 / 6, 3)
     assert data["overview"]["down"][-1] == 1
     [incident] = data["incidents"]
     assert incident["host"] == DOWN and incident["ongoing"] and incident["probes"] == 5
@@ -111,6 +113,98 @@ async def test_single_failure_is_not_an_incident_and_recovery_ends_it(db):
     [incident] = data["incidents"]
     assert incident["probes"] == 2 and not incident["ongoing"] and incident["end"] is not None
     assert {h["host"]: h for h in data["hosts"]}[DOWN]["state"] == "unstable"
+
+
+async def test_probe_gaps_do_not_fake_recovery_and_success_splits_incidents(db):
+    service, now = make_service(db)
+    repo = SgoStatusRepository(db)
+    at = now[0]
+    # Длинный разрыв без удачи — тот же сбой. Удача даже между близкими
+    # неудачами завершает серию: прежняя эвристика по 7,5 минуты теряла оба случая.
+    await repo.add_probes([
+        (DOWN, at - 900, True, 100, "", None),
+        (DOWN, at, False, 0, "connect", None),
+        (DOWN, at + 600, False, 0, "connect", None),
+        (DOWN, at + 660, True, 100, "", None),
+        (DOWN, at + 720, False, 0, "http 503", None),
+        (DOWN, at + 780, False, 0, "http 503", None),
+    ])
+    now[0] = at + 840
+    data = await service.summary()
+    first, second = sorted(data["incidents"], key=lambda i: i["start"])
+    assert first["start"] == at and first["end"] == at + 660 and not first["ongoing"]
+    assert second["start"] == at + 720 and second["ongoing"]
+    host = next(h for h in data["hosts"] if h["host"] == DOWN)
+    assert host["down_since"] == at + 720
+
+
+async def test_last_success_survives_two_hour_summary_window(db):
+    service, now = make_service(db)
+    await SgoStatusRepository(db).add_probes([
+        (DOWN, now[0] - 12 * 3600, True, 100, "", None),
+        (DOWN, now[0] - 10 * 3600, False, 0, "connect", None),
+        (DOWN, now[0] - 300, False, 0, "connect", None),
+        (DOWN, now[0], False, 0, "connect", None),
+    ])
+    host = next(h for h in (await service.summary())["hosts"] if h["host"] == DOWN)
+    assert host["last_ok_at"] == now[0] - 12 * 3600
+    live = await service.live_state(f"https://{DOWN}")
+    assert live["last_ok_at"] == host["last_ok_at"]
+    assert live["down_since"] == host["down_since"] == now[0] - 10 * 3600
+
+
+async def test_account_results_are_anonymous_and_do_not_change_probe_uptime(db, app_context):
+    service, now = make_service(db)
+    # Проверяем, что обработчик использует актуальный сервис даже после его замены.
+    app_context.status = service
+    await service.refresh_catalog()
+    await SgoStatusRepository(db).add_probes([(DOWN, now[0], True, 100, "", True)])
+    monitor = app_context.watchers.outages
+    url = f"https://{DOWN}/"
+    # Ошибки входа не попадают ни в счётчики, ни в статус.
+    await monitor.record(url, ok=False, server_down=False)
+    assert await SgoStatusRepository(db).account_checks(0) == {}
+    for _ in range(3):
+        await monitor.record(url, ok=False, server_down=True)
+    host = next(h for h in (await service.summary())["hosts"] if h["host"] == DOWN)
+    assert host["state"] == "unstable" and host["diary_issues"]
+    assert host["account_checks"] == {"good": 0, "total": 3}
+    assert host["uptime"] == 100 and not host["down_since"]
+    for _ in range(4):
+        await monitor.record(url, ok=True)
+    host = next(h for h in (await service.summary())["hosts"] if h["host"] == DOWN)
+    assert host["state"] == "up" and not host["diary_issues"]
+    assert host["account_checks"] == {"good": 4, "total": 7}
+    columns = {row["name"] for row in await db.fetch_all("PRAGMA table_info(sgo_account_checks)")}
+    assert columns == {"host", "bucket", "good", "total"}
+    now[0] += 3600
+    host = next(h for h in (await service.summary())["hosts"] if h["host"] == DOWN)
+    assert host["account_checks"] is None and not host["diary_issues"]
+
+
+@pytest.mark.parametrize("status,body,root,error", [
+    (503, "Service unavailable", "<h1>Техническое обслуживание</h1>", "maintenance"),
+    (503, "Service unavailable", "Service unavailable", "http 503"),
+    (500, "NullReference in StudentDiaryService", "", "http 500"),
+    (200, "<h1>Технические <b>работы</b></h1>", "", "maintenance"),
+    (200, "<html>Unknown error</html>", "", "invalid_response"),
+])
+async def test_maintenance_needs_an_explicit_announcement(db, monkeypatch, status, body, root, error):
+    def handler(request):
+        return httpx.Response(status, text=body if request.url.path == "/webapi/logindata" else root)
+
+    prober = HttpProber()
+    monkeypatch.setattr(prober, "_client", lambda url, timeout: httpx.AsyncClient(
+        transport=httpx.MockTransport(handler)))
+    probe = await prober(Target(DOWN, f"https://{DOWN}", "Регион"))
+    assert not probe.ok and probe.error == error
+    service, now = make_service(db)
+    await SgoStatusRepository(db).add_probes([
+        (DOWN, now[0] - 600, True, 100, "", None),
+        (DOWN, now[0] - 300, False, 0, probe.error, None),
+        (DOWN, now[0], False, 0, probe.error, None),
+    ])
+    assert (await service.live_state(f"https://{DOWN}"))["error"] == error
 
 
 async def test_http_prober_checks_web_and_mobile(monkeypatch):
@@ -204,6 +298,52 @@ async def test_status_page_is_public(client):
     # Ловушка для ботов: ответ «принято», но ничего не записано.
     response = await client.post("/mini/status/report", json={"host": "x", "kind": "down", "website": "spam"})
     assert (await response.json()) == {"ok": True}
+
+
+async def test_public_websocket_signals_checks_and_reports_and_cleans_up(client, app_context):
+    service = app_context.status
+    async with client.ws_connect("/mini/status/ws") as socket:
+        initial = await socket.receive_json(timeout=2)
+        assert initial == {"t": "status", "revision": 0}
+        await service.record_account_check(f"https://{DOWN}", False)
+        update = await socket.receive_json(timeout=2)
+        assert set(update) == {"t", "revision"} and update["revision"] > initial["revision"]
+        data = await (await client.get("/mini/status/data")).json()
+        host = next(h for h in data["hosts"] if h["host"] == DOWN)
+        assert host["account_checks"] == {"good": 0, "total": 1}
+        assert data["probe_every_s"] == 60
+        await client.post("/mini/status/report", json={"host": DOWN, "kind": "down"})
+        report = await socket.receive_json(timeout=2)
+        assert report["revision"] > update["revision"]
+    async with asyncio.timeout(2):
+        while service._listeners:
+            await asyncio.sleep(0.01)
+    assert not service._listeners
+
+
+async def test_status_notifications_coalesce_for_slow_clients(db):
+    service, _ = make_service(db, prober=lambda target: asyncio.sleep(0, result=Probe(True, 100)))
+    queue = service.subscribe()
+    await queue.get()
+    await service.probe_all()
+    await service.record_account_check(f"https://{DOWN}", True)
+    await service.record_account_check(f"https://{DOWN}", False)
+    assert queue.qsize() == 1
+    await queue.get()
+    service.unsubscribe(queue)
+    await service.record_account_check(f"https://{DOWN}", False)
+    assert queue.empty()
+
+
+async def test_status_shutdown_closes_open_socket(client, app_context):
+    socket = await client.ws_connect("/mini/status/ws")
+    await socket.receive_json(timeout=2)
+    app_context.status.close_listeners()
+    message = await socket.receive(timeout=2)
+    from aiohttp import WSMsgType
+    assert message.type in (WSMsgType.CLOSE, WSMsgType.CLOSED)
+    await socket.close()
+    assert not app_context.status._listeners
 
 
 async def test_migration_moves_version_history_from_shared_table(tmp_path):

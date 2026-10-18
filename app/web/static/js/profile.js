@@ -248,7 +248,7 @@ function when(iso) {
 function statusLine(status) {
   if (!status) return '';
   const failing = status.last_error_at && (!status.last_ok_at || status.last_error_at > status.last_ok_at);
-  const rows = [`Последняя успешная проверка: ${when(status.last_ok_at)}`];
+  const rows = [`Последняя успешная проверка вашего дневника: ${when(status.last_ok_at)}`];
   if (failing) rows.push(`Ошибка ${when(status.last_error_at)}: ${esc(status.last_error)}`);
   if (status.running && status.next_check_at) rows.push(`Следующая: ${when(status.next_check_at)}`);
   if (status.queued) rows.push(`Ждут отправки: ${status.queued}`);

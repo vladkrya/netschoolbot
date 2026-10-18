@@ -1787,7 +1787,8 @@ class SgoStatusRepository:
     """Страница статуса «Сетевого города»: свои проверки серверов, своя история
     версий и жалобы. С пользователями и проверками оценок не связано.
 
-    Личных данных нет: адрес сервера, время, итог. Клиент жалобы — хэш
+    Личных данных нет: адрес сервера, время, итог и обезличенные счётчики
+    фоновых проверок аккаунтов. Клиент жалобы — хэш
     адреса, только чтобы ограничить частоту.
     """
 
@@ -1832,7 +1833,12 @@ class SgoStatusRepository:
     async def failures(self, since: float) -> list[dict]:
         """Неудачные проверки по порядку — из них складываются сбои."""
         rows = await self._db.fetch_all(
-            "SELECT host, at, error FROM sgo_probes WHERE at >= ? AND ok = 0 ORDER BY host, at",
+            "SELECT host, at, error, previous_ok, next_at, next_ok FROM ("
+            "SELECT host, at, error, ok, "
+            "LAG(ok) OVER (PARTITION BY host ORDER BY at) AS previous_ok, "
+            "LEAD(at) OVER (PARTITION BY host ORDER BY at) AS next_at, "
+            "LEAD(ok) OVER (PARTITION BY host ORDER BY at) AS next_ok "
+            "FROM sgo_probes WHERE at >= ?) WHERE ok = 0 ORDER BY host, at",
             (since,),
         )
         return [dict(row) for row in rows]
@@ -1897,6 +1903,24 @@ class SgoStatusRepository:
         rows = await self._db.fetch_all("SELECT DISTINCT host FROM sgo_probes WHERE ok = 1")
         return {row[0] for row in rows}
 
+    async def latest_successes(self) -> dict[str, float]:
+        rows = await self._db.fetch_all("SELECT host, MAX(at) AS at FROM sgo_probes WHERE ok = 1 GROUP BY host")
+        return {row["host"]: row["at"] for row in rows}
+
+    async def add_account_check(self, host: str, at: float, ok: bool) -> None:
+        await self._db.execute(
+            "INSERT INTO sgo_account_checks (host, bucket, good, total) VALUES (?, ?, ?, 1) "
+            "ON CONFLICT(host, bucket) DO UPDATE SET good = good + excluded.good, total = total + 1",
+            (host, int(at // 300) * 300, int(ok)),
+        )
+
+    async def account_checks(self, since: float) -> dict[str, dict]:
+        rows = await self._db.fetch_all(
+            "SELECT host, SUM(good) AS good, SUM(total) AS total "
+            "FROM sgo_account_checks WHERE bucket >= ? GROUP BY host", (since,),
+        )
+        return {row["host"]: {"good": row["good"], "total": row["total"]} for row in rows}
+
     async def host_probes(self, host: str, since: float) -> list[dict]:
         rows = await self._db.fetch_all(
             "SELECT host, at, ok, latency_ms, error, mobile FROM sgo_probes "
@@ -1908,6 +1932,15 @@ class SgoStatusRepository:
     async def host_ever_ok(self, host: str) -> bool:
         row = await self._db.fetch_one("SELECT 1 FROM sgo_probes WHERE host = ? AND ok = 1 LIMIT 1", (host,))
         return row is not None
+
+    async def host_check_history(self, host: str) -> dict:
+        row = await self._db.fetch_one(
+            "SELECT MAX(CASE WHEN ok = 1 THEN at END) AS last_ok_at, "
+            "MIN(CASE WHEN ok = 0 AND at > COALESCE(("
+            "SELECT MAX(at) FROM sgo_probes WHERE host = ? AND ok = 1), 0) THEN at END) AS down_since "
+            "FROM sgo_probes WHERE host = ?", (host, host),
+        )
+        return dict(row)
 
     # Подписки из приложения (sgo_alerts).
 
@@ -1943,6 +1976,7 @@ class SgoStatusRepository:
 
     async def prune(self, probes_before: float, reports_before: float) -> None:
         await self._db.execute("DELETE FROM sgo_probes WHERE at < ?", (probes_before,))
+        await self._db.execute("DELETE FROM sgo_account_checks WHERE bucket < ?", (probes_before,))
         await self._db.execute("DELETE FROM sgo_reports WHERE created_at < ?", (reports_before,))
 
 

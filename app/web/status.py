@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 
 import aiohttp_jinja2
@@ -67,6 +68,41 @@ async def status_report(request: web.Request) -> web.Response:
     if refused:
         return web.json_response({"ok": False, "error": refused}, status=400)
     return web.json_response({"ok": True})
+
+
+@routes.get("/status/ws")
+async def status_socket(request: web.Request) -> web.WebSocketResponse:
+    """Только публичный сигнал об изменении; снимок клиент читает по HTTP."""
+    service = _service(request)
+    socket = web.WebSocketResponse(heartbeat=25, max_msg_size=1024)
+    await socket.prepare(request)
+    queue = service.subscribe()
+
+    async def publish() -> None:
+        while True:
+            revision = await queue.get()
+            if revision is None:
+                return
+            await socket.send_json({"t": "status", "revision": revision})
+
+    async def receive() -> None:
+        async for _message in socket:
+            pass
+
+    tasks = [asyncio.create_task(publish()), asyncio.create_task(receive())]
+    try:
+        done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+        for task in done:
+            task.result()
+    except (ConnectionError, RuntimeError):
+        pass
+    finally:
+        service.unsubscribe(queue)
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        await socket.close()
+    return socket
 
 
 # ───────────────────────── из приложения (со входом) ─────────────────────────

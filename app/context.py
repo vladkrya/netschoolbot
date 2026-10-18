@@ -97,6 +97,9 @@ class AppContext:
             from .status.service import StatusService
 
             self.status = StatusService(SgoStatusRepository(self.db), secret=self.settings.secret_key)
+        # main.py заменяет self.status сервисом с HTTP-проверками; обращаемся
+        # к текущему экземпляру, не сохраняем привязанный метод прежнего.
+        self.watchers.outages.check_observer = lambda url, ok: self.status.record_account_check(url, ok)
         if self.sgo_alerts is None:
             from .db.repositories import SgoStatusRepository
             from .status.alerts import SgoAlerts

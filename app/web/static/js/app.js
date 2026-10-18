@@ -486,6 +486,29 @@ function initResume() {
   });
 }
 
+async function refreshCurrentTab(event) {
+  const done = event?.detail?.done || (() => {});
+  if (state.refreshing || $('screens').childElementCount) { done(); return; }
+  forgetRevalidated();
+  state.refreshing = true;
+  $('refreshBtn').disabled = true;
+  syncStarted();
+  try {
+    if (['day', 'schedule', 'homework', 'totals', 'mail'].includes(state.tab)) {
+      await quietly(() => TABS[state.tab](true));
+    } else {
+      await api('/api/diary?refresh=1');
+    }
+  } catch (error) {
+    banner(error.message, true);
+  } finally {
+    state.refreshing = false;
+    $('refreshBtn').disabled = false;
+    syncFinished();
+    done();
+  }
+}
+
 /** Перерисовать вкладку на месте: без скелетона и без повторного «въезда»
  *  карточек — только лёгкое проявление обновлённого. */
 async function quietly(render) {
@@ -535,6 +558,8 @@ function initChrome() {
   initFresh();
   initResume();
   initLiveDiary();
+  document.addEventListener('netschool:refresh', refreshCurrentTab);
+  $('refreshBtn').addEventListener('click', () => refreshCurrentTab());
   $('menuBtn').addEventListener('click', openDrawer);
   $('navMenuBtn').addEventListener('click', openDrawer);
   $('drawerShade').addEventListener('click', closeDrawer);

@@ -763,6 +763,17 @@ MIGRATIONS: list[str] = [
         added_at REAL NOT NULL
     );
     """,
+    # 47 — обезличенные итоги фоновых проверок: только сервер и счётчики за 5 минут.
+    """
+    CREATE TABLE sgo_account_checks (
+        host TEXT NOT NULL,
+        bucket REAL NOT NULL,
+        good INTEGER NOT NULL DEFAULT 0,
+        total INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (host, bucket)
+    );
+    CREATE INDEX idx_sgo_account_checks_bucket ON sgo_account_checks(bucket);
+    """,
 ]
 
 
