@@ -154,6 +154,8 @@ class NetSchoolSettings:
     # Запасной прокси: через него идёт запрос, если основной не соединился
     # с сервером школы. Только при заданном основном.
     backup_proxy: str = ""
+    # Отдельный маршрут yavds для сравнения серверов на странице статуса.
+    status_yavds_proxy: str = ""
     # Вложения заданий скачиваются заранее и хранятся столько дней — чтобы
     # открывались, когда «Сетевой город» лежит. 0 — не скачивать.
     keep_attachments_days: int = 14
@@ -337,6 +339,7 @@ def load_settings(*, require_bot_token: bool = True) -> Settings:
                 _env("NETSCHOOL_PROXY"),
             ),
             backup_proxy=_env("NETSCHOOL_BACKUP_PROXY"),
+            status_yavds_proxy=_env("NETSCHOOL_STATUS_YAVDS_PROXY"),
             keep_attachments_days=max(0, _env_int("NETSCHOOL_KEEP_ATTACHMENTS_DAYS", 14)),
             keep_attachments_mb=max(50, _env_int("NETSCHOOL_KEEP_ATTACHMENTS_MB", 3000)),
         ),
