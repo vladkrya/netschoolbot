@@ -127,7 +127,7 @@ export function saveHalloweenAccent(color) {
   applyAccent();
 }
 
-/** Иконка вкладки нижней панели: в Хеллоуин — праздничная, если такая есть. */
+/** Иконка вкладки нижней панели и кнопки помощника: в Хеллоуин — праздничная, если такая есть. */
 export function navIcon(name) {
   return (isHalloween() && HALLOWEEN_ICONS[name]) || ICONS[name] || '';
 }
@@ -159,31 +159,36 @@ export function applyHalloween() {
   const was = root.getAttribute('data-holiday') === 'halloween';
   if (on) root.setAttribute('data-holiday', 'halloween');
   else root.removeAttribute('data-holiday');
-  // Луна, паутина, мыши и паук — слой поверх шапки, туман — над панелью
-  // вкладок (halloween.css). В сам Хеллоуин мышей больше.
+  // Луна, паутина, мыши и паук — слой внутри шапки, под её кнопками и
+  // именем: мышь пролетает за заголовком, паук не закрывает стрелки.
+  // Мерцающие звёзды — за всем экраном, туман — над панелью вкладок
+  // (halloween.css). В сам Хеллоуин мышей больше.
   let decor = document.querySelector('.hw-decor');
   if (on && !decor) {
     decor = document.createElement('div');
     decor.className = 'hw-decor';
     decor.ariaHidden = 'true';
     const bats = halloweenDaysLeft() === 0 ? 6 : 3;
-    decor.innerHTML = '<span class="hw-moon"></span><span class="hw-web"></span>'
+    decor.innerHTML = '<span class="hw-moon"></span><span class="hw-web"></span><span class="hw-spider"></span>'
       + '<span class="hw-bat"></span>'.repeat(bats);
-    const spider = document.createElement('div');
-    spider.className = 'hw-spider';
-    spider.ariaHidden = 'true';
+    const stars = document.createElement('div');
+    stars.className = 'hw-stars';
+    stars.ariaHidden = 'true';
+    stars.innerHTML = '<span></span>'.repeat(7);
     const fog = document.createElement('div');
     fog.className = 'hw-fog';
     fog.ariaHidden = 'true';
-    document.body.append(decor, spider, fog);
+    (document.getElementById('appHeader') || document.body).prepend(decor);
+    document.body.append(stars, fog);
     swoop();
   } else if (!on) {
-    document.querySelectorAll('.hw-decor, .hw-spider, .hw-fog, .hw-swoop').forEach((el) => el.remove());
+    document.querySelectorAll('.hw-decor, .hw-stars, .hw-fog, .hw-swoop').forEach((el) => el.remove());
   }
   if (on === was) return;
   applyAccent();
-  // Иконки панели меняются на месте — значки непрочитанного остаются.
-  document.querySelectorAll('.bottom-nav .ico[data-icon]').forEach((icon) => {
+  // Иконки панели и кнопки помощника меняются на месте — значки
+  // непрочитанного остаются.
+  document.querySelectorAll('.bottom-nav .ico[data-icon], .ai-fab[data-icon]').forEach((icon) => {
     icon.querySelector('svg.icon')?.remove();
     icon.insertAdjacentHTML('afterbegin', navIcon(icon.dataset.icon));
   });
