@@ -559,3 +559,87 @@ async def test_app_endpoints(client, app_context, users):
     assert (await response.json())["data"]["sgo_updates"] is True
     response = await client.post("/mini/api/sgo/notify", headers=headers, json={"kind": "nope"})
     assert response.status == 400
+
+
+def test_wrapped_tls_and_connect_timeout_are_reported_precisely():
+    import ssl
+
+    tls = httpx.ConnectError("private proxy address")
+    tls.__cause__ = ssl.SSLCertVerificationError("untrusted certificate")
+    assert error_name(tls) == "ssl"
+    assert error_name(httpx.ConnectTimeout("private proxy address")) == "timeout"
+
+
+@pytest.mark.parametrize("status,expected,error", [(401, True, ""), (403, False, "http 403"),
+                                                    (503, False, "http 503")])
+async def test_mobile_probe_keeps_http_reason_and_rejects_waf(monkeypatch, status, expected, error):
+    def handler(request):
+        if request.url.path == "/webapi/logindata":
+            return httpx.Response(200, json={"version": "5.59.1"})
+        return httpx.Response(status, text="Forbidden" if status == 403 else "")
+
+    prober = HttpProber()
+    monkeypatch.setattr(prober, "_client", lambda url, timeout: httpx.AsyncClient(
+        transport=httpx.MockTransport(handler)))
+    result = await prober(Target("ok.ru", "https://ok.ru", "Регион", "https://ok.ru:444/api/mobile"))
+    assert result.ok
+    assert result.mobile is expected and result.mobile_error == error
+
+
+async def test_mobile_timeout_does_not_erase_successful_web_probe(monkeypatch):
+    import app.status.service as module
+
+    monkeypatch.setattr(module, "MOBILE_TIMEOUT_S", 0.01)
+
+    async def handler(request):
+        if request.url.path == "/webapi/logindata":
+            return httpx.Response(200, json={"version": "5.59.1"})
+        await asyncio.sleep(10)
+
+    prober = HttpProber()
+    monkeypatch.setattr(prober, "_client", lambda url, timeout: httpx.AsyncClient(
+        transport=httpx.MockTransport(handler)))
+    result = await prober(Target("ok.ru", "https://ok.ru", "Регион", "https://ok.ru/api/mobile"))
+    assert result.ok and result.version == "5.59.1"
+    assert result.mobile is False and result.mobile_error == "timeout"
+
+
+async def test_route_comparison_preserves_primary_history_and_catalog_api(db, monkeypatch):
+    from app.status.service import RoutedHttpProber
+
+    calls = []
+
+    async def check(self, target):
+        proxy = self._proxy_for(target.url)
+        calls.append((target.host, proxy, target.mobile_url))
+        if proxy:
+            return Probe(True, 120, version="5.59.1", mobile=False, mobile_error="http 503")
+        return Probe(False, 20000, error="timeout", mobile=False, mobile_error="timeout")
+
+    monkeypatch.setattr(HttpProber, "__call__", check)
+    proxy = "socks5://user:secret@127.0.0.1:1082"
+    prober = RoutedHttpProber(lambda _: proxy, proxy)
+    service, _ = make_service(db, prober)
+    await service.probe_all()
+    data = await service.summary()
+    host = next(h for h in data["hosts"] if h["host"] == MORDOVIA)
+    assert host["web_state"] == "up" and host["uptime"] == 100
+    assert host["mobile_url"] == f"https://{MORDOVIA}/api/mobile"
+    checks = host["route_checks"]
+    assert not checks["routes"]["vdsru"]["ok"]
+    assert checks["routes"]["yavds"]["ok"]
+    assert checks["routes"]["yavds"]["mobile_error"] == "http 503"
+    assert checks["mobile_error"] == "http 503"
+    assert len(calls) == 2 * len(service.targets())  # основной маршрут повторно не опрашиваем
+    assert "secret" not in str(data) and "socks5" not in str(data)
+    # Кэш сводки также сохраняет независимые результаты.
+    again = await service.summary()
+    assert next(h for h in again["hosts"] if h["host"] == MORDOVIA)["route_checks"] == checks
+
+
+def test_wrapped_dns_error_is_not_reported_as_generic_connection_failure():
+    import socket
+
+    error = httpx.ConnectError("private address")
+    error.__cause__ = socket.gaierror("not found")
+    assert error_name(error) == "dns"

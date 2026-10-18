@@ -15,7 +15,7 @@
     <header class="top">
       <div>
         <h1>Статус «Сетевого города»</h1>
-        <p class="muted">Бот проверяет серверы каждую минуту. Результаты приходят без перезагрузки страницы.</p>
+        <p class="muted">Проверяем веб и мобильное API отдельно с vdsru и yavds. Результаты обновляются автоматически.</p>
       </div>
       <button class="primary" type="button" data-report>Сообщить о сбое</button>
     </header>
@@ -36,12 +36,28 @@
       <span class="muted" id="live-status" role="status">Подключаемся…</span>
     </div>
 
+    <section class="card route-card" aria-labelledby="route-title">
+      <h2 id="route-title">Доступность с наших серверов</h2>
+      <p class="muted route-help">В каждой ячейке — результат последней проверки без входа в аккаунт. Адреса мобильного API берём из <a href="https://mobile.ir-tech.ru/api/v1/mobile/parent/end-points" target="_blank" rel="noopener">каталога ИРТех</a>. Ответ API не гарантирует загрузку дневника.</p>
+      <div id="route-summary" class="route-summary" aria-live="polite"></div>
+      <div class="route-scroll" tabindex="0" role="region" aria-label="Сравнение vdsru и yavds">
+        <table class="route-table">
+          <thead><tr><th rowspan="2" scope="col">Регион</th><th colspan="2" scope="colgroup">vdsru · напрямую</th><th colspan="2" scope="colgroup">yavds</th></tr>
+          <tr><th scope="col">Веб</th><th scope="col">Мобильное API</th><th scope="col">Веб</th><th scope="col">Мобильное API</th></tr></thead>
+          <tbody id="route-hosts"></tbody>
+        </table>
+      </div>
+      <p class="muted route-help">401 без токена — API отвечает. 403 — доступ запрещён, 503 — сервис недоступен. Ошибка TLS — не удалось проверить сертификат. «Нет в каталоге» — мобильного адреса у ИРТех нет.</p>
+    </section>
+
     <section class="card charts">
       <div class="chart" id="chart-down" aria-label="Сколько серверов было недоступно"></div>
       <div class="chart" id="chart-reports" aria-label="Сколько пришло жалоб"></div>
     </section>
 
     <section class="card">
+      <h2>История по маршруту бота</h2>
+      <p class="muted route-help">Графики и проценты ниже относятся к веб-API по настроенному маршруту бота. Результаты с каждого сервера показаны отдельно выше.</p>
       <div class="hosts-head" aria-hidden="true">
         <span>Сервер</span><span></span>
         <span class="axis-row"><span id="strip-from">24 ч назад</span><span>сейчас</span></span>
@@ -50,7 +66,7 @@
       <div id="hosts" class="hosts"></div>
       <details class="status-help muted">
         <summary>Как считаем статус</summary>
-        <p>Проценты и график — результаты проверок страницы входа без авторизации. Мобильное API проверяем отдельно. Успешный ответ не гарантирует загрузку дневника. В карточках также учитываются обезличенные итоги фоновых проверок дневников за 30 минут, без ошибок входа. Начало сбоя — первая неудача в текущей серии; разрыв между проверками не означает восстановление.</p>
+        <p>Проценты и график — результаты проверок страницы входа без авторизации. Мобильное API проверяем отдельно по адресу из каталога ИРТех. 401 без токена считается ответом API, 403 — отказом в доступе. Успешный ответ не гарантирует загрузку дневника. В карточках также учитываются обезличенные итоги фоновых проверок дневников за 30 минут, без ошибок входа. Начало сбоя — первая неудача в текущей серии; разрыв между проверками не означает восстановление.</p>
       </details>
       <div class="legend" aria-label="Обозначения">
         <span><i class="sw good"></i>работал</span>

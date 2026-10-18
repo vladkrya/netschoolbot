@@ -15,10 +15,12 @@ const STATES = {
   blocked: { label: 'Нет данных', tone: 'none' },
 };
 const ERRORS = {
-  timeout: 'не ответил за 20 с',
+  timeout: 'таймаут',
   connect: 'нет соединения',
-  ssl: 'ошибка сертификата',
+  dns: 'ошибка DNS',
+  ssl: 'ошибка TLS-сертификата',
   unavailable: 'сервер недоступен',
+  ProtocolError: 'ошибка соединения',
   maintenance: 'технические работы — объявление на сервере',
   invalid_response: 'сервер вернул неожиданный ответ',
 };
@@ -71,7 +73,7 @@ function plural(n, one, few, many) {
 }
 
 const pct = (v) => (v == null ? '—' : `${v >= 99.995 ? '100' : v.toFixed(v >= 99 ? 2 : 1)}%`);
-const errorText = (e) => (!e ? '' : ERRORS[e] || (e.startsWith('http ') ? `ошибка сервера (HTTP ${e.slice(5)})` : e));
+const errorText = (e) => (!e ? '' : ERRORS[e] || ({ 'http 403': 'доступ запрещён (403)', 'http 503': 'сервис недоступен (503)' })[e] || (e.startsWith('http ') ? `ошибка HTTP ${e.slice(5)}` : e));
 const name = (h) => h.region || h.host;
 
 function el(tag, attrs = {}, ...children) {
@@ -209,7 +211,7 @@ function matches(host) {
   return `${host.region} ${host.host}`.toLowerCase().includes(query);
 }
 
-const BLOCKED_TEXT = 'С нашего сервера этот сайт не открывается, поэтому проверить его нельзя. Сам сайт при этом может работать.';
+const BLOCKED_TEXT = 'Успешных проверок по маршруту бота ещё не было. Причина последней ошибки и результаты с каждого сервера показаны выше. Сайт может открываться из других сетей.';
 
 function hostDetails(host) {
   const incidents = data.incidents.filter((i) => i.host === host.host).slice(0, 5);
@@ -228,10 +230,12 @@ function hostDetails(host) {
     host.state === 'blocked' ? el('p', { class: 'muted' }, BLOCKED_TEXT) : '',
     host.notice ? el('div', { class: 'notice' },
       el('b', {}, host.app_disabled ? 'ИРТех: регион отключён в приложении NetSchool. ' : 'ИРТех: '), host.notice) : '',
+    host.route_checks?.mobile_error ? el('p', { class: 'notice' }, `Мобильное API: ${errorText(host.route_checks.mobile_error)}.`) : '',
     el('dl', { class: 'facts' },
       el('dt', {}, 'Адрес'), el('dd', {}, el('a', { href: host.url, target: '_blank', rel: 'noopener' }, host.url.replace(/^https?:\/\//, ''))),
       el('dt', {}, 'Версия'), el('dd', {}, host.version ? [el('code', {}, host.version), host.version_changed_at ? ` · с ${when(host.version_changed_at)}` : ''] : 'неизвестна'),
       el('dt', {}, 'Мобильное API'), el('dd', {}, mobileText(host)),
+      host.mobile_url ? [el('dt', {}, 'Адрес API ИРТех'), el('dd', {}, el('a', { href: host.mobile_url, target: '_blank', rel: 'noopener' }, host.mobile_url))] : '',
       el('dt', {}, 'Отклик'), el('dd', {}, host.avg_latency_ms == null ? '—' : `${(host.avg_latency_ms / 1000).toFixed(1)} с в среднем за сутки`),
       el('dt', {}, 'Проверка'), el('dd', {}, lastCheck),
       el('dt', {}, 'Последний ответ'), el('dd', {}, when(host.last_ok_at)),
@@ -261,7 +265,7 @@ function hostRow(host) {
   const strip = el('div', { class: `strip${blocked ? ' blocked' : ''}`, role: 'img',
     'aria-label': blocked ? `${name(host)}: нет данных` : `Доступность ${name(host)}: ${pct(host.uptime)}` });
   if (blocked) {
-    strip.append(el('span', {}, 'нет данных — с нашего сервера не открывается'));
+    strip.append(el('span', {}, host.error ? errorText(host.error) : 'нет успешных проверок'));
   } else {
     host.bars.forEach((share, i) => {
       const reports = host.report_bars[i];
@@ -361,11 +365,51 @@ document.querySelectorAll('#feed-tabs button').forEach((button) => button.addEve
   if (data) renderLists();
 }));
 
+function routeCell(host, route, mobile) {
+  const snapshot = host.route_checks;
+  const check = snapshot?.routes?.[route];
+  let text, tone = 'none';
+  if (mobile && !host.in_app) text = 'Нет в каталоге';
+  else if (!check) text = 'Нет проверки';
+  else if (Date.now() / 1000 - snapshot.checked_at > 180) text = 'Устарело';
+  else {
+    const ok = mobile ? check.mobile : check.ok;
+    const error = mobile ? check.mobile_error : check.error;
+    if (ok === true) { text = 'Отвечает'; tone = 'good'; }
+    else if (ok == null) text = 'Нет проверки';
+    else { text = errorText(error) || 'Не отвечает'; tone = 'critical'; }
+  }
+  return el('td', {}, el('span', { class: `route-result ${tone}`, title: snapshot ? `Проверено ${when(snapshot.checked_at)}` : 'Ожидаем первую проверку' },
+    el('i', { class: `dot ${tone}`, 'aria-hidden': 'true' }), text));
+}
+
+function renderRoutes() {
+  const hosts = data.hosts.filter(matches).sort((a, b) => name(a).localeCompare(name(b), 'ru'));
+  $('#route-hosts').replaceChildren(...hosts.map((host) => el('tr', {},
+    el('th', { scope: 'row' }, name(host),
+      el('small', { class: 'muted' }, host.host),
+      host.app_disabled ? el('small', { class: 'route-disabled', title: host.notice }, 'ИРТех: отключён в NetSchool') : '',
+      host.route_checks ? el('small', { class: 'muted' }, `Проверено ${ago(host.route_checks.checked_at)}`) : ''),
+    routeCell(host, 'vdsru', false), routeCell(host, 'vdsru', true),
+    routeCell(host, 'yavds', false), routeCell(host, 'yavds', true),
+  )));
+  const summaries = ['vdsru', 'yavds'].map((route) => {
+    const checked = data.hosts.filter((h) => h.route_checks?.routes?.[route] && Date.now() / 1000 - h.route_checks.checked_at <= 180);
+    if (!checked.length) return el('span', {}, `${route}: ожидаем проверки`);
+    const web = checked.filter((h) => h.route_checks.routes[route].ok).length;
+    const mobileHosts = checked.filter((h) => h.in_app);
+    const mobile = mobileHosts.filter((h) => h.route_checks.routes[route].mobile === true).length;
+    return el('span', {}, el('b', {}, route), ` · веб ${web}/${checked.length} · мобильное API ${mobile}/${mobileHosts.length}`);
+  });
+  $('#route-summary').replaceChildren(...summaries);
+}
+
 function renderBanner() {
   const known = data.hosts.filter((h) => h.state !== 'unknown' && h.state !== 'blocked');
   const blocked = data.hosts.filter((h) => h.state === 'blocked');
   const down = known.filter((h) => h.state === 'down');
   const shaky = known.filter((h) => h.state === 'unstable' || h.state === 'slow');
+  const mobileDown = data.hosts.filter((h) => h.in_app && h.mobile === false);
   const banner = $('#banner');
   let cls = 'good', icon = '✓', title, sub;
   if (!known.length) {
@@ -379,10 +423,14 @@ function renderBanner() {
     cls = 'warning'; icon = '!';
     title = `Сбои на ${shaky.length} ${plural(shaky.length, 'сервере', 'серверах', 'серверах')}`;
     sub = shaky.map(name).join(', ');
+  } else if (mobileDown.length) {
+    cls = 'warning'; icon = '!'; title = 'Есть проблемы с мобильным API';
+    sub = mobileDown.map(name).join(', ');
   } else {
-    title = 'Все серверы работают';
+    title = 'Проверенные веб-серверы отвечают';
     sub = `${known.length} ${plural(known.length, 'сервер', 'сервера', 'серверов')} отвечают`;
   }
+  if (mobileDown.length && (down.length || shaky.length)) sub += `. Мобильное API не отвечает: ${mobileDown.map(name).join(', ')}`;
   if (blocked.length && known.length) sub += `. Нет данных: ${blocked.map(name).join(', ')}`;
   banner.className = `banner ${cls}`;
   banner.querySelector('.banner-icon').textContent = icon;
@@ -394,6 +442,7 @@ function renderBanner() {
 function render() {
   if (!data) return;
   renderBanner();
+  renderRoutes();
   renderCharts();
   renderHosts();
   renderLists();
@@ -442,7 +491,7 @@ document.querySelectorAll('#range button').forEach((button) => {
 
 $('#search').addEventListener('input', (event) => {
   query = event.target.value.trim().toLowerCase();
-  if (data) { renderHosts(); renderLists(); }
+  if (data) { renderRoutes(); renderHosts(); renderLists(); }
 });
 
 let resizeTimer;

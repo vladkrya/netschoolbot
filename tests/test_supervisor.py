@@ -177,7 +177,7 @@ async def test_run_exits_nonzero_when_web_crashes(monkeypatch, tmp_path):
         telegram=types.SimpleNamespace(admin_id=0),
         web=types.SimpleNamespace(enabled=True, miniapp_url=""),
         push=None,
-        netschool=types.SimpleNamespace(proxy_for=lambda _url: None),
+        netschool=types.SimpleNamespace(proxy_for=lambda _url: None, status_yavds_proxy=""),
         secret_key="",
     )
     args = main.parse_args([])

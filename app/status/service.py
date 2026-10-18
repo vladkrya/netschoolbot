@@ -24,9 +24,11 @@ import html
 import logging
 import math
 import re
+import ssl
+import socket
 import time
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
@@ -109,6 +111,9 @@ class Probe:
     error: str = ""
     # None — мобильное API не проверяли (региона нет в приложении).
     mobile: bool | None = None
+    mobile_error: str = ""
+    # Последний результат каждого независимого маршрута, без резервного перехода.
+    routes: dict[str, Probe] | None = None
 
 
 Prober = Callable[[Target], Awaitable[Probe]]
@@ -161,12 +166,24 @@ class HttpProber:
 
         return httpx.AsyncClient(
             proxy=self._proxy_for(url), verify=school_ssl_context(), timeout=timeout,
-            headers={"User-Agent": USER_AGENT},
+            headers={"User-Agent": USER_AGENT}, trust_env=False,
             # В справочнике бывают адреса http://, а сайт уводит на https.
             follow_redirects=True, max_redirects=3,
         )
 
     async def __call__(self, target: Target) -> Probe:
+        async def web_check() -> Probe:
+            try:
+                return await asyncio.wait_for(self._web(target), PROBE_TIMEOUT_S)
+            except asyncio.TimeoutError:
+                return Probe(False, PROBE_TIMEOUT_S * 1000, error="timeout")
+
+        if not target.mobile_url:
+            return await web_check()
+        web, (mobile, mobile_error) = await asyncio.gather(web_check(), self._mobile(target))
+        return replace(web, mobile=mobile, mobile_error=mobile_error)
+
+    async def _web(self, target: Target) -> Probe:
         started = time.monotonic()
         try:
             async with self._client(target.url, PROBE_TIMEOUT_S) as client:
@@ -196,20 +213,50 @@ class HttpProber:
             raise
         except Exception as exc:  # noqa: BLE001 — недоступность и есть результат
             web = Probe(False, int((time.monotonic() - started) * 1000), error=error_name(exc))
-        if not target.mobile_url:
-            return web
-        return Probe(web.ok, web.latency_ms, web.version, web.error, await self._mobile(target))
+        return web
 
-    async def _mobile(self, target: Target) -> bool:
+    async def _mobile(self, target: Target) -> tuple[bool, str]:
         try:
-            async with self._client(target.mobile_url, MOBILE_TIMEOUT_S) as client:
-                response = await client.get(f"{target.mobile_url}/users")
+            async with asyncio.timeout(MOBILE_TIMEOUT_S):
+                async with self._client(target.mobile_url, MOBILE_TIMEOUT_S) as client:
+                    response = await client.get(f"{target.mobile_url}/users")
         except asyncio.CancelledError:
             raise
-        except Exception:  # noqa: BLE001
-            return False
-        # Без токена живой сервер отвечает 401: запрос дошёл до API.
-        return response.status_code in (200, 401, 403)
+        except Exception as exc:  # noqa: BLE001
+            return False, error_name(exc)
+        # 403 может быть страницей блокировки WAF, поэтому успехом его не считаем.
+        if response.status_code in (200, 401):
+            return True, ""
+        return False, f"http {response.status_code}"
+
+
+class RoutedHttpProber:
+    """Сравнивает прямой выход и yavds. История остаётся на маршруте бота."""
+
+    def __init__(self, proxy_for: Callable[[str], str | None], yavds_proxy: str = "") -> None:
+        self._proxy_for = proxy_for
+        self._yavds_proxy = yavds_proxy
+        self._probers = {"vdsru": HttpProber()}
+        if yavds_proxy:
+            self._probers["yavds"] = HttpProber(lambda _url: yavds_proxy)
+        self._primary = HttpProber(proxy_for)
+
+    async def __call__(self, target: Target) -> Probe:
+        web_proxy = self._proxy_for(target.url)
+        mobile_proxy = self._proxy_for(target.mobile_url) if target.mobile_url else web_proxy
+        primary_route = None
+        if web_proxy == mobile_proxy and not web_proxy:
+            primary_route = "vdsru"
+        elif web_proxy == mobile_proxy == self._yavds_proxy and self._yavds_proxy:
+            primary_route = "yavds"
+        probers = dict(self._probers)
+        if primary_route is None:
+            probers["bot"] = self._primary
+        keys = list(probers)
+        results = await asyncio.gather(*(probers[key](target) for key in keys))
+        routes = dict(zip(keys, results))
+        primary = routes.pop("bot") if primary_route is None else routes[primary_route]
+        return replace(primary, routes=routes)
 
 
 def _maintenance_page(response: httpx.Response) -> bool:
@@ -240,7 +287,17 @@ def catalog_fetcher(proxy_for: Callable[[str], str | None] = lambda _url: None) 
 def error_name(exc: BaseException) -> str:
     """Короткая причина неудачи для страницы: без текста исключения, в нём
     бывают адреса прокси."""
-    if isinstance(exc, (asyncio.TimeoutError, TimeoutError)):
+    # httpx оборачивает ошибки TLS в ConnectError, таймаут — в ConnectTimeout.
+    cause: BaseException | None = exc
+    seen: set[int] = set()
+    while cause is not None and id(cause) not in seen:
+        seen.add(id(cause))
+        if isinstance(cause, ssl.SSLError):
+            return "ssl"
+        if isinstance(cause, socket.gaierror):
+            return "dns"
+        cause = cause.__cause__ or cause.__context__
+    if isinstance(exc, (asyncio.TimeoutError, TimeoutError, httpx.TimeoutException)):
         return "timeout"
     status = getattr(getattr(exc, "response", None), "status_code", None)
     if isinstance(status, int):
@@ -273,6 +330,7 @@ class StatusService:
         self._cache: dict[str, tuple[float, dict]] = {}
         self._alerted: dict[str, float] = {}
         self._live: dict[str, tuple[float, dict]] = {}
+        self._route_checks: dict[str, dict] = {}
         self._listeners: set[asyncio.Queue] = set()
         self._revision = 0
         # Сообщения в группы Telegram о простоях и обновлениях (status/groups.py).
@@ -356,6 +414,18 @@ class StatusService:
             (target.host, at, result.ok, result.latency_ms, result.error, result.mobile)
             for target, result in zip(targets, results)
         ])
+        self._route_checks = {
+            target.host: {
+                "checked_at": at,
+                "mobile_error": result.mobile_error,
+                "routes": {
+                    route: {"ok": check.ok, "latency_ms": check.latency_ms,
+                            "error": check.error, "mobile": check.mobile,
+                            "mobile_error": check.mobile_error}
+                    for route, check in (result.routes or {}).items()
+                },
+            } for target, result in zip(targets, results)
+        }
         changed: dict[str, tuple[str, str]] = {}
         for target, result in zip(targets, results):
             if result.version:
@@ -583,6 +653,8 @@ class StatusService:
                 "down_since": ongoing.get(target.host),
                 "version": version["version"] if version else "",
                 "version_changed_at": version["changed_at"] if version else None,
+                "mobile_url": target.mobile_url,
+                "route_checks": self._route_checks.get(target.host),
                 "in_app": bool(target.mobile_url),
                 "app_disabled": target.unavailable,
                 "notice": target.notice,
