@@ -144,9 +144,9 @@ export function canInstall() {
 export async function openInBrowser() {
   tap();
   try {
-    const { data } = await api('/api/pwa-link');
-    // Метка: в браузере после PIN сразу показать, как установить.
-    const url = `${data.url}${data.url.includes('?') ? '&' : '?'}install=1`;
+    // Одноразовая ссылка на 15 минут с меткой install=1: в браузере сразу
+    // покажется, как установить.
+    const { data: { url } } = await api('/api/pwa-link');
     // openLink открывает внешний браузер, а не встроенный в Telegram.
     if (tg?.openLink) tg.openLink(url, { try_instant_view: false });
     else window.open(url, '_blank');
@@ -165,7 +165,7 @@ function openTelegramGuide() {
       <p>Дневник откроется с иконки, как обычное приложение: во весь экран, быстрее и с пуш-уведомлениями.</p>
     </div>
     <ol class="install-steps">
-      <li><span class="install-num">1</span><span>Нажмите «Открыть в ${iphone ? 'Safari' : 'браузере'}» — откроется ваша личная ссылка</span></li>
+      <li><span class="install-num">1</span><span>Нажмите «Открыть в ${iphone ? 'Safari' : 'браузере'}» — откроется ваша личная ссылка. Она работает 15 минут и один раз</span></li>
       <li><span class="install-num">2</span><span>Там появится подсказка, куда нажать, чтобы добавить иконку</span></li>
       <li><span class="install-num">3</span><span>Запустите дневник с иконки — уведомления включатся сами</span></li>
     </ol>

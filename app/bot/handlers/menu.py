@@ -47,7 +47,7 @@ async def miniapp_url(app: AppContext, user: User) -> str:
     """Адрес мини-приложения для этого пользователя.
 
     В Telegram личность подтверждается подписанной initData. Для установки
-    вне Telegram выдаётся отдельная ссылка /app_install; старые общие токены
+    вне Telegram — одноразовая ссылка из приложения (/app_install); старые общие токены
     продолжают работать, но новые здесь больше не создаются.
     """
     if not user.school.configured:
@@ -328,33 +328,25 @@ async def open_miniapp(message: Message, user: User, app: AppContext) -> None:
 
 @router.message(Command("app_install"))
 async def install_miniapp(message: Message, user: User, app: AppContext) -> None:
-    """Ссылка для установки на домашний экран.
+    """Установка на домашний экран — через само приложение.
 
-    Отдельной командой, потому что внутри Telegram установить приложение
-    нельзя — для этого страницу нужно открыть в самом браузере.
+    Раньше здесь была ссылка на сутки, которую можно открыть много раз.
+    Теперь приложение открывается с инструкцией, а её кнопка «Открыть в
+    Safari» даёт одноразовую ссылку на 15 минут (как «Добавить устройство»).
     """
     if (hint := require_school(user)) and not await viewing.choices(app, user):
         # Родной с просмотром дневника входит без своего «Сетевого города».
         await reply(message, hint)
         return
-    # Не постоянный токен, а ссылка установки на сутки: она кладёт браузеру
-    # свой токен устройства, а иконка получает адрес без токена (server.py).
-    code = await app.miniapp.issue_enter_code(user.telegram_id)
-    url = f"{app.settings.web.miniapp_url}/?enter={code}"
-    mirror = mirror_url(app, url)
-    mirror_hint = (
-        "Если мобильный интернет урезан и основной адрес не открывается — "
-        "установите с резервного.\n\n"
-    ) if mirror else ""
     await message.answer(
         "🌐 <b>Установка на телефон</b>\n\n"
-        "Откройте ссылку в браузере и выберите «Добавить на домашний экран» — "
-        "дневник появится отдельной иконкой и будет работать без Telegram.\n\n"
-        f"{mirror_hint}"
-        "⚠️ Ссылка персональная и действует сутки — потом попросите новую. "
-        "Если она утекла — <code>/app_reset</code>.",
+        "Откройте дневник кнопкой ниже и нажмите «Открыть в Safari» (или в Chrome): "
+        "там выберите «На экран Домой» — дневник появится отдельной иконкой "
+        "и будет работать без Telegram.\n\n"
+        "Ссылка в браузер действует 15 минут и открывается один раз. "
+        "Для компьютера — Настройки → Устройства → «Добавить устройство» или вход по почте на сайте.",
         parse_mode="HTML",
-        reply_markup=keyboards.miniapp_external(url, mirror),
+        reply_markup=keyboards.miniapp(f"{app.settings.web.miniapp_url}/?open=install"),
     )
 
 

@@ -308,17 +308,15 @@ class TestMenu:
         assert button.url is None
         assert button.web_app.url == "https://example.ru/mini/"
 
-    async def test_install_link_is_a_plain_url(self, app, users):
-        """Установить приложение на домашний экран можно только из браузера,
-        поэтому здесь нужна обычная ссылка, а не кнопка Telegram."""
+    async def test_install_opens_app_with_guide(self, app, users):
+        """Многоразовой ссылки на сутки больше нет: приложение открывается с
+        инструкцией, а одноразовую ссылку в браузер даёт оно само."""
         user = await users.save(make_user())
         message = FakeMessage()
         await menu.install_miniapp(message, user, app)
         button = message.answers[-1][1]["reply_markup"].inline_keyboard[0][0]
-        assert button.web_app is None
-        # Ссылка установки на сутки, а не постоянный токен.
-        assert button.url.startswith("https://example.ru/mini/?enter=")
-        assert await app.miniapp.use_enter_code(button.url.split("enter=")[1]) == 1
+        assert button.web_app.url == "https://example.ru/mini/?open=install"
+        assert "15 минут" in message.texts and "один раз" in message.texts
 
     async def test_app_requires_school(self, app, users):
         user = await users.get_or_create(1)

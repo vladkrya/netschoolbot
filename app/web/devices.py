@@ -204,8 +204,8 @@ def _device_url(app, code: str) -> str:
 async def new_device_link(request: web.Request) -> web.Response:
     """«Добавить устройство»: ссылка на 15 минут и одно открытие, QR-код для камеры
     телефона. Метка install=1 — на телефоне сразу покажется, как поставить
-    дневник на экран «Домой». /app_install в боте по-прежнему даёт ссылку на
-    сутки: её открывают сначала в Telegram, потом в Safari."""
+    дневник на экран «Домой». Ту же ссылку даёт «Открыть в Safari» в
+    инструкции установки (/api/pwa-link, /app_install в боте)."""
     from .account import _render_qr
 
     app, user = context(request), current_user(request)

@@ -15,7 +15,7 @@ import {
   isNewDesign, navIcon, setHalloweenAccess,
 } from './appearance.js';
 import { ICONS } from './icons.js';
-import { dropInstallHints, initInstallPrompt } from './install.js';
+import { dropInstallHints, initInstallPrompt, openInstall } from './install.js';
 import {
   applyStoredTheme, closeDrawer, initStudentSwitch, isDrawerOpen, loadProfile, loadSettings, offerPushOnFirstLaunch, openDrawer,
   syncTimezone,
@@ -892,6 +892,7 @@ async function start() {
   });
   offerPushOnFirstLaunch();
   initInstallPrompt();
+  openRequestedInstall();
   renderNav();
   renderIcons();
   applyScheduleTab();
@@ -931,6 +932,17 @@ async function start() {
   } catch {
     /* профиль не критичен для остальных экранов */
   }
+}
+
+/** /app_install в боте открывает приложение с ?open=install — сразу инструкция
+ *  с кнопкой «Открыть в Safari» (одноразовая ссылка на 15 минут). */
+function openRequestedInstall() {
+  const params = new URLSearchParams(location.search);
+  if (params.get('open') !== 'install') return;
+  params.delete('open');
+  const query = params.toString();
+  history.replaceState(history.state, '', `${location.pathname}${query ? `?${query}` : ''}${location.hash}`);
+  setTimeout(openInstall, 600);
 }
 
 /** Service worker вне Telegram: показ сохранённого без сети и push. */

@@ -282,7 +282,8 @@ async def index(request: web.Request) -> web.Response:
         response = web.HTTPFound(f"{_base(request)}/#own")
         _set_token_cookie(request, response, await context.miniapp.issue_token(telegram_id, device=True))
         raise response
-    # Ссылка установки из /app_install: адрес с кодом не меняем — из
+    # Ссылка установки прежнего /app_install (новых не выдаём, старые живут
+    # до суток): адрес с кодом не меняем — из
     # встроенного браузера Telegram его ещё откроют «в Safari», и там код
     # тоже должен сработать (сутки, каждый раз свой токен устройства).
     entered = ""

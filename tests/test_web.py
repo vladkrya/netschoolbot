@@ -797,8 +797,8 @@ class TestNewFeatures:
     async def test_pwa_link_is_personal(self, client, token, app_context):
         response = await client.get(f"{BASE}/api/pwa-link", params={"token": token})
         url = (await response.json())["data"]["url"]
-        assert token not in url and "?enter=" in url
-        assert await app_context.miniapp.use_enter_code(url.split("enter=")[1]) == 1
+        assert token not in url and "?device=" in url and "install=1" in url
+        assert await app_context.miniapp.use_device_code(url.split("device=")[1].split("&")[0])
 
     async def test_install_link_puts_device_token_and_clean_icon(self, client, token, app_context):
         """Ссылка установки → свой токен устройства в cookie; в иконке вместо
