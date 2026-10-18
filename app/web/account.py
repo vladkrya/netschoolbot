@@ -17,7 +17,7 @@ import secrets
 import time
 from collections import deque
 from dataclasses import dataclass, field, replace
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from aiohttp import web
 
@@ -31,6 +31,9 @@ from ..netschool import login as login_flow
 from ..netschool.errors import NetSchoolError, Reason, wrap
 from . import viewing
 from .api import BOT, context, current_user, json_error
+
+if TYPE_CHECKING:
+    from ..context import AppContext
 
 routes = web.RouteTableDef()
 logger = logging.getLogger("netschoolbot.web")
@@ -274,6 +277,17 @@ async def _send_verification(request: web.Request, email: str) -> None:
         note="Введите его в приложении: Настройки → Вход по почте. Код действует 15 минут.", site=app.mailer.site))
 
 
+async def _needs_verify(app: AppContext, telegram_id: int, account=None) -> bool:
+    """Аккаунт только с почтой, и она не подтверждена: дальше кода из письма не пускаем.
+
+    Без настроенной почты подтвердить нечем — тогда не требуем.
+    """
+    if not app.mailer.configured or has_telegram(telegram_id):
+        return False
+    account = account or await app.accounts.by_user(telegram_id)
+    return bool(account and not account["email_verified_at"])
+
+
 # ─────────────────────────────── После входа ───────────────────────────────
 
 
@@ -288,6 +302,7 @@ async def account_info(request: web.Request) -> web.Response:
         "viewing": {"id": owner.telegram_id, "name": owner.label} if owner else None,
         "email": account["email"] if account else None,
         "verified": bool(account and account["email_verified_at"]),
+        "needs_verify": await _needs_verify(app, user.telegram_id, account),
         "telegram": has_telegram(user.telegram_id),
         # Только «не вошёл» (нет школы). enabled=False — это и выключенные
         # уведомления в боте: таким дневник открывать как обычно.
@@ -527,6 +542,8 @@ async def sgo_login(request: web.Request) -> web.Response:
     body = await _body(request)
     url, school = _region_url(body), str(body.get("school") or "").strip()
     method = str(body.get("method") or "")
+    if await _needs_verify(app, user.telegram_id):
+        return json_error("Сначала подтвердите почту кодом из письма", status=403, reason="verify")
     if not url or not school:
         return json_error("Выберите регион и школу")
     if method not in {"password", "esia", "qr"}:

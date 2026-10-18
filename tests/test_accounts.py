@@ -75,6 +75,27 @@ class TestRegisterAndLogin:
         assert response.status == 401
 
 
+class TestEmailVerification:
+    async def test_new_account_must_verify_before_sgo_login(self, client, app_context):
+        app_context.mailer.outbox = []
+        _, body, _ = await register(client)
+        token = body["data"]["token"]
+        info = (await (await client.get(f"{BASE}/api/account", params={"token": token})).json())["data"]
+        assert info["needs_verify"] and not info["verified"]
+        status, data, _ = await post(client, "/api/sgo/login", {
+            "url": "https://sgo.example.ru", "school": "Школа №1", "method": "password",
+            "login": "kid", "password": "секрет"}, token)
+        assert status == 403 and data["reason"] == "verify"
+        code = app_context.mailer.outbox[0].get_body(("plain",)).get_content().split("Код подтверждения:")[1].split()[0]
+        status, data, _ = await post(client, "/api/account/verify", {"code": code}, token)
+        assert status == 200 and data["data"]["verified"] and not data["data"]["needs_verify"]
+
+    async def test_no_mail_no_gate(self, client):
+        _, body, _ = await register(client)
+        info = (await (await client.get(f"{BASE}/api/account", params={"token": body["data"]["token"]})).json())["data"]
+        assert info["needs_verify"] is False
+
+
 class TestPasswords:
     async def test_reset_by_mail_revokes_old_tokens(self, client, app_context):
         app_context.mailer.outbox = []
