@@ -16,6 +16,7 @@ import { loadRecipients, openCompose } from './mail.js';
 import { pushScreen } from './screens.js';
 import { isHalloween, isNewDesign } from './appearance.js';
 import { navTabs } from './tabs.js';
+import { textStream } from './text-stream.js';
 
 const SUGGESTIONS = [
   'Что задали на завтра?',
@@ -319,19 +320,19 @@ function mount(body, { tab = false } = {}) {
     log.appendChild(typing);
     scroll();
     q('aiSend').disabled = true;
+    const live = textStream((text) => {
+      typing.classList.remove('typing');
+      const content = document.createElement('div');
+      content.className = 'ai-text';
+      content.textContent = text;
+      typing.replaceChildren(content);
+      scroll();
+    });
     try {
       await waitForContext();
       const { data } = await api('/api/assistant', {
         method: 'POST',
-        onDelta: (text) => {
-          typing.classList.remove('typing');
-          typing.replaceChildren();
-          const content = document.createElement('div');
-          content.className = 'ai-text';
-          content.textContent = text;
-          typing.appendChild(content);
-          scroll();
-        },
+        onDelta: (text) => live.push(text),
         body: JSON.stringify({
           stream: true,
           messages: chat.messages.slice(-12).map(({ role, content }) => ({ role, content })),
@@ -340,6 +341,7 @@ function mount(body, { tab = false } = {}) {
           ui: { design: isNewDesign() ? 'new' : 'classic', tabs: navTabs(), halloween: isHalloween() },
         }),
       });
+      await live.finish();
       const reply = { role: 'assistant', content: data.reply };
       chat.messages.push(reply);
       chat.left = data.left;
@@ -356,6 +358,7 @@ function mount(body, { tab = false } = {}) {
       notify('error');
       banner(error.message, true);
     } finally {
+      live.cancel();
       busy = false;
       q('aiSend').disabled = false;
       syncSend();
