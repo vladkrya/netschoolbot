@@ -16,7 +16,7 @@ from ...domain import formatting
 from ...domain.models import MarkKind, User, normalize
 from ...notifications.outbox import mark_from_dict
 from ...netschool.errors import NetSchoolError
-from ...web import viewing
+from ...web import sync, viewing
 from .. import keyboards
 from .common import reply, report_error, require_school
 
@@ -376,6 +376,8 @@ async def demo(message: Message, app: AppContext) -> None:
 @router.message(Command("app_reset"))
 async def miniapp_reset(message: Message, user: User, app: AppContext) -> None:
     token = await app.miniapp.issue_token(user.telegram_id, revoke_existing=True)
+    # Открытые приложения на отозванных устройствах выходят сразу.
+    await sync.publish(app, user.telegram_id, "devices")
     url = f"{app.settings.web.miniapp_url}/?token={token}"
     await message.answer(
         "🔄 Старая ссылка отозвана, прежние перестали работать. Новая:",

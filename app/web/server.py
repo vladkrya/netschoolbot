@@ -25,7 +25,7 @@ from aiohttp import web
 
 from .. import __version__
 from ..context import AppContext
-from . import account, api, assistant, bugreport, caldav, captcha_proxy, chat, devices, extras, lock, status
+from . import account, api, assistant, bugreport, caldav, captcha_proxy, chat, devices, extras, lock, status, sync
 from .api import BOT, CONTEXT
 
 logger = logging.getLogger("netschoolbot.web")
@@ -104,7 +104,7 @@ async def security_headers(request: web.Request, handler):
 
 def create_app(context: AppContext, bot=None) -> web.Application:
     """Собрать сервер: подприложение под префиксом плюс проверка живости."""
-    inner = web.Application(middlewares=[security_headers, caldav.root_discovery, compress_static, api.error_middleware, api.auth_middleware])
+    inner = web.Application(middlewares=[security_headers, caldav.root_discovery, compress_static, api.error_middleware, api.auth_middleware, sync.sync_middleware])
     inner[CONTEXT] = context
     inner[BOT] = bot
     inner[chat.HUB] = context.hub
@@ -278,7 +278,8 @@ async def index(request: web.Request) -> web.Response:
     # Иконка на экране «Домой», первый запуск: код из start_url меняется на
     # свой токен устройства в cookie, и иконка открывает чистый адрес.
     if (icon := request.query.get("icon")) and (telegram_id := await context.miniapp.use_icon_code(icon)):
-        response = web.HTTPFound(f"{_base(request)}/")
+        # #own — токен уже свой, заводить его заново незачем (boot.js, ownToken).
+        response = web.HTTPFound(f"{_base(request)}/#own")
         _set_token_cookie(request, response, await context.miniapp.issue_token(telegram_id, device=True))
         raise response
     # Ссылка установки из /app_install: адрес с кодом не меняем — из

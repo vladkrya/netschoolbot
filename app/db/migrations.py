@@ -779,6 +779,10 @@ MIGRATIONS: list[str] = [
     """
     ALTER TABLE install_codes ADD COLUMN token TEXT;
     """,
+    # Своя подпись сеанса на экране «Устройства»: «Планшет на кухне».
+    """
+    ALTER TABLE miniapp_tokens ADD COLUMN name TEXT NOT NULL DEFAULT '';
+    """,
 ]
 
 

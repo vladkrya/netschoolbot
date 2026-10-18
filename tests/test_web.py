@@ -824,7 +824,7 @@ class TestNewFeatures:
         icon = start.split("icon=")[1]
         client.session.cookie_jar.clear()
         response = await client.get(f"{BASE}/", params={"icon": icon}, allow_redirects=False)
-        assert response.status == 302 and response.headers["Location"] == f"{BASE}/"
+        assert response.status == 302 and response.headers["Location"] == f"{BASE}/#own"
         launched = response.cookies["netschool_token"].value
         assert await app_context.miniapp.resolve_token(launched) == 1 and launched not in (device, other)
         # Второй раз код ничего не открывает: «Поделиться» иконкой безопасно.

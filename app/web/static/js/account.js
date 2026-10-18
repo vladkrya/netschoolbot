@@ -170,13 +170,13 @@ const post = (path, body) => api(path, { method: 'POST', body: JSON.stringify(bo
 
 /* ─────────────────────────── Вход по почте ─────────────────────────── */
 
-export function showAuth(view = 'login') {
+export function showAuth(view = 'login', email = '') {
   const views = { login: renderLogin, register: renderRegister, reset: renderReset };
-  views[view]();
+  views[view](email);
   return new Promise(() => {}); // страница перезагрузится после входа
 }
 
-function renderLogin() {
+function renderLogin(email = '') {
   const card = landing(`
     <h2>Вход в дневник</h2>
     <button class="btn ld-tg-login" type="button" data-landing-bot hidden>
@@ -195,6 +195,7 @@ function renderLogin() {
     </div>
     <a class="ld-demo-link" href="${base}/demo">Без входа — <b>попробовать демо-режим</b> на выдуманном ученике</a>`);
   bindLinks(card);
+  fillEmail(card, email);
   card.querySelector('.ld-tg-login').addEventListener('click', (event) => startBotLogin(event.currentTarget));
   const form = card.querySelector('form');
   form.addEventListener('submit', (event) => {
@@ -210,7 +211,7 @@ function renderLogin() {
   });
 }
 
-function renderRegister() {
+function renderRegister(email = '') {
   const card = landing(`
     <h2>Регистрация</h2>
     <p class="muted">${hasInvite() ? 'Аккаунт, чтобы принять приглашение. Пароль от «Сетевого города» не понадобится.'
@@ -224,6 +225,7 @@ function renderRegister() {
     </form>
     <div class="account-links"><button class="link" data-go="login">Уже есть аккаунт</button></div>`);
   bindLinks(card);
+  fillEmail(card, email);
   const form = card.querySelector('form');
   form.addEventListener('submit', (event) => {
     event.preventDefault();
@@ -242,7 +244,7 @@ function renderRegister() {
   });
 }
 
-function renderReset() {
+function renderReset(email = '') {
   const card = landing(`
     <h2>Сброс пароля</h2>
     <p class="muted">Пришлём код на почту — или в Telegram, если он привязан.</p>
@@ -257,6 +259,7 @@ function renderReset() {
     </form>
     <div class="account-links"><button class="link" data-go="login">Назад ко входу</button></div>`);
   bindLinks(card);
+  fillEmail(card, email);
   const form = card.querySelector('form');
   const button = form.querySelector('button');
   form.addEventListener('submit', (event) => {
@@ -364,8 +367,15 @@ function waitForBot(card, code) {
   tick();
 }
 
+/** Переходы между входом, регистрацией и сбросом: введённая почта едет дальше. */
 function bindLinks(card) {
-  card.querySelectorAll('[data-go]').forEach((link) => link.addEventListener('click', () => showAuth(link.dataset.go)));
+  card.querySelectorAll('[data-go]').forEach((link) => link.addEventListener('click', () =>
+    showAuth(link.dataset.go, card.querySelector('input[name="email"]')?.value.trim() || '')));
+}
+
+function fillEmail(card, email) {
+  const field = card.querySelector('input[name="email"]');
+  if (field && email) field.value = email;
 }
 
 /* ─────────────────────── Приглашение от ученика ─────────────────────── */

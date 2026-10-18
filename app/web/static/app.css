@@ -2399,6 +2399,11 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
 .device-end-all { width: 100%; margin-top: 4px; }
 .device-note { margin: 12px 4px; }
 .device-detail { margin: 0; font-size: 14px; }
+.device-rename { font-size: 13px; }
+.device-row.editing .device-title { flex: 1; min-width: 0; }
+.device-name-form { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; width: 100%; }
+.device-name-form .field { flex: 1 1 160px; min-width: 0; margin: 0; }
+.device-name-form .btn { width: auto; margin: 0; padding: 8px 14px; }
 .device-add { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; margin: 0 0 12px; }
 .device-add .icon, .device-new-actions .icon { width: 18px; height: 18px; }
 .device-new { display: flex; flex-direction: column; gap: 10px; }

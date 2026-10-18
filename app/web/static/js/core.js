@@ -3,7 +3,15 @@
 
 import { ICONS } from './icons.js';
 
-export const { base, token, pushEnabled, student, school, demo } = window.NETSCHOOL;
+export const { base, pushEnabled, student, school, demo } = window.NETSCHOOL;
+export let { token } = window.NETSCHOOL;
+/** Иконка на экране «Домой» завела свой токен (boot.js, ownToken). */
+export function setToken(value) {
+  token = value;
+  window.NETSCHOOL.token = value;
+}
+/** Эта вкладка: сервер не шлёт ей по сокету её же изменения (app/web/sync.py). */
+export const tabId = Math.random().toString(36).slice(2, 12);
 /** Есть ли ИИ-помощник: на сервере задан ключ, и это не демо. */
 export const assistantEnabled = Boolean(window.NETSCHOOL.assistant);
 
@@ -397,6 +405,7 @@ async function request(path, options = {}) {
   if (initData) headers['X-Telegram-Init-Data'] = initData;
   if (token) headers['X-Netschool-Token'] = token;
   if (unlockToken) headers['X-Netschool-Unlock'] = unlockToken;
+  headers['X-Netschool-Tab'] = tabId;
 
   // Без предела запрос к зависшему школьному серверу крутил загрузку
   // бесконечно. Сервер сам отвечает не дольше минуты при обновлении.
@@ -479,6 +488,7 @@ export async function apiBlob(path) {
   if (initData) headers['X-Telegram-Init-Data'] = initData;
   if (token) headers['X-Netschool-Token'] = token;
   if (unlockToken) headers['X-Netschool-Unlock'] = unlockToken;
+  headers['X-Netschool-Tab'] = tabId;
   let response;
   try {
     response = await fetch(base + path, { headers, cache: 'no-store' });

@@ -190,3 +190,102 @@ async def test_new_device_qr_to_chat(app_context, users):
     finally:
         await client.close()
     assert sent and sent[0][0] == 1 and sent[0][1] == b"\x89PNG\r\n\x1a\n" and "одно открытие" in sent[0][2]
+
+
+async def test_rename_session(client, token, app_context):
+    phone = await app_context.miniapp.issue_token(1, device=True)
+    target = next(item for item in await items(client, phone) if item["current"])
+    assert target["name"] == ""
+    status, body = await post(client, phone, "/api/devices/rename", {"id": target["id"], "name": "  Планшет   на кухне  "})
+    assert status == 200
+    assert next(item for item in body["data"]["items"] if item["current"])["name"] == "Планшет на кухне"
+    # Общие ссылки и Telegram не подписываются; завершённый — «уже завершён».
+    assert (await post(client, phone, "/api/devices/rename", {"id": "links", "name": "x"}))[0] == 404
+    await app_context.miniapp.revoke_device_token(phone)
+    other = await app_context.miniapp.issue_token(1, device=True)
+    assert (await post(client, other, "/api/devices/rename", {"id": target["id"], "name": "x"}))[0] == 404
+
+
+async def test_home_screen_icon_gets_own_token(client, token, app_context):
+    safari = await app_context.miniapp.issue_token(1, device=True)
+    status, body = await post(client, safari, "/api/devices/own")
+    own = body["data"]["token"]
+    assert status == 200 and own not in ("", safari)
+    # Выход в Safari иконку не трогает.
+    await app_context.miniapp.revoke_device_token(safari)
+    assert await app_context.miniapp.resolve_token(own) == 1
+    # Общий токен старых ссылок не размножается.
+    assert (await post(client, token, "/api/devices/own"))[1]["data"]["token"] == ""
+
+
+class FakeSocket:
+    def __init__(self):
+        self.sent, self.closed = [], False
+
+    async def send_json(self, event):
+        self.sent.append(event)
+
+    async def close(self):
+        self.closed = True
+
+
+def listen(app_context, uid, *, tab="", device=""):
+    from app.chat.hub import Listener
+
+    socket = FakeSocket()
+    app_context.hub.add(Listener(uid, set(), socket=socket, tab=tab, device=device))
+    return socket
+
+
+async def test_changes_reach_other_tabs_not_the_sender(client, token, app_context):
+    here, there, stranger = listen(app_context, 1, tab="a"), listen(app_context, 1, tab="b"), listen(app_context, 2)
+    response = await client.post(f"{BASE}/api/homework/done", headers={"X-Netschool-Token": token, "X-Netschool-Tab": "a"},
+                                 json={"key": "0123456789abcdef", "done": True})
+    assert response.status == 200
+    homework = {"t": "sync", "topic": "homework"}
+    assert homework not in here.sent and stranger.sent == []
+    assert homework in there.sent
+    # Ошибка ничего не меняет — и сигнала нет.
+    await client.post(f"{BASE}/api/homework/done", headers={"X-Netschool-Token": token}, json={"key": "bad"})
+    assert there.sent.count(homework) == 1
+
+
+async def test_revoked_device_signs_out_at_once(client, token, app_context):
+    from app.db.repositories import token_fingerprint
+
+    phone = await app_context.miniapp.issue_token(1, device=True)
+    laptop = await app_context.miniapp.issue_token(1, device=True)
+    telegram = listen(app_context, 1)
+    on_phone = listen(app_context, 1, device=token_fingerprint(phone))
+    on_laptop = listen(app_context, 1, device=token_fingerprint(laptop))
+    target = next(item for item in await items(client, phone) if item["kind"] == "device" and not item["current"])
+    assert (await post(client, phone, "/api/devices/revoke", {"id": target["id"]}))[0] == 200
+    assert on_laptop.closed and {"t": "signed-out"} in on_laptop.sent
+    assert not on_phone.closed and not telegram.closed
+    assert {"t": "sync", "topic": "devices"} in on_phone.sent
+
+
+def test_sync_topics():
+    from app.web.sync import topic_for
+
+    assert topic_for("/app/api/homework/done") == "homework"
+    assert topic_for("/app/api/homework/5/answer/text") == "answers"
+    assert topic_for("/app/api/notes/12") == "notes"
+    assert topic_for("/app/api/devices/new-link/status") == ""
+    assert topic_for("/app/api/devices/revoke") == "devices"
+    assert topic_for("/app/api/student-class") == ""
+    assert topic_for("/app/api/visit") == ""
+
+
+def test_ws_ticket_carries_device():
+    from types import SimpleNamespace
+
+    from app.web.chat import issue_ws_ticket, verify_ws_ticket, ws_ticket_device
+
+    app = SimpleNamespace(settings=SimpleNamespace(telegram=SimpleNamespace(bot_token="123:abc")))
+    ticket = issue_ws_ticket(app, 7, now=100, device="00ff00ff00ff00ff")
+    assert verify_ws_ticket(app, ticket, now=120) == 7 and ws_ticket_device(ticket) == "00ff00ff00ff00ff"
+    forged = ticket.replace("00ff00ff00ff00ff", "11ff00ff00ff00ff")
+    assert verify_ws_ticket(app, forged, now=120) is None
+    plain = issue_ws_ticket(app, 7, now=100)
+    assert verify_ws_ticket(app, plain, now=120) == 7 and ws_ticket_device(plain) == ""

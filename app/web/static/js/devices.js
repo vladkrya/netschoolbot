@@ -35,12 +35,15 @@ function row(item) {
   const clients = item.clients ? `<button class="device-more" data-clients>
       <span>${item.clients.length ? `${item.clients.length} ${plural(item.clients.length, 'устройство', 'устройства', 'устройств')}` : 'Какие устройства'}</span>${ICONS.right}</button>` : '';
   const action = item.main ? '' : `<button class="btn outline danger device-end" data-end="${esc(item.id)}">${item.current ? 'Выйти' : 'Завершить'}</button>`;
-  return `<div class="card device-row">
+  const rename = item.kind === 'device'
+    ? `<button class="link device-rename" data-rename="${esc(item.id)}">${item.name ? 'Изменить подпись' : 'Подписать'}</button>` : '';
+  return `<div class="card device-row" data-row="${esc(item.id)}">
     <div class="device-head">
       <span class="device-icon">${ICONS[ICON[item.kind]] || ICONS.install}</span>
-      <div class="device-title"><b>${esc(item.label)}</b>${badge}</div>
+      <div class="device-title"><b>${esc(item.name || item.label)}</b>${badge}</div>
     </div>
-    <p class="muted small">${esc(describe(item))}</p>
+    ${item.name ? `<p class="device-detail">${esc(item.label)}</p>` : ''}
+    <p class="muted small">${esc(describe(item))} ${rename}</p>
     ${seen}${clients}${action}
   </div>`;
 }
@@ -49,7 +52,36 @@ function confirmText(item) {
   if (item.current) return 'Это устройство — вы выйдете из аккаунта здесь. Продолжить?';
   if (item.kind === 'links') return 'Завершить ссылки из бота? Старые иконки на экране «Домой» и ссылки с ключом в адресе перестанут открывать дневник. Если ваш календарь подписан по старой ссылке — переподпишитесь в меню.';
   if (item.kind === 'calendar') return 'Отключить подписку на календарь? Расписание в календаре перестанет обновляться.';
-  return `Завершить сеанс «${item.label}»? На том устройстве дневник перестанет открываться — войти снова можно через бота или по почте.`;
+  return `Завершить сеанс «${item.name || item.label}»? На том устройстве дневник перестанет открываться — войти снова можно через бота или по почте.`;
+}
+
+/** Своя подпись сеанса прямо в карточке: «Планшет на кухне». */
+function editName(card, item, onSaved) {
+  const title = card.querySelector('.device-title');
+  const before = title.innerHTML;
+  title.innerHTML = `<form class="device-name-form">
+      <input class="field" name="name" maxlength="40" placeholder="${esc(item.label)}" value="${esc(item.name || '')}"
+        aria-label="Подпись устройства" autocomplete="off" enterkeyhint="done">
+      <button class="btn" type="submit">Сохранить</button>
+      <button class="link" type="button" data-cancel-name>Отмена</button>
+    </form>`;
+  card.classList.add('editing');
+  const form = title.querySelector('form');
+  const close = () => { title.innerHTML = before; card.classList.remove('editing'); };
+  form.name.focus();
+  form.querySelector('[data-cancel-name]').addEventListener('click', close);
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const button = form.querySelector('[type="submit"]');
+    button.disabled = true;
+    try {
+      onSaved((await post('/api/devices/rename', { id: item.id, name: form.name.value })).data.items);
+      notify('success');
+    } catch (error) {
+      button.disabled = false;
+      banner(error.message, true);
+    }
+  });
 }
 
 /** Подвкладка «Ссылки из бота»: какие устройства ходят по общему ключу. */
@@ -242,6 +274,10 @@ export function openDevices() {
         banner(error.message, true);
       }
     }));
+    body.querySelectorAll('[data-rename]').forEach((button) => button.addEventListener('click', () => {
+      const item = items.find((entry) => entry.id === button.dataset.rename);
+      if (item) editName(button.closest('.device-row'), item, draw);
+    }));
     body.querySelector('[data-add]').addEventListener('click', () => openNewDevice(load));
     body.querySelector('[data-clients]')?.addEventListener('click', () => {
       const links = items.find((entry) => entry.kind === 'links');
@@ -272,4 +308,10 @@ export function openDevices() {
     .catch((error) => { body.innerHTML = `<div class="card error-card"><p>${esc(error.message)}</p></div>`; });
   body.innerHTML = '<div class="card"><div class="muted">Загрузка…</div></div>';
   load();
+  // Вход, выход и подписи на других устройствах — сразу здесь (app/web/sync.py).
+  const live = ({ detail }) => {
+    if (!body.isConnected) return window.removeEventListener('netschool:sync', live);
+    if (detail.topic === 'devices' && !body.querySelector('.device-row.editing')) load();
+  };
+  window.addEventListener('netschool:sync', live);
 }

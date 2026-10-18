@@ -27,6 +27,10 @@ class Listener:
     socket: Any = None
     name: str = ""  # подпись для «печатает…»; пусто — писать не может
     typed_at: float = 0.0
+    # Вкладка приложения (X-Netschool-Tab): своё же изменение ей не шлём.
+    tab: str = ""
+    # Отпечаток токена устройства; пусто — Telegram, его не завершить.
+    device: str = ""
 
     def hears(self, room: str) -> bool:
         return self.every_room or room in self.rooms or room_school(room) in self.schools
@@ -69,10 +73,23 @@ class ChatHub:
             except Exception as exc:  # noqa: BLE001 — оборванное соединение уберёт его обработчик
                 logger.debug("Сокет чата %s не принял событие: %s", listener.telegram_id, exc)
 
-    async def publish_user(self, telegram_id: int, event: dict[str, Any]) -> None:
+    async def publish_user(self, telegram_id: int, event: dict[str, Any], *, skip_tab: str = "") -> None:
         for listener in list(self._listeners):
-            if listener.telegram_id == telegram_id:
+            if listener.telegram_id == telegram_id and not (skip_tab and listener.tab == skip_tab):
                 try:
                     await listener.socket.send_json(event)
                 except Exception:  # noqa: BLE001
                     pass
+
+    async def sign_out_devices(self, telegram_id: int, alive: set[str]) -> None:
+        """Сеанс завершили на другом устройстве — открытое приложение там
+        узнаёт об этом сразу, а не со следующим запросом."""
+        for listener in list(self._listeners):
+            if listener.telegram_id != telegram_id or not listener.device or listener.device in alive:
+                continue
+            self.remove(listener)
+            try:
+                await listener.socket.send_json({"t": "signed-out"})
+                await listener.socket.close()
+            except Exception:  # noqa: BLE001
+                pass

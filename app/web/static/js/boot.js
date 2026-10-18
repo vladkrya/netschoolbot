@@ -1,5 +1,5 @@
 // Быстрый старт: PIN и проверка доступа не ждут загрузки всех экранов приложения.
-import { api, demo, state, tg, token } from './core.js';
+import { api, demo, setToken, state, tg, token } from './core.js';
 import { unlockApp } from './lock.js';
 import { initIosHaptics } from './haptics.js';
 
@@ -49,6 +49,29 @@ function signedOut() {
   try { return localStorage.getItem('ns-signed-out') === token; } catch { return false; }
 }
 
+const OWN_KEY = 'ns-own-token';
+
+/** iPhone при установке копирует в иконку на экране «Домой» cookie Safari —
+ *  токен у них общий, и выход в Safari выкидывал иконку. Иконка один раз
+ *  заводит себе свой (app/web/devices.py, own_token). #own — первый запуск
+ *  по коду из манифеста: токен там уже свой. */
+async function ownToken() {
+  if (demo || tg?.initData || !token || navigator.standalone !== true) return;
+  try {
+    if (location.hash === '#own') {
+      localStorage.setItem(OWN_KEY, token);
+      history.replaceState(null, '', location.pathname + location.search);
+      return;
+    }
+    if (localStorage.getItem(OWN_KEY) === token || sessionStorage.getItem(OWN_KEY)) return;
+    sessionStorage.setItem(OWN_KEY, '1');
+    const { data } = await api('/api/devices/own', { method: 'POST', body: '{}' });
+    // Общий токен старых ссылок не трогаем — запоминаем, чтобы не спрашивать снова.
+    localStorage.setItem(OWN_KEY, data.token || token);
+    if (data.token) setToken(data.token);
+  } catch { /* хранилище недоступно или нет сети — попробуем при следующем запуске */ }
+}
+
 async function boot() {
   // В браузере жест вниз — наше обновление дневника, а не перезагрузка страницы.
   if (!tg?.initData) document.documentElement.classList.add('in-browser');
@@ -66,6 +89,7 @@ async function boot() {
     return;
   }
   await unlockApp();
+  await ownToken();
   // Сначала своё: оформление и настройки с сервера бота — раньше аккаунта и
   // дневника, который ждёт «Сетевой город» (app.js берёт этот же запрос).
   if (!demo) state.prefsSync = import('./prefs.js').then((module) => module.syncPrefs()).catch(() => false);

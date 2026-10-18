@@ -1,5 +1,7 @@
 // Один WebSocket на приложение; HTTP остаётся источником сообщений.
-import { api, base, demo } from './core.js';
+// Кроме чатов по нему приходят новые оценки (diary), изменения с других
+// устройств (sync, app/web/sync.py) и завершение этого сеанса (signed-out).
+import { api, base, demo, tabId } from './core.js';
 import { setMailBadge } from './tabs.js';
 
 export const chatEvents = new EventTarget();
@@ -37,6 +39,7 @@ async function connect() {
     const url = new URL(`${base}/api/chat/ws`, location.origin);
     url.protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
     url.searchParams.set('ticket', data.ticket);
+    url.searchParams.set('tab', tabId);
     const ws = new WebSocket(url);
     socket = ws;
     ws.onopen = () => {
@@ -48,6 +51,7 @@ async function connect() {
     ws.onmessage = (frame) => {
       let event;
       try { event = JSON.parse(frame.data); } catch { return; }
+      if (event.t === 'signed-out') { signedOutHere(); return; }
       chatEvents.dispatchEvent(new CustomEvent('change', { detail: event }));
       if (['msg', 'upd', 'unread'].includes(event.t)) refreshChatUnread();
     };
@@ -55,6 +59,16 @@ async function connect() {
     ws.onerror = () => ws.close();
   } catch { scheduleReconnect(); }
   finally { connecting = false; }
+}
+
+/** Сеанс завершили с другого устройства: убрать сохранённое и выйти. */
+async function signedOutHere() {
+  eligible = false;
+  try {
+    const { clearOffline } = await import('./lock.js');
+    await clearOffline();
+  } catch { /* перезагрузка всё равно покажет вход */ }
+  location.replace(`${base}/`);
 }
 
 function scheduleReconnect() {

@@ -1143,6 +1143,12 @@ class SessionRepository:
         )
 
 
+def token_fingerprint(token: str) -> str:
+    """Короткий отпечаток токена: по нему экран «Устройства» и сокеты
+    различают сеансы, не показывая сам токен."""
+    return hashlib.sha256(token.encode()).hexdigest()[:16]
+
+
 class MiniappRepository:
     """Постоянные ссылки на PWA, коды подтверждения и push-подписки."""
 
@@ -1250,7 +1256,7 @@ class MiniappRepository:
         )
         return row is not None
 
-    async def touch_token(self, token: str, label: str, model: str = "", ip: str = "") -> None:
+    async def touch_token(self, token: str, label: str, model: str = "", ip: str = "") -> int | None:
         """Отметить активность токена для экрана «Устройства»; название
         устройства запоминается при первом использовании. По общему токену
         («Ссылки из бота») ходит несколько устройств — каждое пишется отдельно."""
@@ -1262,19 +1268,21 @@ class MiniappRepository:
                 (now, label, token),
             )
             cursor = await db.execute(
-                """SELECT telegram_id FROM miniapp_tokens
-                   WHERE token = ? AND revoked_at IS NULL AND device = 0 AND scope = ''""",
+                "SELECT telegram_id, device, scope FROM miniapp_tokens WHERE token = ? AND revoked_at IS NULL",
                 (token,),
             )
             row = await cursor.fetchone()
             if row is None:
-                return
+                return None
+            if row[1] or row[2]:
+                return int(row[0])
             await db.execute(
                 """INSERT INTO token_clients (telegram_id, token_hash, client, model, ip, first_seen, last_seen)
                    VALUES (?,?,?,?,?,?,?)
                    ON CONFLICT (token_hash, client, model) DO UPDATE SET last_seen = excluded.last_seen, ip = excluded.ip""",
                 (row[0], hashlib.sha256(token.encode()).hexdigest(), label, model, ip, now, now),
             )
+        return int(row[0])
 
     async def link_clients(self, telegram_id: int) -> list[dict]:
         """Устройства, ходившие по действующим общим токенам пользователя."""
@@ -1294,10 +1302,28 @@ class MiniappRepository:
         )
         return [dict(row) for row in rows]
 
+    async def live_fingerprints(self, telegram_id: int) -> set[str]:
+        """Отпечатки действующих токенов приложения (без календаря)."""
+        rows = await self._db.fetch_all(
+            "SELECT token FROM miniapp_tokens WHERE telegram_id = ? AND revoked_at IS NULL AND scope = ''",
+            (telegram_id,),
+        )
+        return {token_fingerprint(row["token"]) for row in rows}
+
+    async def set_token_name(self, telegram_id: int, token: str, name: str) -> bool:
+        """Своя подпись сеанса на экране «Устройства» («Планшет на кухне»)."""
+        async with self._db.transaction() as db:
+            cursor = await db.execute(
+                """UPDATE miniapp_tokens SET name = ?
+                   WHERE telegram_id = ? AND token = ? AND revoked_at IS NULL""",
+                (name, telegram_id, token),
+            )
+            return cursor.rowcount > 0
+
     async def sessions(self, telegram_id: int) -> list[dict]:
         """Действующие токены пользователя — для экрана «Устройства»."""
         rows = await self._db.fetch_all(
-            """SELECT token, device, scope, label, created_at, last_used FROM miniapp_tokens
+            """SELECT token, device, scope, label, name, created_at, last_used FROM miniapp_tokens
                WHERE telegram_id = ? AND revoked_at IS NULL ORDER BY created_at""",
             (telegram_id,),
         )
