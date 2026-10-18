@@ -604,8 +604,7 @@ async def test_mobile_timeout_does_not_erase_successful_web_probe(monkeypatch):
     assert result.mobile is False and result.mobile_error == "timeout"
 
 
-async def test_route_comparison_preserves_primary_history_and_catalog_api(db, monkeypatch):
-    from app.status.service import RoutedHttpProber
+async def test_status_checks_only_configured_exit_and_keeps_catalog_api(db, monkeypatch):
 
     calls = []
 
@@ -618,23 +617,22 @@ async def test_route_comparison_preserves_primary_history_and_catalog_api(db, mo
 
     monkeypatch.setattr(HttpProber, "__call__", check)
     proxy = "socks5://user:secret@127.0.0.1:1082"
-    prober = RoutedHttpProber(lambda _: proxy, proxy)
+    prober = HttpProber(lambda _: proxy)
     service, _ = make_service(db, prober)
     await service.probe_all()
     data = await service.summary()
     host = next(h for h in data["hosts"] if h["host"] == MORDOVIA)
     assert host["web_state"] == "up" and host["uptime"] == 100
     assert host["mobile_url"] == f"https://{MORDOVIA}/api/mobile"
-    checks = host["route_checks"]
-    assert not checks["routes"]["vdsru"]["ok"]
-    assert checks["routes"]["yavds"]["ok"]
-    assert checks["routes"]["yavds"]["mobile_error"] == "http 503"
+    checks = host["latest_check"]
+    assert checks["ok"]
     assert checks["mobile_error"] == "http 503"
-    assert len(calls) == 2 * len(service.targets())  # основной маршрут повторно не опрашиваем
+    assert len(calls) == len(service.targets())
+    assert all(call[1] == proxy for call in calls)  # прямых проверок нет
     assert "secret" not in str(data) and "socks5" not in str(data)
     # Кэш сводки также сохраняет независимые результаты.
     again = await service.summary()
-    assert next(h for h in again["hosts"] if h["host"] == MORDOVIA)["route_checks"] == checks
+    assert next(h for h in again["hosts"] if h["host"] == MORDOVIA)["latest_check"] == checks
 
 
 def test_wrapped_dns_error_is_not_reported_as_generic_connection_failure():

@@ -74,7 +74,7 @@ function plural(n, one, few, many) {
 
 const pct = (v) => (v == null ? '—' : `${v >= 99.995 ? '100' : v.toFixed(v >= 99 ? 2 : 1)}%`);
 const errorText = (e) => (!e ? '' : ERRORS[e] || ({ 'http 403': 'доступ запрещён (403)', 'http 503': 'сервис недоступен (503)' })[e] || (e.startsWith('http ') ? `ошибка HTTP ${e.slice(5)}` : e));
-const name = (h) => h.region || h.host;
+const name = (h) => h.region || 'Регион без названия';
 
 function el(tag, attrs = {}, ...children) {
   const node = document.createElement(tag);
@@ -208,10 +208,10 @@ function renderCharts() {
 
 function matches(host) {
   if (!query) return true;
-  return `${host.region} ${host.host}`.toLowerCase().includes(query);
+  return (host.region || '').toLowerCase().includes(query);
 }
 
-const BLOCKED_TEXT = 'Успешных проверок по маршруту бота ещё не было. Причина последней ошибки и результаты с каждого сервера показаны выше. Сайт может открываться из других сетей.';
+const BLOCKED_TEXT = 'Успешных проверок по маршруту бота ещё не было. Причина последней ошибки показана в таблице. Сайт может открываться из других сетей.';
 
 function hostDetails(host) {
   const incidents = data.incidents.filter((i) => i.host === host.host).slice(0, 5);
@@ -230,12 +230,10 @@ function hostDetails(host) {
     host.state === 'blocked' ? el('p', { class: 'muted' }, BLOCKED_TEXT) : '',
     host.notice ? el('div', { class: 'notice' },
       el('b', {}, host.app_disabled ? 'ИРТех: регион отключён в приложении NetSchool. ' : 'ИРТех: '), host.notice) : '',
-    host.route_checks?.mobile_error ? el('p', { class: 'notice' }, `Мобильное API: ${errorText(host.route_checks.mobile_error)}.`) : '',
+    host.latest_check?.mobile_error ? el('p', { class: 'notice' }, `Мобильное API: ${errorText(host.latest_check.mobile_error)}.`) : '',
     el('dl', { class: 'facts' },
-      el('dt', {}, 'Адрес'), el('dd', {}, el('a', { href: host.url, target: '_blank', rel: 'noopener' }, host.url.replace(/^https?:\/\//, ''))),
       el('dt', {}, 'Версия'), el('dd', {}, host.version ? [el('code', {}, host.version), host.version_changed_at ? ` · с ${when(host.version_changed_at)}` : ''] : 'неизвестна'),
       el('dt', {}, 'Мобильное API'), el('dd', {}, mobileText(host)),
-      host.mobile_url ? [el('dt', {}, 'Адрес API ИРТех'), el('dd', {}, el('a', { href: host.mobile_url, target: '_blank', rel: 'noopener' }, host.mobile_url))] : '',
       el('dt', {}, 'Отклик'), el('dd', {}, host.avg_latency_ms == null ? '—' : `${(host.avg_latency_ms / 1000).toFixed(1)} с в среднем за сутки`),
       el('dt', {}, 'Проверка'), el('dd', {}, lastCheck),
       el('dt', {}, 'Последний ответ'), el('dd', {}, when(host.last_ok_at)),
@@ -260,7 +258,8 @@ function mobileText(host) {
 
 function hostRow(host) {
   const state = host.error === 'maintenance' ? { label: 'Техработы', tone: 'warning' }
-    : host.diary_issues && host.state !== 'down' ? { label: 'Проблемы с дневниками', tone: 'serious' } : STATES[host.state] || STATES.unknown;
+    : host.diary_issues && host.state !== 'down' ? { label: 'Проблемы с дневниками', tone: 'serious' }
+      : host.web_state === 'up' && host.in_app && host.mobile === false ? { label: 'Веб работает', tone: 'good' } : STATES[host.state] || STATES.unknown;
   const blocked = host.state === 'blocked';
   const strip = el('div', { class: `strip${blocked ? ' blocked' : ''}`, role: 'img',
     'aria-label': blocked ? `${name(host)}: нет данных` : `Доступность ${name(host)}: ${pct(host.uptime)}` });
@@ -280,7 +279,7 @@ function hostRow(host) {
     });
   }
   const isOpen = expanded.has(host.host);
-  const sub = [host.host];
+  const sub = [];
   if (host.error === 'maintenance') sub.push('технические работы');
   else if (host.state === 'down' && host.down_since) sub.push(`текущий сбой ~${duration(Date.now() / 1000 - host.down_since)}`);
   else if (host.version) sub.push(host.version);
@@ -336,7 +335,7 @@ function renderLists() {
     list(container, data.incidents.filter((i) => matches(i)), (i) => el('div', { class: 'item' },
       el('i', { class: `dot ${i.ongoing ? 'critical' : 'none'}`, 'aria-hidden': 'true' }),
       el('div', {},
-        el('div', {}, el('b', {}, i.region || i.host), i.ongoing
+        el('div', {}, el('b', {}, name(i)), i.ongoing
           ? ` — недоступен уже ${duration(Date.now() / 1000 - i.start)}`
           : ` — не отвечал ~${duration(i.end - i.start)}`),
         el('div', { class: 'when' }, `${when(i.start)}${i.error ? ` · ${errorText(i.error)}` : ''}`))),
@@ -346,14 +345,14 @@ function renderLists() {
     list(container, data.versions.filter((v) => v.previous && matches(v)), (v) => el('div', { class: 'item' },
       el('i', { class: 'dot accent', 'aria-hidden': 'true' }),
       el('div', {},
-        el('div', {}, el('b', {}, v.region || v.host), ': ', el('code', {}, v.previous), ' → ', el('code', {}, v.version)),
+        el('div', {}, el('b', {}, name(v)), ': ', el('code', {}, v.previous), ' → ', el('code', {}, v.version)),
         el('div', { class: 'when' }, when(v.changed_at)))),
       'Обновлений пока не было');
   } else {
     list(container, data.reports.filter((r) => matches(r)), (r) => el('div', { class: 'item' },
       el('i', { class: 'dot accent', 'aria-hidden': 'true' }),
       el('div', {},
-        el('div', {}, el('b', {}, r.region || r.host), ` — ${data.kinds[r.kind] || r.kind}`),
+        el('div', {}, el('b', {}, name(r)), ` — ${data.kinds[r.kind] || r.kind}`),
         el('div', { class: 'when' }, ago(r.created_at)))),
       'Жалоб не было');
   }
@@ -365,9 +364,9 @@ document.querySelectorAll('#feed-tabs button').forEach((button) => button.addEve
   if (data) renderLists();
 }));
 
-function routeCell(host, route, mobile) {
-  const snapshot = host.route_checks;
-  const check = snapshot?.routes?.[route];
+function routeCell(host, mobile) {
+  const snapshot = host.latest_check;
+  const check = snapshot;
   let text, tone = 'none';
   if (mobile && !host.in_app) text = 'Нет в каталоге';
   else if (!check) text = 'Нет проверки';
@@ -387,21 +386,19 @@ function renderRoutes() {
   const hosts = data.hosts.filter(matches).sort((a, b) => name(a).localeCompare(name(b), 'ru'));
   $('#route-hosts').replaceChildren(...hosts.map((host) => el('tr', {},
     el('th', { scope: 'row' }, name(host),
-      el('small', { class: 'muted' }, host.host),
       host.app_disabled ? el('small', { class: 'route-disabled', title: host.notice }, 'ИРТех: отключён в NetSchool') : '',
-      host.route_checks ? el('small', { class: 'muted' }, `Проверено ${ago(host.route_checks.checked_at)}`) : ''),
-    routeCell(host, 'vdsru', false), routeCell(host, 'vdsru', true),
-    routeCell(host, 'yavds', false), routeCell(host, 'yavds', true),
+      host.latest_check ? el('small', { class: 'muted' }, `Проверено ${ago(host.latest_check.checked_at)}`) : ''),
+    routeCell(host, false), routeCell(host, true),
   )));
-  const summaries = ['vdsru', 'yavds'].map((route) => {
-    const checked = data.hosts.filter((h) => h.route_checks?.routes?.[route] && Date.now() / 1000 - h.route_checks.checked_at <= 180);
-    if (!checked.length) return el('span', {}, `${route}: ожидаем проверки`);
-    const web = checked.filter((h) => h.route_checks.routes[route].ok).length;
-    const mobileHosts = checked.filter((h) => h.in_app);
-    const mobile = mobileHosts.filter((h) => h.route_checks.routes[route].mobile === true).length;
-    return el('span', {}, el('b', {}, route), ` · веб ${web}/${checked.length} · мобильное API ${mobile}/${mobileHosts.length}`);
-  });
-  $('#route-summary').replaceChildren(...summaries);
+  const checked = data.hosts.filter((h) => h.latest_check && Date.now() / 1000 - h.latest_check.checked_at <= 180);
+  if (!checked.length) {
+    $('#route-summary').textContent = 'Ожидаем первые результаты';
+    return;
+  }
+  const web = checked.filter((h) => h.latest_check.ok).length;
+  const mobileHosts = checked.filter((h) => h.in_app);
+  const mobile = mobileHosts.filter((h) => h.latest_check.mobile === true).length;
+  $('#route-summary').textContent = `Веб: ${web}/${checked.length} · мобильное API: ${mobile}/${mobileHosts.length}`;
 }
 
 function renderBanner() {
@@ -511,7 +508,7 @@ function openReport(host) {
   const select = $('#report-host');
   const hosts = [...data.hosts].sort((a, b) => name(a).localeCompare(name(b), 'ru'));
   select.replaceChildren(el('option', { value: '' }, 'Выберите регион'),
-    ...hosts.map((h) => el('option', { value: h.host }, h.region ? `${h.region} — ${h.host}` : h.host)));
+    ...hosts.map((h) => el('option', { value: h.host }, name(h))));
   select.value = host || '';
   const kinds = $('#report-kinds');
   kinds.replaceChildren(...Object.entries(data.kinds).map(([value, label], i) =>
