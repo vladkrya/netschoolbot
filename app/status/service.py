@@ -31,6 +31,7 @@ import httpx
 
 if TYPE_CHECKING:
     from ..db.repositories import SgoStatusRepository
+    from .groups import GroupBroadcast
 
 logger = logging.getLogger("netschoolbot.status")
 
@@ -253,6 +254,8 @@ class StatusService:
         self._cache: dict[str, tuple[float, dict]] = {}
         self._alerted: dict[str, float] = {}
         self._live: dict[str, tuple[float, dict]] = {}
+        # Сообщения в группы Telegram о простоях и обновлениях (status/groups.py).
+        self.groups: GroupBroadcast | None = None
 
     # ───────────────────────────── серверы ─────────────────────────────
 
@@ -303,13 +306,20 @@ class StatusService:
             (target.host, at, result.ok, result.latency_ms, result.error, result.mobile)
             for target, result in zip(targets, results)
         ])
+        changed: dict[str, tuple[str, str]] = {}
         for target, result in zip(targets, results):
             if result.version:
                 previous = await self._repo.save_version(target.host, result.version, at)
                 if previous and previous != result.version:
+                    changed[target.host] = (previous, result.version)
                     logger.info("«Сетевой город» %s: версия %s → %s", target.host, previous, result.version,
                                 extra={"public": True})
         self._cache.clear()
+        if self.groups is not None:
+            try:
+                await self.groups.observe(list(zip(targets, results)), changed, at)
+            except Exception as exc:  # noqa: BLE001 — рассылка не должна ломать проверки
+                logger.warning("Рассылка о «Сетевом городе» в группы не удалась: %s", exc)
         good = sum(1 for result in results if result.ok)
         logger.debug("Статус «Сетевого города»: ответили %s из %s", good, len(results))
         return good

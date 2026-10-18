@@ -750,6 +750,19 @@ MIGRATIONS: list[str] = [
     """
     ALTER TABLE app_visits ADD COLUMN halloween INTEGER;
     """,
+    # 46 — группы и каналы Telegram, куда бот сам пишет о «Сетевом городе»
+    # (status/groups.py): простои и обновления, по выбранным регионам.
+    # regions — JSON-список хостов; пустой — все регионы.
+    """
+    CREATE TABLE broadcast_groups (
+        chat_id INTEGER PRIMARY KEY,
+        title TEXT NOT NULL DEFAULT '',
+        outages INTEGER NOT NULL DEFAULT 1,
+        updates INTEGER NOT NULL DEFAULT 1,
+        regions TEXT NOT NULL DEFAULT '[]',
+        added_at REAL NOT NULL
+    );
+    """,
 ]
 
 

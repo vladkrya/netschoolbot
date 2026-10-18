@@ -2016,3 +2016,78 @@ class AppFlagRepository:
             "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
             (key, "1" if on else "0"),
         )
+
+
+class BroadcastGroupRepository:
+    """Группы и каналы, куда бот пишет о простоях и обновлениях «Сетевого
+    города» (status/groups.py). Здесь же — какие серверы уже объявлены
+    лежащими: после перезапуска не повторять «не отвечает»."""
+
+    DOWN_KEY = "group_down:"
+
+    def __init__(self, db: Database) -> None:
+        self._db = db
+
+    @staticmethod
+    def _row(row: aiosqlite.Row) -> dict:
+        item = dict(row)
+        item["outages"] = bool(item["outages"])
+        item["updates"] = bool(item["updates"])
+        try:
+            regions = json.loads(item["regions"] or "[]")
+        except ValueError:
+            regions = []
+        item["regions"] = [str(host) for host in regions] if isinstance(regions, list) else []
+        return item
+
+    async def all(self) -> list[dict]:
+        rows = await self._db.fetch_all("SELECT * FROM broadcast_groups ORDER BY added_at")
+        return [self._row(row) for row in rows]
+
+    async def get(self, chat_id: int) -> dict | None:
+        row = await self._db.fetch_one("SELECT * FROM broadcast_groups WHERE chat_id = ?", (chat_id,))
+        return self._row(row) if row else None
+
+    async def add(self, chat_id: int, title: str, now: float) -> bool:
+        """Подключить группу (оба вида сообщений, все регионы). False — уже была;
+        тогда обновляется только название."""
+        if await self.get(chat_id) is not None:
+            await self._db.execute("UPDATE broadcast_groups SET title = ? WHERE chat_id = ?", (title, chat_id))
+            return False
+        await self._db.execute(
+            "INSERT INTO broadcast_groups (chat_id, title, added_at) VALUES (?, ?, ?)", (chat_id, title, now))
+        return True
+
+    async def remove(self, chat_id: int) -> None:
+        await self._db.execute("DELETE FROM broadcast_groups WHERE chat_id = ?", (chat_id,))
+
+    async def set_kind(self, chat_id: int, kind: str, on: bool) -> None:
+        if kind not in ("outages", "updates"):
+            raise ValueError(kind)
+        await self._db.execute(f"UPDATE broadcast_groups SET {kind} = ? WHERE chat_id = ?", (int(on), chat_id))
+
+    async def set_regions(self, chat_id: int, hosts: list[str]) -> None:
+        await self._db.execute("UPDATE broadcast_groups SET regions = ? WHERE chat_id = ?",
+                               (json.dumps(sorted(set(hosts))), chat_id))
+
+    async def move(self, old_id: int, new_id: int) -> None:
+        """Группа стала супергруппой — у неё новый id."""
+        await self._db.execute("UPDATE broadcast_groups SET chat_id = ? WHERE chat_id = ?", (new_id, old_id))
+
+    async def down_hosts(self) -> dict[str, float]:
+        rows = await self._db.fetch_all(
+            "SELECT key, value FROM app_metadata WHERE key LIKE ?", (self.DOWN_KEY + "%",))
+        down = {}
+        for row in rows:
+            try:
+                down[row["key"][len(self.DOWN_KEY):]] = float(row["value"])
+            except ValueError:
+                continue
+        return down
+
+    async def set_down(self, host: str, since: float | None) -> None:
+        if since is None:
+            await self._db.execute("DELETE FROM app_metadata WHERE key = ?", (self.DOWN_KEY + host,))
+        else:
+            await self._db.execute("INSERT OR REPLACE INTO app_metadata (key, value) VALUES (?, ?)",
+                                   (self.DOWN_KEY + host, repr(since)))

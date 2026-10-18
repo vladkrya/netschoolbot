@@ -42,6 +42,22 @@ class ContextMiddleware(BaseMiddleware):
         return await handler(event, data)
 
 
+class AppOnlyMiddleware(BaseMiddleware):
+    """Только контекст приложения — для событий, где пользователь не нужен."""
+
+    def __init__(self, context: AppContext) -> None:
+        self._context = context
+
+    async def __call__(
+        self,
+        handler: Callable[[TelegramObject, dict[str, Any]], Awaitable[Any]],
+        event: TelegramObject,
+        data: dict[str, Any],
+    ) -> Any:
+        data["app"] = self._context
+        return await handler(event, data)
+
+
 def _message_of(target: Message | CallbackQuery) -> Message | None:
     """Сообщение, в которое нужно отвечать.
 

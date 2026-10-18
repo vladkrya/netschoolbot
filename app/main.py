@@ -209,6 +209,20 @@ async def run(settings: Settings, args: argparse.Namespace) -> int:
         SgoStatusRepository(context.db), prober=HttpProber(proxy_for), catalog=catalog_fetcher(proxy_for),
         notify=tell_admin if settings.telegram.admin_id else None, secret=settings.secret_key,
     )
+    # Сообщения о простоях и обновлениях в группы Telegram (/groups у админа).
+    from .db.repositories import BroadcastGroupRepository
+    from .status.groups import GroupBroadcast
+
+    async def send_group(chat_id: int, text: str) -> None:
+        await bot.send_message(chat_id, text, disable_web_page_preview=True)
+
+    context.status.groups = GroupBroadcast(BroadcastGroupRepository(context.db), send_group,
+                                           status_url=f"{settings.web.miniapp_url.rstrip('/')}/status"
+                                           if settings.web.enabled else "")
+    try:
+        await context.status.groups.load(SgoStatusRepository(context.db))
+    except Exception as exc:  # noqa: BLE001 — без этого может повторить «не отвечает»
+        logger.warning("Рассылка в группы: состояние не загружено: %s", exc)
     from .accounts import has_telegram
     from .status.alerts import SgoAlerts
 
