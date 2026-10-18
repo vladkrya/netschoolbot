@@ -82,14 +82,57 @@ async def test_link_clients_are_listed(client, token, app_context):
     assert await app_context.miniapp.link_clients(1) == []
 
 
-async def test_new_device_link(client, token, app_context):
+IPHONE = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit Version/27.2 Mobile/15E148 Safari/604.1"
+
+
+async def open_link(client, url, ua=IPHONE):
+    """Открыть ссылку «с чистого устройства»: без cookie. Токен страницы или ""."""
+    import re
+    client.session.cookie_jar.clear()
+    page = await (await client.get(f"{BASE}/?{url.split('?', 1)[1]}", headers={"User-Agent": ua})).text()
+    return re.search(r'token: "([^"]*)"', page).group(1)
+
+
+async def test_new_device_link_opens_once(client, token, app_context):
     phone = await app_context.miniapp.issue_token(1, device=True)
     status, body = await post(client, phone, "/api/devices/new-link")
     assert status == 200
-    url = body["data"]["url"]
-    assert "?enter=" in url and token not in url and phone not in url
-    assert await app_context.miniapp.use_enter_code(url.split("enter=")[1]) == 1
-    assert body["data"]["qr"].startswith("data:image/png;base64,")
+    data = body["data"]
+    url, code = data["url"], data["code"]
+    assert "?device=" in url and "install=1" in url and token not in url and phone not in url
+    assert data["qr"].startswith("data:image/png;base64,")
+    assert 3500 < data["expires"] - __import__("time").time() <= 3600
+    assert (await post(client, phone, "/api/devices/new-link/status", {"code": code}))[1]["data"]["state"] == "waiting"
+    # Превью в мессенджере ссылку не гасит.
+    assert await open_link(client, url, "TelegramBot (like TwitterBot)") == ""
+    # Первое открытие — новый токен устройства, второе — уже ничего.
+    device = await open_link(client, url)
+    assert device not in ("", token, phone) and await app_context.miniapp.is_device_token(device)
+    assert await open_link(client, url) == ""
+    status = (await post(client, phone, "/api/devices/new-link/status", {"code": code}))[1]["data"]
+    assert status["state"] == "used" and status["label"] == "Safari на iPhone"
+    assert status["id"] in [item["id"] for item in await items(client, phone)]
+    # Открытую ссылку уже не отменить и QR по ней не прислать.
+    assert (await post(client, phone, "/api/devices/new-link/send-qr", {"code": code}))[0] == 400
+
+
+async def test_new_device_link_cancel_and_expiry(client, token, app_context):
+    phone = await app_context.miniapp.issue_token(1, device=True)
+    code = (await post(client, phone, "/api/devices/new-link"))[1]["data"]["code"]
+    assert (await post(client, phone, "/api/devices/new-link/cancel", {"code": code}))[0] == 200
+    assert (await post(client, phone, "/api/devices/new-link/status", {"code": code}))[1]["data"]["state"] == "gone"
+    assert await app_context.miniapp.use_device_code(code) is None
+
+    url = (await post(client, phone, "/api/devices/new-link"))[1]["data"]["url"]
+    code = url.split("device=")[1].split("&")[0]
+    await app_context.db.execute("UPDATE install_codes SET expires_at = 1 WHERE code = ?", (code,))
+    assert (await post(client, phone, "/api/devices/new-link/status", {"code": code}))[1]["data"]["state"] == "expired"
+    assert await open_link(client, url) == ""
+    # Чужую ссылку не узнать и не отменить.
+    other = (await app_context.miniapp.issue_device_code(2))[0]
+    assert (await post(client, phone, "/api/devices/new-link/status", {"code": other}))[1]["data"]["state"] == "gone"
+    await post(client, phone, "/api/devices/new-link/cancel", {"code": other})
+    assert (await app_context.miniapp.device_code(2, other))["used_at"] is None
 
 
 async def test_pwa_and_safari_are_distinct_clients_of_legacy_link(client, token, app_context):
@@ -123,3 +166,27 @@ async def test_device_pwa_label_is_updated_from_first_browser_visit(client, app_
         "X-Netschool-Token": device, "User-Agent": "Mozilla/5.0 (iPhone) Safari", "X-Netschool-Client": "pwa"})
     rows = (await response.json())["data"]["items"]
     assert next(row for row in rows if row["current"])["label"].startswith("Веб-приложение")
+
+
+async def test_new_device_qr_to_chat(app_context, users):
+    from aiohttp.test_utils import TestClient, TestServer
+
+    from app.web.server import create_app
+    from tests.test_web import make_user
+
+    await users.save(make_user(1))
+    sent = []
+
+    class Bot:
+        async def send_photo(self, chat_id, photo, caption=""):
+            sent.append((chat_id, photo.data[:8], caption))
+
+    client = TestClient(TestServer(create_app(app_context, bot=Bot())))
+    await client.start_server()
+    try:
+        phone = await app_context.miniapp.issue_token(1, device=True)
+        code = (await post(client, phone, "/api/devices/new-link"))[1]["data"]["code"]
+        assert (await post(client, phone, "/api/devices/new-link/send-qr", {"code": code}))[0] == 200
+    finally:
+        await client.close()
+    assert sent and sent[0][0] == 1 and sent[0][1] == b"\x89PNG\r\n\x1a\n" and "одно открытие" in sent[0][2]
