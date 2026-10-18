@@ -185,6 +185,10 @@ async def run(settings: Settings, args: argparse.Namespace) -> int:
         async def tell_admin(text: str) -> None:
             await bot.send_message(settings.telegram.admin_id, text)
         context.watchers.outages.attach(tell_admin)
+    try:
+        await context.watchers.outages.persist(context.db)
+    except Exception as exc:  # noqa: BLE001 — без этого бот работает, только может повторить «не отвечает»
+        logger.warning("Простои «Сетевого города» не загружены: %s", exc)
     # Версии «Сетевого города» — в лог и админу о смене; пишутся и без админа.
     from .db.repositories import SgoVersionRepository
     from .notifications.sgo_version import VersionTracker, logindata_fetcher

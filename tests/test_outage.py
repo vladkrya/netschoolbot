@@ -146,3 +146,36 @@ async def test_outage_messages_carry_version(db):
     assert len(sent) == 2
     assert "снова отвечает" in sent[1] and "версия обновилась: 5.58.6 → 5.58.7" in sent[1]
     assert server.calls == 2  # после простоя — сразу, не дожидаясь периода
+
+
+async def test_restart_does_not_repeat_outage(db):
+    """После перезапуска бот помнит, что о простое уже сказал."""
+    sent: list[str] = []
+    now = [1000.0]
+
+    async def send(text):
+        sent.append(text)
+
+    url = "https://sgo.example.ru/"
+    monitor = OutageMonitor(send, clock=lambda: now[0])
+    await monitor.persist(db)
+    for _ in range(5):
+        await monitor.record(url, ok=False, server_down=True)
+        now[0] += 30
+    assert len(sent) == 1
+
+    restarted = OutageMonitor(send, clock=lambda: now[0])
+    await restarted.persist(db)
+    for _ in range(10):
+        await restarted.record(url, ok=False, server_down=True)
+        now[0] += 30
+    assert len(sent) == 1  # «не отвечает» не повторяем
+    for _ in range(3):
+        await restarted.record(url, ok=True)
+    assert len(sent) == 2 and "снова отвечает" in sent[1]
+
+    again = OutageMonitor(send, clock=lambda: now[0])
+    await again.persist(db)
+    for _ in range(3):
+        await again.record(url, ok=True)
+    assert len(sent) == 2  # ожил — забыли, второй раз «снова отвечает» не шлём

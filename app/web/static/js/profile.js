@@ -785,7 +785,7 @@ function render() {
     </section>
     <section class="drawer-section">
       <div class="drawer-heading">Оформление</div>
-      ${data.halloween ? `<label class="switch-row halloween-row"><span>🎃 Хеллоуин<span class="muted small switch-note">${halloweenCountdown()} · видно только вам</span></span>
+      ${data.halloween ? `<label class="switch-row halloween-row"><span>🎃 Хеллоуин<span class="muted small switch-note">${halloweenCountdown()}</span></span>
         <input type="checkbox" switch class="switch" id="halloweenOn" ${isHalloween() ? 'checked' : ''}></label>` : ''}
       ${spooky ? '<div class="muted small halloween-note">В Хеллоуин тема всегда ночная. Светлая и свой цвет вернутся, когда выключите праздник.</div>'
         : isNewDesign() ? themeSegment : `${radio('light', 'Светлая тема')}

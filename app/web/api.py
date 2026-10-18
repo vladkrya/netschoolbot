@@ -448,6 +448,12 @@ async def _cached(request: web.Request, section: str, producer, *, cacheable=lam
     return web.json_response({"ok": True, "data": payload, "stale": False})
 
 
+def halloween_season(today: dt.date) -> bool:
+    """Хеллоуинское оформление включено у всех: с 18 октября по 8 ноября
+    включительно (до 23:59 по времени человека)."""
+    return (10, 18) <= (today.month, today.day) <= (11, 8)
+
+
 def _utc_iso(moment: dt.datetime | None) -> str | None:
     """Время из базы (UTC без пояса) — в ISO с «Z», чтобы браузер показал местное."""
     return moment.isoformat(timespec="seconds") + "Z" if moment else None
@@ -537,10 +543,9 @@ async def profile(request: web.Request) -> web.Response:
                 "quiet_hours": user.quiet_hours.as_text(),
                 "enabled": user.enabled,
                 "assistant": app.settings.assistant.enabled,
-                # Хеллоуинское оформление пока видит только админ — по тому,
-                # кто вошёл, а не чей дневник открыт.
-                "halloween": bool(app.settings.telegram.admin_id)
-                and (viewer or user).telegram_id == app.settings.telegram.admin_id,
+                # Хеллоуинское оформление — у всех в праздничный сезон;
+                # выключается тумблером в настройках.
+                "halloween": halloween_season(user.today()),
                 # Без капчи отчёт об ошибке не отправить — пункт меню прячется.
                 "bug_report": bool(app.settings.web.captcha_url),
                 "timezone": user.timezone,
@@ -1749,10 +1754,11 @@ async def visit(request: web.Request) -> web.Response:
         body = {}
     design = body.get("design") if isinstance(body, dict) else None
     client = body.get("client") if isinstance(body, dict) else None
+    halloween = body.get("halloween") if isinstance(body, dict) else None
     if design not in {"new", "classic"} or client not in {"telegram", "pwa", "web"}:
         return json_error("Некорректный запрос")
     miniapp, telegram_id = context(request).miniapp, current_user(request).telegram_id
-    await miniapp.record_visit(telegram_id, design, client)
+    await miniapp.record_visit(telegram_id, design, client, halloween if isinstance(halloween, bool) else None)
     if client == "pwa" and (await miniapp.prefs(telegram_id)).get("pwa") != "installed":
         await miniapp.save_prefs(telegram_id, {"pwa": "installed"})
     return web.json_response({"ok": True})
@@ -1763,6 +1769,18 @@ async def chat_launch_notice(request: web.Request) -> web.Response:
     app, user = context(request), current_user(request)
     show = await app.miniapp.claim_chat_launch_notice(user.telegram_id)
     return web.json_response({"ok": True, "data": {"show": show}}, headers={"Cache-Control": "no-store"})
+
+
+@routes.post("/api/notices/halloween")
+async def halloween_notice(request: web.Request) -> web.Response:
+    """Разовая карточка «включили хеллоуинское оформление» — по одной на
+    человека, флаг в общих настройках, чтобы не повторять на других устройствах."""
+    app, user = context(request), current_user(request)
+    show = halloween_season(user.today()) and not (await app.miniapp.prefs(user.telegram_id)).get("halloween_notice")
+    if show:
+        await app.miniapp.save_prefs(user.telegram_id, {"halloween_notice": True})
+    data = {"show": show, "bug_report": bool(app.settings.web.captcha_url)}
+    return web.json_response({"ok": True, "data": data}, headers={"Cache-Control": "no-store"})
 
 
 @routes.post("/api/notices/survey")

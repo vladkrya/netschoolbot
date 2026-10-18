@@ -4,7 +4,7 @@
 // Здесь же — статус серверов внутри приложения.
 
 import { $, api, banner, base, demo, esc, markSgoDown } from './core.js';
-import { tap } from './haptics.js';
+import { notify as haptic, tap } from './haptics.js';
 import { pushScreen } from './screens.js';
 
 const DISMISSED_KEY = 'ns-sgo-down-dismissed';
@@ -61,6 +61,11 @@ function headline(data, slow) {
     const since = minutes >= 10 ? ` — не отвечает с ${timeFmt.format(new Date(data.down_since * 1000))}` : '';
     return `<b>Сервер «Сетевого города»${where} сейчас недоступен</b>${esc(since)}.`;
   }
+  // Дневник не загрузился, а проверка страницы входа прошла: сервер жив, но
+  // журнал отдаёт медленно. Раньше здесь было «долго не отвечает», а в
+  // статусе тот же сервер — «отвечает», и одно противоречило другому.
+  if (data.state === 'unstable') return `<b>Сервер «Сетевого города»${where} работает с перебоями</b> — дневник сейчас грузится очень долго.`;
+  if (slow && data.ok) return `<b>Сервер «Сетевого города»${where} отвечает очень медленно</b> — дневник грузится дольше обычного.`;
   return `<b>Сервер «Сетевого города»${where} ${slow ? 'долго не отвечает' : 'сейчас не отвечает'}.</b>`;
 }
 
@@ -90,19 +95,27 @@ function show(data, slow) {
     el.classList.add('leaving');
     setTimeout(() => el.remove(), 250);
   };
-  el.querySelector('[data-act="notify"]').addEventListener('click', async (event) => {
+  const notify = el.querySelector('[data-act="notify"]');
+  const label = notify.textContent;
+  notify.addEventListener('click', async () => {
     tap();
-    event.currentTarget.disabled = true;
+    // После await event.currentTarget уже null — раньше на ошибке это падало,
+    // и кнопка оставалась тёмной без единого слова.
+    notify.disabled = true;
+    notify.textContent = 'Подписываем…';
     try {
       await api('/api/sgo/notify', { method: 'POST', body: JSON.stringify({ kind: 'up', on: true }) });
+      haptic('success');
       // Подписались — карточка больше не нужна и до конца запуска не вернётся.
       dismiss();
       actions.remove();
-      text.innerHTML = '<b>Готово.</b> Сообщим в Telegram и уведомлением, когда дневник снова загрузится.';
-      setTimeout(close, 2200);
+      text.innerHTML = '✅ <b>Готово.</b> Сообщим в Telegram и уведомлением, когда дневник снова загрузится.';
+      setTimeout(close, 3500);
     } catch (error) {
-      event.currentTarget.disabled = false;
-      text.textContent = error.message;
+      haptic('error');
+      notify.disabled = false;
+      notify.textContent = label;
+      text.textContent = `Не удалось подписаться: ${error.message}`;
     }
   });
   el.querySelector('[data-act="close"]').addEventListener('click', () => {

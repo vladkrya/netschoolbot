@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
 if TYPE_CHECKING:
+    from ..db.engine import Database
     from .sgo_version import VersionTracker
 
 logger = logging.getLogger("netschoolbot.outage")
@@ -27,6 +28,9 @@ MIN_CHECKS = 5
 FAIL_SHARE = 0.8
 # Ожил: столько удачных проверок подряд.
 RECOVERED_AFTER = 3
+# Лежащие серверы помним в app_metadata: раньше после каждого перезапуска
+# бот забывал, что о простое уже сказал, и присылал «не отвечает» заново.
+DOWN_KEY = "outage_down:"
 
 
 @dataclass
@@ -43,6 +47,31 @@ class OutageMonitor:
         self._clock = clock
         self._hosts: dict[str, _Host] = {}
         self._versions: VersionTracker | None = None
+        self._db: Database | None = None
+
+    async def persist(self, db: Database) -> None:
+        """Хранить «лежит с …» в базе и поднять то, что было до перезапуска."""
+        self._db = db
+        rows = await db.fetch_all(
+            "SELECT key, value FROM app_metadata WHERE key LIKE ?", (DOWN_KEY + "%",))
+        for row in rows:
+            try:
+                since = float(row["value"])
+            except ValueError:
+                continue
+            self._hosts.setdefault(row["key"][len(DOWN_KEY):], _Host()).down_since = since
+
+    async def _remember(self, host: str, since: float | None) -> None:
+        if self._db is None:
+            return
+        try:
+            if since is None:
+                await self._db.execute("DELETE FROM app_metadata WHERE key = ?", (DOWN_KEY + host,))
+            else:
+                await self._db.execute("INSERT OR REPLACE INTO app_metadata (key, value) VALUES (?, ?)",
+                                       (DOWN_KEY + host, repr(since)))
+        except Exception as exc:  # noqa: BLE001 — без записи просто повторим сообщение
+            logger.warning("Не удалось запомнить простой %s: %s", host, exc)
 
     def attach(self, send: Callable[[str], Awaitable[None]]) -> None:
         self._send = send
@@ -68,6 +97,7 @@ class OutageMonitor:
             if state.down_since is not None and state.ok_streak >= RECOVERED_AFTER:
                 minutes = max(1, round((now - state.down_since) / 60))
                 state.down_since = None
+                await self._remember(host, None)
                 text = f"✅ «Сетевой город» {host} снова отвечает (простой ~{minutes} мин)"
                 if self._versions is not None:
                     previous, version = await self._versions.check(host, school_url)
@@ -85,6 +115,7 @@ class OutageMonitor:
         total = len(state.checks)
         if state.down_since is None and total >= MIN_CHECKS and failed / total >= FAIL_SHARE:
             state.down_since = now
+            await self._remember(host, now)
             version = self._versions.known(host) if self._versions is not None else ""
             text = (f"⚠️ «Сетевой город» {host} не отвечает: {failed} из {total} проверок "
                     f"за {WINDOW_S // 60} мин" + (f" (версия до простоя {version})" if version else "")

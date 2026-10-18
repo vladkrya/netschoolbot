@@ -25,7 +25,7 @@ async def test_visits_are_counted_for_admin(app_context, users):
         for uid, design, where in ((1, "new", "telegram"), (2, "classic", "pwa")):
             token = await app_context.miniapp.issue_token(uid)
             response = await client.post("/mini/api/visit", params={"token": token},
-                                         json={"design": design, "client": where})
+                                         json={"design": design, "client": where, "halloween": uid == 1})
             assert response.status == 200
         bad = await client.post("/mini/api/visit", params={"token": token}, json={"design": "x", "client": "web"})
         assert bad.status == 400
@@ -44,6 +44,7 @@ async def test_visits_are_counted_for_admin(app_context, users):
     assert "новый 1 (50%)" in text and "старый 1 (50%)" in text
     assert "только в Telegram: <b>1</b> (50%)" in text and "только в браузере: <b>1</b> (50%)" in text
     assert "Установленное приложение (экран «Домой»): 1" in text
+    assert "С хеллоуинским оформлением" in text and "за сутки 1 (в новом 1, в старом 0)" in text
     assert "только Telegram: <b>2</b> (100%) · +2" in text
     assert "Опрос" not in text  # пока никому не показан
 

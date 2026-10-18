@@ -83,7 +83,9 @@ class SgoAlerts:
             return await self.info(telegram_id, url)
         # «Когда заработает» принимаем всегда: человек просит после того,
         # как дневник не загрузился, — значит, для него сервер не работает.
-        _, version = await self._probe(url)
+        # Версия нужна только «об обновлениях»: раньше и здесь ждали ответа
+        # лежащего сервера до 20 с, и кнопка в приложении просто гасла.
+        version = (await self._probe(url))[1] if kind == "updates" else ""
         await self._repo.alert_subscribe(telegram_id, host, url, kind, version, self._clock())
         return await self.info(telegram_id, url)
 
