@@ -74,6 +74,36 @@ async def test_off_preserves_server_error_retry(direct_mode):
         await session.close()
 
 
+async def test_off_does_not_repeat_post_after_server_error(direct_mode):
+    calls = 0
+    async def handler(request):
+        nonlocal calls
+        calls += 1
+        return httpx.Response(500)
+    session = await make_session(handler)
+    try:
+        with pytest.raises(httpx.HTTPStatusError):
+            await session.post('mail/messages', json={})
+        assert calls == 1
+    finally:
+        await session.close()
+
+
+async def test_off_does_not_repeat_post_after_read_timeout(direct_mode):
+    calls = 0
+    async def handler(request):
+        nonlocal calls
+        calls += 1
+        raise httpx.ReadTimeout('timed out', request=request)
+    session = await make_session(handler)
+    try:
+        with pytest.raises(ServerUnavailable, match='мог быть выполнен'):
+            await session.post('mail/messages', json={})
+        assert calls == 1
+    finally:
+        await session.close()
+
+
 async def test_off_ignores_environment_proxy_for_web_and_mobile(direct_mode, monkeypatch):
     monkeypatch.setenv('HTTPS_PROXY', 'http://127.0.0.1:59999')
     monkeypatch.setenv('ALL_PROXY', 'socks5://127.0.0.1:59999')
