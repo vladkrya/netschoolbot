@@ -541,6 +541,14 @@ class TestNewFeatures:
         assert profile["data"]["status"]["last_ok_at"].endswith("Z")
         assert profile["data"]["timezone"] == "Europe/Moscow"
 
+    async def test_manual_diary_load_counts_as_check(self, client, app_context, token):
+        next_at = dt.datetime(2030, 1, 1, 12, 0)
+        await app_context.state.set_watch_status(1, ok=False, error="timeout", next_check_at=next_at)
+        await client.get(f"{BASE}/api/diary", params={"token": token})
+        status = await app_context.state.watch_status(1)
+        assert status.last_ok_at is not None and status.last_ok_at >= status.last_error_at
+        assert status.next_check_at == next_at
+
     async def test_homework_done_roundtrip(self, client, token):
         url = f"{BASE}/api/homework/done"
         bad = await client.post(url, params={"token": token}, json={"key": "../x", "done": True})

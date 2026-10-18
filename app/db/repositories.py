@@ -587,6 +587,17 @@ class MarkStateRepository:
             (telegram_id, before_id if before_id is not None else 2**62, limit),
         )
 
+    async def mark_watch_ok(self, telegram_id: int) -> None:
+        """Дневник открылся вручную — это тоже успешная проверка.
+
+        Срок следующей фоновой проверки не трогаем: она идёт по своему расписанию.
+        """
+        await self._db.execute(
+            """INSERT INTO watch_status (telegram_id, last_ok_at) VALUES (?, ?)
+               ON CONFLICT(telegram_id) DO UPDATE SET last_ok_at = excluded.last_ok_at""",
+            (telegram_id, _utc_now_text()),
+        )
+
     async def set_watch_status(
         self,
         telegram_id: int,
