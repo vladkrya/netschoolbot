@@ -3,7 +3,7 @@
 // заработает — в Telegram и push на все устройства (status/alerts.py).
 // Здесь же — статус серверов внутри приложения.
 
-import { $, api, banner, base, demo, esc } from './core.js';
+import { $, api, banner, base, demo, esc, markSgoDown } from './core.js';
 import { tap } from './haptics.js';
 import { pushScreen } from './screens.js';
 
@@ -40,7 +40,13 @@ export async function checkServer({ failed = false, slow = false } = {}) {
   checking = api('/api/sgo/server').then(({ data }) => data);
   try {
     const data = await checking;
-    if (failed || data.state === 'down') show(data, slow && data.state !== 'down');
+    if (!failed && data.state !== 'down') return;
+    // Уже попросил сообщить — карточку не повторяем, просто не ждём школу.
+    if (data.subscribed?.up) {
+      markSgoDown();
+      return;
+    }
+    show(data, slow && data.state !== 'down');
   } catch {
     /* бот тоже не ответил — об этом скажет обычная плашка */
   } finally {
@@ -58,50 +64,53 @@ function headline(data, slow) {
   return `<b>Сервер «Сетевого города»${where} ${slow ? 'долго не отвечает' : 'сейчас не отвечает'}.</b>`;
 }
 
-/** slow — запрос ещё идёт, просто долго: карточка уберётся сама, если
- *  данные всё же придут (core.js, staleBanner). */
+function dismiss() {
+  try { sessionStorage.setItem(DISMISSED_KEY, '1'); } catch { /* приватный режим */ }
+}
+
+/** Карточка «недоступен»: полупрозрачная, сверху, с маленькими кнопками.
+ *  Показали — дальше школу не ждём (markSgoDown): загрузка не крутится
+ *  после того, как человеку уже сказали, что ждать бесполезно. */
 function show(data, slow) {
   if ($('sgoDown')) return;
+  markSgoDown();
   const el = document.createElement('div');
   el.id = 'sgoDown';
-  if (slow) el.dataset.slow = '1';
-  el.className = 'banner login-failed sgo-down';
+  el.className = 'sgo-down';
   el.setAttribute('role', 'alert');
-  el.innerHTML = `<p>${headline(data, slow)} Это не у вас и не в приложении — попробуйте зайти позже.</p>
-    <p class="sgo-down-state" hidden></p>
-    <div class="login-failed-actions">
-      <button class="btn" data-act="notify">Сообщить, когда заработает</button>
-      <button class="btn outline" data-act="close">Закрыть</button>
-    </div>
-    <button class="sgo-down-link" data-act="status">Статус серверов</button>`;
-  const notifyButton = el.querySelector('[data-act="notify"]');
-  const stateLine = el.querySelector('.sgo-down-state');
-  const subscribed = (on) => {
-    stateLine.hidden = !on;
-    stateLine.textContent = on ? 'Готово — пришлём в Telegram и уведомлением на все устройства, как только сервер ответит.' : '';
-    notifyButton.textContent = on ? 'Не сообщать' : 'Сообщить, когда заработает';
-    notifyButton.dataset.on = on ? '1' : '';
+  el.innerHTML = `<button class="sgo-down-x" data-act="close" aria-label="Закрыть">×</button>
+    <p class="sgo-down-text">${headline(data, slow)} Попробуйте зайти позже.</p>
+    <div class="sgo-down-actions">
+      <button class="sgo-down-btn primary" data-act="notify">Сообщить, когда заработает</button>
+      <button class="sgo-down-btn" data-act="status">Статус</button>
+    </div>`;
+  const text = el.querySelector('.sgo-down-text');
+  const actions = el.querySelector('.sgo-down-actions');
+  const close = () => {
+    el.classList.add('leaving');
+    setTimeout(() => el.remove(), 250);
   };
-  subscribed(Boolean(data.subscribed?.up));
-  notifyButton.addEventListener('click', async () => {
+  el.querySelector('[data-act="notify"]').addEventListener('click', async (event) => {
     tap();
-    const on = !notifyButton.dataset.on;
-    notifyButton.disabled = true;
+    event.currentTarget.disabled = true;
     try {
-      const { data: result } = await api('/api/sgo/notify', { method: 'POST', body: JSON.stringify({ kind: 'up', on }) });
-      subscribed(Boolean(result.subscribed?.up));
+      await api('/api/sgo/notify', { method: 'POST', body: JSON.stringify({ kind: 'up', on: true }) });
+      // Подписались — карточка больше не нужна и до конца запуска не вернётся.
+      dismiss();
+      actions.remove();
+      text.innerHTML = '<b>Готово.</b> Сообщим в Telegram и уведомлением, когда дневник снова загрузится.';
+      setTimeout(close, 2200);
     } catch (error) {
-      stateLine.hidden = false;
-      stateLine.textContent = error.message;
-    } finally {
-      notifyButton.disabled = false;
+      event.currentTarget.disabled = false;
+      text.textContent = error.message;
     }
   });
   el.querySelector('[data-act="close"]').addEventListener('click', () => {
-    try { sessionStorage.setItem(DISMISSED_KEY, '1'); } catch { /* приватный режим */ }
-    el.remove();
+    dismiss();
+    close();
   });
   el.querySelector('[data-act="status"]').addEventListener('click', () => {
+    dismiss();
     el.remove();
     openStatus();
   });

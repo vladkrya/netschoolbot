@@ -64,6 +64,9 @@ async function boot() {
     return;
   }
   await unlockApp();
+  // Сначала своё: оформление и настройки с сервера бота — раньше аккаунта и
+  // дневника, который ждёт «Сетевой город» (app.js берёт этот же запрос).
+  if (!demo) state.prefsSync = import('./prefs.js').then((module) => module.syncPrefs()).catch(() => false);
   // Пришли по ссылке-приглашению от ученика — сначала её.
   if (!demo && pendingInvite()) {
     const { showInvite } = await import('./account.js');

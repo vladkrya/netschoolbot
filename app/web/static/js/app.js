@@ -156,7 +156,9 @@ const PULL_ARM = 80;
 const RING = 2 * Math.PI * 11;
 // Насколько опустить кружок, чтобы его центр лёг на полосу загрузки под
 // шапкой: индикатор стоит на 34px выше её края, кружок — 36px.
-const MERGE_Y = 16;
+const MERGE_Y = 13;
+// Сколько кружок едет к полосе и сжимается в точку.
+const MERGE_MS = 220;
 
 function bindPullToRefresh() {
   const indicator = $('pullIndicator');
@@ -225,32 +227,38 @@ function bindPullToRefresh() {
       return;
     }
     // Данные остаются на экране, пока идёт запрос, и меняются на месте —
-    // без скелетона и без повторной анимации появления. Кружок не крутится
-    // отдельно, а замыкается, поднимается к полосе загрузки под шапкой и
-    // растекается в неё: дальше идёт одна полоса, а не два индикатора.
+    // без скелетона и без повторной анимации появления. Индикатор один —
+    // полоса загрузки под шапкой, и видно, откуда она взялась: кружок
+    // замыкается, поднимается на линию полосы и сжимается в точку, а из
+    // точки в обе стороны вырастает бегущая полоса (sync-grow в app.css).
     busy = true;
-    arc.style.transition = 'stroke-dashoffset .15s var(--ease)';
+    const root = document.documentElement;
+    arc.style.transition = 'stroke-dashoffset .12s var(--ease)';
     arc.style.strokeDashoffset = '0';
-    ring.style.transition = 'transform .45s var(--ease), opacity .3s ease-in .15s';
-    // Поворот тот же, что в конце жеста (270°), — иначе кружок, раскручиваясь,
-    // сплющивался бы вкось. В повёрнутых осях «ширина» — это вторая ось.
-    ring.style.transform = `translateY(${MERGE_Y}px) rotate(270deg) scale(.08, 3)`;
-    ring.style.opacity = '0';
+    // Поворот тот же, что в конце жеста (270°): иначе кружок раскручивался бы.
+    ring.style.transition = `transform ${MERGE_MS}ms var(--ease)`;
+    ring.style.transform = `translateY(${MERGE_Y}px) rotate(270deg) scale(.22)`;
     text.textContent = 'Обновляю…';
     state.refreshing = true;
     state.refreshFailed = false;
-    syncStarted();
-    const merged = new Promise((resolve) => setTimeout(resolve, 450));
+    const merged = new Promise((resolve) => setTimeout(() => {
+      ring.style.transition = 'opacity .1s';
+      ring.style.opacity = '0';
+      root.classList.add('sync-grow');
+      syncStarted();
+      resolve();
+    }, MERGE_MS));
     try {
       await quietly(() => TABS[state.tab](true));
     } finally {
       state.refreshing = false;
+      await merged;
       syncFinished();
+      setTimeout(() => root.classList.remove('sync-grow'), 350);
     }
     const failed = state.refreshFailed || document.querySelector('.panel.active .error-card');
     notify(failed ? 'error' : 'success');
     text.textContent = failed ? 'Не удалось обновить' : 'Обновлено';
-    await merged;
     arc.style.transition = '';
     hide();
     setTimeout(() => { text.textContent = ''; }, 1000);
@@ -714,7 +722,8 @@ async function start() {
   // Telegram должен скрыть свой экран загрузки до ввода PIN.
   initTelegram();
   // Тема, дизайн и цвет, выбранные в Telegram, — и на сайте (и наоборот).
-  syncPrefs().then((changed) => {
+  // Запрос ушёл ещё из boot.js, раньше дневника: своё — вперёд «Сетевого города».
+  (state.prefsSync || syncPrefs()).then((changed) => {
     if (changed) {
       applyStoredTheme();
       applyAccent();
@@ -748,15 +757,18 @@ async function start() {
   // С PIN сервер не кладёт имя в страницу, а профиль без сети приходит
   // последним — до него в шапке стояло «Дневник». Берём имя прошлого входа.
   $('topName').textContent = studentFirstName(student) || storedName() || school || 'Дневник';
+  // Профиль — с сервера бота, без «Сетевого города»: просим его раньше
+  // дневника и не ждём первый экран. Раньше он шёл после первой вкладки, и
+  // когда школьный сервер висел, вместе с ним висели имя, меню и настройки.
+  const profileLoad = loadProfile().catch(() => null);
   // Первая вкладка панели — та, с которой открывается приложение.
-  await switchTab(navTabs()[0]);
-  // Остальные запросы идут только после первого экрана, не конкурируют с ним.
-  setTimeout(prefetch, 600);
+  const firstTab = switchTab(navTabs()[0]);
+  firstTab.then(() => setTimeout(prefetch, 600)).catch(() => {});
 
   // Профиль нужен только меню, но имя ученика в шапке берём из него,
   // если страница открыта без токена (по initData Telegram).
   try {
-    const profile = await loadProfile();
+    const profile = await profileLoad;
     setHalloweenAccess(profile?.halloween);
     if (profile?.name) {
       $('topName').textContent = studentFirstName(profile.name);

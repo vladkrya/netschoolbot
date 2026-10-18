@@ -35,6 +35,8 @@ export const state = {
   profile: null,
   calc: null,
   initialDiary: null,
+  // Настройки с сервера бота (prefs.js), запрошенные из boot.js раньше дневника.
+  prefsSync: null,
   initialDiaryFresh: null,
 };
 
@@ -116,6 +118,9 @@ export function showLoading(container, html) {
 /** Ошибка загрузки. При обновлении свайпом прежние данные остаются, а
  *  ошибка — плашкой; иначе карточка ошибки вместо содержимого. */
 export function showFailure(container, error, html) {
+  // «Сетевой город» объявлен недоступным (sgo.js) — карточка уже всё сказала,
+  // показанные данные остаются без лишней плашки.
+  if (error.sgoDown && container.childElementCount && !container.querySelector('.skeleton')) return;
   if (state.refreshing && container.childElementCount && !container.querySelector('.skeleton')) {
     state.refreshFailed = true;
     banner(error.message, true, 5000);
@@ -246,6 +251,37 @@ function staleBanner(show, reason, source) {
 const SGO_SLOW_MS = 8000;
 const SGO_STUCK_MS = 20000;
 
+// Запросы, на которые сервер бота отвечает сам, без «Сетевого города»: их
+// простой школьного сервера не касается — ни подсказок, ни обрыва.
+const OWN_PATHS = [
+  '/api/lock/', '/api/sgo/', '/api/account', '/api/profile', '/api/prefs', '/api/visit', '/api/notices/',
+  '/api/push/', '/api/family', '/api/devices', '/api/chat', '/api/notes', '/api/history',
+  '/api/attachment-ticket', '/api/settings/', '/api/bug-report', '/api/assistant', '/api/view',
+];
+const touchesSgo = (path) => !OWN_PATHS.some((prefix) => path.startsWith(prefix));
+
+// Сказали человеку, что «Сетевой город» недоступен (sgo.js), — дальше его не
+// ждём: идущие запросы к нему обрываются, а пару минут новые не просят
+// обновления (сервер бота отдаёт сохранённое сразу) и ждут не дольше 10 с.
+// Раньше после карточки «недоступен» загрузка всё равно шла ещё минуту.
+const SGO_DOWN_MS = 120000;
+const SGO_DOWN_WAIT_MS = 10000;
+let sgoDownUntil = 0;
+const sgoRequests = new Set();
+
+export const sgoDown = () => Date.now() < sgoDownUntil;
+
+export function markSgoDown() {
+  sgoDownUntil = Date.now() + SGO_DOWN_MS;
+  for (const controller of sgoRequests) {
+    controller.sgoDown = true;
+    controller.abort();
+  }
+  sgoRequests.clear();
+}
+
+const withoutRefresh = (path) => path.replace(/([?&])refresh=1(&|$)/, (_, lead, tail) => (tail ? lead : ''));
+
 function sgoHint(failed = false, slow = false) {
   if (demo) return;
   import('./sgo.js').then((module) => module.checkServer({ failed, slow })).catch(() => {});
@@ -304,10 +340,16 @@ async function request(path, options = {}) {
   // Без предела запрос к зависшему школьному серверу крутил загрузку
   // бесконечно. Сервер сам отвечает не дольше минуты при обновлении.
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), path.startsWith('/api/lock/') ? 10000 : REQUEST_TIMEOUT_MS);
-  const watched = !(path.startsWith('/api/lock/') || path.startsWith('/api/sgo/') || options.method);
-  const slow = watched ? setTimeout(sgoHint, SGO_SLOW_MS) : 0;
-  const stuck = watched ? setTimeout(() => sgoHint(true, true), SGO_STUCK_MS) : 0;
+  const watched = !options.method && touchesSgo(path);
+  const down = watched && sgoDown();
+  if (down) path = withoutRefresh(path);
+  const timer = setTimeout(() => {
+    if (down) controller.sgoDown = true;
+    controller.abort();
+  }, path.startsWith('/api/lock/') ? 10000 : down ? SGO_DOWN_WAIT_MS : REQUEST_TIMEOUT_MS);
+  if (watched) sgoRequests.add(controller);
+  const slow = watched && !down ? setTimeout(sgoHint, SGO_SLOW_MS) : 0;
+  const stuck = watched && !down ? setTimeout(() => sgoHint(true, true), SGO_STUCK_MS) : 0;
   const { onFresh, retried, ...init } = options;
   let response;
   try {
@@ -315,6 +357,10 @@ async function request(path, options = {}) {
       ...init, headers, cache: 'no-store', signal: controller.signal,
     });
   } catch (error) {
+    if (controller.sgoDown) {
+      throw Object.assign(new Error('«Сетевой город» сейчас не отвечает — попробуйте позже.'),
+        { reason: 'server', sgoDown: true });
+    }
     const failure = new Error(error.name === 'AbortError'
       ? 'Сервер приложения не ответил вовремя. Проверьте интернет и повторите попытку.'
       : 'Не удалось подключиться к серверу приложения. Проверьте интернет и повторите попытку.');
@@ -322,6 +368,7 @@ async function request(path, options = {}) {
     failure.source = 'app';
     throw failure;
   } finally {
+    sgoRequests.delete(controller);
     clearTimeout(timer);
     clearTimeout(slow);
     clearTimeout(stuck);
@@ -457,7 +504,7 @@ export async function api(path, options = {}) {
   // просыпается дольше его ожидания, и он отдаёт сохранённое. Такую копию
   // тоже сверяем: refresh=1 он всегда отправляет в сеть.
   const outdated = payload.stale || payload.offline || (payload.age ?? 0) > REVALIDATE_AFTER_S;
-  const canRevalidate = !options.method && !path.includes('refresh=1') && !revalidated.has(path);
+  const canRevalidate = !options.method && !path.includes('refresh=1') && !revalidated.has(path) && !sgoDown();
   if (outdated && canRevalidate) {
     if (options.onFresh) {
       revalidate(path, payload, options.onFresh);
