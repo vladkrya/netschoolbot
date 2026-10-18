@@ -101,12 +101,20 @@ async def admin_stats(message: Message, app: AppContext) -> None:
 
     lines.append("")
     lines.append("📈 <b>Активность</b>")
-    opened = []
+    opened, spooky = [], []
     for label, days in (("сутки", 1), ("неделю", 7), ("месяц", 30)):
         stats = await app.miniapp.visit_stats(now - days * 86400)
         opened.append(f"за {label} {_num(sum(stats['design'].values()))}")
+        halloween = stats["halloween"]
+        if sum(halloween.values()):
+            spooky.append(f"за {label} {_num(sum(halloween.values()))} "
+                          f"(в новом {_num(halloween.get('new', 0))}, в старом {_num(halloween.get('classic', 0))})")
     lines.append("• открывали: " + ", ".join(opened))
     lines.append(f"• дизайн за месяц: {_split(stats['design'], DESIGNS)}")
+    if spooky:
+        lines.append("")
+        lines.append("🎃 <b>С хеллоуинским оформлением</b>")
+        lines.extend(f"• {item}" for item in spooky)
 
     survey = await app.miniapp.survey_stats()
     if survey["shown"]:

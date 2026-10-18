@@ -137,9 +137,9 @@ class TestAuth:
 
         assert halloween_season(dt.date(2026, 10, 18))
         assert halloween_season(dt.date(2026, 10, 31))
-        assert halloween_season(dt.date(2026, 11, 7))
-        assert not halloween_season(dt.date(2026, 11, 8))
-        assert not halloween_season(dt.date(2026, 10, 14))
+        assert halloween_season(dt.date(2026, 11, 8))
+        assert not halloween_season(dt.date(2026, 11, 9))
+        assert not halloween_season(dt.date(2026, 10, 17))
         assert not halloween_season(dt.date(2026, 6, 1))
 
     async def test_halloween_notice_once(self, client, app_context, token, monkeypatch):

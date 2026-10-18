@@ -589,7 +589,7 @@ function reportVisit() {
   const client = tg?.initData ? 'telegram'
     : window.matchMedia('(display-mode: standalone)').matches || navigator.standalone ? 'pwa' : 'web';
   api('/api/visit', {
-    method: 'POST', body: JSON.stringify({ design: isNewDesign() ? 'new' : 'classic', client }),
+    method: 'POST', body: JSON.stringify({ design: isNewDesign() ? 'new' : 'classic', client, halloween: isHalloween() }),
   }).catch(() => {});
 }
 
@@ -638,7 +638,7 @@ async function showHalloweenNotice() {
     ? 'в настройках, внизу — <b>«Сообщить об ошибке или идее»</b>'
     : 'во вкладке <b>Сообщения → Чаты</b> — там можно написать админу';
   const body = openSheet('🎃 Хеллоуин в дневнике', `
-    <p>До 31 октября приложение оделось к празднику. Что появилось:</p>
+    <p>До 8 ноября приложение оделось к Хеллоуину. Что появилось:</p>
     <ul class="halloween-news">
       <li>🌙 ночная тема с луной, мерцающими звёздами и туманом внизу экрана;</li>
       <li>🕸️ паутина с пауком и летучие мыши в шапке — а в сам Хеллоуин их станет больше;</li>

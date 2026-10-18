@@ -1409,17 +1409,20 @@ class MiniappRepository:
             (endpoint, telegram_id, p256dh, auth),
         )
 
-    async def record_visit(self, telegram_id: int, design: str, client: str) -> None:
-        """Открытие приложения: последний дизайн и откуда открыто, а также
-        все места, где его открывали."""
+    async def record_visit(self, telegram_id: int, design: str, client: str,
+                           halloween: bool | None = None) -> None:
+        """Открытие приложения: последний дизайн и откуда открыто (и включено
+        ли хеллоуинское оформление), а также все места, где его открывали."""
         now = time.time()
+        flag = None if halloween is None else int(halloween)
         async with self._db.transaction() as db:
             await db.execute(
-                """INSERT INTO app_visits (telegram_id, design, client, first_seen_at, seen_at)
-                   VALUES (?, ?, ?, ?, ?)
+                """INSERT INTO app_visits (telegram_id, design, client, first_seen_at, seen_at, halloween)
+                   VALUES (?, ?, ?, ?, ?, ?)
                    ON CONFLICT(telegram_id) DO UPDATE SET
-                       design = excluded.design, client = excluded.client, seen_at = excluded.seen_at""",
-                (telegram_id, design, client, now, now),
+                       design = excluded.design, client = excluded.client, seen_at = excluded.seen_at,
+                       halloween = excluded.halloween""",
+                (telegram_id, design, client, now, now, flag),
             )
             await db.execute(
                 """INSERT INTO app_clients (telegram_id, client, first_seen_at, seen_at)
@@ -1442,13 +1445,18 @@ class MiniappRepository:
         return row is not None
 
     async def visit_stats(self, since: float) -> dict[str, dict[str, int]]:
-        """Сколько открывавших с `since` — по дизайну и по месту открытия."""
+        """Сколько открывавших с `since` — по дизайну и по месту открытия;
+        halloween — по дизайну те, у кого включено хеллоуинское оформление."""
         result: dict[str, dict[str, int]] = {}
         for column in ("design", "client"):
             rows = await self._db.fetch_all(
                 f"SELECT {column} AS key, COUNT(*) AS n FROM app_visits WHERE seen_at >= ? GROUP BY {column}",
                 (since,))
             result[column] = {row["key"]: row["n"] for row in rows}
+        rows = await self._db.fetch_all(
+            "SELECT design AS key, COUNT(*) AS n FROM app_visits WHERE seen_at >= ? AND halloween = 1 GROUP BY design",
+            (since,))
+        result["halloween"] = {row["key"]: row["n"] for row in rows}
         return result
 
     async def audience_stats(self, now: float, web_id_base: int) -> dict[str, Any]:

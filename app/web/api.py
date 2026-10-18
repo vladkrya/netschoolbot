@@ -449,8 +449,9 @@ async def _cached(request: web.Request, section: str, producer, *, cacheable=lam
 
 
 def halloween_season(today: dt.date) -> bool:
-    """Хеллоуинское оформление включено у всех: с 15 октября по 7 ноября."""
-    return (today.month, today.day) >= (10, 15) and (today.month, today.day) <= (11, 7)
+    """Хеллоуинское оформление включено у всех: с 18 октября по 8 ноября
+    включительно (до 23:59 по времени человека)."""
+    return (10, 18) <= (today.month, today.day) <= (11, 8)
 
 
 def _utc_iso(moment: dt.datetime | None) -> str | None:
@@ -1753,10 +1754,11 @@ async def visit(request: web.Request) -> web.Response:
         body = {}
     design = body.get("design") if isinstance(body, dict) else None
     client = body.get("client") if isinstance(body, dict) else None
+    halloween = body.get("halloween") if isinstance(body, dict) else None
     if design not in {"new", "classic"} or client not in {"telegram", "pwa", "web"}:
         return json_error("Некорректный запрос")
     miniapp, telegram_id = context(request).miniapp, current_user(request).telegram_id
-    await miniapp.record_visit(telegram_id, design, client)
+    await miniapp.record_visit(telegram_id, design, client, halloween if isinstance(halloween, bool) else None)
     if client == "pwa" and (await miniapp.prefs(telegram_id)).get("pwa") != "installed":
         await miniapp.save_prefs(telegram_id, {"pwa": "installed"})
     return web.json_response({"ok": True})

@@ -745,6 +745,11 @@ MIGRATIONS: list[str] = [
         value TEXT NOT NULL
     );
     """,
+    # Кто открывает приложение с хеллоуинским оформлением — для /adminstats.
+    # Пусто — открывали до версии, которая это сообщает.
+    """
+    ALTER TABLE app_visits ADD COLUMN halloween INTEGER;
+    """,
 ]
 
 
