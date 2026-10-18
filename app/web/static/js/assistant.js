@@ -55,6 +55,19 @@ function preload() {
   return preloaded;
 }
 
+/** Медленный школьный сервер не должен задерживать отправку вопроса ИИ. */
+async function waitForContext() {
+  let timer;
+  try {
+    await Promise.race([
+      preload(),
+      new Promise(resolve => { timer = setTimeout(resolve, 1000); }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /** Текст ответа: модели любят **жирный** — показываем его, остальное как есть. */
 function rich(text) {
   return esc(text).replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>');
@@ -124,7 +137,7 @@ function mount(body, { tab = false } = {}) {
     <div class="ai-intro" id="aiIntro">
       <div class="ai-hello ai-stagger" style="--i:0">${ICONS.sparkles}<div>Спросите про оценки, задания, расписание или как что-то сделать в приложении. Могу написать письмо учителю.</div></div>
       <div class="chips ai-suggest">${SUGGESTIONS.map((text, index) => `<button class="chip ai-stagger" style="--i:${index + 1}" data-suggest="${esc(text)}">${esc(text)}</button>`).join('')}</div>
-      <div class="muted small ai-stagger" style="--i:${SUGGESTIONS.length + 1}">Вопросы и оценки уходят в OpenRouter без имени ученика и школы. Решать домашку за вас помощник не будет — но объяснит, с чего начать.</div>
+      <div class="muted small ai-stagger" style="--i:${SUGGESTIONS.length + 1}">Вопросы и оценки передаются через Villnus без имени ученика и школы. Решать домашку за вас помощник не будет — но объяснит, с чего начать.</div>
     </div>
     <div class="ai-quick" id="aiQuick" hidden>${FOLLOW_UPS.map((text) => `<button class="chip" data-suggest="${esc(text)}">${esc(text)}</button>`).join('')}</div>
     <form class="ai-input" id="aiForm">
@@ -307,7 +320,7 @@ function mount(body, { tab = false } = {}) {
     scroll();
     q('aiSend').disabled = true;
     try {
-      await preload();
+      await waitForContext();
       const { data } = await api('/api/assistant', {
         method: 'POST',
         body: JSON.stringify({
