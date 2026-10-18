@@ -141,7 +141,7 @@ class GroupBroadcast:
         return sent
 
     def _text(self, lines: list[str]) -> str:
-        text = "«Сетевой город»\n" + "\n".join(lines)
+        text = "\n".join(lines)
         if self._status_url:
             text += f'\n\n<a href="{html.escape(self._status_url)}">Статус всех регионов</a>'
         return text
