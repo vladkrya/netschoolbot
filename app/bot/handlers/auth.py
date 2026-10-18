@@ -49,6 +49,8 @@ router = Router(name="auth")
 OTP_TIMEOUT = 300
 # Сколько школ показываем в списке: больше не помещается в клавиатуру.
 MAX_SCHOOLS = 20
+# Регионов на одной странице списка: весь список не помещается на экран.
+REGIONS_PER_PAGE = 8
 
 
 class Login(StatesGroup):
@@ -62,6 +64,46 @@ class Login(StatesGroup):
     otp = State()
     qr_pending = State()
     qr_retry = State()
+
+
+async def _step(target: Message | CallbackQuery, state: FSMContext, text: str, **kwargs) -> None:
+    """Следующий шаг входа: прошлый шаг удаляется, чтобы в чате не путаться."""
+    message = getattr(target, "message", target)
+    await _drop_step(message, state)
+    sent = await message.answer(text, parse_mode="HTML", **kwargs)
+    if getattr(sent, "message_id", None) is not None:
+        await state.update_data(step_id=sent.message_id)
+
+
+async def _drop_step(message: Message, state: FSMContext) -> None:
+    """Удалить сообщение прошлого шага, если оно ещё есть."""
+    step_id = (await state.get_data()).get("step_id")
+    bot, chat = getattr(message, "bot", None), getattr(message, "chat", None)
+    if step_id is None or bot is None or chat is None:
+        return
+    try:
+        await bot.delete_message(chat.id, step_id)
+    except Exception as exc:  # noqa: BLE001 — сообщение могли удалить сами
+        logger.debug("Не удалось удалить прошлый шаг входа: %s", exc)
+
+
+def _regions_keyboard(regions: list[str], page: int) -> InlineKeyboardMarkup:
+    pages = max(1, -(-len(regions) // REGIONS_PER_PAGE))
+    page = max(0, min(page, pages - 1))
+    start = page * REGIONS_PER_PAGE
+    rows = [
+        [InlineKeyboardButton(text=name, callback_data=f"region:{index}")]
+        for index, name in enumerate(regions[start:start + REGIONS_PER_PAGE], start)
+    ]
+    if pages > 1:
+        rows.append([
+            InlineKeyboardButton(text="◀️", callback_data=f"region:page:{(page - 1) % pages}"),
+            InlineKeyboardButton(text=f"{page + 1} из {pages}", callback_data="region:noop"),
+            InlineKeyboardButton(text="▶️", callback_data=f"region:page:{(page + 1) % pages}"),
+        ])
+    rows.append([InlineKeyboardButton(text="🔗 Ввести адрес вручную", callback_data="region:manual")])
+    rows.append([InlineKeyboardButton(text="❌ Отмена", callback_data="login:cancel")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def _cancel_keyboard() -> InlineKeyboardMarkup:
@@ -84,18 +126,11 @@ async def start_login(message: Message, state: FSMContext) -> None:
     await state.set_state(Login.region)
     await state.update_data(regions=regions)
 
-    rows = [
-        [InlineKeyboardButton(text=name, callback_data=f"region:{index}")]
-        for index, name in enumerate(regions)
-    ]
-    rows.append([InlineKeyboardButton(text="🔗 Ввести адрес вручную", callback_data="region:manual")])
-    rows.append([InlineKeyboardButton(text="❌ Отмена", callback_data="login:cancel")])
-
-    await message.answer(
+    await _step(
+        message, state,
         "🗺 <b>Шаг 1 из 3.</b> Выберите свой регион.\n\n"
         "Школы по умолчанию нет — вы выбираете её сами.",
-        parse_mode="HTML",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=rows),
+        reply_markup=_regions_keyboard(regions, 0),
     )
 
 
@@ -109,20 +144,36 @@ async def cancel_login(event: Message | CallbackQuery, state: FSMContext) -> Non
     """
     if isinstance(event, CallbackQuery):
         await event.answer("Отменено")
+    await _drop_step(getattr(event, "message", event), state)
     await state.clear()
     await reply(event, "Вход отменён. Начать заново: /login")
 
 
 @router.callback_query(Login.region, F.data.startswith("region:"))
 async def choose_region(callback: CallbackQuery, state: FSMContext) -> None:
-    await callback.answer()
     choice = callback.data.split(":", 1)[1]
+    if choice == "noop":
+        await callback.answer()
+        return
+    if choice.startswith("page:"):
+        await callback.answer()
+        regions = (await state.get_data()).get("regions") or []
+        try:
+            page = int(choice.split(":", 1)[1])
+        except ValueError:
+            page = 0
+        try:
+            await callback.message.edit_reply_markup(reply_markup=_regions_keyboard(regions, page))
+        except TelegramBadRequest:
+            pass  # та же страница — Telegram не даёт «изменить» на то же самое
+        return
+    await callback.answer()
 
     if choice == "manual":
         await state.set_state(Login.school_query)
         await state.update_data(url=None)
-        await reply(
-            callback,
+        await _step(
+            callback, state,
             "🔗 Пришлите адрес сервера «Сетевого города», например\n"
             "<code>https://sgo.example.ru</code>",
             reply_markup=_cancel_keyboard(),
@@ -148,8 +199,8 @@ async def choose_region(callback: CallbackQuery, state: FSMContext) -> None:
 
     await state.update_data(url=url, region=region)
     await state.set_state(Login.school_query)
-    await reply(
-        callback,
+    await _step(
+        callback, state,
         f"🏫 <b>Шаг 2 из 3.</b> Регион: {formatting.esc(region)}\n\n"
         "Пришлите название школы или её номер — найду подходящие.",
         reply_markup=_cancel_keyboard(),
@@ -172,7 +223,8 @@ async def search_school(message: Message, state: FSMContext, app: AppContext) ->
             await reply(message, "Адрес должен начинаться с <code>https://</code>")
             return
         await state.update_data(url=query.rstrip("/"))
-        await reply(message, "🏫 Теперь пришлите название школы или её номер.")
+        await _step(message, state, "🏫 Теперь пришлите название школы или её номер.",
+                    reply_markup=_cancel_keyboard())
         return
 
     notice = await message.answer("⏳ Ищу школы…")
@@ -215,7 +267,8 @@ async def search_school(message: Message, state: FSMContext, app: AppContext) ->
     rows.append([InlineKeyboardButton(text="❌ Отмена", callback_data="login:cancel")])
 
     suffix = f" (показаны первые {MAX_SCHOOLS})" if len(schools) > MAX_SCHOOLS else ""
-    await message.answer(
+    await _step(
+        message, state,
         f"Найдено школ: {len(schools)}{suffix}. Выберите свою:",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=rows),
     )
@@ -225,7 +278,7 @@ async def search_school(message: Message, state: FSMContext, app: AppContext) ->
 async def retry_search(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
     await state.set_state(Login.school_query)
-    await reply(callback, "🏫 Пришлите другой запрос.", reply_markup=_cancel_keyboard())
+    await _step(callback, state, "🏫 Пришлите другой запрос.", reply_markup=_cancel_keyboard())
 
 
 @router.callback_query(Login.school_choice, F.data.startswith("school:"))
@@ -247,8 +300,8 @@ async def choose_school(callback: CallbackQuery, state: FSMContext, user: User) 
             and user.school.url == data.get("url") and user.school.name == school):
         markup.inline_keyboard.insert(1, [InlineKeyboardButton(
             text="🔐 Войти с сохранёнными данными", callback_data="login:saved")])
-    await reply(
-        callback,
+    await _step(
+        callback, state,
         f"🔐 <b>Шаг 3 из 3.</b> Школа: {formatting.esc(school)}\n\nКак будете входить?",
         reply_markup=markup,
     )
@@ -280,7 +333,7 @@ async def ask_save_credentials(callback: CallbackQuery, state: FSMContext) -> No
         if login_type.is_gosuslugi else
         "С сохранёнными данными бот сможет войти снова, когда сессия истечёт."
     )
-    await reply(callback,
+    await _step(callback, state,
         "🔒 Сохранить логин и пароль для следующих входов?\n\n"
         + explanation + "\n\nЕсли не сохранять — текущая сессия останется для дневника "
         "и уведомлений, а после её истечения понадобится /login. "
@@ -301,16 +354,18 @@ async def choose_save_credentials(callback: CallbackQuery, state: FSMContext) ->
     text = ("👤 Пришлите логин Госуслуг (телефон, СНИЛС или почту)."
             if LoginType.parse(data.get("login_type")).is_gosuslugi else
             "👤 Пришлите логин от «Сетевого города».")
-    await reply(callback, text, reply_markup=_cancel_keyboard())
+    await _step(callback, state, text, reply_markup=_cancel_keyboard())
 
 
 @router.message(Login.username)
 async def receive_username(message: Message, state: FSMContext) -> None:
     await state.update_data(login=(message.text or "").strip())
     await state.set_state(Login.password)
-    await message.answer(
+    await _step(
+        message, state,
         "🔒 Теперь пришлите пароль.\n\n"
-        "Сообщение с паролем я удалю сразу после получения."
+        "Сообщение с паролем я удалю сразу после получения.",
+        reply_markup=_cancel_keyboard(),
     )
 
 
@@ -338,6 +393,7 @@ async def _password_attempt(message, state, user, app, password: str) -> None:
     login_type = LoginType.parse(data.get("login_type"))
     attempt = secrets.token_hex(8)
     await state.update_data(password_attempt=attempt)
+    await _drop_step(message, state)
     notice = await message.answer("⏳ Вхожу…")
 
     candidate = replace(
@@ -460,6 +516,7 @@ async def _qr_attempt(callback: CallbackQuery, state: FSMContext, user: User, ap
         credentials=Credentials(login_type=LoginType.ESIA_QR, remember=False),
     )
     ttl = app.settings.netschool.qr_login_ttl
+    await _drop_step(callback.message, state)
     notice = await callback.message.answer("📱 Готовлю QR-код…")
     qr_message: Message | None = None
 

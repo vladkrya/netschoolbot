@@ -641,3 +641,49 @@ class TestPushDelivery:
         notifier = TelegramNotifier(bot, users, None)
         await notifier.send_mark_events(user, [MarkEvent(MarkKind.NEW, record())])
         assert len(bot.sent) == 1
+
+
+class TestLoginSteps:
+    async def test_regions_are_paged(self):
+        regions = [f"Регион {i}" for i in range(20)]
+        first = auth._regions_keyboard(regions, 0).inline_keyboard
+        assert [row[0].text for row in first[:auth.REGIONS_PER_PAGE]] == regions[:auth.REGIONS_PER_PAGE]
+        nav = first[auth.REGIONS_PER_PAGE]
+        assert [b.text for b in nav] == ["◀️", "1 из 3", "▶️"]
+        assert nav[0].callback_data == "region:page:2" and nav[2].callback_data == "region:page:1"
+        last = auth._regions_keyboard(regions, 2).inline_keyboard
+        # Номер в callback — индекс во всём списке, а не на странице.
+        assert last[0][0].text == "Регион 16" and last[0][0].callback_data == "region:16"
+        assert len(last) == 4 + 3
+
+    async def test_page_button_edits_keyboard(self, login_state):
+        await login_state.set_state(auth.Login.region)
+        await login_state.update_data(regions=[f"Регион {i}" for i in range(20)])
+        callback = FakeCallback("region:page:1")
+        await auth.choose_region(callback, login_state)
+        (_, kwargs), = callback.message.answers
+        assert kwargs["reply_markup"].inline_keyboard[0][0].text == "Регион 8"
+        assert await login_state.get_state() == auth.Login.region.state
+
+    async def test_next_step_deletes_previous(self, login_state):
+        deleted = []
+        bot = SimpleNamespace(delete_message=AsyncMock(side_effect=lambda chat, mid: deleted.append((chat, mid))))
+
+        class Sent(FakeMessage):
+            def __init__(self, text="", message_id=0):
+                super().__init__(text)
+                self.message_id, self.bot, self.chat = message_id, bot, SimpleNamespace(id=7)
+                self._next = message_id
+
+            async def answer(self, text, **kwargs):
+                self.answers.append((text, kwargs))
+                self._next += 1
+                return Sent(text, self._next)
+
+        message = Sent(message_id=100)
+        await auth._step(message, login_state, "шаг 1")
+        assert deleted == []
+        await auth._step(message, login_state, "шаг 2")
+        assert deleted == [(7, 101)]
+        await auth._drop_step(message, login_state)
+        assert deleted == [(7, 101), (7, 102)]
