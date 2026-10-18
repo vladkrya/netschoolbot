@@ -762,6 +762,7 @@ function render() {
       ${data.assistant && !demo && !readonly && !navTabs().includes('assistant') ? toolTile('drawerAssistant', 'sparkles', 'ИИ-помощник') : ''}
       ${toolTile('drawerCalc', 'calc', 'Калькулятор баллов')}
       ${toolTile('drawerHistory', 'clock', 'История оценок')}
+      ${toolTile('drawerStatus', 'pulse', 'Статус серверов')}
       ${demo ? '' : toolTile('drawerExport', 'table', 'Отчёты в Excel')}
       ${demo ? '' : toolTile('drawerFamily', 'users', 'Родные')}
       ${demo || readonly ? '' : toolTile('drawerCalendar', 'calendar', 'Расписание в календарь')}
@@ -1029,6 +1030,7 @@ function bindDrawer() {
   });
   $('drawerAssistant')?.addEventListener('click', () => { closeDrawer(); openAssistant(); });
   $('drawerHistory').addEventListener('click', () => { tap(); openHistory(); });
+  $('drawerStatus').addEventListener('click', () => { tap(); openExternal(`${window.NETSCHOOL.base}/status`); });
   $('drawerEvents')?.addEventListener('click', async () => {
     closeDrawer();
     const { openEvents } = await import('./events.js');
