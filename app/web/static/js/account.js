@@ -477,6 +477,19 @@ function showDeleteAccount(back) {
   };
 }
 
+/** Открыть бота сразу в приложении Telegram. Ссылка https://t.me в новой
+ * вкладке Safari (особенно в приватном режиме и на экране «Домой») часто
+ * остаётся страницей t.me и в приложение не переходит; tg:// открывает его
+ * напрямую, а если Telegram не установлен — через секунду идём на t.me. */
+export function openTelegram(url) {
+  const parsed = new URL(url);
+  const domain = parsed.pathname.replace(/^\//, '');
+  const start = parsed.searchParams.get('start');
+  const fallback = setTimeout(() => { if (!document.hidden) location.href = url; }, 1200);
+  document.addEventListener('visibilitychange', () => clearTimeout(fallback), { once: true });
+  location.href = `tg://resolve?domain=${encodeURIComponent(domain)}${start ? `&start=${encodeURIComponent(start)}` : ''}`;
+}
+
 /* ─────────────────────── Подтверждение почты ─────────────────────── */
 
 /** Сразу после регистрации: без кода из письма дальше не пускаем. */
@@ -894,9 +907,13 @@ export async function openAccountSettings() {
               команду <code>${esc(command)}</code> — код действует 15 минут.</p>
             ${data.url ? `<a class="btn" href="${esc(data.url)}" target="_blank" rel="noopener" data-act="open-bot">Скопировать и открыть Telegram</a>` : ''}
             <button class="btn outline" type="button" data-act="copy-link">Скопировать команду</button>`;
-          // Команда в буфере на случай, если ссылка t.me откроется без старта.
+          // Команда в буфере на случай, если бот откроется без старта.
           const copyCommand = () => navigator.clipboard?.writeText(command).catch(() => {});
-          box.querySelector('[data-act="open-bot"]')?.addEventListener('click', copyCommand);
+          box.querySelector('[data-act="open-bot"]')?.addEventListener('click', (event) => {
+            event.preventDefault();
+            copyCommand();
+            openTelegram(data.url);
+          });
           box.querySelector('[data-act="copy-link"]').addEventListener('click', async () => {
             await copyCommand();
             notify('success');
