@@ -165,6 +165,8 @@ async def test_run_exits_nonzero_when_web_crashes(monkeypatch, tmp_path):
     from app.status import service as status_service
     monkeypatch.setattr(status_service, "StatusService",
                         lambda *_, **__: types.SimpleNamespace(run=forever))
+    from app.status import alerts as status_alerts
+    monkeypatch.setattr(status_alerts, "SgoAlerts", lambda *_, **__: types.SimpleNamespace(run=forever))
     monkeypatch.setattr(server, "start_web", lambda *_: crashing_web())
     monkeypatch.setattr(main, "cleanup_sessions", lambda _context: forever())
     monkeypatch.setattr(main, "restore_esia_sessions", lambda _context: asyncio.sleep(0))

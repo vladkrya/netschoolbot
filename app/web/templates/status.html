@@ -15,7 +15,7 @@
     <header class="top">
       <div>
         <h1>Статус «Сетевого города»</h1>
-        <p class="muted">Серверы электронного дневника по регионам. Бот сам проверяет каждый сервер раз в 5 минут: сайт (страница входа, без логина) и мобильное API. Список регионов — из каталога приложения NetSchool.</p>
+        <p class="muted">Бот сам проверяет каждый сервер раз в 5 минут: сайт и мобильное API.</p>
       </div>
       <button class="primary" type="button" data-report>Сообщить о сбое</button>
     </header>
@@ -34,40 +34,34 @@
       <input type="search" id="search" placeholder="Регион или адрес" aria-label="Поиск сервера">
     </div>
 
-    <section class="card">
-      <h2>Сбои и жалобы</h2>
+    <section class="card charts">
       <div class="chart" id="chart-down" aria-label="Сколько серверов было недоступно"></div>
       <div class="chart" id="chart-reports" aria-label="Сколько пришло жалоб"></div>
     </section>
 
     <section class="card">
-      <div class="card-head">
-        <h2>Серверы</h2>
-        <div class="legend" aria-label="Обозначения">
-          <span><i class="sw good"></i>работал</span>
-          <span><i class="sw warning"></i>сбои до 10%</span>
-          <span><i class="sw serious"></i>сбои до половины</span>
-          <span><i class="sw critical"></i>недоступен</span>
-          <span><i class="sw none"></i>нет данных</span>
-        </div>
+      <div class="hosts-head" aria-hidden="true">
+        <span>Сервер</span><span></span>
+        <span class="axis-row"><span id="strip-from">24 ч назад</span><span>сейчас</span></span>
+        <span>доступн.</span><span></span>
       </div>
       <div id="hosts" class="hosts"></div>
+      <div class="legend" aria-label="Обозначения">
+        <span><i class="sw good"></i>работал</span>
+        <span><i class="sw warning"></i>сбои до 10%</span>
+        <span><i class="sw serious"></i>сбои до половины</span>
+        <span><i class="sw critical"></i>недоступен</span>
+        <span><i class="sw none"></i>нет данных</span>
+      </div>
     </section>
 
-    <div class="grid2">
-      <section class="card">
-        <h2>Сбои</h2>
-        <div id="incidents" class="list"></div>
-      </section>
-      <section class="card">
-        <h2>Обновления</h2>
-        <div id="versions" class="list"></div>
-      </section>
-    </div>
-
     <section class="card">
-      <h2>Последние жалобы</h2>
-      <div id="reports" class="list"></div>
+      <div class="segmented small" id="feed-tabs" role="tablist">
+        <button type="button" data-tab="incidents" aria-pressed="true">Сбои</button>
+        <button type="button" data-tab="versions" aria-pressed="false">Обновления</button>
+        <button type="button" data-tab="reports" aria-pressed="false">Жалобы</button>
+      </div>
+      <div id="feed" class="list"></div>
     </section>
 
     <footer class="muted">Обновлено <span id="updated">—</span> · бот «Сетевой город» v{{ app_version }}</footer>

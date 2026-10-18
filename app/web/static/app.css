@@ -303,6 +303,11 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .login-failed-actions { display: flex; gap: 8px; margin-top: 10px; }
 .login-failed-actions .btn { flex: 1; margin: 0; }
 #loginFailed .btn.outline { background: rgba(255, 255, 255, .55); color: #b71c1c; border: 1.5px solid currentColor; box-shadow: none; }
+/* Сервер «Сетевого города» школы лежит (sgo.js). */
+.banner.sgo-down { background: #fff8e1; color: #5d4037; z-index: 71; }
+.banner.sgo-down p { margin: 0 0 4px; }
+.banner.sgo-down .sgo-down-state { font-weight: 600; color: #2e7d32; }
+#sgoDown .btn.outline { background: rgba(255, 255, 255, .55); color: #5d4037; border: 1.5px solid currentColor; box-shadow: none; }
 .banner { cursor: pointer; touch-action: none; transition: transform .15s, opacity .15s; }
 /* Перерисовка дня по таймеру — без анимации появления. */
 .list.quiet, .list.quiet * { animation: none !important; }

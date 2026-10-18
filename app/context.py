@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from .caldav.service import CaldavService
     from .domain.models import User
+    from .status.alerts import SgoAlerts
     from .status.service import StatusService
 
 from .db.crypto import PasswordCipher
@@ -75,6 +76,8 @@ class AppContext:
     notes: NotesRepository | None = None
     # Страница статуса «Сетевого города» (status/service.py).
     status: StatusService | None = None
+    # Подписки из приложения: «когда заработает», «об обновлениях» (status/alerts.py).
+    sgo_alerts: SgoAlerts | None = None
 
     def __post_init__(self) -> None:
         if self.family is None:
@@ -91,6 +94,11 @@ class AppContext:
             from .status.service import StatusService
 
             self.status = StatusService(SgoStatusRepository(self.db), secret=self.settings.secret_key)
+        if self.sgo_alerts is None:
+            from .db.repositories import SgoStatusRepository
+            from .status.alerts import SgoAlerts
+
+            self.sgo_alerts = SgoAlerts(self.status, SgoStatusRepository(self.db))
 
     @classmethod
     async def create(cls, settings: Settings, notifier: Notifier | None = None) -> "AppContext":

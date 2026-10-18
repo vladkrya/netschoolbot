@@ -10,6 +10,8 @@ const STATES = {
   unstable: { label: 'Сбои', tone: 'serious' },
   down: { label: 'Недоступен', tone: 'critical' },
   unknown: { label: 'Нет данных', tone: 'none' },
+  // Ни разу не ответил боту: с нашего сервера не открывается.
+  blocked: { label: 'Нет данных', tone: 'none' },
 };
 const ERRORS = {
   timeout: 'не ответил за 20 с',
@@ -132,7 +134,7 @@ function barChart(container, title, values, color, describe) {
   container.replaceChildren();
   container.append(el('div', { class: 'title' }, title));
   const width = Math.max(280, container.clientWidth);
-  const height = 96, top = 6, bottom = 20, left = 28;
+  const height = 80, top = 6, bottom = 18, left = 26;
   const plotH = height - top - bottom, plotW = width - left;
   const max = Math.max(1, ...values);
   const step = max <= 4 ? 1 : Math.ceil(max / 4);
@@ -205,138 +207,149 @@ function matches(host) {
   return `${host.region} ${host.host}`.toLowerCase().includes(query);
 }
 
+const BLOCKED_TEXT = 'С нашего сервера этот сайт не открывается, поэтому проверить его нельзя. Сам сайт при этом может работать.';
+
 function hostDetails(host) {
   const incidents = data.incidents.filter((i) => i.host === host.host).slice(0, 5);
   const versions = data.versions.filter((v) => v.host === host.host).slice(0, 5);
+  const lastCheck = host.checked_at
+    ? `${when(host.checked_at)}: ${host.error ? errorText(host.error) : `ответ за ${host.latency_ms} мс`}` : 'не проверялся';
   return el('div', { class: 'host-details' },
-    el('h3', {}, 'Сбои за период'),
-    incidents.length
-      ? el('ul', {}, incidents.map((i) => el('li', {},
-          `${when(i.start)} — ${i.ongoing ? 'продолжается' : duration((i.end - i.start) + data.probe_every_s)}`,
-          i.error ? `, ${errorText(i.error)}` : '')))
-      : el('div', { class: 'muted' }, 'Не было'),
-    el('h3', {}, 'Версии'),
-    versions.length
-      ? el('ul', {}, versions.map((v) => el('li', {}, `${when(v.changed_at)}: `, el('code', {}, v.version),
-          v.previous ? el('span', { class: 'muted' }, ` (была ${v.previous})`) : '')))
-      : el('div', { class: 'muted' }, host.version ? `Текущая ${host.version}, смен не было` : 'Неизвестно'),
-    el('h3', {}, 'Последняя проверка сайта'),
-    el('div', {}, host.checked_at ? `${when(host.checked_at)}: ${host.error ? errorText(host.error) : `ответ за ${host.latency_ms} мс`}` : 'Не проверялся'),
-    host.last_ok_at && host.state !== 'up' ? el('div', { class: 'muted' }, `Последний удачный ответ ${when(host.last_ok_at)}`) : '',
+    host.state === 'blocked' ? el('p', { class: 'muted' }, BLOCKED_TEXT) : '',
+    host.notice ? el('div', { class: 'notice' },
+      el('b', {}, host.app_disabled ? 'ИРТех: регион отключён в приложении NetSchool. ' : 'ИРТех: '), host.notice) : '',
+    el('dl', { class: 'facts' },
+      el('dt', {}, 'Адрес'), el('dd', {}, el('a', { href: host.url, target: '_blank', rel: 'noopener' }, host.url.replace(/^https?:\/\//, ''))),
+      el('dt', {}, 'Версия'), el('dd', {}, host.version ? [el('code', {}, host.version), host.version_changed_at ? ` · с ${when(host.version_changed_at)}` : ''] : 'неизвестна'),
+      el('dt', {}, 'Мобильное API'), el('dd', {}, mobileText(host)),
+      el('dt', {}, 'Отклик'), el('dd', {}, host.avg_latency_ms == null ? '—' : `${(host.avg_latency_ms / 1000).toFixed(1)} с в среднем за сутки`),
+      el('dt', {}, 'Проверка'), el('dd', {}, lastCheck),
+      host.reports_24h ? [el('dt', {}, 'Жалобы'), el('dd', {}, `${host.reports_24h} за сутки`)] : '',
+    ),
+    incidents.length ? [el('h3', {}, 'Сбои за период'), el('ul', {}, incidents.map((i) => el('li', {},
+      `${when(i.start)} — ${i.ongoing ? 'продолжается' : duration((i.end - i.start) + data.probe_every_s)}`,
+      i.error ? `, ${errorText(i.error)}` : '')))] : '',
+    versions.length > 1 || versions[0]?.previous ? [el('h3', {}, 'Обновления'), el('ul', {}, versions.map((v) => el('li', {},
+      `${when(v.changed_at)}: `, el('code', {}, v.version), v.previous ? el('span', { class: 'muted' }, ` (была ${v.previous})`) : '')))] : '',
+    el('button', { class: 'small', type: 'button', onclick: () => openReport(host.host) }, 'Сообщить о сбое'),
   );
+}
+
+function mobileText(host) {
+  if (!host.in_app) return 'региона нет в приложении NetSchool';
+  if (host.app_disabled) return 'регион отключён в приложении';
+  if (host.mobile == null) return 'нет данных';
+  return `${host.mobile ? 'отвечает' : 'не отвечает'}${host.mobile_uptime != null ? ` · ${pct(host.mobile_uptime)} за период` : ''}`;
 }
 
 function hostRow(host) {
   const state = STATES[host.state] || STATES.unknown;
-  const strip = el('div', { class: 'strip', role: 'img', 'aria-label': `Доступность ${name(host)}: ${pct(host.uptime)}` });
-  host.bars.forEach((share, i) => {
-    const reports = host.report_bars[i];
-    const cell = el('div', { class: `cell ${tone(share)}${reports ? ' has-reports' : ''}` });
-    cell.addEventListener('pointermove', (event) => showTip(event,
-      `<b>${esc(bucketLabel(i))}</b>`
-      + `<div class="row"><i class="sw ${tone(share)}"></i>${share == null ? 'Нет проверок' : 'Отвечал'}`
-      + `${share == null ? '' : `<span class="num">${Math.round(share * 1000) / 10}%</span>`}</div>`
-      + (reports ? `<div class="row">Жалоб<span class="num">${reports}</span></div>` : '')));
-    cell.addEventListener('pointerleave', hideTip);
-    strip.append(cell);
-  });
+  const blocked = host.state === 'blocked';
+  const strip = el('div', { class: `strip${blocked ? ' blocked' : ''}`, role: 'img',
+    'aria-label': blocked ? `${name(host)}: нет данных` : `Доступность ${name(host)}: ${pct(host.uptime)}` });
+  if (blocked) {
+    strip.append(el('span', {}, 'нет данных — с нашего сервера не открывается'));
+  } else {
+    host.bars.forEach((share, i) => {
+      const reports = host.report_bars[i];
+      const cell = el('div', { class: `cell ${tone(share)}${reports ? ' has-reports' : ''}` });
+      cell.addEventListener('pointermove', (event) => showTip(event,
+        `<b>${esc(bucketLabel(i))}</b>`
+        + `<div class="row"><i class="sw ${tone(share)}"></i>${share == null ? 'Нет проверок' : 'Отвечал'}`
+        + `${share == null ? '' : `<span class="num">${Math.round(share * 1000) / 10}%</span>`}</div>`
+        + (reports ? `<div class="row">Жалоб<span class="num">${reports}</span></div>` : '')));
+      cell.addEventListener('pointerleave', hideTip);
+      strip.append(cell);
+    });
+  }
   const isOpen = expanded.has(host.host);
-  const statusLine = host.state === 'down' && host.down_since
-    ? `не отвечает ${duration(Date.now() / 1000 - host.down_since)}`
-    : host.error ? errorText(host.error) : '';
-  return el('div', { class: 'host', 'data-host': host.host },
-    el('div', { class: 'host-row' },
-      el('div', { class: 'host-name' },
-        el('div', { class: 'region' }, name(host), ' ',
-          el('span', { class: `badge ${host.state}` }, el('i', { 'aria-hidden': 'true' }), state.label)),
-        el('div', { class: 'addr' }, el('a', { href: host.url, target: '_blank', rel: 'noopener' }, host.url.replace(/^https?:\/\//, ''))),
-      ),
-      el('div', { class: 'strip-wrap' }, strip,
-        el('div', { class: 'strip-axis' },
-          el('span', {}, data.range === '24h' ? '24 ч назад' : data.range === '7d' ? '7 дней назад' : '30 дней назад'),
-          el('span', {}, 'сейчас'))),
-      el('div', { class: 'host-stats' },
-        el('div', {}, el('span', { class: 'num' }, pct(host.uptime)), el('small', {}, 'доступность')),
-        el('div', { class: 'hide-sm' }, el('span', { class: 'num' }, host.avg_latency_ms == null ? '—' : `${(host.avg_latency_ms / 1000).toFixed(1)} с`), el('small', {}, 'отклик')),
-      ),
+  const sub = [host.host];
+  if (host.state === 'down' && host.down_since) sub.push(`не отвечает ${duration(Date.now() / 1000 - host.down_since)}`);
+  else if (host.version) sub.push(host.version);
+  if (host.app_disabled) sub.push('отключён в приложении');
+  else if (host.in_app && host.mobile === false) sub.push('мобильное API не отвечает');
+  const toggle = () => {
+    if (expanded.has(host.host)) expanded.delete(host.host); else expanded.add(host.host);
+    renderHosts();
+  };
+  return el('div', { class: `host${isOpen ? ' open' : ''}`, 'data-host': host.host },
+    el('button', { class: 'host-row', type: 'button', 'aria-expanded': String(isOpen), onclick: toggle },
+      el('span', { class: 'host-name' },
+        el('span', { class: 'region' }, el('i', { class: `dot ${state.tone}`, 'aria-hidden': 'true' }), name(host)),
+        el('span', { class: 'addr' }, sub.join(' · '))),
+      el('span', { class: 'state-label' }, state.label),
+      strip,
+      el('span', { class: 'num' }, blocked ? '—' : pct(host.uptime)),
+      el('span', { class: 'chevron', 'aria-hidden': 'true' }, isOpen ? '▴' : '▾'),
     ),
-    el('div', { class: 'host-meta' },
-      host.version ? el('span', {}, 'Версия ', el('code', {}, host.version)) : el('span', {}, 'Версия неизвестна'),
-      host.version_changed_at ? el('span', {}, `обновлён ${when(host.version_changed_at)}`) : '',
-      statusLine ? el('span', {}, statusLine) : '',
-      mobileBadge(host),
-      host.reports_24h ? el('span', {}, `${host.reports_24h} ${plural(host.reports_24h, 'жалоба', 'жалобы', 'жалоб')} за сутки`) : '',
-      el('button', { class: 'expand', type: 'button', 'aria-expanded': String(isOpen), onclick: () => {
-        if (expanded.has(host.host)) expanded.delete(host.host); else expanded.add(host.host);
-        renderHosts();
-      } }, isOpen ? 'Скрыть' : 'Подробнее'),
-      el('button', { class: 'expand', type: 'button', onclick: () => openReport(host.host) }, 'Пожаловаться'),
-    ),
-    host.notice ? el('div', { class: 'notice' }, el('b', {}, host.app_disabled ? 'ИРТех: регион отключён в приложении NetSchool. ' : 'ИРТех: '), host.notice) : '',
     isOpen ? hostDetails(host) : '',
   );
 }
 
-function mobileBadge(host) {
-  if (!host.in_app) return el('span', { class: 'muted' }, 'Нет в приложении NetSchool');
-  const label = host.app_disabled ? 'отключено' : host.mobile == null ? 'нет данных' : host.mobile ? 'отвечает' : 'не отвечает';
-  const cls = host.app_disabled || host.mobile === false ? 'down' : host.mobile ? 'up' : 'unknown';
-  return el('span', { class: 'mobile' }, 'Мобильное API ',
-    el('span', { class: `badge ${cls}` }, el('i', { 'aria-hidden': 'true' }), label),
-    host.mobile_uptime != null && !host.app_disabled ? el('span', { class: 'muted' }, ` ${pct(host.mobile_uptime)}`) : '');
-}
-
 function renderHosts() {
-  const order = { down: 0, unstable: 1, slow: 2, unknown: 3, up: 4 };
+  const order = { down: 0, unstable: 1, slow: 2, up: 3, unknown: 4, blocked: 5 };
   const hosts = data.hosts.filter(matches)
     .sort((a, b) => (order[a.state] - order[b.state]) || name(a).localeCompare(name(b), 'ru'));
   $('#hosts').replaceChildren(...(hosts.length ? hosts.map(hostRow) : [el('div', { class: 'muted' }, 'Ничего не нашлось')]));
+  $('#strip-from').textContent = data.range === '24h' ? '24 ч назад' : data.range === '7d' ? '7 дней назад' : '30 дней назад';
 }
 
 // ───────────────────────────── списки ─────────────────────────────
 
-function list(container, items, render, empty, limit = 8) {
-  const shown = container.dataset.all ? items : items.slice(0, limit);
+let tab = 'incidents';
+const LIMIT = 5;
+
+function list(container, items, render, empty) {
+  const shown = container.dataset.all ? items : items.slice(0, LIMIT);
   const children = shown.length ? shown.map(render) : [el('div', { class: 'empty' }, empty)];
-  if (items.length > limit) {
+  if (items.length > LIMIT) {
     children.push(el('button', { class: 'small more', type: 'button', onclick: () => {
       container.dataset.all = container.dataset.all ? '' : '1';
-      list(container, items, render, empty, limit);
+      list(container, items, render, empty);
     } }, container.dataset.all ? 'Свернуть' : `Показать все (${items.length})`));
   }
   container.replaceChildren(...children);
 }
 
 function renderLists() {
-  const incidents = data.incidents.filter((i) => matches(i));
-  list($('#incidents'), incidents, (i) => el('div', { class: 'item' },
-    el('i', { class: `dot ${i.ongoing ? 'critical' : ''}`, 'aria-hidden': 'true' }),
-    el('div', {},
-      el('div', {}, el('b', {}, i.region || i.host), i.ongoing
-        ? ` — недоступен уже ${duration(Date.now() / 1000 - i.start)}`
-        : ` — не отвечал ~${duration((i.end - i.start) + data.probe_every_s)}`),
-      el('div', { class: 'when' }, `${when(i.start)}${i.error ? ` · ${errorText(i.error)}` : ''}`))),
-    'За этот период сбоев не было');
-
-  const versions = data.versions.filter((v) => matches(v));
-  list($('#versions'), versions, (v) => el('div', { class: 'item' },
-    el('i', { class: 'dot accent', 'aria-hidden': 'true' }),
-    el('div', {},
-      el('div', {}, el('b', {}, v.region || v.host), ': ',
-        v.previous ? [el('code', {}, v.previous), ' → '] : '', el('code', {}, v.version)),
-      el('div', { class: 'when' }, v.previous ? when(v.changed_at) : `впервые замечена ${when(v.changed_at)}`))),
-    'Обновлений пока не было');
-
-  list($('#reports'), data.reports.filter((r) => matches(r)), (r) => el('div', { class: 'item' },
-    el('i', { class: 'dot accent', 'aria-hidden': 'true' }),
-    el('div', {},
-      el('div', {}, el('b', {}, r.region || r.host), ` — ${data.kinds[r.kind] || r.kind}`),
-      el('div', { class: 'when' }, ago(r.created_at)))),
-    'Жалоб не было', 6);
+  const container = $('#feed');
+  document.querySelectorAll('#feed-tabs button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.tab === tab)));
+  if (tab === 'incidents') {
+    list(container, data.incidents.filter((i) => matches(i)), (i) => el('div', { class: 'item' },
+      el('i', { class: `dot ${i.ongoing ? 'critical' : 'none'}`, 'aria-hidden': 'true' }),
+      el('div', {},
+        el('div', {}, el('b', {}, i.region || i.host), i.ongoing
+          ? ` — недоступен уже ${duration(Date.now() / 1000 - i.start)}`
+          : ` — не отвечал ~${duration((i.end - i.start) + data.probe_every_s)}`),
+        el('div', { class: 'when' }, `${when(i.start)}${i.error ? ` · ${errorText(i.error)}` : ''}`))),
+      'За этот период сбоев не было');
+  } else if (tab === 'versions') {
+    // «Впервые замечена» — не обновление: это просто начало наблюдений.
+    list(container, data.versions.filter((v) => v.previous && matches(v)), (v) => el('div', { class: 'item' },
+      el('i', { class: 'dot accent', 'aria-hidden': 'true' }),
+      el('div', {},
+        el('div', {}, el('b', {}, v.region || v.host), ': ', el('code', {}, v.previous), ' → ', el('code', {}, v.version)),
+        el('div', { class: 'when' }, when(v.changed_at)))),
+      'Обновлений пока не было');
+  } else {
+    list(container, data.reports.filter((r) => matches(r)), (r) => el('div', { class: 'item' },
+      el('i', { class: 'dot accent', 'aria-hidden': 'true' }),
+      el('div', {},
+        el('div', {}, el('b', {}, r.region || r.host), ` — ${data.kinds[r.kind] || r.kind}`),
+        el('div', { class: 'when' }, ago(r.created_at)))),
+      'Жалоб не было');
+  }
 }
 
+document.querySelectorAll('#feed-tabs button').forEach((button) => button.addEventListener('click', () => {
+  tab = button.dataset.tab;
+  delete $('#feed').dataset.all;
+  if (data) renderLists();
+}));
+
 function renderBanner() {
-  const known = data.hosts.filter((h) => h.state !== 'unknown');
+  const known = data.hosts.filter((h) => h.state !== 'unknown' && h.state !== 'blocked');
+  const blocked = data.hosts.filter((h) => h.state === 'blocked');
   const down = known.filter((h) => h.state === 'down');
   const shaky = known.filter((h) => h.state === 'unstable' || h.state === 'slow');
   const banner = $('#banner');
@@ -356,6 +369,7 @@ function renderBanner() {
     title = 'Все серверы работают';
     sub = `${known.length} ${plural(known.length, 'сервер', 'сервера', 'серверов')} отвечают`;
   }
+  if (blocked.length && known.length) sub += `. Нет данных: ${blocked.map(name).join(', ')}`;
   banner.className = `banner ${cls}`;
   banner.querySelector('.banner-icon').textContent = icon;
   $('#banner-title').textContent = title;

@@ -453,6 +453,15 @@ def _utc_iso(moment: dt.datetime | None) -> str | None:
     return moment.isoformat(timespec="seconds") + "Z" if moment else None
 
 
+async def _sgo_updates(app: AppContext, telegram_id: int, url: str) -> bool:
+    from ..db.repositories import SgoStatusRepository
+    from ..status.service import host_of
+
+    if not url:
+        return False
+    return "updates" in await SgoStatusRepository(app.db).alert_kinds(telegram_id, host_of(url))
+
+
 @routes.get("/api/profile")
 async def profile(request: web.Request) -> web.Response:
     from . import viewing
@@ -475,6 +484,8 @@ async def profile(request: web.Request) -> web.Response:
                     for s in user.available_students
                 ],
                 "notifications": asdict(user.notifications),
+                # «Об обновлениях «Сетевого города»» — подписка на сервер школы (status/alerts.py).
+                "sgo_updates": await _sgo_updates(app, (viewer or user).telegram_id, user.school.url),
                 # Тумблер пропусков показывается только там, где есть отметки посещаемости.
                 "api_mode": user.effective_api_mode.value,
                 "interval_minutes": user.check_interval // 60,

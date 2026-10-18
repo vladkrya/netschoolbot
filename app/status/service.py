@@ -52,6 +52,9 @@ KEEP_PROBES_S = 31 * 86400
 KEEP_REPORTS_S = 90 * 86400
 PRUNE_EVERY_S = 6 * 3600
 SUMMARY_TTL_S = 60
+# Для приложения: проверка из круга моложе этого — свежая; своя — помнится.
+LIVE_FRESH_S = 3 * 3600
+LIVE_CACHE_S = 120
 
 # Период графика: (длина, размер столбика).
 RANGES = {
@@ -249,6 +252,7 @@ class StatusService:
         self._catalog_at: float | None = None
         self._cache: dict[str, tuple[float, dict]] = {}
         self._alerted: dict[str, float] = {}
+        self._live: dict[str, tuple[float, dict]] = {}
 
     # ───────────────────────────── серверы ─────────────────────────────
 
@@ -367,6 +371,60 @@ class StatusService:
         except Exception as exc:  # noqa: BLE001
             logger.warning("Не удалось сообщить админу о жалобах: %s", exc)
 
+    # ───────────────────────────── один сервер ─────────────────────────────
+
+    async def live_state(self, url: str) -> dict:
+        """Что с сервером школы прямо сейчас — для приложения, пока у
+        человека долго грузится дневник. Свежая проверка из круга, иначе своя
+        (результат помним две минуты)."""
+        host = host_of(url)
+        now = self._clock()
+        probes = await self._repo.host_probes(host, now - LIVE_FRESH_S)
+        if not probes:
+            cached = self._live.get(host)
+            if cached and now - cached[0] < LIVE_CACHE_S:
+                return cached[1]
+            if self._prober is None:
+                return {"host": host, "state": "unknown"}
+            parsed = urlparse(url)
+            target = Target(host, f"{parsed.scheme}://{parsed.netloc}", "")
+            try:
+                result = await asyncio.wait_for(self._prober(target), PROBE_TIMEOUT_S + 5)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # noqa: BLE001
+                result = Probe(False, 0, error=error_name(exc))
+            probes = [{"host": host, "at": now, "ok": result.ok, "latency_ms": result.latency_ms,
+                       "error": result.error, "mobile": result.mobile}]
+            data = self._host_state(host, probes, await self._repo.host_ever_ok(host) or result.ok,
+                                    result.version)
+            self._live[host] = (now, data)
+            return data
+        versions = await self._repo.versions()
+        version = versions.get(host, {}).get("version", "")
+        return self._host_state(host, probes, await self._repo.host_ever_ok(host), version)
+
+    def _host_state(self, host: str, probes: list[dict], ever_ok: bool, version: str) -> dict:
+        region = next((t.region for t in self._targets if t.host == host), "")
+        state = _state(probes)
+        if not ever_ok and state != "up":
+            state = "blocked"
+        failing = [p["at"] for p in probes if not p["ok"]]
+        last_ok = next((p["at"] for p in probes if p["ok"]), None)
+        return {
+            "host": host,
+            "region": region,
+            "state": state,
+            # Последняя проверка удалась: сервер отвечает, даже если недавно сбоил.
+            "ok": bool(probes[0]["ok"]),
+            "checked_at": probes[0]["at"],
+            "last_ok_at": last_ok,
+            # Сколько не отвечает — по проверкам за последние часы.
+            "down_since": min((at for at in failing if last_ok is None or at > last_ok), default=None)
+            if state == "down" else None,
+            "version": version,
+        }
+
     # ───────────────────────────── сводка ─────────────────────────────
 
     async def summary(self, range_key: str = "24h") -> dict:
@@ -385,7 +443,11 @@ class StatusService:
         count = int(length // size)
         since = (math.floor(now / size) - count + 1) * size
         targets = self._targets
-        regions = {t.host: t.region for t in targets}
+        # Серверы, которые ни разу не ответили боту: с нашего сервера они не
+        # открываются (а людям — может быть, вполне). «Недоступен» о них —
+        # неправда, сбоев и полос у них нет — только «нет данных».
+        reachable = await self._repo.reachable_hosts()
+        regions = {t.host: t.region for t in targets if t.host in reachable}
 
         recent: dict[str, list[dict]] = {}
         for row in await self._repo.recent_probes(now - 2 * 3600):
@@ -397,7 +459,7 @@ class StatusService:
         checked = [0] * count
         for row in await self._repo.buckets(since, size):
             index = row["bucket"]
-            if row["host"] not in bars or not 0 <= index < count or not row["total"]:
+            if row["host"] not in regions or not 0 <= index < count or not row["total"]:
                 continue
             share = (row["good"] or 0) / row["total"]
             bars[row["host"]][index] = round(share, 3)
@@ -418,13 +480,15 @@ class StatusService:
                 reports_total[index] += 1
 
         incidents = self._incidents(await self._repo.failures(now - KEEP_PROBES_S), recent, regions)
+        regions = {t.host: t.region for t in targets}
         ongoing = {i["host"]: i["start"] for i in incidents if i["ongoing"]}
         versions = await self._repo.versions()
 
         hosts = []
         for target in targets:
             probes = recent.get(target.host, [])
-            state = _state(probes)
+            blocked = target.host not in reachable
+            state = "blocked" if blocked and probes else _state(probes)
             last = probes[0] if probes else None
             last_ok = next((p["at"] for p in probes if p["ok"]), None)
             mobile = next((p["mobile"] for p in probes if p["mobile"] is not None), None)
@@ -446,8 +510,8 @@ class StatusService:
                 "notice": target.notice,
                 "mobile": None if mobile is None else bool(mobile),
                 "mobile_uptime": _share(period.get(target.host), "mobile_total", "mobile_good"),
-                "uptime": _share(period.get(target.host)),
-                "uptime_24h": _share(day.get(target.host)),
+                "uptime": None if blocked else _share(period.get(target.host)),
+                "uptime_24h": None if blocked else _share(day.get(target.host)),
                 "avg_latency_ms": _latency(day.get(target.host)),
                 "reports_24h": reports_day.get(target.host, 0),
                 "bars": bars[target.host],
@@ -467,7 +531,7 @@ class StatusService:
             "incidents": [i for i in incidents if (i["end"] or now) >= since][:60],
             "versions": [
                 {**row, "region": regions.get(row["host"], "")}
-                for row in history if row["host"] in regions
+                for row in history if row["host"] in {t.host for t in targets}
             ],
             "reports": [
                 {"host": r["host"], "region": regions.get(r["host"], ""), "kind": r["kind"],

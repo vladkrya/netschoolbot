@@ -1883,6 +1883,56 @@ class SgoStatusRepository:
                 (client, host, since))
         return int(row[0]) if row else 0
 
+    async def reachable_hosts(self) -> set[str]:
+        """Серверы, которые хоть раз ответили боту. Остальные с нашего
+        сервера не открываются вовсе — о них нечего сказать."""
+        rows = await self._db.fetch_all("SELECT DISTINCT host FROM sgo_probes WHERE ok = 1")
+        return {row[0] for row in rows}
+
+    async def host_probes(self, host: str, since: float) -> list[dict]:
+        rows = await self._db.fetch_all(
+            "SELECT host, at, ok, latency_ms, error, mobile FROM sgo_probes "
+            "WHERE host = ? AND at >= ? ORDER BY at DESC",
+            (host, since),
+        )
+        return [dict(row) for row in rows]
+
+    async def host_ever_ok(self, host: str) -> bool:
+        row = await self._db.fetch_one("SELECT 1 FROM sgo_probes WHERE host = ? AND ok = 1 LIMIT 1", (host,))
+        return row is not None
+
+    # Подписки из приложения (sgo_alerts).
+
+    async def alert_kinds(self, telegram_id: int, host: str) -> set[str]:
+        rows = await self._db.fetch_all(
+            "SELECT kind FROM sgo_alerts WHERE telegram_id = ? AND host = ?", (telegram_id, host))
+        return {row[0] for row in rows}
+
+    async def alert_subscribe(self, telegram_id: int, host: str, url: str, kind: str,
+                              version: str, now: float) -> None:
+        await self._db.execute(
+            "INSERT INTO sgo_alerts (telegram_id, host, url, kind, version, created_at) VALUES (?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(telegram_id, host, kind) DO UPDATE SET url = excluded.url, created_at = excluded.created_at",
+            (telegram_id, host, url, kind, version, now),
+        )
+
+    async def alert_unsubscribe(self, telegram_id: int, host: str, kind: str) -> None:
+        await self._db.execute(
+            "DELETE FROM sgo_alerts WHERE telegram_id = ? AND host = ? AND kind = ?", (telegram_id, host, kind))
+
+    async def alerts(self) -> list[dict]:
+        rows = await self._db.fetch_all("SELECT * FROM sgo_alerts ORDER BY host, telegram_id")
+        return [dict(row) for row in rows]
+
+    async def alert_seen_version(self, telegram_id: int, host: str, version: str) -> None:
+        await self._db.execute(
+            "UPDATE sgo_alerts SET version = ? WHERE telegram_id = ? AND host = ? AND kind = 'updates'",
+            (version, telegram_id, host),
+        )
+
+    async def alerts_expire(self, kind: str, before: float) -> None:
+        await self._db.execute("DELETE FROM sgo_alerts WHERE kind = ? AND created_at < ?", (kind, before))
+
     async def prune(self, probes_before: float, reports_before: float) -> None:
         await self._db.execute("DELETE FROM sgo_probes WHERE at < ?", (probes_before,))
         await self._db.execute("DELETE FROM sgo_reports WHERE created_at < ?", (reports_before,))
