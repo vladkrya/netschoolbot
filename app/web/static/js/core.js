@@ -227,21 +227,28 @@ export function forgetRevalidated() {
 }
 
 function staleBanner(show, reason, source) {
-  // Свежий ответ пришёл — плашка о сохранённых данных больше не правда.
-  if (!show) clearNotices();
+  // Свежий ответ пришёл — плашка о сохранённых данных больше не правда, и
+  // карточка «долго не отвечает» тоже.
+  if (!show) {
+    clearNotices();
+    if ($('sgoDown')?.dataset.slow) $('sgoDown').remove();
+  }
   else if (reason === 'auth') loginFailedNotice();
   else if ($('sgoDown')) return;  // о простое школы уже сказано карточкой
   else showNotice(source === 'app' ? APP_SERVER_TEXT : reason === 'server' ? SERVER_TEXT : STALE_TEXT);
   if (show && reason === 'server' && source !== 'app') sgoHint(true);
 }
 
-// Дневник грузится дольше этого — спрашиваем, не лежит ли сервер школы
-// (sgo.js): человеку лучше сразу узнать, что ждать бесполезно.
+// Дневник грузится дольше SGO_SLOW_MS — спрашиваем, не лежит ли сервер
+// школы по странице статуса (sgo.js). Дольше SGO_STUCK_MS — говорим «долго не
+// отвечает» в любом случае: сервер бота ждёт школу при обновлении до минуты,
+// и всё это время человек видел только крутящийся кружок.
 const SGO_SLOW_MS = 8000;
+const SGO_STUCK_MS = 20000;
 
-function sgoHint(failed = false) {
+function sgoHint(failed = false, slow = false) {
   if (demo) return;
-  import('./sgo.js').then((module) => module.checkServer({ failed })).catch(() => {});
+  import('./sgo.js').then((module) => module.checkServer({ failed, slow })).catch(() => {});
 }
 
 // «Сетевой город» не пускает с сохранённым паролем — скорее всего, его
@@ -298,8 +305,9 @@ async function request(path, options = {}) {
   // бесконечно. Сервер сам отвечает не дольше минуты при обновлении.
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), path.startsWith('/api/lock/') ? 10000 : REQUEST_TIMEOUT_MS);
-  const slow = path.startsWith('/api/lock/') || path.startsWith('/api/sgo/') || options.method
-    ? 0 : setTimeout(sgoHint, SGO_SLOW_MS);
+  const watched = !(path.startsWith('/api/lock/') || path.startsWith('/api/sgo/') || options.method);
+  const slow = watched ? setTimeout(sgoHint, SGO_SLOW_MS) : 0;
+  const stuck = watched ? setTimeout(() => sgoHint(true, true), SGO_STUCK_MS) : 0;
   const { onFresh, retried, ...init } = options;
   let response;
   try {
@@ -316,6 +324,7 @@ async function request(path, options = {}) {
   } finally {
     clearTimeout(timer);
     clearTimeout(slow);
+    clearTimeout(stuck);
   }
 
   let payload;
@@ -463,7 +472,9 @@ export async function api(path, options = {}) {
       }
     }
   }
-  if (payload.stale && !payload.refreshing) staleBanner(true, payload.reason);
+  // Обновление жестом: сервер ждал школу минуту и так и не дождался
+  // (refreshing) — для человека это та же неудача, а не «всё хорошо».
+  if (payload.stale && (!payload.refreshing || path.includes('refresh=1'))) staleBanner(true, payload.reason || 'server');
   else if ('data' in payload && !payload.stale) staleBanner(false);
   return payload;
 }

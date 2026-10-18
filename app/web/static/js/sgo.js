@@ -24,7 +24,9 @@ function dismissed() {
 /** Спросить сервер бота, что со «Сетевым городом» школы, и показать
  *  карточку. failed — запрос к школе уже не удался: тогда карточка
  *  показывается, что бы ни говорили проверки, — дневник не загрузился. */
-export async function checkServer({ failed = false } = {}) {
+export async function checkServer({ failed = false, slow = false } = {}) {
+  // Долгая загрузка кончилась неудачей — карточка остаётся и после неё.
+  if (failed && !slow && $('sgoDown')?.dataset.slow) delete $('sgoDown').dataset.slow;
   if (demo || $('sgoDown') || dismissed()) return;
   if (!failed) {
     if (Date.now() - slowCheckedAt < SLOW_EVERY_MS) return;
@@ -32,13 +34,13 @@ export async function checkServer({ failed = false } = {}) {
   }
   if (checking) {
     const result = await checking.catch(() => null);
-    if (failed && result && !$('sgoDown') && !dismissed()) show(result, true);
+    if (failed && result && !$('sgoDown') && !dismissed()) show(result, slow);
     return;
   }
   checking = api('/api/sgo/server').then(({ data }) => data);
   try {
     const data = await checking;
-    if (failed || data.state === 'down') show(data, failed);
+    if (failed || data.state === 'down') show(data, slow && data.state !== 'down');
   } catch {
     /* бот тоже не ответил — об этом скажет обычная плашка */
   } finally {
@@ -46,23 +48,26 @@ export async function checkServer({ failed = false } = {}) {
   }
 }
 
-function headline(data) {
+function headline(data, slow) {
   const where = data.region ? ` (${esc(data.region)})` : '';
   if (data.state === 'down') {
     const minutes = data.down_since ? Math.round((Date.now() / 1000 - data.down_since) / 60) : 0;
     const since = minutes >= 10 ? ` — не отвечает с ${timeFmt.format(new Date(data.down_since * 1000))}` : '';
     return `<b>Сервер «Сетевого города»${where} сейчас недоступен</b>${esc(since)}.`;
   }
-  return `<b>Сервер «Сетевого города»${where} сейчас не отвечает.</b>`;
+  return `<b>Сервер «Сетевого города»${where} ${slow ? 'долго не отвечает' : 'сейчас не отвечает'}.</b>`;
 }
 
-function show(data, failed) {
+/** slow — запрос ещё идёт, просто долго: карточка уберётся сама, если
+ *  данные всё же придут (core.js, staleBanner). */
+function show(data, slow) {
   if ($('sgoDown')) return;
   const el = document.createElement('div');
   el.id = 'sgoDown';
+  if (slow) el.dataset.slow = '1';
   el.className = 'banner login-failed sgo-down';
   el.setAttribute('role', 'alert');
-  el.innerHTML = `<p>${headline(data)} Это не у вас и не в приложении — попробуйте зайти позже.</p>
+  el.innerHTML = `<p>${headline(data, slow)} Это не у вас и не в приложении — попробуйте зайти позже.</p>
     <p class="sgo-down-state" hidden></p>
     <div class="login-failed-actions">
       <button class="btn" data-act="notify">Сообщить, когда заработает</button>
