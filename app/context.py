@@ -87,11 +87,10 @@ class AppContext:
             self.mailer = Mailer(self.settings.mail, site=self.settings.web.miniapp_url)
         if self.status is None:
             # Без опроса серверов: сводка и жалобы. Опрос включает main.py.
-            from .db.repositories import SgoStatusRepository, SgoVersionRepository
+            from .db.repositories import SgoStatusRepository
             from .status.service import StatusService
 
-            self.status = StatusService(SgoStatusRepository(self.db), SgoVersionRepository(self.db),
-                                        secret=self.settings.secret_key)
+            self.status = StatusService(SgoStatusRepository(self.db), secret=self.settings.secret_key)
 
     @classmethod
     async def create(cls, settings: Settings, notifier: Notifier | None = None) -> "AppContext":
