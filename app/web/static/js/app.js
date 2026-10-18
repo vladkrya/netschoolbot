@@ -136,7 +136,7 @@ function initTelegram() {
 /** Иконки подставляются из одного набора: в разметке только data-icon. */
 function renderIcons(root = document) {
   root.querySelectorAll('[data-icon]').forEach((el) => {
-    el.innerHTML = el.closest('.bottom-nav') ? navIcon(el.dataset.icon) : ICONS[el.dataset.icon] || '';
+    el.innerHTML = el.closest('.bottom-nav, .ai-fab') ? navIcon(el.dataset.icon) : ICONS[el.dataset.icon] || '';
   });
 }
 

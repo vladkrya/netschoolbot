@@ -58,16 +58,17 @@
 
 /* ─────────────────── Луна, паутина, летучие мыши ─────────────────── */
 
-/* Слой .hw-decor создаёт appearance.js: поверх шапки, но не ловит нажатий.
-   Луна — слева в строке шапки, паутина — в правом верхнем углу, три мыши
-   пролетают над шапкой с разной скоростью. */
+/* Слой .hw-decor создаёт appearance.js первым ребёнком шапки. z-index -1
+   внутри шапки — над её фоном, но под именем, стрелками и полосой недели:
+   мышь пролетает за заголовком, паутина уходит под кнопки. Луна — слева
+   в строке шапки, паутина — в правом верхнем углу, три мыши пролетают
+   с разной скоростью. */
 .hw-decor { display: none; }
 :root[data-holiday="halloween"]:not(#_) .hw-decor {
   display: block;
-  position: fixed;
-  left: 0; right: 0; top: 0;
-  height: calc(var(--topbar-h, 52px) + 10px);
-  z-index: 21;
+  position: absolute;
+  inset: 0;
+  z-index: -1;
   pointer-events: none;
   overflow: hidden;
 }
@@ -79,7 +80,20 @@
   border-radius: 50%;
   background: radial-gradient(circle at 38% 36%, #fffbe8, #f6dc95 70%);
   box-shadow: 0 0 14px 4px rgba(247, 220, 140, .35), 0 0 40px 12px rgba(247, 220, 140, .12);
+  animation: hw-moon 6s ease-in-out infinite alternate;
 }
+/* Луна медленно разгорается и притухает — ореол отдельным слоем, чтобы
+   анимировалась только прозрачность. */
+.hw-moon::before {
+  content: '';
+  position: absolute;
+  inset: -10px;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(247, 220, 140, .3), transparent);
+  animation: hw-glow 6s ease-in-out infinite alternate;
+}
+@keyframes hw-glow { from { opacity: .3; } to { opacity: 1; } }
+@keyframes hw-moon { to { translate: 0 1px; } }
 /* Тень на луне — кратеры. */
 .hw-moon::after {
   content: '';
@@ -137,17 +151,24 @@
 
 /* ─────────────────── Паук, туман, большая мышь ─────────────────── */
 
-/* Паучок спускается на паутинке из угла с паутиной и поднимается обратно. */
+/* Паучок спускается на паутинке из угла с паутиной и поднимается обратно —
+   только в пределах строки шапки: ниже стрелки дня и вкладки «Почты».
+   Нить тянется масштабом, паук едет сдвигом: если масштабировать всё
+   вместе, паук сплющивается. */
 .hw-spider { display: none; }
 :root[data-holiday="halloween"][data-design="new"]:not(#_) .hw-spider {
+  --len: calc(var(--bar-top, 0px) + 30px);
   display: block;
-  position: fixed;
+  position: absolute;
   right: 26px;
   top: 0;
-  z-index: 21;
   width: 2px;
-  height: calc(var(--bar-top, 0px) + 70px);
-  pointer-events: none;
+  height: var(--len);
+}
+:root[data-holiday="halloween"][data-design="new"]:not(#_) .hw-spider::before {
+  content: '';
+  position: absolute;
+  inset: 0;
   background: linear-gradient(rgba(217, 200, 238, .45), rgba(217, 200, 238, .25));
   transform-origin: top center;
   animation: hw-dangle 9s ease-in-out infinite;
@@ -156,15 +177,21 @@
   content: '';
   position: absolute;
   left: -10px;
-  bottom: -18px;
+  top: -6px;
   width: 22px;
   height: 22px;
   background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23d9c8ee' stroke-width='1.6' stroke-linecap='round'%3E%3Ccircle cx='12' cy='9' r='2.4' fill='%23110a18'/%3E%3Cellipse cx='12' cy='14.4' rx='3.4' ry='3.8' fill='%23110a18'/%3E%3Cpath d='M9 12.6 5.6 10.4 3.5 12M8.7 14.6H5l-2 2.2M9.2 16.6 6.6 19.2v2M15 12.6l3.4-2.2 2.1 1.6M15.3 14.6H19l2 2.2M14.8 16.6l2.6 2.6v2'/%3E%3Ccircle cx='11.2' cy='8.6' r='.5' fill='%23ff8a1f' stroke='none'/%3E%3Ccircle cx='12.8' cy='8.6' r='.5' fill='%23ff8a1f' stroke='none'/%3E%3C/svg%3E") center / contain no-repeat;
-  animation: hw-wiggle 1.6s ease-in-out infinite alternate;
+  transform-origin: 50% 25%;
+  translate: 0 var(--len);
+  animation: hw-drop 9s ease-in-out infinite, hw-wiggle 1.6s ease-in-out infinite alternate;
 }
 @keyframes hw-dangle {
-  0%, 100% { scale: 1 .55; }
-  45%, 60% { scale: 1 1.25; }
+  0%, 100% { scale: 1 .5; }
+  45%, 60% { scale: 1 1; }
+}
+@keyframes hw-drop {
+  0%, 100% { translate: 0 calc(var(--len) * .5); }
+  45%, 60% { translate: 0 var(--len); }
 }
 @keyframes hw-wiggle { from { rotate: -8deg; } to { rotate: 8deg; } }
 
@@ -207,22 +234,63 @@
   100% { translate: calc(100vw + 140px) -10vh; scale: .5; }
 }
 
-/* Без анимаций паук висит, туман стоит. */
-.no-motion :is(.hw-spider, .hw-spider::after, .hw-fog) { animation: none !important; }
+/* Звёзды на небе мерцают — по одной, вразнобой. Слой за всем экраном
+   (z-index -1 у корня), анимируется только прозрачность. */
+.hw-stars { display: none; }
+:root[data-holiday="halloween"]:not(#_) .hw-stars {
+  display: block;
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+}
+.hw-stars span {
+  position: absolute;
+  left: var(--x);
+  top: var(--y);
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: #fff6dc;
+  box-shadow: 0 0 6px 1px rgba(255, 240, 200, .6);
+  opacity: .15;
+  animation: hw-twinkle var(--t, 5s) ease-in-out var(--d, 0s) infinite;
+}
+.hw-stars span:nth-child(1) { --x: 12%; --y: 22%; --t: 4.6s; }
+.hw-stars span:nth-child(2) { --x: 78%; --y: 30%; --t: 6.2s; --d: -2s; }
+.hw-stars span:nth-child(3) { --x: 44%; --y: 47%; --t: 5.4s; --d: -4s; }
+.hw-stars span:nth-child(4) { --x: 90%; --y: 58%; --t: 7s; --d: -1s; }
+.hw-stars span:nth-child(5) { --x: 25%; --y: 68%; --t: 5.8s; --d: -3s; }
+.hw-stars span:nth-child(6) { --x: 62%; --y: 80%; --t: 4.2s; --d: -2.6s; }
+.hw-stars span:nth-child(7) { --x: 6%; --y: 88%; --t: 6.6s; --d: -5s; }
+@keyframes hw-twinkle {
+  0%, 70%, 100% { opacity: .15; }
+  80% { opacity: .9; }
+}
+
+/* Без анимаций паук висит, туман стоит, луна и звёзды не мерцают.
+   Псевдоэлементы — отдельно: внутри :is() браузер их молча отбрасывает. */
+.no-motion :is(.hw-fog, .hw-moon, .hw-stars span),
+.no-motion :is(.hw-spider, .hw-moon)::before,
+.no-motion .hw-spider::after { animation: none !important; }
 @media (prefers-reduced-motion: reduce) {
-  :is(.hw-spider, .hw-fog) { animation: none !important; }
+  :is(.hw-fog, .hw-moon, .hw-stars span),
+  :is(.hw-spider, .hw-moon)::before,
   .hw-spider::after { animation: none !important; }
 }
 
 /* ──────────────────────── Шапка и меню ──────────────────────── */
 
 :root[data-holiday="halloween"]:not(#_) .topbar-title::after {
-  content: ' 🎃';
+  content: '🎃';
+  flex: none;
+  margin-left: 4px;
   font-size: .9em;
 }
 
-/* Классический дизайн: цветная шапка — тыквенный градиент в ночь. */
-:root[data-holiday="halloween"]:not([data-design="new"]):not(#_) .app-header {
+/* Классический дизайн: цветная шапка — тыквенный градиент в ночь,
+   у экранов поверх (урок, письмо) — такая же. */
+:root[data-holiday="halloween"]:not([data-design="new"]):not(#_) :is(.app-header, .screen-head) {
   background: linear-gradient(180deg, var(--head), color-mix(in srgb, var(--head) 45%, #120d18));
 }
 
@@ -256,6 +324,13 @@
   border-radius: 12px;
   padding-left: 10px;
   padding-right: 10px;
+}
+
+/* Кнопка помощника — шляпа ведьмы (navIcon) и тыквенное свечение; шляпа
+   линейная, заливка от искорок ей не нужна. */
+:root[data-holiday="halloween"][data-design="new"]:not(#_) .ai-fab .icon { fill: none; stroke-width: 1.9; }
+:root[data-holiday="halloween"]:not(#_) .fab {
+  box-shadow: 0 8px 22px rgba(0, 0, 0, .45), 0 0 22px color-mix(in srgb, var(--head) 45%, transparent);
 }
 
 /* Заставка загрузки — тоже ночная. */
@@ -390,7 +465,9 @@
 }
 
 /* Без анимаций — ничего не качается и не мерцает. */
-.no-motion :is(.lc-num, .nav-item .ico svg, .app-lock-card::before) { animation: none !important; }
+.no-motion :is(.lc-num, .nav-item .ico svg),
+.no-motion .app-lock-card::before { animation: none !important; }
 @media (prefers-reduced-motion: reduce) {
-  :root[data-holiday="halloween"]:not(#_) :is(.lc-num, .nav-item .ico svg) { animation: none; }
+  :root[data-holiday="halloween"]:not(#_) :is(.lc-num, .nav-item .ico svg),
+  :root[data-holiday="halloween"]:not(#_) :is(.empty, .app-lock-card)::before { animation: none; }
 }
