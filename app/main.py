@@ -195,6 +195,16 @@ async def run(settings: Settings, args: argparse.Namespace) -> int:
     except Exception as exc:  # noqa: BLE001 — без истории версий бот работает
         logger.warning("Версии «Сетевого города» не загружены: %s", exc)
     context.watchers.outages.track_versions(versions)
+    # Страница статуса: все серверы «Сетевого города» опрашиваются сами.
+    from .db.repositories import SgoStatusRepository
+    from .status.service import StatusService
+
+    context.status = StatusService(
+        SgoStatusRepository(context.db), SgoVersionRepository(context.db),
+        fetch=logindata_fetcher(context), versions=versions,
+        notify=tell_admin if settings.telegram.admin_id else None,
+        secret=settings.secret_key,
+    )
 
     supervisor = Supervisor()
     tasks: list[asyncio.Task] = [
@@ -216,6 +226,10 @@ async def run(settings: Settings, args: argparse.Namespace) -> int:
                 name="note-reminders",
             )
         )
+    )
+    # Опрос серверов для страницы статуса: его сбой бота не роняет.
+    tasks.append(
+        supervisor.watch(asyncio.create_task(context.status.run(), name="sgo-status"), critical=False)
     )
     if settings.telegram.admin_id:
         tasks.append(

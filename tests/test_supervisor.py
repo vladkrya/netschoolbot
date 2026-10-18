@@ -162,6 +162,9 @@ async def test_run_exits_nonzero_when_web_crashes(monkeypatch, tmp_path):
     monkeypatch.setattr(push, "PushSender", lambda *_: types.SimpleNamespace(configured=True))
     monkeypatch.setattr(sgo_version, "VersionTracker", FakeVersions)
     monkeypatch.setattr(sgo_version, "logindata_fetcher", lambda _context: None)
+    from app.status import service as status_service
+    monkeypatch.setattr(status_service, "StatusService",
+                        lambda *_, **__: types.SimpleNamespace(run=forever))
     monkeypatch.setattr(server, "start_web", lambda *_: crashing_web())
     monkeypatch.setattr(main, "cleanup_sessions", lambda _context: forever())
     monkeypatch.setattr(main, "restore_esia_sessions", lambda _context: asyncio.sleep(0))
@@ -170,6 +173,7 @@ async def test_run_exits_nonzero_when_web_crashes(monkeypatch, tmp_path):
         telegram=types.SimpleNamespace(admin_id=0),
         web=types.SimpleNamespace(enabled=True, miniapp_url=""),
         push=None,
+        secret_key="",
     )
     args = main.parse_args([])
 

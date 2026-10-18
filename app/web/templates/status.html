@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Статус «Сетевого города»</title>
+  <meta name="description" content="Доступность серверов «Сетевого города» по регионам: сбои, версии, жалобы">
+  <meta name="color-scheme" content="light dark">
+  <link rel="icon" href="{{ base }}/static/icon-192.png">
+  <link rel="stylesheet" href="{{ base }}/static/v{{ version }}/status/status.css">
+  <script type="module" src="{{ base }}/static/v{{ version }}/status/status.js"></script>
+</head>
+<body data-base="{{ base }}">
+  <main class="page">
+    <header class="top">
+      <div>
+        <h1>Статус «Сетевого города»</h1>
+        <p class="muted">Серверы электронного дневника по регионам. Проверка каждые 5 минут — запрос к странице входа, без логина.</p>
+      </div>
+      <button class="primary" type="button" data-report>Сообщить о сбое</button>
+    </header>
+
+    <section class="banner" id="banner" aria-live="polite">
+      <span class="banner-icon" aria-hidden="true">…</span>
+      <div><strong id="banner-title">Загружаем…</strong><div class="muted" id="banner-sub"></div></div>
+    </section>
+
+    <div class="controls" role="toolbar" aria-label="Период и поиск">
+      <div class="segmented" id="range">
+        <button type="button" data-range="24h" aria-pressed="true">24 часа</button>
+        <button type="button" data-range="7d" aria-pressed="false">7 дней</button>
+        <button type="button" data-range="30d" aria-pressed="false">30 дней</button>
+      </div>
+      <input type="search" id="search" placeholder="Регион или адрес" aria-label="Поиск сервера">
+    </div>
+
+    <section class="card">
+      <h2>Сбои и жалобы</h2>
+      <div class="chart" id="chart-down" aria-label="Сколько серверов было недоступно"></div>
+      <div class="chart" id="chart-reports" aria-label="Сколько пришло жалоб"></div>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <h2>Серверы</h2>
+        <div class="legend" aria-label="Обозначения">
+          <span><i class="sw good"></i>работал</span>
+          <span><i class="sw warning"></i>сбои до 10%</span>
+          <span><i class="sw serious"></i>сбои до половины</span>
+          <span><i class="sw critical"></i>недоступен</span>
+          <span><i class="sw none"></i>нет данных</span>
+        </div>
+      </div>
+      <div id="hosts" class="hosts"></div>
+    </section>
+
+    <div class="grid2">
+      <section class="card">
+        <h2>Сбои</h2>
+        <div id="incidents" class="list"></div>
+      </section>
+      <section class="card">
+        <h2>Обновления</h2>
+        <div id="versions" class="list"></div>
+      </section>
+    </div>
+
+    <section class="card">
+      <h2>Последние жалобы</h2>
+      <div id="reports" class="list"></div>
+    </section>
+
+    <footer class="muted">Обновлено <span id="updated">—</span> · бот «Сетевой город» v{{ app_version }}</footer>
+  </main>
+
+  <div class="tooltip" id="tooltip" role="tooltip" hidden></div>
+
+  <dialog id="report-dialog">
+    <form id="report-form" method="dialog">
+      <h2>Сообщить о сбое</h2>
+      <label>Сервер
+        <select name="host" id="report-host" required></select>
+      </label>
+      <fieldset>
+        <legend>Что случилось</legend>
+        <div id="report-kinds" class="kinds"></div>
+      </fieldset>
+      <label><span>Подробности <span class="muted">(необязательно)</span></span>
+        <textarea name="comment" maxlength="500" rows="3" placeholder="Например: после входа пустой дневник"></textarea>
+      </label>
+      <label class="trap" aria-hidden="true">Сайт <input name="website" tabindex="-1" autocomplete="off"></label>
+      <p class="form-error" id="report-error" role="alert"></p>
+      <div class="actions">
+        <button type="button" value="cancel" data-close>Отмена</button>
+        <button type="submit" class="primary">Отправить</button>
+      </div>
+    </form>
+  </dialog>
+</body>
+</html>
