@@ -223,6 +223,10 @@ def apply(*, timeout: int, blocked_host_ttl: int, fallback_proxy: str = "", back
                 return await original_send(self, method, path, timeout=timeout,
                                            follow_redirects=follow_redirects, **kwargs)
 
+            # Повторяем только то, что ничего не меняет на сервере: POST после
+            # 5xx или таймаута мог уже выполниться, и письмо ушло бы дважды.
+            safe = method == 'GET' or path.strip('/') == 'auth/getdata'
+
             async def request():
                 retries = 0
                 while True:
@@ -231,9 +235,11 @@ def apply(*, timeout: int, blocked_host_ttl: int, fallback_proxy: str = "", back
                             **{key: value for key, value in kwargs.items() if value is not None})
                         return await self._client.send(req, follow_redirects=follow_redirects)
                     except httpx.ReadTimeout:
+                        if not safe:
+                            raise ServerUnavailable('Школьный сервер не ответил вовремя; запрос мог быть выполнен') from None
                         await asyncio.sleep(0.1)
                     except httpx.HTTPStatusError as exc:
-                        if not 500 <= exc.response.status_code < 600 or retries >= 3:
+                        if not safe or not 500 <= exc.response.status_code < 600 or retries >= 3:
                             raise
                         retries += 1
                         await asyncio.sleep(0.2 * retries)
