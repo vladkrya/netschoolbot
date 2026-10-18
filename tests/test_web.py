@@ -593,6 +593,13 @@ class TestNewFeatures:
         assert data == {"accent": "#a8434f", "theme": "dark", "weights": [1, 2, 1.5]}
         assert (await (await client.get(url, params={"token": token})).json())["data"] == data
 
+    async def test_halloween_choice_is_shared(self, client, token):
+        url = f"{BASE}/api/prefs"
+        response = await client.post(url, params={"token": token}, json={"halloween": "off", "halloweenAccent": "#8E4FD6"})
+        assert (await response.json())["data"] == {"halloween": "off", "halloweenAccent": "#8e4fd6"}
+        for bad in ({"halloween": "yes"}, {"halloweenAccent": "orange"}):
+            assert (await client.post(url, params={"token": token}, json=bad)).status == 400
+
     async def test_saved_accents(self, client, token):
         url = f"{BASE}/api/prefs"
         response = await client.post(url, params={"token": token}, json={"accents": ["#123ABC", "#123abc", "#00ff00"]})
