@@ -300,14 +300,16 @@ async def test_app_alerts_when_server_is_back_and_on_update(db, users):
     assert sent == []  # повторно не пишем
 
 
-async def test_back_up_only_when_diary_opens_again(db, users):
-    """Страница входа отвечает, а дневник не грузится: «заработал» не шлём,
-    пока фоновая проверка оценок на этом сервере не пройдёт."""
-    from app.status.alerts import SgoAlerts
+async def test_back_up_only_when_subscribers_own_diary_opens(db, users):
+    """Страница входа отвечает, а журнал не грузится: «заработал» не шлём,
+    пока не загрузится дневник самого подписчика."""
+    from app.status.alerts import DIARY_EVERY_S, SgoAlerts
     from tests.test_repositories import make_user
 
     await users.save(make_user())
     sent: list[str] = []
+    opens = {"v": False}
+    tries: list[int] = []
 
     async def deliver(telegram_id, text, title, body):
         sent.append(text)
@@ -315,21 +317,28 @@ async def test_back_up_only_when_diary_opens_again(db, users):
     async def bot_route(url):
         return "5.58.7"  # logindata отвечает
 
+    async def diary_opens(telegram_id):
+        tries.append(telegram_id)
+        if not opens["v"]:
+            raise TimeoutError
+        return True
+
     service, now = make_service(db)
-    alerts = SgoAlerts(service, SgoStatusRepository(db), deliver, fetch=bot_route, clock=lambda: now[0])
+    alerts = SgoAlerts(service, SgoStatusRepository(db), deliver, fetch=bot_route, clock=lambda: now[0],
+                       diary_opens=diary_opens)
     url = f"https://{DOWN}/"
-    info = await alerts.subscribe(1, url, "up", True)
-    assert info["subscribed"]["up"]  # принимаем, хоть страница входа и отвечает
+    assert (await alerts.subscribe(1, url, "up", True))["subscribed"]["up"]
+    await alerts.check()
+    assert sent == [] and tries == [1]
     now[0] += 60
     await alerts.check()
-    assert sent == []
-    await alerts.record_check(url, ok=False)
+    assert tries == [1]  # дневник пробуем не чаще раза в 5 минут
+    opens["v"] = True
+    now[0] += DIARY_EVERY_S
     await alerts.check()
-    assert sent == []
-    now[0] += 60
-    await alerts.record_check(url, ok=True)  # дневник открылся
+    assert len(sent) == 1 and "дневник загрузился" in sent[0]
     await alerts.check()
-    assert len(sent) == 1 and "снова работает" in sent[0]
+    assert len(sent) == 1  # подписка снята
 
 
 async def test_back_up_when_login_page_returns(db, users):

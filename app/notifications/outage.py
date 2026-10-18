@@ -43,7 +43,6 @@ class OutageMonitor:
         self._clock = clock
         self._hosts: dict[str, _Host] = {}
         self._versions: VersionTracker | None = None
-        self._listeners: list[Callable[[str, bool], Awaitable[None]]] = []
 
     def attach(self, send: Callable[[str], Awaitable[None]]) -> None:
         self._send = send
@@ -53,20 +52,10 @@ class OutageMonitor:
         после простоя — сервер часто возвращается уже обновлённым."""
         self._versions = versions
 
-    def listen(self, listener: Callable[[str, bool], Awaitable[None]]) -> None:
-        """Сообщать итог каждой проверки (адрес школы, удалась ли) — так
-        подписки «когда заработает» узнают, что дневник снова открывается."""
-        self._listeners.append(listener)
-
     async def record(self, school_url: str, *, ok: bool, server_down: bool = False) -> None:
         """Итог проверки. Ошибки не про сервер (вход, неизвестные) не считаем."""
         if not ok and not server_down:
             return
-        for listener in self._listeners:
-            try:
-                await listener(school_url, ok)
-            except Exception as exc:  # noqa: BLE001 — проверку не роняем
-                logger.warning("Слушатель итогов проверок упал: %s", exc)
         host = urlparse(school_url).hostname or school_url
         state = self._hosts.setdefault(host, _Host())
         now = self._clock()

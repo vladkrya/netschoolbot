@@ -215,6 +215,19 @@ const NOTIFY_NOTES = {
 // Отметки посещаемости есть только в мобильном API.
 const MOBILE_ONLY = new Set(['absences']);
 
+/** «Сохранять файлы заданий» (бета): тумблер есть у админа, а у остальных —
+ *  когда админ открыл доступ всем (второй тумблер, виден только ему). */
+function keepFilesSection(keep) {
+  if (!keep?.available && !keep?.admin) return '';
+  return `<section class="drawer-section">
+      <div class="drawer-heading">Файлы заданий <span class="beta-badge">бета</span></div>
+      ${keep.available ? `<label class="switch-row"><span>Сохранять файлы заданий<span class="muted small switch-note">файлы к Д/З хранятся ${keep.days || 14} дней и открываются, даже когда «Сетевой город» не работает</span></span>
+        <input type="checkbox" switch class="switch" id="keepFiles" ${keep.on ? 'checked' : ''}></label>` : ''}
+      ${keep.admin ? `<label class="switch-row"><span>Открыть всем<span class="muted small switch-note">видно только вам: без этого тумблер «Сохранять файлы» есть только у вас</span></span>
+        <input type="checkbox" switch class="switch" id="keepFilesAll" ${keep.all ? 'checked' : ''}></label>` : ''}
+    </section>`;
+}
+
 // Атрибут switch — системный переключатель: в Safari на iPhone он сам
 // тактильно щёлкает от касания (vibrate там нет, см. haptics.js).
 function toggle(key, label, on) {
@@ -804,6 +817,7 @@ function render() {
         <input type="checkbox" switch class="switch" id="bellsTab" ${showBells() ? 'checked' : ''}></label>`}`)}
     </section>
     ${isNewDesign() ? tabsSection() : ''}
+    ${readonly ? '' : keepFilesSection(data.keep_attachments)}
     ${readonly ? `<section class="drawer-section">
       <div class="drawer-heading">Уведомления</div>
       <div class="muted small">Уведомления об этом ученике приходят, если он разрешил их в приглашении. Отказаться — «Родные».</div>
@@ -971,6 +985,26 @@ function bindDrawer() {
       }
     })
   );
+  for (const [id, key] of [['keepFiles', 'on'], ['keepFilesAll', 'all']]) {
+    $(id)?.addEventListener('change', async (event) => {
+      select();
+      const input = event.target;
+      input.disabled = true;
+      try {
+        const { data } = await api('/api/settings/keep-attachments', {
+          method: 'POST', body: JSON.stringify({ [key]: input.checked }),
+        });
+        state.profile.keep_attachments = data;
+        input.checked = Boolean(data[key]);
+      } catch (error) {
+        notify('error');
+        input.checked = !input.checked;
+        banner(error.message, true);
+      } finally {
+        input.disabled = false;
+      }
+    });
+  }
   $('sgoUpdates')?.addEventListener('change', async (event) => {
     select();
     const input = event.target;
