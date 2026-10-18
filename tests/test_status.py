@@ -341,6 +341,28 @@ async def test_back_up_only_when_subscribers_own_diary_opens(db, users):
     assert len(sent) == 1  # подписка снята
 
 
+async def test_subscribe_up_does_not_wait_for_server(db, users):
+    """«Сообщить, когда заработает» не ходит в лежащий сервер: раньше кнопка
+    в приложении гасла на 20 с, пока бот ждал версию, которая ей не нужна."""
+    from app.status.alerts import SgoAlerts
+    from tests.test_repositories import make_user
+
+    await users.save(make_user())
+    fetched: list[str] = []
+
+    async def bot_route(url):
+        fetched.append(url)
+        return "5.58.7"
+
+    service, now = make_service(db)
+    alerts = SgoAlerts(service, SgoStatusRepository(db), fetch=bot_route, clock=lambda: now[0])
+    url = f"https://{DOWN}/"
+    assert (await alerts.subscribe(1, url, "up", True))["subscribed"]["up"]
+    assert fetched == []
+    await alerts.subscribe(1, url, "updates", True)
+    assert fetched == [url]  # версию для «об обновлениях» запоминаем
+
+
 async def test_back_up_when_login_page_returns(db, users):
     from app.status.alerts import SgoAlerts
     from tests.test_repositories import make_user

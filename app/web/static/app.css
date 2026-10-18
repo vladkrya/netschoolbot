@@ -1909,6 +1909,7 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
 }
 .survey-score.on { background: var(--primary); color: #fff; }
 #surveySend:disabled { opacity: .5; }
+.halloween-news { margin: 0 0 12px; padding-left: 4px; list-style: none; display: grid; gap: 6px; }
 .survey-decline { color: var(--text2); border-color: var(--border); }
 .survey-ends { display: flex; justify-content: space-between; margin-bottom: 14px; font-size: 12px; color: var(--text2); }
 .chat-react-row { display: flex; justify-content: space-between; gap: 6px; margin-bottom: 12px; }

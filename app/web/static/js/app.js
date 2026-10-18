@@ -11,7 +11,8 @@ import { loadTotals } from './totals.js';
 import { chatEvents } from './chat-live.js';
 import { initMail, loadMail, openAnnouncements, openCompose, selectChats } from './mail.js';
 import {
-  applyAccent, applyDesign, applyHalloween, applyScheduleTab, initFullscreen, isNewDesign, navIcon, setHalloweenAccess,
+  applyAccent, applyDesign, applyHalloween, applyScheduleTab, halloweenAvailable, initFullscreen, isHalloween,
+  isNewDesign, navIcon, setHalloweenAccess,
 } from './appearance.js';
 import { ICONS } from './icons.js';
 import { dropInstallHints, initInstallPrompt } from './install.js';
@@ -620,6 +621,52 @@ async function showChatLaunchNotice() {
   } catch { /* Без связи окно дождётся следующего открытия приложения. */ }
 }
 
+/** Разовое окно: всем включили хеллоуинское оформление — что появилось,
+ *  где выключить и куда писать об ошибках. */
+async function showHalloweenNotice() {
+  // Уже выключил сам (профиль пришёл раньше) — рассказывать незачем.
+  if (demo || (halloweenAvailable() && !isHalloween())) return;
+  await sheetFree();
+  let data;
+  try {
+    ({ data } = await api('/api/notices/halloween', { method: 'POST' }));
+  } catch { return; /* Без связи покажем при следующем открытии. */ }
+  if (!data.show) return;
+  await sheetFree();
+  const settings = isNewDesign() ? 'вкладке <b>Настройки</b>' : 'меню <b>☰</b>';
+  const feedback = data.bug_report
+    ? 'в настройках, внизу — <b>«Сообщить об ошибке или идее»</b>'
+    : 'во вкладке <b>Сообщения → Чаты</b> — там можно написать админу';
+  const body = openSheet('🎃 Хеллоуин в дневнике', `
+    <p>До 31 октября приложение оделось к празднику. Что появилось:</p>
+    <ul class="halloween-news">
+      <li>🌙 ночная тема с луной, мерцающими звёздами и туманом внизу экрана;</li>
+      <li>🕸️ паутина с пауком и летучие мыши в шапке — а в сам Хеллоуин их станет больше;</li>
+      <li>🦇 иногда через весь экран пролетает большая летучая мышь;</li>
+      <li>🧙 праздничные иконки вкладок: тыква, котёл, книга заклинаний, привидение, паучок;</li>
+      <li>🎨 свои цвета: тыквенный, ведьмин, зелье, кровавая луна, призрачный, костяной.</li>
+    </ul>
+    <p>Не нравится? Выключить можно в ${settings} → <b>Оформление</b> → <b>🎃 Хеллоуин</b>. Ваша тема и цвет вернутся.</p>
+    <p class="muted small">Нашли ошибку или есть идея — напишите ${feedback}.</p>
+    <div class="chat-actions">
+      <button class="btn" id="halloweenOk">Класс 🎃</button>
+      <button class="btn outline" id="halloweenFeedback">${data.bug_report ? 'Сообщить об ошибке или идее' : 'Написать админу'}</button>
+    </div>`);
+  body.querySelector('#halloweenOk').addEventListener('click', () => {
+    tap('light');
+    closeSheet();
+  });
+  body.querySelector('#halloweenFeedback').addEventListener('click', () => {
+    closeSheet();
+    if (data.bug_report) {
+      openBugReport('bug');
+    } else {
+      selectChats();
+      switchTab('mail');
+    }
+  });
+}
+
 /** Ждать, пока закроется уже открытая панель (объявление, другой опрос). */
 async function sheetFree() {
   while (!$('sheet').hidden) {
@@ -735,7 +782,7 @@ async function start() {
     }
     // Флаг «видел» уже пришёл с сервера — окошко не повторится на другом устройстве.
     dropInstallHints();
-    if (!isReadOnly()) showChatLaunchNotice().then(showSurvey);
+    if (!isReadOnly()) showChatLaunchNotice().then(showHalloweenNotice).then(showSurvey);
     reportVisit();
   });
   offerPushOnFirstLaunch();

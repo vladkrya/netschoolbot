@@ -123,15 +123,33 @@ class TestAuth:
         assert response.status == 200
         assert (await response.json())["data"]["name"] == "Иванов И."
 
-    async def test_halloween_only_for_admin(self, client, app_context, users, token):
-        # В тестовых настройках TG_ADMIN_ID = 1.
-        response = await client.get(f"{BASE}/api/profile", params={"token": token})
-        assert (await response.json())["data"]["halloween"] is True
+    async def test_halloween_for_everyone_in_season(self, client, app_context, users, token):
+        from app.web.api import halloween_season
+
         await users.save(make_user(2, student_name="Петров П."))
         other = await app_context.miniapp.issue_token(2)
-        client.session.cookie_jar.clear()
         response = await client.get(f"{BASE}/api/profile", params={"token": other})
-        assert (await response.json())["data"]["halloween"] is False
+        user = await users.get(2)
+        assert (await response.json())["data"]["halloween"] is halloween_season(user.today())
+
+    def test_halloween_season(self):
+        from app.web.api import halloween_season
+
+        assert halloween_season(dt.date(2026, 10, 18))
+        assert halloween_season(dt.date(2026, 10, 31))
+        assert halloween_season(dt.date(2026, 11, 7))
+        assert not halloween_season(dt.date(2026, 11, 8))
+        assert not halloween_season(dt.date(2026, 10, 14))
+        assert not halloween_season(dt.date(2026, 6, 1))
+
+    async def test_halloween_notice_once(self, client, app_context, token, monkeypatch):
+        from app.web import api as web_api
+
+        monkeypatch.setattr(web_api, "halloween_season", lambda today: True)
+        response = await client.post(f"{BASE}/api/notices/halloween", params={"token": token})
+        assert (await response.json())["data"]["show"] is True
+        response = await client.post(f"{BASE}/api/notices/halloween", params={"token": token})
+        assert (await response.json())["data"]["show"] is False
 
     async def test_token_accepted_in_header(self, client, token):
         response = await client.get(f"{BASE}/api/profile", headers={"X-Netschool-Token": token})
