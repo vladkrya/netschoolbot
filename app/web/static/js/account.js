@@ -63,8 +63,8 @@ function heroHtml() {
       <p class="ld-lead">Оценки, домашние задания и расписание из вашего электронного дневника
         в одном красивом приложении. Работает в Telegram, в браузере и на домашнем экране телефона.</p>
       <div class="ld-actions">
-        <a class="btn ld-demo" href="${base}/demo">▶ Демо-режим</a>
-        <a class="btn outline ld-status" href="${base}/status"><i class="ld-status-dot" aria-hidden="true"></i>Статус серверов</a>
+        <button class="btn ld-demo" type="button" data-landing-route="demo">▶ Демо-режим</button>
+        <button class="btn outline ld-status" type="button" data-landing-route="status"><i class="ld-status-dot" aria-hidden="true"></i>Статус серверов</button>
       </div>
     </section>
     <div class="ld-preview" aria-hidden="true">
@@ -114,6 +114,15 @@ function landing(html) {
 }
 
 async function bindLanding(root) {
+  // В iOS WebView обычные ссылки внутри полноэкранного экрана входа иногда
+  // остаются без click после касания. Кнопка и явный переход работают и в
+  // браузере, и в Telegram, а base сохраняет путь установки приложения.
+  root.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-landing-route]');
+    const route = button?.dataset.landingRoute;
+    if (!button || !root.contains(button) || !['demo', 'status'].includes(route)) return;
+    location.assign(`${base}/${route}`);
+  });
   try {
     landingConfig ??= (await api('/api/account/config')).data;
   } catch {
