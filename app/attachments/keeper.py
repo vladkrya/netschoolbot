@@ -5,7 +5,7 @@
 файлы к домашке нужны как раз вечером накануне, когда сервер чаще всего лежит.
 
 Теперь проверка оценок, увидев задания, отдаёт их сюда; файлы к заданиям на
-ближайшие дни скачиваются в фоне — по одному, с паузой, чтобы не нагружать
+14 дней назад и вперёд скачиваются в фоне — по одному, с паузой, чтобы не нагружать
 школьный сервер, — и хранятся `keep_attachments_days` дней (по умолчанию 14).
 Файл к заданию у всего класса общий, поэтому на диске он один на сервер
 школы, режим API и номер вложения; отдаётся только тем, у кого это вложение
@@ -37,12 +37,11 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("netschoolbot.attachments")
 
-# Задания со сроком в этих пределах (дни от сегодня): прошлые уже не нужны,
-# а на месяц вперёд учитель всё равно может поменять.
-DUE_FROM_DAYS = -1
+# Задания со сроком в пределах двух недель назад и вперёд от сегодня.
+DUE_FROM_DAYS = -14
 DUE_TO_DAYS = 14
 # Файлы больше этого не храним: видео и архивы съели бы весь диск.
-MAX_FILE_BYTES = 25 * 1024 * 1024
+MAX_FILE_BYTES = 50 * 1024 * 1024
 DOWNLOAD_TIMEOUT_S = 100
 # Скачиваем по одному на весь бот и с паузой: это фоновая работа, школьный
 # сервер не должен её заметить.
@@ -115,7 +114,8 @@ class AttachmentKeeper:
         try:
             if self._wanted is not None and not await self._wanted(user):
                 return
-            await self._save(key, payload)
+            if not await self._saved(key):
+                await self._save(key, payload)
             await self._repo.grant(user.telegram_id, key[0], key[1], [attachment_id])
         except Exception as exc:  # noqa: BLE001 — копия вторична
             logger.debug("Вложение %s не сохранено: %s", attachment_id, exc)
@@ -150,12 +150,11 @@ class AttachmentKeeper:
             saved = 0
             for attachment_id in ids:
                 key = (host, mode, attachment_id)
-                if key in self._skip:
-                    continue
-                row = await self._repo.saved(*key)
-                if row is not None and self._clock() - row["saved_at"] <= self._ttl and self._path(key).exists():
-                    continue
                 async with self._semaphore:
+                    # Проверяем внутри блокировки: пока ждали, файл мог
+                    # сохранить одноклассник или открывший его пользователь.
+                    if key in self._skip or await self._saved(key):
+                        continue
                     try:
                         payload = await asyncio.wait_for(
                             self._diary.download_attachment(user, attachment_id), DOWNLOAD_TIMEOUT_S)
@@ -187,6 +186,11 @@ class AttachmentKeeper:
             raise
         except Exception as exc:  # noqa: BLE001 — фоновая работа не роняет проверку
             logger.warning("Сохранение вложений %s не удалось: %s", user.telegram_id, exc)
+
+    async def _saved(self, key: tuple[str, str, int]) -> bool:
+        row = await self._repo.saved(*key)
+        return (row is not None and self._clock() - row["saved_at"] <= self._ttl
+                and self._path(key).exists())
 
     async def _save(self, key: tuple[str, str, int], payload: bytes) -> None:
         path = self._path(key)

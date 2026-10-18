@@ -50,7 +50,7 @@ async def test_files_are_kept_for_classmates_and_served_when_server_is_down(db, 
     for user in (alice, bob, stranger):
         await users.save(user)
 
-    keeper.offer(alice, [homework(1, 2, 3), homework(9, due=dt.date.today() - dt.timedelta(days=10))])
+    keeper.offer(alice, [homework(1, 2, 3), homework(9, due=dt.date.today() - dt.timedelta(days=15))])
     await settle(keeper)
     assert diary.calls == [1, 2, 3]  # старое задание не трогаем; большой файл скачан, но не сохранён
     keeper.offer(bob, [homework(1, 2)])
@@ -66,6 +66,70 @@ async def test_files_are_kept_for_classmates_and_served_when_server_is_down(db, 
     assert await keeper.get(alice, 1) is None  # две недели прошли
     await keeper.prune(force=True)
     assert not list(tmp_path.glob("*-web-1"))
+
+
+async def test_download_window_includes_two_weeks_back_and_forward(db, users, tmp_path, monkeypatch):
+    monkeypatch.setattr("app.attachments.keeper.PAUSE_S", 0)
+    keeper, diary = make(db, tmp_path, [1_000_000.0])
+    offsets = [-15, -14, -10, 0, 14, 15]
+    diary.files = {i: f"file-{i}".encode() for i in range(1, 7)}
+    user = make_user(1)
+    await users.save(user)
+    keeper.offer(user, [homework(i, due=dt.date.today() + dt.timedelta(days=offset))
+                        for i, offset in enumerate(offsets, 1)])
+    await settle(keeper)
+    assert diary.calls == [2, 3, 4, 5]
+    assert await keeper.get(user, 2) == b"file-2"
+    assert await keeper.get(user, 5) == b"file-5"
+    assert await keeper.get(user, 1) is None
+    assert await keeper.get(user, 6) is None
+
+
+async def test_opened_file_at_50_mib_is_saved_but_larger_is_skipped(db, users, tmp_path):
+    keeper, _ = make(db, tmp_path, [1_000_000.0])
+    user = make_user(1)
+    await users.save(user)
+    payload = b"x" * (50 * 1024 * 1024)
+    await keeper.store(user, 1, payload)
+    assert await keeper.get(user, 1) == payload
+    await keeper.store(user, 2, payload + b"x")
+    assert await keeper.get(user, 2) is None
+
+
+async def test_concurrent_classmates_download_shared_attachment_once(db, users, tmp_path, monkeypatch):
+    monkeypatch.setattr("app.attachments.keeper.PAUSE_S", 0)
+    keeper, diary = make(db, tmp_path, [1_000_000.0])
+    alice, bob = make_user(1), make_user(2)
+    for user in (alice, bob):
+        await users.save(user)
+    original_download = diary.download_attachment
+
+    async def slow_download(user, attachment_id):
+        await asyncio.sleep(0.05)  # второй ученик проверяется, пока первый ещё скачивает
+        return await original_download(user, attachment_id)
+
+    diary.download_attachment = slow_download
+    for user in (alice, bob):
+        keeper.offer(user, [homework(1)])
+    await settle(keeper)
+    assert diary.calls == [1]
+    assert await keeper.get(alice, 1) == await keeper.get(bob, 1) == b"pdf-1"
+    assert len(list(tmp_path.glob("*-web-*"))) == 1
+
+
+async def test_opened_shared_copy_is_not_rewritten(db, users, tmp_path):
+    now = [1_000_000.0]
+    keeper, _ = make(db, tmp_path, now)
+    alice, bob = make_user(1), make_user(2)
+    for user in (alice, bob):
+        await users.save(user)
+    await keeper.store(alice, 1, b"shared-file")
+    now[0] += 60
+    await keeper.store(bob, 1, b"shared-file")
+    row = await keeper._repo.saved(*keeper._key(alice, 1))
+    assert row["saved_at"] == 1_000_000.0
+    assert await keeper.get(bob, 1) == b"shared-file"
+    assert len(list(tmp_path.glob("*-web-*"))) == 1
 
 
 async def test_server_down_postpones_until_next_check(db, users, tmp_path):
