@@ -219,9 +219,16 @@ async def run(settings: Settings, args: argparse.Namespace) -> int:
             await bot.send_message(telegram_id, text)
 
     # «Заработал ли» — тем же путём, каким бот ходит за дневником.
+    async def diary_opens(telegram_id: int) -> bool:
+        # Текущая неделя дневника — тот же запрос, что делает приложение.
+        user = await context.users.get(telegram_id)
+        if user is None or not user.school.configured:
+            return False
+        await context.diary.fetch_diary(user, weeks_back=0, weeks_forward=0)
+        return True
+
     context.sgo_alerts = SgoAlerts(context.status, SgoStatusRepository(context.db), deliver_sgo,
-                                   fetch=logindata_fetcher(context))
-    context.watchers.outages.listen(context.sgo_alerts.record_check)
+                                   fetch=logindata_fetcher(context), diary_opens=diary_opens)
     # Вложения заданий — на диск заранее, чтобы открывались при простое СГО.
     if context.attachments.enabled:
         context.watchers.homework_seen = context.attachments.offer
