@@ -12,8 +12,8 @@ from aiogram.types import BotCommand, MenuButtonCommands, MenuButtonWebApp, WebA
 
 from ..context import AppContext
 from ..settings import Settings
-from .handlers import account, admin, auth, family, menu, settings as settings_handlers
-from .handlers.common import ContextMiddleware
+from .handlers import account, admin, auth, family, groups, menu, settings as settings_handlers
+from .handlers.common import AppOnlyMiddleware, ContextMiddleware
 
 logger = logging.getLogger("netschoolbot.bot")
 
@@ -64,10 +64,13 @@ def create_dispatcher(context: AppContext) -> Dispatcher:
     middleware = ContextMiddleware(context)
     dispatcher.message.middleware(middleware)
     dispatcher.callback_query.middleware(middleware)
+    # Бота добавили в группу: пользователя под того, кто добавил, не заводим.
+    dispatcher.my_chat_member.middleware(AppOnlyMiddleware(context))
 
     # Порядок важен: auth перехватывает сообщения внутри диалога входа,
     # поэтому регистрируется раньше общего меню.
     dispatcher.include_router(admin.router)
+    dispatcher.include_router(groups.router)
     dispatcher.include_router(account.router)
     dispatcher.include_router(family.router)
     dispatcher.include_router(auth.router)
