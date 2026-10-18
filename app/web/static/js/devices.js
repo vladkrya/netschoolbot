@@ -134,7 +134,7 @@ async function saveQr(data) {
   link.click();
 }
 
-/** «Добавить устройство»: ссылка на час и одно открытие, QR. Экран ждёт,
+/** «Добавить устройство»: ссылка на 15 минут и одно открытие, QR. Экран ждёт,
  *  пока её откроют, и показывает, какое устройство вошло. */
 async function openNewDevice(onConnected) {
   const body = pushScreen('Новое устройство');
@@ -151,7 +151,7 @@ async function openNewDevice(onConnected) {
     body.querySelector('[data-done]')?.addEventListener('click', () => popScreen());
     body.querySelector('[data-again]')?.addEventListener('click', create);
   };
-  const expired = () => finish('Ссылка истекла', 'Она действовала час. Создайте новую — старая уже ничего не открывает.');
+  const expired = () => finish('Ссылка истекла', 'Она действовала 15 минут. Создайте новую — старая уже ничего не открывает.');
 
   const show = (data) => {
     const external = initData && tg?.openLink;

@@ -292,16 +292,19 @@ async def index(request: web.Request) -> web.Response:
             entered = request.cookies["netschool_token"]  # обновили страницу — токен уже есть
         else:
             entered = await context.miniapp.issue_token(telegram_id, device=True)
-    # Ссылка с экрана «Добавить устройство»: открывается один раз. Повторное
-    # открытие (обновили страницу) пускает по cookie, которую поставили сейчас.
+    # Ссылка с экрана «Добавить устройство»: открывается один раз — токен
+    # уходит в cookie, а адрес сразу чистый. Погасший код в адресе (обновили
+    # страницу, добавили на экран «Домой») больше нигде не остаётся.
     if (
         (device_code := request.query.get("device"))
         and request.method == "GET"
         and not LINK_PREVIEWS.search(request.headers.get("User-Agent", ""))
-        and (issued := await context.miniapp.use_device_code(device_code))
     ):
-        entered = issued
-        await devices.touch(request, issued)
+        response = web.HTTPFound(f"{_base(request)}/" + ("?install=1" if request.query.get("install") == "1" else ""))
+        if issued := await context.miniapp.use_device_code(device_code):
+            await devices.touch(request, issued)
+            _set_token_cookie(request, response, issued)
+        raise response
     # Ссылка с токеном важнее cookie, но отозванный токен в ссылке (старая
     # иконка на домашнем экране после «Выйти») не мешает войти по cookie.
     token, user = "", None

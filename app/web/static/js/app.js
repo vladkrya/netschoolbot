@@ -937,7 +937,11 @@ async function start() {
 function registerWorker() {
   if (tg?.initData || demo || !token || !('serviceWorker' in navigator)) return;
   navigator.serviceWorker
-    .register(`${base}/sw.js?token=${encodeURIComponent(token)}`, { scope: `${base}/` })
+    // Адрес без токена: сервер его не читает, а новый адрес при каждом новом
+    // токене (вход по ссылке, иконка) переустанавливал worker, и на iPhone
+    // старый обрывал идущие запросы — «Не удалось подключиться к серверу
+    // приложения».
+    .register(`${base}/sw.js`, { scope: `${base}/` })
     .catch(() => { /* без worker приложение работает как раньше, только без офлайна */ });
 }
 

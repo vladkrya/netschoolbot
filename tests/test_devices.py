@@ -101,7 +101,7 @@ async def test_new_device_link_opens_once(client, token, app_context):
     url, code = data["url"], data["code"]
     assert "?device=" in url and "install=1" in url and token not in url and phone not in url
     assert data["qr"].startswith("data:image/png;base64,")
-    assert 3500 < data["expires"] - __import__("time").time() <= 3600
+    assert 850 < data["expires"] - __import__("time").time() <= 900
     assert (await post(client, phone, "/api/devices/new-link/status", {"code": code}))[1]["data"]["state"] == "waiting"
     # Превью в мессенджере ссылку не гасит.
     assert await open_link(client, url, "TelegramBot (like TwitterBot)") == ""

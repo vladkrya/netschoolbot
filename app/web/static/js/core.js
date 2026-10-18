@@ -422,7 +422,7 @@ async function request(path, options = {}) {
   if (watched) sgoRequests.add(controller);
   const slow = watched && !down ? setTimeout(sgoHint, SGO_SLOW_MS) : 0;
   const stuck = watched && !down ? setTimeout(() => sgoHint(true, true), SGO_STUCK_MS) : 0;
-  const { onFresh, onDelta, retried, ...init } = options;
+  const { onFresh, onDelta, retried, networkRetried, ...init } = options;
   let response;
   try {
     response = await fetch(base + path, {
@@ -432,6 +432,13 @@ async function request(path, options = {}) {
     if (controller.sgoDown) {
       throw Object.assign(new Error('«Сетевой город» сейчас не отвечает — попробуйте позже.'),
         { reason: 'server', sgoDown: true });
+    }
+    // Соединение оборвалось сразу (iPhone после сна, смена сети) — чтение
+    // повторяем один раз, прежде чем говорить, что сервер недоступен.
+    if (error.name !== 'AbortError' && !init.method && !networkRetried) {
+      clearTimeout(timer);
+      await new Promise((resolve) => setTimeout(resolve, 700));
+      return request(path, { ...options, networkRetried: true });
     }
     const failure = new Error(error.name === 'AbortError'
       ? 'Сервер приложения не ответил вовремя. Проверьте интернет и повторите попытку.'

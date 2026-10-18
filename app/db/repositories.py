@@ -1363,10 +1363,10 @@ class MiniappRepository:
         )
         return int(row["telegram_id"]) if row else None
 
-    DEVICE_TTL = 3600
+    DEVICE_TTL = 15 * 60
 
     async def issue_device_code(self, telegram_id: int) -> tuple[str, float]:
-        """Ссылка с экрана «Добавить устройство»: час и только одно открытие —
+        """Ссылка с экрана «Добавить устройство»: 15 минут и только одно открытие —
         её показывают на экране и QR-кодом, пересылать дальше незачем."""
         code, expires = secrets.token_urlsafe(24), time.time() + self.DEVICE_TTL
         async with self._db.transaction() as db:
