@@ -6,15 +6,13 @@
 * «Об обновлениях» (kind='updates') — постоянная: на сервере вышла новая
   версия «Сетевого города».
 
-«Заработал» — только когда видно, что дневник снова открывается:
-
-* фоновая проверка оценок кого-то из пользователей этого сервера прошла
-  (OutageMonitor сообщает сюда итог каждой проверки), или
-* страница входа (`/webapi/logindata` тем же путём, каким бот ходит за
-  дневником) после подписки не отвечала, а потом ответила.
-
-Просто «страница входа отвечает» — мало: бывает, что она открывается, а
-дневник — нет, и человек получил бы «заработал», когда ничего не работает.
+«Заработал» — только когда у самого подписчика открылся дневник: бот
+загружает текущую неделю его дневника тем же путём, что и приложение. Раньше
+хватало удачной фоновой проверки любого пользователя этого сервера — а она в
+мобильном режиме часто читает только ленту событий, не журнал: лента
+отвечала, журнал нет, и человеку приходило ложное «снова работает». Сначала
+дешёвая проверка страницы входа (`/webapi/logindata`): пока лежит она,
+дневник не трогаем.
 """
 
 from __future__ import annotations
@@ -45,20 +43,25 @@ Deliver = Callable[[int, str, str, str], Awaitable[None]]
 # Версия сервера школы маршрутом бота (sgo_version.logindata_fetcher).
 Fetch = Callable[[str], Awaitable[str]]
 FETCH_TIMEOUT_S = 20
+# Открывается ли дневник у человека (telegram_id) — main.py: неделя дневника.
+DiaryOpens = Callable[[int], Awaitable[bool]]
+DIARY_TIMEOUT_S = 60
+# Дневник подписчика пробуем не чаще этого: запрос тяжелее страницы входа.
+DIARY_EVERY_S = 5 * 60
 
 
 class SgoAlerts:
     def __init__(self, status: StatusService, repo: SgoStatusRepository, deliver: Deliver | None = None,
-                 fetch: Fetch | None = None, clock: Callable[[], float] = time.time) -> None:
+                 fetch: Fetch | None = None, clock: Callable[[], float] = time.time,
+                 diary_opens: DiaryOpens | None = None) -> None:
         self._status = status
         self._repo = repo
         self._deliver = deliver
         self._fetch = fetch
         self._clock = clock
-        # Когда проверка оценок на сервере в последний раз прошла.
-        self._diary_ok: dict[str, float] = {}
-        # Подписки «когда заработает», при которых страница входа уже не отвечала.
-        self._saw_down: set[tuple[int, str]] = set()
+        self._diary_opens = diary_opens
+        # Когда в последний раз пробовали открыть дневник подписчика.
+        self._diary_tried: dict[int, float] = {}
 
     def attach(self, deliver: Deliver) -> None:
         self._deliver = deliver
@@ -70,11 +73,6 @@ class SgoAlerts:
         data["subscribed"] = {kind: kind in kinds for kind in KINDS}
         return data
 
-    async def record_check(self, school_url: str, ok: bool) -> None:
-        """Итог фоновой проверки оценок (OutageMonitor): дневник открылся или нет."""
-        if ok:
-            self._diary_ok[host_of(school_url)] = self._clock()
-
     async def subscribe(self, telegram_id: int, url: str, kind: str, on: bool) -> dict:
         """Включить или снять подписку. Возвращает то же, что info."""
         if kind not in KINDS:
@@ -85,9 +83,7 @@ class SgoAlerts:
             return await self.info(telegram_id, url)
         # «Когда заработает» принимаем всегда: человек просит после того,
         # как дневник не загрузился, — значит, для него сервер не работает.
-        ok, version = await self._probe(url)
-        if kind == "up" and not ok:
-            self._saw_down.add((telegram_id, host))
+        _, version = await self._probe(url)
         await self._repo.alert_subscribe(telegram_id, host, url, kind, version, self._clock())
         return await self.info(telegram_id, url)
 
@@ -126,17 +122,11 @@ class SgoAlerts:
             ok, version = await self._probe(rows[0]["url"])
             region = html.escape(self._status.region(host) or host)
             for row in rows:
-                key = (row["telegram_id"], host)
-                if row["kind"] == "up" and not ok:
-                    self._saw_down.add(key)
-                if row["kind"] == "up" and (
-                    self._diary_ok.get(host, 0) > row["created_at"] or (ok and key in self._saw_down)
-                ):
-                    self._saw_down.discard(key)
+                if row["kind"] == "up" and ok and await self._opens(row["telegram_id"]):
                     await self._send(
                         row["telegram_id"],
-                        f"✅ Сервер «Сетевого города» ({region}) снова работает — можно заходить в дневник.",
-                        "«Сетевой город» снова работает", f"{region}: сервер отвечает",
+                        f"✅ «Сетевой город» ({region}) снова работает — ваш дневник загрузился, можно заходить.",
+                        "«Сетевой город» снова работает", f"{region}: дневник загружается",
                     )
                     await self._repo.alert_unsubscribe(row["telegram_id"], host, "up")
                 elif row["kind"] == "updates" and version and version != row["version"]:
@@ -148,6 +138,26 @@ class SgoAlerts:
                             "«Сетевой город» обновился", f"{region}: версия {version}",
                         )
                     await self._repo.alert_seen_version(row["telegram_id"], host, version)
+
+    async def _opens(self, telegram_id: int) -> bool:
+        """Загружается ли дневник у этого человека. Без проверки дневника
+        (тесты, страница без бота) — достаточно страницы входа."""
+        if self._diary_opens is None:
+            return True
+        now = self._clock()
+        if now - self._diary_tried.get(telegram_id, 0) < DIARY_EVERY_S:
+            return False
+        self._diary_tried[telegram_id] = now
+        try:
+            opened = await asyncio.wait_for(self._diary_opens(telegram_id), DIARY_TIMEOUT_S)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001 — не открылся, это и есть ответ
+            logger.info("Дневник %s пока не открывается: %s", telegram_id, type(exc).__name__)
+            return False
+        if opened:
+            self._diary_tried.pop(telegram_id, None)
+        return bool(opened)
 
     async def _send(self, telegram_id: int, text: str, title: str, body: str) -> None:
         if self._deliver is None:

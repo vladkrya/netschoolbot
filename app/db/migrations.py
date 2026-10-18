@@ -718,6 +718,33 @@ MIGRATIONS: list[str] = [
         PRIMARY KEY (telegram_id, host, kind)
     );
     """,
+    # 44 — вложения заданий, скачанные заранее (attachments/keeper.py): файл
+    # один на сервер школы, режим API и номер вложения — у всего класса он
+    # общий, — а отдаётся только тем, у кого это вложение есть в заданиях.
+    """
+    CREATE TABLE kept_attachments (
+        host TEXT NOT NULL,
+        mode TEXT NOT NULL,
+        attachment_id INTEGER NOT NULL,
+        size INTEGER NOT NULL,
+        saved_at REAL NOT NULL,
+        PRIMARY KEY (host, mode, attachment_id)
+    );
+    CREATE INDEX idx_kept_attachments_saved ON kept_attachments(saved_at);
+    CREATE TABLE kept_attachment_access (
+        telegram_id INTEGER NOT NULL REFERENCES users(telegram_id) ON DELETE CASCADE,
+        host TEXT NOT NULL,
+        mode TEXT NOT NULL,
+        attachment_id INTEGER NOT NULL,
+        PRIMARY KEY (telegram_id, host, mode, attachment_id)
+    );
+    -- Переключатели на весь бот, которые админ меняет из приложения
+    -- (например, «сохранение файлов — всем»).
+    CREATE TABLE app_flags (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+    );
+    """,
 ]
 
 

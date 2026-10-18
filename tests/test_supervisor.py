@@ -120,8 +120,7 @@ async def test_run_exits_nonzero_when_web_crashes(monkeypatch, tmp_path):
     stopped: list[str] = []
 
     class FakeWatchers:
-        outages = types.SimpleNamespace(attach=lambda *_: None, track_versions=lambda *_: None,
-                                        listen=lambda *_: None)
+        outages = types.SimpleNamespace(attach=lambda *_: None, track_versions=lambda *_: None)
         notifier = None
 
         def attach_notifier(self, _):
@@ -133,6 +132,7 @@ async def test_run_exits_nonzero_when_web_crashes(monkeypatch, tmp_path):
     class FakeContext:
         watchers = FakeWatchers()
         miniapp = users = db = family = notes = None
+        attachments = types.SimpleNamespace(enabled=False)
 
         async def shutdown(self):
             stopped.append("context")
@@ -168,7 +168,7 @@ async def test_run_exits_nonzero_when_web_crashes(monkeypatch, tmp_path):
                         lambda *_, **__: types.SimpleNamespace(run=forever))
     from app.status import alerts as status_alerts
     monkeypatch.setattr(status_alerts, "SgoAlerts",
-                        lambda *_, **__: types.SimpleNamespace(run=forever, record_check=None))
+                        lambda *_, **__: types.SimpleNamespace(run=forever))
     monkeypatch.setattr(server, "start_web", lambda *_: crashing_web())
     monkeypatch.setattr(main, "cleanup_sessions", lambda _context: forever())
     monkeypatch.setattr(main, "restore_esia_sessions", lambda _context: asyncio.sleep(0))

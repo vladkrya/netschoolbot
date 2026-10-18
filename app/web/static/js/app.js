@@ -154,6 +154,9 @@ function syncHeaderHeight() {
  *  дальше с того же угла, пока идёт запрос. */
 const PULL_ARM = 80;
 const RING = 2 * Math.PI * 11;
+// Насколько опустить кружок, чтобы его центр лёг на полосу загрузки под
+// шапкой: индикатор стоит на 34px выше её края, кружок — 36px.
+const MERGE_Y = 16;
 
 function bindPullToRefresh() {
   const indicator = $('pullIndicator');
@@ -161,7 +164,6 @@ function bindPullToRefresh() {
       <circle class="pull-track" cx="15" cy="15" r="11"/><circle class="pull-arc" cx="15" cy="15" r="11"/></svg></span></span>
     <span class="pull-text" aria-live="polite"></span>`;
   const ring = indicator.querySelector('.pull-ring');
-  const spin = indicator.querySelector('.pull-spin');
   const arc = indicator.querySelector('.pull-arc');
   const text = indicator.querySelector('.pull-text');
   arc.style.strokeDasharray = String(RING);
@@ -223,17 +225,22 @@ function bindPullToRefresh() {
       return;
     }
     // Данные остаются на экране, пока идёт запрос, и меняются на месте —
-    // без скелетона и без повторной анимации появления.
+    // без скелетона и без повторной анимации появления. Кружок не крутится
+    // отдельно, а замыкается, поднимается к полосе загрузки под шапкой и
+    // растекается в неё: дальше идёт одна полоса, а не два индикатора.
     busy = true;
-    ring.style.transition = 'transform .25s var(--ease)';
-    ring.style.transform = `translateY(${PULL_ARM * 0.6}px) rotate(270deg)`;
-    arc.style.transition = 'stroke-dashoffset .4s var(--ease)';
-    arc.style.strokeDashoffset = String(RING * 0.25);
-    spin.classList.add('busy');
+    arc.style.transition = 'stroke-dashoffset .15s var(--ease)';
+    arc.style.strokeDashoffset = '0';
+    ring.style.transition = 'transform .45s var(--ease), opacity .3s ease-in .15s';
+    // Поворот тот же, что в конце жеста (270°), — иначе кружок, раскручиваясь,
+    // сплющивался бы вкось. В повёрнутых осях «ширина» — это вторая ось.
+    ring.style.transform = `translateY(${MERGE_Y}px) rotate(270deg) scale(.08, 3)`;
+    ring.style.opacity = '0';
     text.textContent = 'Обновляю…';
     state.refreshing = true;
     state.refreshFailed = false;
     syncStarted();
+    const merged = new Promise((resolve) => setTimeout(resolve, 450));
     try {
       await quietly(() => TABS[state.tab](true));
     } finally {
@@ -242,21 +249,12 @@ function bindPullToRefresh() {
     }
     const failed = state.refreshFailed || document.querySelector('.panel.active .error-card');
     notify(failed ? 'error' : 'success');
-    // Кружок замыкается и тает — с того угла, где крутился.
-    arc.style.strokeDashoffset = '0';
     text.textContent = failed ? 'Не удалось обновить' : 'Обновлено';
-    setTimeout(() => {
-      ring.style.transition = 'opacity .25s, transform .25s';
-      ring.style.opacity = '0';
-      ring.style.transform += ' scale(.6)';
-      setTimeout(() => {
-        spin.classList.remove('busy');
-        arc.style.transition = '';
-        text.textContent = '';
-        hide();
-        busy = false;
-      }, 260);
-    }, 300);
+    await merged;
+    arc.style.transition = '';
+    hide();
+    setTimeout(() => { text.textContent = ''; }, 1000);
+    busy = false;
   };
   document.addEventListener('touchend', onPullEnd, { passive: true });
   const onPullCancel = () => {

@@ -117,7 +117,10 @@ function pickDay() {
 }
 
 export async function loadDay(force = false) {
-  if (!state.date || autoDay) state.date = isoToday();
+  // Тот же выбор дня, что и после загрузки: раньше на время запроса экран
+  // прыгал на «сегодня» — и при обновлении в выходной появлялись спрятанные
+  // суббота и воскресенье, пока школа не ответит.
+  if (!state.date || autoDay) state.date = pickDay();
   renderHeader();
   const container = $('dayContent');
   if (force || !loadedWeeks.has(weekOffsetOf(state.date))) {

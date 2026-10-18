@@ -303,6 +303,12 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .login-failed-actions { display: flex; gap: 8px; margin-top: 10px; }
 .login-failed-actions .btn { flex: 1; margin: 0; }
 #loginFailed .btn.outline { background: rgba(255, 255, 255, .55); color: #b71c1c; border: 1.5px solid currentColor; box-shadow: none; }
+/* Пометка «бета» у возможностей, которые пока открыты не всем. */
+.beta-badge {
+  display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 999px; vertical-align: middle;
+  font-size: 11px; font-weight: 700; letter-spacing: .02em; text-transform: uppercase;
+  color: var(--primary); background: color-mix(in srgb, var(--primary) 14%, transparent);
+}
 /* Сервер «Сетевого города» школы лежит (sgo.js). */
 .banner.sgo-down { background: #fff8e1; color: #5d4037; z-index: 71; }
 .banner.sgo-down p { margin: 0 0 4px; }

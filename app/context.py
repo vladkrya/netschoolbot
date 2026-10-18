@@ -15,6 +15,7 @@ from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from .attachments.keeper import AttachmentKeeper
     from .caldav.service import CaldavService
     from .domain.models import User
     from .status.alerts import SgoAlerts
@@ -78,6 +79,8 @@ class AppContext:
     status: StatusService | None = None
     # Подписки из приложения: «когда заработает», «об обновлениях» (status/alerts.py).
     sgo_alerts: SgoAlerts | None = None
+    # Вложения заданий, скачанные заранее (attachments/keeper.py).
+    attachments: AttachmentKeeper | None = None
 
     def __post_init__(self) -> None:
         if self.family is None:
@@ -99,6 +102,17 @@ class AppContext:
             from .status.alerts import SgoAlerts
 
             self.sgo_alerts = SgoAlerts(self.status, SgoStatusRepository(self.db))
+        if self.attachments is None:
+            from .attachments.keeper import AttachmentKeeper
+            from .db.repositories import KeptAttachmentRepository
+
+            netschool = self.settings.netschool
+            self.attachments = AttachmentKeeper(
+                # Папка — по текущим настройкам: в тестах data_dir меняют после сборки.
+                KeptAttachmentRepository(self.db), self.diary, lambda: self.settings.data_dir / "attachments",
+                days=netschool.keep_attachments_days, max_bytes=netschool.keep_attachments_mb * 1024 * 1024,
+                wanted=self.keep_attachments_wanted,
+            )
 
     @classmethod
     async def create(cls, settings: Settings, notifier: Notifier | None = None) -> "AppContext":
@@ -146,6 +160,25 @@ class AppContext:
                 notes=NotesRepository(db),
             ),
         )
+
+    async def keep_attachments_access(self, user: User) -> bool:
+        """Есть ли у человека тумблер «Сохранять файлы заданий» (бета):
+        у админа — всегда, у остальных — когда админ открыл доступ всем."""
+        from .attachments.keeper import ALL_FLAG
+        from .db.repositories import AppFlagRepository
+
+        admin = self.settings.telegram.admin_id
+        if admin and user.telegram_id == admin:
+            return True
+        return await AppFlagRepository(self.db).get(ALL_FLAG)
+
+    async def keep_attachments_wanted(self, user: User) -> bool:
+        """Сохранять ли файлы этого человека: доступ есть и тумблер включён."""
+        from .attachments.keeper import PREF
+
+        if not await self.keep_attachments_access(user):
+            return False
+        return bool((await self.miniapp.prefs(user.telegram_id)).get(PREF))
 
     async def shutdown(self) -> None:
         """Аккуратно закрыть всё, что открыли. Порядок важен."""

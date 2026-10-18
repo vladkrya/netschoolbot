@@ -154,6 +154,11 @@ class NetSchoolSettings:
     # Запасной прокси: через него идёт запрос, если основной не соединился
     # с сервером школы. Только при заданном основном.
     backup_proxy: str = ""
+    # Вложения заданий скачиваются заранее и хранятся столько дней — чтобы
+    # открывались, когда «Сетевой город» лежит. 0 — не скачивать.
+    keep_attachments_days: int = 14
+    # Предел места под них, МБ: сверх него удаляются самые старые.
+    keep_attachments_mb: int = 3000
 
     def proxy_for(self, url: str) -> str | None:
         for host, proxy in self.proxy_hosts.items():
@@ -332,6 +337,8 @@ def load_settings(*, require_bot_token: bool = True) -> Settings:
                 _env("NETSCHOOL_PROXY"),
             ),
             backup_proxy=_env("NETSCHOOL_BACKUP_PROXY"),
+            keep_attachments_days=max(0, _env_int("NETSCHOOL_KEEP_ATTACHMENTS_DAYS", 14)),
+            keep_attachments_mb=max(50, _env_int("NETSCHOOL_KEEP_ATTACHMENTS_MB", 3000)),
         ),
         debug=_env_bool("DEBUG_MODE", False),
         secret_key=_env("NETSCHOOL_SECRET_KEY"),
