@@ -6,8 +6,15 @@
 * «Об обновлениях» (kind='updates') — постоянная: на сервере вышла новая
   версия «Сетевого города».
 
-Состояние сервера берётся у страницы статуса (StatusService): из её круга
-проверок, а для серверов вне её списка — своей проверкой того же клиента.
+«Заработал» — только когда видно, что дневник снова открывается:
+
+* фоновая проверка оценок кого-то из пользователей этого сервера прошла
+  (OutageMonitor сообщает сюда итог каждой проверки), или
+* страница входа (`/webapi/logindata` тем же путём, каким бот ходит за
+  дневником) после подписки не отвечала, а потом ответила.
+
+Просто «страница входа отвечает» — мало: бывает, что она открывается, а
+дневник — нет, и человек получил бы «заработал», когда ничего не работает.
 """
 
 from __future__ import annotations
@@ -35,15 +42,23 @@ UP_TTL_S = 7 * 86400
 
 # (кому, текст для Telegram, заголовок push, строка push)
 Deliver = Callable[[int, str, str, str], Awaitable[None]]
+# Версия сервера школы маршрутом бота (sgo_version.logindata_fetcher).
+Fetch = Callable[[str], Awaitable[str]]
+FETCH_TIMEOUT_S = 20
 
 
 class SgoAlerts:
     def __init__(self, status: StatusService, repo: SgoStatusRepository, deliver: Deliver | None = None,
-                 clock: Callable[[], float] = time.time) -> None:
+                 fetch: Fetch | None = None, clock: Callable[[], float] = time.time) -> None:
         self._status = status
         self._repo = repo
         self._deliver = deliver
+        self._fetch = fetch
         self._clock = clock
+        # Когда проверка оценок на сервере в последний раз прошла.
+        self._diary_ok: dict[str, float] = {}
+        # Подписки «когда заработает», при которых страница входа уже не отвечала.
+        self._saw_down: set[tuple[int, str]] = set()
 
     def attach(self, deliver: Deliver) -> None:
         self._deliver = deliver
@@ -55,22 +70,40 @@ class SgoAlerts:
         data["subscribed"] = {kind: kind in kinds for kind in KINDS}
         return data
 
+    async def record_check(self, school_url: str, ok: bool) -> None:
+        """Итог фоновой проверки оценок (OutageMonitor): дневник открылся или нет."""
+        if ok:
+            self._diary_ok[host_of(school_url)] = self._clock()
+
     async def subscribe(self, telegram_id: int, url: str, kind: str, on: bool) -> dict:
-        """Включить или снять подписку. Возвращает то же, что info, плюс
-        already_up — сервер уже отвечает, ждать нечего."""
+        """Включить или снять подписку. Возвращает то же, что info."""
         if kind not in KINDS:
             raise ValueError(kind)
         host = host_of(url)
         if not on:
             await self._repo.alert_unsubscribe(telegram_id, host, kind)
             return await self.info(telegram_id, url)
-        state = await self._status.live_state(url)
-        if kind == "up" and state.get("ok"):
-            data = await self.info(telegram_id, url)
-            data["already_up"] = True
-            return data
-        await self._repo.alert_subscribe(telegram_id, host, url, kind, state.get("version", ""), self._clock())
+        # «Когда заработает» принимаем всегда: человек просит после того,
+        # как дневник не загрузился, — значит, для него сервер не работает.
+        ok, version = await self._probe(url)
+        if kind == "up" and not ok:
+            self._saw_down.add((telegram_id, host))
+        await self._repo.alert_subscribe(telegram_id, host, url, kind, version, self._clock())
         return await self.info(telegram_id, url)
+
+    async def _probe(self, url: str) -> tuple[bool, str]:
+        """Отвечает ли сервер боту и какая версия. Без своего клиента (тесты,
+        страница без бота) — по странице статуса."""
+        if self._fetch is None:
+            state = await self._status.live_state(url)
+            return bool(state.get("ok")), state.get("version", "")
+        try:
+            version = (await asyncio.wait_for(self._fetch(url), FETCH_TIMEOUT_S) or "").strip()
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # noqa: BLE001 — не ответил, это и есть ответ
+            return False, ""
+        return True, version
 
     async def run(self) -> None:
         while True:
@@ -90,11 +123,16 @@ class SgoAlerts:
         for row in await self._repo.alerts():
             by_host[row["host"]].append(row)
         for host, rows in by_host.items():
-            state = await self._status.live_state(rows[0]["url"])
-            region = html.escape(state.get("region") or host)
-            version = state.get("version", "")
+            ok, version = await self._probe(rows[0]["url"])
+            region = html.escape(self._status.region(host) or host)
             for row in rows:
-                if row["kind"] == "up" and state.get("ok"):
+                key = (row["telegram_id"], host)
+                if row["kind"] == "up" and not ok:
+                    self._saw_down.add(key)
+                if row["kind"] == "up" and (
+                    self._diary_ok.get(host, 0) > row["created_at"] or (ok and key in self._saw_down)
+                ):
+                    self._saw_down.discard(key)
                     await self._send(
                         row["telegram_id"],
                         f"✅ Сервер «Сетевого города» ({region}) снова работает — можно заходить в дневник.",

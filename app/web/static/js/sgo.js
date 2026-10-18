@@ -1,13 +1,18 @@
-// Сервер «Сетевого города» школы лежит: дневник грузится долго или школа не
-// ответила. Говорим об этом прямо и предлагаем сообщить, когда заработает —
-// в Telegram и push на все устройства (status/alerts.py на сервере).
+// Сервер «Сетевого города» школы не отвечает: дневник грузится долго или
+// школа не ответила. Говорим об этом прямо и предлагаем сообщить, когда
+// заработает — в Telegram и push на все устройства (status/alerts.py).
+// Здесь же — статус серверов внутри приложения.
 
-import { $, api, banner, demo, esc } from './core.js';
+import { $, api, banner, base, demo, esc } from './core.js';
 import { tap } from './haptics.js';
+import { pushScreen } from './screens.js';
 
 const DISMISSED_KEY = 'ns-sgo-down-dismissed';
-const CHECK_EVERY_MS = 60000;
-let checkedAt = 0;
+// «Долго грузится» спрашиваем не чаще раза в минуту. Настоящая неудача
+// запроса к школе — всегда: раньше её глушила недавняя проверка «долго»,
+// которая простоя ещё не видела, и карточка так и не появлялась.
+const SLOW_EVERY_MS = 60000;
+let slowCheckedAt = 0;
 let checking = null;
 
 const timeFmt = new Intl.DateTimeFormat('ru-RU', { hour: '2-digit', minute: '2-digit' });
@@ -16,42 +21,54 @@ function dismissed() {
   try { return Boolean(sessionStorage.getItem(DISMISSED_KEY)); } catch { return false; }
 }
 
-/** Спросить сервер бота, что со «Сетевым городом» школы, и при простое
- *  показать карточку. failed — запрос к школе уже не удался. */
-export function checkServer({ failed = false } = {}) {
-  if (demo || $('sgoDown') || dismissed() || checking) return checking;
-  if (Date.now() - checkedAt < CHECK_EVERY_MS) return null;
-  checkedAt = Date.now();
-  checking = api('/api/sgo/server')
-    .then(({ data }) => {
-      if (data.state === 'down' || (failed && data.state === 'unstable')) show(data);
-    })
-    .catch(() => { /* бот тоже не ответил — об этом скажет обычная плашка */ })
-    .finally(() => { checking = null; });
-  return checking;
+/** Спросить сервер бота, что со «Сетевым городом» школы, и показать
+ *  карточку. failed — запрос к школе уже не удался: тогда карточка
+ *  показывается, что бы ни говорили проверки, — дневник не загрузился. */
+export async function checkServer({ failed = false } = {}) {
+  if (demo || $('sgoDown') || dismissed()) return;
+  if (!failed) {
+    if (Date.now() - slowCheckedAt < SLOW_EVERY_MS) return;
+    slowCheckedAt = Date.now();
+  }
+  if (checking) {
+    const result = await checking.catch(() => null);
+    if (failed && result && !$('sgoDown') && !dismissed()) show(result, true);
+    return;
+  }
+  checking = api('/api/sgo/server').then(({ data }) => data);
+  try {
+    const data = await checking;
+    if (failed || data.state === 'down') show(data, failed);
+  } catch {
+    /* бот тоже не ответил — об этом скажет обычная плашка */
+  } finally {
+    checking = null;
+  }
 }
 
-function since(data) {
-  const at = data.down_since || data.checked_at;
-  if (!at) return '';
-  const minutes = Math.round((Date.now() / 1000 - at) / 60);
-  if (data.down_since && minutes >= 10) return ` — не отвечает с ${timeFmt.format(new Date(at * 1000))}`;
-  return '';
+function headline(data) {
+  const where = data.region ? ` (${esc(data.region)})` : '';
+  if (data.state === 'down') {
+    const minutes = data.down_since ? Math.round((Date.now() / 1000 - data.down_since) / 60) : 0;
+    const since = minutes >= 10 ? ` — не отвечает с ${timeFmt.format(new Date(data.down_since * 1000))}` : '';
+    return `<b>Сервер «Сетевого города»${where} сейчас недоступен</b>${esc(since)}.`;
+  }
+  return `<b>Сервер «Сетевого города»${where} сейчас не отвечает.</b>`;
 }
 
-function show(data) {
+function show(data, failed) {
+  if ($('sgoDown')) return;
   const el = document.createElement('div');
   el.id = 'sgoDown';
   el.className = 'banner login-failed sgo-down';
   el.setAttribute('role', 'alert');
-  const where = data.region ? ` (${esc(data.region)})` : '';
-  el.innerHTML = `<p><b>Сервер «Сетевого города»${where} сейчас недоступен</b>${esc(since(data))}.
-      Это не у вас и не в приложении — попробуйте зайти позже.</p>
+  el.innerHTML = `<p>${headline(data)} Это не у вас и не в приложении — попробуйте зайти позже.</p>
     <p class="sgo-down-state" hidden></p>
     <div class="login-failed-actions">
       <button class="btn" data-act="notify">Сообщить, когда заработает</button>
       <button class="btn outline" data-act="close">Закрыть</button>
-    </div>`;
+    </div>
+    <button class="sgo-down-link" data-act="status">Статус серверов</button>`;
   const notifyButton = el.querySelector('[data-act="notify"]');
   const stateLine = el.querySelector('.sgo-down-state');
   const subscribed = (on) => {
@@ -67,13 +84,7 @@ function show(data) {
     notifyButton.disabled = true;
     try {
       const { data: result } = await api('/api/sgo/notify', { method: 'POST', body: JSON.stringify({ kind: 'up', on }) });
-      if (result.already_up) {
-        stateLine.hidden = false;
-        stateLine.textContent = 'Сервер уже снова отвечает — обновите экран.';
-        notifyButton.hidden = true;
-      } else {
-        subscribed(Boolean(result.subscribed?.up));
-      }
+      subscribed(Boolean(result.subscribed?.up));
     } catch (error) {
       stateLine.hidden = false;
       stateLine.textContent = error.message;
@@ -85,6 +96,23 @@ function show(data) {
     try { sessionStorage.setItem(DISMISSED_KEY, '1'); } catch { /* приватный режим */ }
     el.remove();
   });
+  el.querySelector('[data-act="status"]').addEventListener('click', () => {
+    el.remove();
+    openStatus();
+  });
   banner('');  // общая плашка «не удалось подключиться» — лишняя рядом
   document.body.append(el);
+}
+
+/** Статус серверов — экраном внутри приложения, со стрелкой «назад» в
+ *  дневник. Страница та же, что /status, в облегчённом виде. */
+export function openStatus() {
+  const body = pushScreen('Статус серверов', '«Сетевой город» по регионам');
+  body.classList.add('status-body');
+  const theme = document.documentElement.dataset.theme || '';
+  const frame = document.createElement('iframe');
+  frame.className = 'status-frame';
+  frame.title = 'Статус серверов «Сетевого города»';
+  frame.src = `${base}/status?embed=1${theme ? `&theme=${encodeURIComponent(theme)}` : ''}`;
+  body.append(frame);
 }

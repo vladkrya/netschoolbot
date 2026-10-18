@@ -218,7 +218,10 @@ async def run(settings: Settings, args: argparse.Namespace) -> int:
         if has_telegram(telegram_id):
             await bot.send_message(telegram_id, text)
 
-    context.sgo_alerts = SgoAlerts(context.status, SgoStatusRepository(context.db), deliver_sgo)
+    # «Заработал ли» — тем же путём, каким бот ходит за дневником.
+    context.sgo_alerts = SgoAlerts(context.status, SgoStatusRepository(context.db), deliver_sgo,
+                                   fetch=logindata_fetcher(context))
+    context.watchers.outages.listen(context.sgo_alerts.record_check)
 
     supervisor = Supervisor()
     tasks: list[asyncio.Task] = [

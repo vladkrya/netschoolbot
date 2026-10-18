@@ -186,6 +186,12 @@ async def test_status_page_is_public(client):
     assert response.status == 200
     text = await response.text()
     assert "Статус «Сетевого города»" in text and "/status/status.js" in text
+    assert 'class="embed"' not in text
+    # Экран в приложении: облегчённый вид и тема приложения; чужая тема не проходит.
+    text = await (await client.get("/mini/status?embed=1&theme=dark")).text()
+    assert 'class="embed"' in text and 'data-theme="dark"' in text
+    text = await (await client.get('/mini/status?theme="><script>')).text()
+    assert "data-theme" not in text
 
     response = await client.get("/mini/status/data?range=7d")
     data = await response.json()
@@ -292,9 +298,64 @@ async def test_app_alerts_when_server_is_back_and_on_update(db, users):
     sent.clear()
     await alerts.check()
     assert sent == []  # повторно не пишем
-    # Сервер работает — ждать нечего, подписка не нужна.
-    info = await alerts.subscribe(1, f"https://{DOWN}/", "up", True)
-    assert info["already_up"] and not info["subscribed"]["up"]
+
+
+async def test_back_up_only_when_diary_opens_again(db, users):
+    """Страница входа отвечает, а дневник не грузится: «заработал» не шлём,
+    пока фоновая проверка оценок на этом сервере не пройдёт."""
+    from app.status.alerts import SgoAlerts
+    from tests.test_repositories import make_user
+
+    await users.save(make_user())
+    sent: list[str] = []
+
+    async def deliver(telegram_id, text, title, body):
+        sent.append(text)
+
+    async def bot_route(url):
+        return "5.58.7"  # logindata отвечает
+
+    service, now = make_service(db)
+    alerts = SgoAlerts(service, SgoStatusRepository(db), deliver, fetch=bot_route, clock=lambda: now[0])
+    url = f"https://{DOWN}/"
+    info = await alerts.subscribe(1, url, "up", True)
+    assert info["subscribed"]["up"]  # принимаем, хоть страница входа и отвечает
+    now[0] += 60
+    await alerts.check()
+    assert sent == []
+    await alerts.record_check(url, ok=False)
+    await alerts.check()
+    assert sent == []
+    now[0] += 60
+    await alerts.record_check(url, ok=True)  # дневник открылся
+    await alerts.check()
+    assert len(sent) == 1 and "снова работает" in sent[0]
+
+
+async def test_back_up_when_login_page_returns(db, users):
+    from app.status.alerts import SgoAlerts
+    from tests.test_repositories import make_user
+
+    await users.save(make_user())
+    sent: list[str] = []
+    up = {"v": False}
+
+    async def deliver(telegram_id, text, title, body):
+        sent.append(text)
+
+    async def bot_route(url):
+        if not up["v"]:
+            raise TimeoutError
+        return "5.58.7"
+
+    service, now = make_service(db)
+    alerts = SgoAlerts(service, SgoStatusRepository(db), deliver, fetch=bot_route, clock=lambda: now[0])
+    await alerts.subscribe(1, f"https://{DOWN}/", "up", True)
+    await alerts.check()
+    assert sent == []
+    up["v"] = True
+    await alerts.check()
+    assert len(sent) == 1 and "снова работает" in sent[0]
 
 
 async def test_live_state_probes_servers_outside_the_list(db):

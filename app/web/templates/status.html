@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ru">
+<html lang="ru"{% if theme %} data-theme="{{ theme }}"{% endif %}>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -10,7 +10,7 @@
   <link rel="stylesheet" href="{{ base }}/static/v{{ version }}/status/status.css">
   <script type="module" src="{{ base }}/static/v{{ version }}/status/status.js"></script>
 </head>
-<body data-base="{{ base }}">
+<body data-base="{{ base }}"{% if embed %} class="embed"{% endif %}>
   <main class="page">
     <header class="top">
       <div>

@@ -24,9 +24,14 @@ def _service(request: web.Request):
 async def status_page(request: web.Request) -> web.Response:
     from .server import STATIC_VERSION, _base
 
+    # embed=1 — экран «Статус серверов» в приложении: без заголовка (он у
+    # экрана свой) и в теме приложения.
+    theme = request.query.get("theme", "")
     response = aiohttp_jinja2.render_template(
         "status.html", request,
-        {"base": _base(request), "version": STATIC_VERSION, "app_version": __version__},
+        {"base": _base(request), "version": STATIC_VERSION, "app_version": __version__,
+         "embed": request.query.get("embed") == "1",
+         "theme": theme if theme in ("light", "dark") else ""},
     )
     response.headers["Cache-Control"] = "no-cache"
     return response

@@ -1050,7 +1050,11 @@ function bindDrawer() {
   });
   $('drawerAssistant')?.addEventListener('click', () => { closeDrawer(); openAssistant(); });
   $('drawerHistory').addEventListener('click', () => { tap(); openHistory(); });
-  $('drawerStatus').addEventListener('click', () => { tap(); openExternal(`${window.NETSCHOOL.base}/status`); });
+  $('drawerStatus').addEventListener('click', async () => {
+    closeDrawer();
+    const { openStatus } = await import('./sgo.js');
+    openStatus();
+  });
   $('drawerEvents')?.addEventListener('click', async () => {
     closeDrawer();
     const { openEvents } = await import('./events.js');

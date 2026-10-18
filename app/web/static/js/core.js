@@ -423,6 +423,9 @@ async function revalidateNow(path, shown, onFresh) {
   if (fresh.stale || fresh.offline) {
     revalidated.delete(path);
     staleBanner(true, fresh.reason);
+    // Не дождались свежего и без причины (сервер всё ещё ждал школу) — это
+    // тоже «школа не ответила»: пусть sgo.js скажет, что с сервером.
+    if (fresh.stale && fresh.reason !== 'server' && fresh.reason !== 'auth') sgoHint(true);
     return;
   }
   staleBanner(false);
