@@ -429,23 +429,29 @@
   background: linear-gradient(90deg, transparent, rgba(190, 160, 230, .14), color-mix(in srgb, var(--head) 14%, transparent), transparent);
 }
 
-/* Полоса загрузки под шапкой — тыква летает туда-сюда по нижнему краю,
-   за ней тянется огненный хвост с искрами. Хвост (::after) растёт от центра
-   тыквы: масштаб -1 — тянется влево (тыква летит вправо), 1 — вправо; на
-   развороте он сжимается в ноль, поэтому смена стороны не видна. Тыква и
-   хвост едут одинаковыми ключевыми кадрами left — хвост не отстаёт.
-   Тыква висит наполовину ниже шапки: overflow у шапки режет только по X. */
+/* Полоса загрузки под шапкой — как обычная бегущая полоса, только впереди
+   летит тыква, а за ней тянется огненный хвост с искрами: уходит за правый
+   край и снова вылетает слева. Тыква (::before) и хвост (::after) едут
+   одинаковыми ключевыми кадрами left, поэтому хвост не отстаёт; конец пути —
+   когда за край ушёл и хвост. Тыква — SVG, а не эмодзи: у эмодзи на iPhone
+   своя высота строки, и она съезжала с полосы. По нижнему краю шапки при
+   этом тлеет дорожка. Тыква висит наполовину ниже шапки: overflow у шапки
+   режет только по X. */
+:root[data-holiday="halloween"]:not(#_) .app-header {
+  transition: background-color .3s, box-shadow .3s;
+}
+:root[data-holiday="halloween"].syncing:not(#_) .app-header {
+  box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--head) 30%, transparent), 0 8px 18px -10px color-mix(in srgb, var(--head) 55%, transparent);
+}
 :root[data-holiday="halloween"]:not(#_) .app-header::before {
-  content: '🎃';
+  content: '';
   position: absolute;
-  left: 5px;
-  bottom: -9px;
+  left: -22px;
+  bottom: -11px;
   z-index: 1;
-  width: 18px;
-  height: 18px;
-  font-size: 16px;
-  line-height: 18px;
-  text-align: center;
+  width: 22px;
+  height: 22px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M15 9l.6-5.2c.2-1.4 2.6-1.6 2.9-.2L17.4 9z' fill='%23657d2c'/%3E%3Cellipse cx='10.5' cy='18' rx='8' ry='9.6' fill='%23d9620f'/%3E%3Cellipse cx='21.5' cy='18' rx='8' ry='9.6' fill='%23d9620f'/%3E%3Cellipse cx='16' cy='18' rx='7.2' ry='10.2' fill='%23ff8a1f'/%3E%3Cpath d='M8.6 16.2l2.9-3.6 2.2 4.2zM23.4 16.2l-2.9-3.6-2.2 4.2zM16 17.2l1.3 2.2h-2.6z' fill='%23ffe08a'/%3E%3Cpath d='M8.8 20.6q7.2 6.6 14.4 0l-2.2.9-1.3-1-1.6 1.7-2.1-1.6-2.1 1.6-1.6-1.7-1.3 1z' fill='%23ffe08a'/%3E%3C/svg%3E") center / contain no-repeat;
   filter: drop-shadow(0 0 6px var(--head));
   opacity: 0;
   scale: .4;
@@ -453,57 +459,50 @@
   pointer-events: none;
 }
 :root[data-holiday="halloween"]:not(#_) .app-header::after {
-  left: 14px;
+  left: -45%;
   right: auto;
-  bottom: -5px;
-  width: 40%;
-  height: 12px;
+  bottom: -7px;
+  width: 45%;
+  height: 14px;
   background:
-    radial-gradient(1.5px 1.5px at 18% 18%, #ffe2a8, transparent),
-    radial-gradient(1.5px 1.5px at 36% 86%, #ffb347, transparent),
-    radial-gradient(1px 1px at 55% 22%, #ffd27a, transparent),
-    radial-gradient(1px 1px at 74% 74%, #ff9a3c, transparent),
-    radial-gradient(1px 1px at 90% 30%, rgba(255, 210, 122, .6), transparent),
-    linear-gradient(90deg, color-mix(in srgb, var(--head) 60%, #ffe2a8), var(--head) 30%, color-mix(in srgb, var(--head) 35%, transparent) 70%, transparent) 0 50% / 100% 3px no-repeat;
-  transform-origin: 0 50%;
-  scale: 0 1;
-  filter: drop-shadow(0 0 4px var(--head));
+    radial-gradient(1.5px 1.5px at 30% 14%, rgba(255, 210, 122, .7), transparent),
+    radial-gradient(1.5px 1.5px at 52% 88%, #ffb347, transparent),
+    radial-gradient(2px 2px at 70% 18%, #ffd27a, transparent),
+    radial-gradient(1.5px 1.5px at 84% 82%, #ff9a3c, transparent),
+    radial-gradient(2px 2px at 93% 24%, #ffe2a8, transparent),
+    linear-gradient(90deg, transparent, color-mix(in srgb, var(--head) 55%, transparent) 35%, var(--head) 75%, color-mix(in srgb, var(--head) 55%, #ffe2a8)) 0 50% / 100% 4px no-repeat;
+  filter: drop-shadow(0 0 5px var(--head));
 }
 :root[data-holiday="halloween"].syncing:not(#_) .app-header::before {
   opacity: 1;
   scale: 1;
-  animation: hw-pk-fly 3.2s ease-in-out infinite, hw-pk-tilt 3.2s ease-in-out infinite, hw-pk-bob .4s ease-in-out infinite alternate;
+  animation: hw-pk-run 1.8s cubic-bezier(.45, .05, .55, .95) infinite, hw-pk-bob .3s ease-in-out infinite alternate;
 }
 :root[data-holiday="halloween"].syncing:not(#_) .app-header::after {
   opacity: 1;
-  animation: hw-tr-fly 3.2s ease-in-out infinite, hw-tr-len 3.2s ease-in-out infinite;
+  animation: hw-tr-run 1.8s cubic-bezier(.45, .05, .55, .95) infinite;
 }
-@keyframes hw-pk-fly {
-  0%, 100% { left: 5px; }
-  50% { left: calc(100% - 23px); }
+/* Центр тыквы — от -11px (ещё за левым краем) до 145%: там за правый край
+   ушёл и хвост длиной 45%. */
+@keyframes hw-pk-run {
+  from { left: -22px; }
+  to { left: 145%; }
 }
-@keyframes hw-tr-fly {
-  0%, 100% { left: 14px; }
-  50% { left: calc(100% - 14px); }
-}
-@keyframes hw-tr-len {
-  0%, 50%, 100% { scale: 0 1; }
-  25% { scale: -1 1; }
-  75% { scale: 1 1; }
+@keyframes hw-tr-run {
+  from { left: calc(-45% - 11px); }
+  to { left: calc(100% + 11px); }
 }
 /* Наклон по ходу полёта и лёгкое подпрыгивание. */
-@keyframes hw-pk-tilt {
-  0%, 50%, 100% { rotate: 0deg; }
-  25% { rotate: 14deg; }
-  75% { rotate: -14deg; }
+@keyframes hw-pk-bob {
+  from { translate: 0 1px; rotate: 6deg; }
+  to { translate: 0 -2px; rotate: 14deg; }
 }
-@keyframes hw-pk-bob { from { translate: 0 1px; } to { translate: 0 -2px; } }
 /* Без анимаций тыква просто горит посередине, хвоста нет. */
-:root[data-holiday="halloween"].no-motion:not(#_) .app-header::before { left: calc(50% - 9px); animation: none !important; }
-:root[data-holiday="halloween"].no-motion:not(#_) .app-header::after { animation: none !important; }
+:root[data-holiday="halloween"].no-motion:not(#_) .app-header::before { left: calc(50% - 11px); animation: none !important; }
+:root[data-holiday="halloween"].no-motion:not(#_) .app-header::after { animation: none !important; opacity: 0; }
 @media (prefers-reduced-motion: reduce) {
-  :root[data-holiday="halloween"]:not(#_) .app-header::before { left: calc(50% - 9px); animation: none !important; }
-  :root[data-holiday="halloween"]:not(#_) .app-header::after { animation: none !important; }
+  :root[data-holiday="halloween"]:not(#_) .app-header::before { left: calc(50% - 11px); animation: none !important; }
+  :root[data-holiday="halloween"]:not(#_) .app-header::after { animation: none !important; opacity: 0; }
 }
 
 /* Кружок «потяните, чтобы обновить» — тыквенный. */

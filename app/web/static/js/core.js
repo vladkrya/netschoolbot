@@ -267,13 +267,28 @@ export function setOffline(value) {
 
 /** Есть ли связь с сервером: короткий запрос мимо кэша worker. */
 let probing = null;
+// Был ответ из сохранённой копии worker, а не из сети.
+let servedCached = false;
 export function probe() {
   if (demo) return Promise.resolve(true);
   if (probing) return probing;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), PROBE_LIMIT_MS);
   probing = fetch(`${base}/sw.js`, { method: 'HEAD', cache: 'no-store', signal: controller.signal })
-    .then(() => { setOffline(false); return true; }, () => { setOffline(true); return false; })
+    .then(() => {
+      const wasOffline = offline;
+      setOffline(false);
+      // Сеть есть, а показана копия worker (при запуске сеть проснулась позже
+      // его ожидания, и минуту он отдаёт копии сразу). Раньше на этом всё и
+      // кончалось: дневник так и оставался сохранённым. Снимаем с worker
+      // отметку «нет сети» и перечитываем экран, как при возврате сети.
+      if (servedCached && !wasOffline) {
+        navigator.serviceWorker?.controller?.postMessage('online');
+        document.dispatchEvent(new CustomEvent('netschool:network', { detail: { offline: false } }));
+      }
+      servedCached = false;
+      return true;
+    }, () => { setOffline(true); return false; })
     .finally(() => { clearTimeout(timer); probing = null; });
   return probing;
 }
@@ -585,6 +600,7 @@ async function request(path, options = {}) {
   if (response.headers.get('X-Netschool-Offline')) {
     // Ответ из копии service worker: сеть не ответила вовремя. Проверяем,
     // есть ли она вообще, — без неё общая плашка.
+    servedCached = true;
     if (!offline) probe();
     return { ...payload, offline: true, stale: false };
   }
