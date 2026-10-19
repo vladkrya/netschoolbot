@@ -25,12 +25,31 @@ import { closeSheet, openSheet } from './sheet.js';
 import { openBugReport } from './bugreport.js';
 import { openLockSettings } from './lock.js';
 import { canInstall, openInBrowser, openInstallGuide, wantsInstall } from './install.js';
+import { pendingOps, send } from './outbox.js';
 
 export async function loadProfile(force = false) {
   if (state.profile && !force) return state.profile;
   const { data } = await api('/api/profile');
+  // Переключённое без сети ещё не дошло до сервера (outbox.js).
+  for (const { path, body } of pendingOps('settings:')) {
+    if (data.notifications) Object.assign(data.notifications, localSettings(path, body));
+  }
   state.profile = data;
   return data;
+}
+
+/** Что сервер записал бы в notifications по запросу настройки уведомлений. */
+function localSettings(path, body) {
+  if (path.endsWith('/notifications')) return { [body.key]: body.value };
+  if (path.endsWith('/reminder')) return { reminder_hour: body.hour };
+  if (path.endsWith('/marks-filter')) return { marks_filter: body.values.length >= 4 ? [] : [...body.values].sort() };
+  return {};
+}
+
+/** Настройка уведомлений: сразу или, без сети, в очередь. → notifications. */
+async function saveSettings(id, path, body) {
+  const { queued, data } = await send(`settings:${id}`, path, body);
+  return queued ? { ...state.profile.notifications, ...localSettings(path, body) } : data;
 }
 
 /** Часовой пояс берём у устройства: «сегодня» и время уведомлений
@@ -571,6 +590,23 @@ function historyItem(item, index) {
     </div>`;
 }
 
+// Первая страница истории — и на устройстве: без сети её видно, даже если
+// service worker нет (Telegram) или он её ещё не сохранил.
+const HISTORY_KEY = 'ns-history';
+
+function savedHistory() {
+  try { return JSON.parse(localStorage.getItem(HISTORY_KEY) || 'null'); } catch { return null; }
+}
+
+/** История — заранее, после загрузки вкладок: без сети она откроется. */
+export async function prefetchHistory() {
+  if (demo) return;
+  try {
+    const { data } = await api('/api/history');
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(data));
+  } catch { /* откроется с сетью */ }
+}
+
 async function openHistory() {
   closeDrawer();
   const screen = pushScreen('История оценок');
@@ -612,7 +648,17 @@ async function openHistory() {
     if (button) { button.disabled = true; button.textContent = 'Загружаем…'; }
     try {
       const before = items.length ? `?before=${items[items.length - 1].id}` : '';
-      const { data } = await api(`/api/history${before}`);
+      let data;
+      try {
+        ({ data } = await api(`/api/history${before}`));
+        if (!before) {
+          try { localStorage.setItem(HISTORY_KEY, JSON.stringify(data)); } catch { /* хранилище недоступно */ }
+        }
+      } catch (error) {
+        const saved = !before && error.source === 'app' && savedHistory();
+        if (!saved) throw error;
+        data = saved;
+      }
       items.push(...data.items);
       // Сервер отдаёт по 50: меньше — значит, старше ничего нет.
       more = data.items.length >= 50;
@@ -969,11 +1015,8 @@ function bindDrawer() {
       select();
       input.disabled = true;
       try {
-        const { data } = await api('/api/settings/notifications', {
-          method: 'POST',
-          body: JSON.stringify({ key: input.dataset.notify, value: input.checked }),
-        });
-        state.profile.notifications = data;
+        state.profile.notifications = await saveSettings(`notify:${input.dataset.notify}`, '/api/settings/notifications',
+          { key: input.dataset.notify, value: input.checked });
       } catch (error) {
         notify('error');
         input.checked = !input.checked;
@@ -1025,8 +1068,7 @@ function bindDrawer() {
   $('reminderHour')?.addEventListener('change', async (event) => {
     select();
     try {
-      const { data } = await api('/api/settings/reminder', { method: 'POST', body: JSON.stringify({ hour: Number(event.target.value) }) });
-      state.profile.notifications = data;
+      state.profile.notifications = await saveSettings('reminder', '/api/settings/reminder', { hour: Number(event.target.value) });
     } catch (error) {
       notify('error');
       banner(error.message, true);
@@ -1047,8 +1089,7 @@ function bindDrawer() {
     select();
     chips.forEach((c) => c.setAttribute('aria-pressed', String(c.classList.contains('active'))));
     try {
-      const { data } = await api('/api/settings/marks-filter', { method: 'POST', body: JSON.stringify({ values }) });
-      state.profile.notifications = data;
+      state.profile.notifications = await saveSettings('marks-filter', '/api/settings/marks-filter', { values });
     } catch (error) {
       chip.classList.toggle('active');
       notify('error');
