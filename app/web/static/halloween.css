@@ -282,12 +282,15 @@
 
 /* ──────────────────────── Шапка и меню ──────────────────────── */
 
-:root[data-holiday="halloween"]:not(#_) .topbar-title::after {
+:root[data-holiday="halloween"]:not(#_) .topbar-title::after,
+:root[data-holiday="halloween"]:not(#_) .topbar-title::before {
   content: '🎃';
   flex: none;
   margin-left: 4px;
   font-size: .9em;
 }
+/* Невидимая тыква слева — противовес: по центру шапки само имя, а не имя с тыквой. */
+:root[data-holiday="halloween"]:not(#_) .topbar-title::before { visibility: hidden; margin: 0 4px 0 0; }
 
 /* Классический дизайн: цветная шапка — тыквенный градиент в ночь,
    у экранов поверх (урок, письмо) — такая же. */

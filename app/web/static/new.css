@@ -730,6 +730,11 @@
 /* Меню ☰ в новом дизайне нет — настройки во вкладке. Кнопка остаётся
    пустым местом, чтобы имя ученика стояло по центру. */
 :root[data-design="new"] #menuBtn { visibility: hidden; pointer-events: none; }
+/* Пустое место слева нужно только под луну Хеллоуина. Без праздника его
+   нет: стрелка обновления у края, а имя по центру между ней и колокольчиком. */
+:root[data-design="new"]:not([data-holiday="halloween"]) #menuBtn { display: none; }
+:root[data-design="new"] #bellBtn { margin-left: 40px; }
+:root[data-design="new"]:not([data-holiday="halloween"]) #bellBtn { margin-left: 0; }
 .settings-page .drawer-section:first-child { margin-top: 0; }
 
 .tab-list { display: grid; margin: 2px 0 8px; }
