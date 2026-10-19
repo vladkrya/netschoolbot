@@ -11,12 +11,29 @@ export const reducedMotion = stillMotion;
 /** Перекрасить страницу одним плавным перетеканием (тема, цвет акцента):
  *  без него шапка, панель и карточки менялись в разное время, и на миг
  *  светлая шапка висела над тёмной страницей. */
+let repaint = null;
 export function smoothRepaint(change) {
   if (!document.startViewTransition || reducedMotion()) {
     change();
     return;
   }
-  document.startViewTransition(change);
+  // Переключили снова, пока страница ещё перетекает, — прошлое перетекание
+  // сразу доводим до конца, а не наслаиваем второй снимок поверх первого.
+  repaint?.skipTransition();
+  const root = document.documentElement;
+  // .repainting (app.css): пока идёт перетекание, живые переходы цвета и
+  // праздничные анимации стоят — новый снимок сразу в итоговом виде, и
+  // браузер не перерисовывает его каждый кадр. От этого и были подлагивания.
+  const transition = document.startViewTransition(() => {
+    root.classList.add('repainting');
+    change();
+  });
+  repaint = transition;
+  transition.finished.finally(() => {
+    if (repaint !== transition) return;
+    repaint = null;
+    root.classList.remove('repainting');
+  });
 }
 
 /* ─────────────────────────── Новые оценки ─────────────────────────── */
