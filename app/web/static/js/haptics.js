@@ -58,11 +58,41 @@ function armAll(root) {
   root.querySelectorAll?.(IOS_TAPPABLE).forEach(armSwitch);
 }
 
+/** Системный переключатель iOS переключается и протяжкой пальца, а не только
+ *  касанием: жест «потянуть, чтобы обновить», начатый на карточке урока,
+ *  щёлкал её подписью и открывал урок. Клик подписи после касания, которое
+ *  сдвинулось, — не нажатие; гасим его раньше всех обработчиков. */
+const DRAG_PX = 10;
+function dropDraggedSwitchClicks() {
+  let touch = null;
+  let resetTimer = 0;
+  document.addEventListener('touchstart', (event) => {
+    clearTimeout(resetTimer);
+    const t = event.touches[0];
+    touch = { x: t.clientX, y: t.clientY, moved: false };
+  }, { capture: true, passive: true });
+  document.addEventListener('touchmove', (event) => {
+    if (!touch || touch.moved) return;
+    const t = event.touches[0];
+    touch.moved = Math.hypot(t.clientX - touch.x, t.clientY - touch.y) > DRAG_PX;
+  }, { capture: true, passive: true });
+  // Клик приходит сразу после касания; позже — уже не от него.
+  document.addEventListener('touchend', () => {
+    resetTimer = setTimeout(() => { touch = null; }, 600);
+  }, { capture: true, passive: true });
+  document.addEventListener('click', (event) => {
+    if (!touch?.moved || !event.target.closest?.('.haptic-hit')) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  }, { capture: true });
+}
+
 /** Включить щелчки Safari на iPhone. Новые карточки подхватываются сами. */
 let initialized = false;
 export function initIosHaptics() {
   if (initialized) return;
   initialized = true;
+  if (iosSwitches) dropDraggedSwitchClicks();
   // Делегирование охватывает также кнопки в новых модальных окнах и PIN.
   document.addEventListener('click', event => {
     const control = event.target.closest?.(`${IOS_TAPPABLE}, a, input.switch`);
