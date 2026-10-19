@@ -98,7 +98,8 @@ function cardHtml(phase) {
       <div class="lt-bar"><span></span></div>
       <div class="lt-next">${esc(nextText(phase))}</div>
       <div class="lt-done" aria-hidden="true"><span class="lt-check">✓</span>
-        <span>${isLesson ? 'Урок окончен' : 'Урок начался'}</span></div>
+        <span>${isLesson ? 'Урок окончен' : 'Урок начался'}</span>
+        <span class="lt-bats"><i></i><i></i><i></i><i></i></span></div>
     </div></div>`;
 }
 
