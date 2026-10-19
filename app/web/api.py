@@ -524,6 +524,8 @@ async def profile(request: web.Request) -> web.Response:
                 "quiet_hours": user.quiet_hours.as_text(),
                 "enabled": user.enabled,
                 "assistant": app.settings.assistant.enabled,
+                # Кнопка «Решение» под заданием (web/solver.py).
+                "solver": app.settings.assistant.enabled and app.settings.solver.allowed((viewer or user).telegram_id),
                 # Хеллоуинское оформление — у всех в праздничный сезон;
                 # выключается тумблером в настройках.
                 "halloween": halloween_season(user.today()),
@@ -1356,6 +1358,23 @@ async def attachment_ticket(request: web.Request) -> web.Response:
     return web.json_response({"ok": True, "data": {"ticket": issue_attachment_ticket(app, user.telegram_id)}})
 
 
+async def attachment_payload(app: AppContext, user: User, attachment_id: int) -> bytes:
+    """Файл задания: из часового кэша, из сохранённых заранее или из СГО.
+    asyncio.TimeoutError — школьный сервер не отдал файл вовремя."""
+    cached = _attachment_cache(app, user.telegram_id, attachment_id)
+    if cached.exists() and time.time() - cached.stat().st_mtime < ATTACHMENT_CACHE_S:
+        return cached.read_bytes()
+    if app.attachments is not None and (kept := await app.attachments.get(user, attachment_id)) is not None:
+        # Скачано заранее (attachments/keeper.py): открывается сразу и тогда,
+        # когда «Сетевой город» лежит.
+        return kept
+    payload = await asyncio.wait_for(app.diary.download_attachment(user, attachment_id), ATTACHMENT_TIMEOUT_S)
+    _store_attachment(cached, payload)
+    if app.attachments is not None:
+        await app.attachments.store(user, attachment_id, payload)
+    return payload
+
+
 @routes.get("/api/attachment/{attachment_id}")
 async def attachment(request: web.Request) -> web.Response:
     try:
@@ -1364,24 +1383,12 @@ async def attachment(request: web.Request) -> web.Response:
         return json_error("Некорректный идентификатор вложения")
 
     app, user = context(request), current_user(request)
-    cached = _attachment_cache(app, user.telegram_id, attachment_id)
-    if cached.exists() and time.time() - cached.stat().st_mtime < ATTACHMENT_CACHE_S:
-        payload = cached.read_bytes()
-    elif app.attachments is not None and (kept := await app.attachments.get(user, attachment_id)) is not None:
-        # Скачано заранее (attachments/keeper.py): открывается сразу и тогда,
-        # когда «Сетевой город» лежит.
-        payload = kept
-    else:
-        try:
-            payload = await asyncio.wait_for(
-                app.diary.download_attachment(user, attachment_id), ATTACHMENT_TIMEOUT_S)
-        except asyncio.TimeoutError:
-            return json_error(
-                "«Сетевой город» не отдал файл за полторы минуты — сервер школы перегружен. "
-                "Попробуйте ещё раз позже.", status=504, reason="server")
-        _store_attachment(cached, payload)
-        if app.attachments is not None:
-            await app.attachments.store(user, attachment_id, payload)
+    try:
+        payload = await attachment_payload(app, user, attachment_id)
+    except asyncio.TimeoutError:
+        return json_error(
+            "«Сетевой город» не отдал файл за полторы минуты — сервер школы перегружен. "
+            "Попробуйте ещё раз позже.", status=504, reason="server")
     if request.query.get("prepare"):
         # Страница ожидания сперва ждёт файл здесь, а потом открывает прямую
         # ссылку — она отдаётся из кэша сразу, и браузер сам решает, показать

@@ -187,6 +187,21 @@ class AssistantSettings:
 
 
 @dataclass(frozen=True, slots=True)
+class SolverSettings:
+    """Решения домашних заданий (solver/). Ключ и адрес — как у помощника,
+    модель своя: задачи бесплатной моделью не решить. GPT-6 Luna — потому что
+    Claude у Villnus читает формулы со сканов с ошибками («=» как «−»)."""
+
+    model: str = "gpt-6-luna"
+    # Кому видна кнопка «Решение», telegram_id через запятую. Пусто — никому.
+    users: frozenset[int] = frozenset()
+    daily_limit: int = 40
+
+    def allowed(self, telegram_id: int) -> bool:
+        return telegram_id in self.users
+
+
+@dataclass(frozen=True, slots=True)
 class MailSettings:
     """Почта для входа без Telegram: коды подтверждения и сброса пароля.
     Без хоста письма не отправляются — вход по почте работает и так."""
@@ -222,6 +237,7 @@ class Settings:
     caldav_interval: int = 1800
     assistant: AssistantSettings = field(default_factory=AssistantSettings)
     mail: MailSettings = field(default_factory=MailSettings)
+    solver: SolverSettings = field(default_factory=SolverSettings)
 
     @property
     def logs_dir(self) -> Path:
@@ -234,6 +250,10 @@ class Settings:
     @property
     def icons_dir(self) -> Path:
         return self.data_dir / "icons"
+
+    @property
+    def textbooks_dir(self) -> Path:
+        return self.data_dir / "textbooks"
 
     def ensure_dirs(self) -> None:
         for path in (self.data_dir, self.logs_dir, self.attachments_dir, self.icons_dir):
@@ -362,5 +382,13 @@ def load_settings(*, require_bot_token: bool = True) -> Settings:
             sender=_env("MAIL_FROM"),
             security=(_env("MAIL_SMTP_SECURITY") or "starttls").lower(),
             tls_name=_env("MAIL_SMTP_TLS_NAME"),
+        ),
+        solver=SolverSettings(
+            model=_env("NETSCHOOL_SOLVER_MODEL", "gpt-6-luna"),
+            users=frozenset(
+                int(chunk) for chunk in _env("NETSCHOOL_SOLVER_USERS").replace(" ", "").split(",")
+                if chunk.lstrip("-").isdigit()
+            ),
+            daily_limit=max(1, _env_int("NETSCHOOL_SOLVER_DAILY_LIMIT", 40)),
         ),
     )

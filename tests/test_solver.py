@@ -1,0 +1,234 @@
+"""Решения заданий: разбор задания, поиск по учебнику, файлы и API."""
+
+import base64
+import dataclasses
+import io
+import json
+import zipfile
+
+import pytest
+
+from app.settings import AssistantSettings, SolverSettings
+from app.solver.extract import extract_text
+from app.solver.prompt import DraftFilter, Task, cache_key, user_content
+from app.solver.refs import parse
+from app.solver.textbooks import Library
+from app.web import solver
+from tests.test_web import BASE, client, token  # noqa: F401 — фикстуры
+from tests.test_bot_handlers import app as app_context  # noqa: F401 — фикстура
+
+
+class TestRefs:
+    def test_numbers_with_parts(self):
+        refs = parse("п.13,№289(б,г),№290(б),№291(в).")
+        assert refs.paragraphs == [13]
+        assert [e.label() for e in refs.exercises] == ["№289(б,г)", "№290(б)", "№291(в)"]
+
+    def test_paragraph_with_exercise_range(self):
+        refs = parse("§5 читать, письменно упр. 2-3")
+        assert refs.paragraphs == [5] and [e.number for e in refs.exercises] == [2, 3]
+
+    def test_page_and_exercise(self):
+        refs = parse("упр. 48 стр.  47")
+        assert refs.pages == [47] and [e.number for e in refs.exercises] == [48]
+
+    def test_review_is_not_a_paragraph(self):
+        refs = parse("пар. 39, пересказ, повторить 38-44")
+        assert refs.paragraphs == [39] and refs.review == list(range(38, 45))
+
+    def test_comma_list_after_number_sign(self):
+        assert [e.number for e in parse("№ 12, 14, 15(а)").exercises] == [12, 14, 15]
+
+    def test_nothing_to_solve(self):
+        assert not parse("Подготовить доклад") and not parse("нет д/з.")
+
+
+def page(*lines):
+    return "\n".join(lines)
+
+
+@pytest.fixture
+def library(tmp_path):
+    pages = [
+        page("1"),
+        page("§ 1. Введение", "Текст параграфа"),
+        page("Вопросы", "1. Что такое …?", "2. Почему …?"),
+        page("§ 2. Уравнения", "13. Дробные рациональные уравнения"),
+        page("288. Решите уравнение:", "а) x = 1"),
+        page("289. Решите уравнение:", "а) …", "290", "Найдите корни"),
+        page("ОТВЕТЫ"),
+        page("289. а) 2; б) 4. 290. а) 10."),
+    ]
+    (tmp_path / "alg.pages.json").write_text(json.dumps({"pages": pages, "offset": 0, "answers_from": 6}), "utf-8")
+    (tmp_path / "inf.pages.json").write_text(json.dumps({
+        "pages": ["a", "b", "c", "d", "e"], "offset": 0,
+        "toc": [["§ 1.1. Алгоритмы", 0], ["§ 2.4. Табличные информационные модели", 2], ["§ 2.5. Графы", 4]],
+    }), "utf-8")
+    (tmp_path / "library.json").write_text(json.dumps({"grade": 9, "books": [
+        {"id": "alg", "subjects": ["Алгебра"], "title": "Алгебра"},
+        {"id": "inf", "subjects": ["Информатика и ИКТ"], "title": "Информатика"},
+    ]}), "utf-8")
+    return Library(tmp_path)
+
+
+class TestTextbooks:
+    def test_exercises_and_answers(self, library):
+        book = library.books_for("алгебра")[0]
+        found = book.find(parse("№289(б),№290(а)"))
+        assert 5 in found.pages and 5 in found.exercises
+        assert found.answers[289] == "289. а) 2; б) 4."
+        assert found.answers[290].startswith("290. а) 10")
+
+    def test_number_in_a_box_is_found(self, library):
+        # Номер в рамке распознаётся отдельной строкой без точки.
+        assert library.books_for("Алгебра")[0].exercise_page(290) == 5
+
+    def test_exercises_inside_paragraph_first(self, library):
+        book = library.books_for("Алгебра")[0]
+        found = book.find(parse("§1, упр. 2"))
+        assert 2 in found.exercises and 1 in found.pages
+
+    def test_dotted_paragraphs_found_by_topic(self, library):
+        book = library.books_for("Информатика и ИКТ")[0]
+        found = book.find(parse("§6; вопросы"), "Табличные модели")
+        assert found.pages == [2, 3, 4]
+
+    def test_unknown_subject(self, library):
+        assert library.books_for("Химия") == [] and library.grade() == 9
+
+    def test_scan_sends_exercise_page_as_image(self, library, tmp_path):
+        from PIL import Image
+
+        (tmp_path / "alg").mkdir()
+        Image.new("L", (1600, 2000), 255).save(tmp_path / "alg" / "0005.jpg")
+        (tmp_path / "library.json").touch()
+        library._loaded_mtime = None
+        book = library.books_for("Алгебра")[0]
+        task = Task(subject="Алгебра", due="2026-10-19", text="№289(б)")
+        blocks = user_content(task, [(book, book.find(task.refs()))], [])
+        images = [b for b in blocks if b["type"] == "image"]
+        # Строк скана нет — страница целиком, уменьшенная до 1100 px.
+        assert len(images) == 1
+        with Image.open(io.BytesIO(base64.b64decode(images[0]["source"]["data"]))) as page:
+            assert max(page.size) == 1100
+        assert "№289: 289. а) 2; б) 4." in blocks[-1]["text"]
+
+
+class TestDraft:
+    def test_draft_is_hidden_even_split_across_chunks(self):
+        draft = DraftFilter()
+        shown = "".join(draft.feed(c) for c in ["<чер", "новик>x=3? нет", ", x=4</черно", "вик>\n### №291", " ответ"])
+        assert shown == "### №291 ответ"
+
+    def test_answer_without_draft_passes_through(self):
+        draft = DraftFilter()
+        assert draft.feed("### №") + draft.feed("291") == "### №291"
+
+    def test_unclosed_draft_is_better_than_nothing(self):
+        draft = DraftFilter()
+        assert draft.feed("<черновик>решение") == "" and draft.rest() == "решение"
+
+
+class TestCrop:
+    def test_exercise_cut_from_scan(self, tmp_path):
+        from PIL import Image
+
+        (tmp_path / "scan").mkdir()
+        Image.new("L", (100, 1000), 255).save(tmp_path / "scan" / "0000.jpg")
+        (tmp_path / "scan.pages.json").write_text(json.dumps({"pages": ["290. …\n291. …\n292. …"]}), "utf-8")
+        (tmp_path / "scan.lines.json").write_text(json.dumps([[
+            ["290. Решите", 0.1, 0.10, 0.9, 0.12], ["291. Найдите корни", 0.1, 0.40, 0.9, 0.42],
+            ["в) …", 0.1, 0.50, 0.9, 0.52], ["292. Решите", 0.1, 0.70, 0.9, 0.72],
+        ]]), "utf-8")
+        (tmp_path / "library.json").write_text(json.dumps({"books": [{"id": "scan", "subjects": ["Алгебра"]}]}), "utf-8")
+        book = Library(tmp_path).books_for("Алгебра")[0]
+        with Image.open(io.BytesIO(book.crop(0, 291))) as part:
+            assert part.size[0] == 100 and 280 <= part.size[1] <= 310  # от 291 до 292
+        # «292» не распознался бы — 293 режется от предыдущего номера.
+        with Image.open(io.BytesIO(book.crop(0, 293))) as part:
+            assert part.size[1] >= 290
+        assert book.crop(0, 500) is None
+
+
+class TestExtract:
+    def test_pptx_slides_in_order(self):
+        buffer = io.BytesIO()
+        a = "http://schemas.openxmlformats.org/drawingml/2006/main"
+        with zipfile.ZipFile(buffer, "w") as archive:
+            for number, text in ((10, "Десятый"), (2, "Второй")):
+                archive.writestr(f"ppt/slides/slide{number}.xml",
+                                 f'<p:sld xmlns:p="p" xmlns:a="{a}"><a:p><a:r><a:t>{text}</a:t></a:r></a:p></p:sld>')
+        text = extract_text("Эндокринная.pptx", buffer.getvalue())
+        assert text.index("Второй") < text.index("Десятый") and "[Слайд 2]" in text
+
+    def test_unknown_or_broken(self):
+        assert extract_text("фото.jpg", b"x") == "" and extract_text("битый.docx", b"not a zip") == ""
+
+
+class TestCacheKey:
+    def test_same_task_same_key_for_classmates(self):
+        a = Task(subject="Алгебра", due="2026-10-19", text="№289(б,г)", attachments=[(2, "b"), (1, "a")])
+        b = Task(subject="алгебра ", due="2026-10-19", text=" №289(б,г) ", attachments=[(1, "a"), (2, "b")])
+        assert cache_key("sgo", a, "1", "m") == cache_key("sgo", b, "1", "m")
+        assert cache_key("sgo", a, "1", "m") != cache_key("sgo", a, "2", "m")
+        assert cache_key("sgo", a, "1", "m") != cache_key("other", a, "1", "m")
+
+
+@pytest.fixture
+def allowed(app_context):
+    app_context.settings = dataclasses.replace(
+        app_context.settings, assistant=AssistantSettings(api_key="k"),
+        solver=SolverSettings(users=frozenset({1}), daily_limit=2),
+    )
+    return app_context
+
+
+TASK = {"subject": "Алгебра", "date": "2026-10-19", "text": "№289(б)", "topic": "", "attachments": []}
+
+
+def events(raw: bytes) -> list[dict]:
+    return [json.loads(line) for line in raw.splitlines()]
+
+
+class TestApi:
+    async def test_hidden_from_others(self, client, token, app_context):
+        app_context.settings = dataclasses.replace(app_context.settings, assistant=AssistantSettings(api_key="k"))
+        response = await client.post(f"{BASE}/api/solve", params={"token": token}, json=TASK)
+        assert response.status == 404
+        profile = await (await client.get(f"{BASE}/api/profile", params={"token": token})).json()
+        assert profile["data"]["solver"] is False
+
+    async def test_solution_is_shared_and_cached(self, client, token, allowed, monkeypatch):
+        calls = []
+
+        async def fake(settings, system, content, **kwargs):
+            calls.append((system, content, kwargs))
+            yield "### №289\n"
+            yield "**Ответ:** $y = 4$"
+
+        monkeypatch.setattr(solver, "stream_messages", fake)
+        first = await client.post(f"{BASE}/api/solve", params={"token": token}, json=TASK)
+        last = events(await first.read())[-1]
+        assert last == {"ok": True, "data": {"text": "### №289\n**Ответ:** $y = 4$", "cached": False, "left": 1}}
+        assert "9 класса" not in calls[0][0]  # библиотеки нет — класс неизвестен
+        assert "Задание: №289(б)" in calls[0][1][0]["text"]
+
+        second = await client.post(f"{BASE}/api/solve", params={"token": token}, json=TASK)
+        assert (await second.json())["data"]["cached"] is True
+        assert len(calls) == 1 and allowed.solver_usage[1][1] == 1
+
+    async def test_failure_refunds_quota(self, client, token, allowed, monkeypatch):
+        async def broken(settings, system, content, **kwargs):
+            raise solver.AssistantError("Решение сейчас недоступно. Попробуйте чуть позже.")
+            yield ""
+
+        monkeypatch.setattr(solver, "stream_messages", broken)
+        response = await client.post(f"{BASE}/api/solve", params={"token": token}, json=TASK)
+        assert events(await response.read())[-1]["ok"] is False
+        assert allowed.solver_usage[1][1] == 0
+        assert await allowed.solutions.get(cache_key("x", solver._task(TASK), "0", "m")) is None
+
+    @pytest.mark.parametrize("body", [{}, {"subject": "Алгебра", "date": "вчера"}, {"date": "2026-10-19"}])
+    async def test_rejects_bad_task(self, client, token, allowed, body):
+        response = await client.post(f"{BASE}/api/solve", params={"token": token}, json=body)
+        assert response.status == 400

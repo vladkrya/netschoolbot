@@ -783,6 +783,19 @@ MIGRATIONS: list[str] = [
     """
     ALTER TABLE miniapp_tokens ADD COLUMN name TEXT NOT NULL DEFAULT '';
     """,
+    # Решения домашних заданий (solver/): одно на класс — ключ из сервера
+    # школы, предмета, даты и текста задания.
+    """
+    CREATE TABLE homework_solutions (
+        key TEXT PRIMARY KEY,
+        subject TEXT NOT NULL DEFAULT '',
+        due TEXT NOT NULL DEFAULT '',
+        model TEXT NOT NULL DEFAULT '',
+        text TEXT NOT NULL,
+        created_at REAL NOT NULL
+    );
+    CREATE INDEX idx_homework_solutions_created ON homework_solutions(created_at);
+    """,
 ]
 
 

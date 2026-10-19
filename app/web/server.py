@@ -26,7 +26,7 @@ from aiohttp import web
 
 from .. import __version__
 from ..context import AppContext
-from . import account, api, assistant, bugreport, caldav, captcha_proxy, chat, devices, extras, lock, retro, status, sync
+from . import account, api, assistant, bugreport, caldav, captcha_proxy, chat, devices, extras, lock, retro, solver, status, sync
 from .api import BOT, CONTEXT
 
 logger = logging.getLogger("netschoolbot.web")
@@ -140,6 +140,7 @@ def create_app(context: AppContext, bot=None) -> web.Application:
     inner.add_routes(devices.routes)
     inner.add_routes(bugreport.routes)
     inner.add_routes(assistant.routes)
+    inner.add_routes(solver.routes)
     inner.add_routes(extras.routes)
     inner.add_routes(captcha_proxy.routes)
     inner.add_routes(status.routes)

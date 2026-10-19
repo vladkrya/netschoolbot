@@ -12,6 +12,7 @@ import { openLessonEditor } from './edits.js';
 import { ICONS } from './icons.js';
 import { isNewDesign } from './appearance.js';
 import { answerSlot, bindDistance, distanceButton, loadAnswers } from './answer.js';
+import { loadSolve, solveSlot } from './solve.js';
 import { pendingOps, send } from './outbox.js';
 
 /* ───────────────────── Отметка «выполнено» ───────────────────── */
@@ -240,6 +241,7 @@ export function openLesson(lesson, iso) {
   if (isNewDesign()) {
     loadComments(body, lesson.homework || []);
     loadAnswers(body, lesson.homework || []);
+    loadSolve(body, lesson.homework || []);
   }
   bindDoneToggles(body, lesson.homework || []);
 
@@ -282,6 +284,7 @@ function homeworkBlock(item, index) {
       ${commentSlot(item)}
       ${attachmentsHtml(item.attachments)}
       ${timestamps.length ? `<div class="hw-times">${timestamps.map(esc).join(' · ')}</div>` : ''}
+      ${solveSlot(item, index)}
       ${answerSlot(item)}
       ${doneToggle(item, index)}
     </div>`;
@@ -357,12 +360,14 @@ export function openHomework(item, topic = '') {
       <div class="detail-text">${escRich(item.text) || '<span class="muted">—Не указано—</span>'}</div>
       ${commentSlot(item)}
       ${attachmentsHtml(item.attachments)}
+      ${solveSlot(item, 0)}
       ${answerSlot(item)}
       ${doneToggle(item, 0)}
     </div>`;
   bindSubject(body, item.subject, item.date);
   loadComments(body, [item]);
   loadAnswers(body, [item]);
+  loadSolve(body, [item]);
   bindDoneToggles(body, [item]);
 }
 

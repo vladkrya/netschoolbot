@@ -2230,6 +2230,59 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
 
 /* Ответ на задание и вход на дистанционный урок (answer.js). */
 .hw-answer { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--card-2); }
+
+/* Решение задания (solve.js). */
+.hw-solve { margin-top: 12px; }
+.solve-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 14px; border-radius: 18px;
+  background: var(--card-2); color: var(--primary); font-weight: 600;
+}
+.solve-btn svg { width: 18px; height: 18px; }
+.solve { padding: 0 2px 24px; }
+.solve-task { padding: 12px 14px; border-radius: 12px; background: var(--card); margin-bottom: 12px; }
+.solve-out { padding: 14px; border-radius: 12px; background: var(--card); line-height: 1.55; overflow-wrap: anywhere; }
+.solve-wait { color: var(--text2); animation: solve-pulse 1.4s ease-in-out infinite; }
+@keyframes solve-pulse { 50% { opacity: .45; } }
+.solve-actions { display: flex; gap: 8px; }
+.solve-actions .btn { flex: 1; }
+.solve-note { margin-top: 12px; text-align: center; }
+
+.md h3 { font-size: 17px; margin: 18px 0 8px; padding-bottom: 4px; border-bottom: 1px solid var(--border); }
+.md h4 { font-size: 15px; margin: 14px 0 6px; }
+.md > :first-child { margin-top: 0; }
+.md p { margin: 6px 0; }
+.md ul, .md ol { margin: 6px 0; padding-left: 22px; }
+.md li { margin: 3px 0; }
+.md hr { border: 0; border-top: 1px solid var(--border); margin: 14px 0; }
+.md code { font-size: .92em; padding: 1px 4px; border-radius: 4px; background: var(--card-2); }
+.md-table { overflow-x: auto; margin: 8px 0; }
+.md table { border-collapse: collapse; font-size: 14px; min-width: 100%; }
+.md th, .md td { border: 1px solid var(--border); padding: 5px 8px; text-align: left; vertical-align: top; }
+.md th { background: var(--card-2); }
+
+/* Формулы как в тетради: дробь столбиком, корень с чертой, система со скобкой. */
+/* Длинная строка формулы переносится по пробелам у знаков; дробь и корень целые. */
+.m { font-family: "Times New Roman", "STIX Two Math", Cambria, serif; font-size: 1.12em; }
+.m-block { font-family: "Times New Roman", "STIX Two Math", Cambria, serif; font-size: 1.18em;
+  margin: 10px 0; text-align: center; overflow-x: auto; overflow-y: hidden; padding: 2px 0; }
+.m-frac { display: inline-flex; flex-direction: column; vertical-align: middle; text-align: center; margin: 0 2px; }
+.m-num { padding: 0 3px 1px; border-bottom: 1px solid currentColor; }
+.m-den { padding: 1px 3px 0; }
+.m-frac .m-frac { font-size: .9em; }
+.m-sqrt { display: inline-flex; align-items: stretch; white-space: nowrap; }
+.m-rad { font-size: 1.1em; line-height: 1; padding-right: 1px; }
+.m-under { border-top: 1px solid currentColor; padding: 1px 2px 0; }
+.m-idx { font-size: .6em; margin-right: -4px; }
+.m-text { font-family: -apple-system, system-ui, sans-serif; font-size: .88em; font-style: normal; }
+.m-fn { font-style: normal; margin-right: 2px; }
+.m-vec { display: inline-block; position: relative; padding-top: 4px; }
+.m-vec::before { content: "→"; position: absolute; left: 0; right: 0; top: -8px; text-align: center; font-size: .75em; }
+.m-over { display: inline-block; border-top: 1px solid currentColor; padding-top: 1px; }
+.m-cases { display: inline-flex; align-items: center; vertical-align: middle; gap: 4px; }
+.m-brace { font-size: 2.4em; font-weight: 200; line-height: 1; transform: scaleX(.7); }
+.m-rows { display: inline-flex; flex-direction: column; align-items: flex-start; vertical-align: middle; gap: 3px; text-align: left; }
+.m sup, .m-block sup, .m sub, .m-block sub { font-size: .7em; }
 .answer-text {
   width: 100%; box-sizing: border-box; margin-top: 6px; padding: 10px 12px;
   border: 1.5px solid var(--card-2); border-radius: 10px; background: var(--card-2);

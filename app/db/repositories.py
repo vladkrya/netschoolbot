@@ -2065,6 +2065,31 @@ class SgoStatusRepository:
         await self._db.execute("DELETE FROM sgo_reports WHERE created_at < ?", (reports_before,))
 
 
+class SolutionRepository:
+    """Готовые решения домашних заданий — общие для класса (solver/)."""
+
+    def __init__(self, db: Database) -> None:
+        self._db = db
+
+    async def get(self, key: str) -> dict | None:
+        row = await self._db.fetch_one(
+            "SELECT text, model, created_at FROM homework_solutions WHERE key = ?", (key,))
+        return dict(row) if row else None
+
+    async def put(self, key: str, subject: str, due: str, model: str, text: str, now: float) -> None:
+        await self._db.execute(
+            "INSERT INTO homework_solutions (key, subject, due, model, text, created_at) VALUES (?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET model = excluded.model, text = excluded.text, created_at = excluded.created_at",
+            (key, subject, due, model, text, now),
+        )
+
+    async def delete(self, key: str) -> None:
+        await self._db.execute("DELETE FROM homework_solutions WHERE key = ?", (key,))
+
+    async def prune(self, before: float) -> None:
+        await self._db.execute("DELETE FROM homework_solutions WHERE created_at < ?", (before,))
+
+
 class KeptAttachmentRepository:
     """Вложения заданий, скачанные заранее: что лежит на диске и кому его отдавать."""
 

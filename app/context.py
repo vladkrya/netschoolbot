@@ -17,7 +17,9 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from .attachments.keeper import AttachmentKeeper
     from .caldav.service import CaldavService
+    from .db.repositories import SolutionRepository
     from .domain.models import User
+    from .solver.textbooks import Library
     from .status.alerts import SgoAlerts
     from .status.service import StatusService
 
@@ -81,8 +83,23 @@ class AppContext:
     sgo_alerts: SgoAlerts | None = None
     # Вложения заданий, скачанные заранее (attachments/keeper.py).
     attachments: AttachmentKeeper | None = None
+    # Решения заданий (solver/): готовые решения, учебники, лимит за сутки и
+    # решения, которые пишутся прямо сейчас, — второй запрос ждёт первый.
+    solutions: SolutionRepository | None = None
+    textbooks: Library | None = None
+    solver_usage: dict[int, tuple] = field(default_factory=dict)
+    solving: dict[str, asyncio.Lock] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
+        if self.solutions is None:
+            from .db.repositories import SolutionRepository
+
+            self.solutions = SolutionRepository(self.db)
+        if self.textbooks is None:
+            from .solver.textbooks import Library
+
+            # Папка — по текущим настройкам, как у вложений ниже.
+            self.textbooks = Library(lambda: self.settings.textbooks_dir)
         if self.family is None:
             self.family = FamilyRepository(self.db)
         if self.notes is None:
