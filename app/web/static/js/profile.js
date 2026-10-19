@@ -13,7 +13,7 @@ import {
 } from './appearance.js';
 import { ICONS } from './icons.js';
 import { smoothRepaint } from './motion.js';
-import { markBox } from './details.js';
+import { markBox, openLesson } from './details.js';
 import { loadCalc } from './calc.js';
 import { openAssistant } from './assistant.js';
 import { MAX_TABS, TAB_NAMES, availableTabs, navTabs, resetTabs, saveTabs } from './tabs.js';
@@ -581,7 +581,7 @@ function historyItem(item, index) {
   const marks = item.kind === 'changed'
     ? `${markBox(item.old, 'old')}<span class="hi-arrow">${ICONS.right}</span>${markBox(item.new, 'fresh')}`
     : markBox(item.mark, item.kind === 'deleted' ? 'old' : 'fresh');
-  return `<div class="history-item hi-${esc(item.kind)}" style="--d:${Math.min(index, 12) * 35}ms">
+  return `<div class="history-item hi-${esc(item.kind)}" data-history="${esc(item.id)}" role="button" tabindex="0" style="--d:${Math.min(index, 12) * 35}ms">
       <div class="hi-main">
         <div class="hi-subject">${esc(item.subject)}</div>
         <div class="hi-title">${esc(item.title || 'Оценка')} · за ${esc(date)}</div>
@@ -606,6 +606,34 @@ export async function prefetchHistory() {
     const { data } = await api('/api/history');
     localStorage.setItem(HISTORY_KEY, JSON.stringify(data));
   } catch { /* откроется с сетью */ }
+}
+
+/** Урок, на котором поставили оценку, — тем же экраном, что из «Дня».
+ *  «Назад» возвращает в историю: экран урока ложится поверх неё. */
+async function openHistoryLesson(item, card) {
+  if (card.classList.contains('loading')) return;
+  tap();
+  card.classList.add('loading');
+  try {
+    const { dayData, ensureWeek } = await import('./day.js');
+    await ensureWeek(item.date);
+    // Пока грузилась неделя, историю могли закрыть.
+    if (!card.isConnected) return;
+    const lessons = (dayData(item.date)?.lessons || []).filter((lesson) => lesson.subject === item.subject);
+    // Урок по номеру; номера нет (школа не указала) — первый урок предмета в тот день.
+    const lesson = lessons.find((l) => item.lesson != null && l.number === item.lesson) || lessons[0];
+    if (!lesson) {
+      notify('error');
+      banner('Этого урока в дневнике за тот день нет — возможно, его убрали из расписания', true, 3500);
+      return;
+    }
+    openLesson(lesson, item.date);
+  } catch (error) {
+    notify('error');
+    banner(error.message, true, 3500);
+  } finally {
+    card.classList.remove('loading');
+  }
 }
 
 async function openHistory() {
@@ -640,6 +668,10 @@ async function openHistory() {
       draw();
     }));
     screen.querySelector('#historyMore')?.addEventListener('click', load);
+    screen.querySelectorAll('[data-history]').forEach((card) => card.addEventListener('click', () => {
+      const item = items.find((entry) => String(entry.id) === card.dataset.history);
+      if (item) openHistoryLesson(item, card);
+    }));
   };
 
   async function load() {
