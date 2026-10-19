@@ -2,7 +2,7 @@
 'use strict';
 
 import {
-  $, api, assistantEnabled, forgetRevalidated, banner, base, demo, isReadOnly, keepTouch, loadAttachmentTicket, school, state, student, studentFirstName, syncFinished, syncStarted, tg, token,
+  $, api, assistantEnabled, forgetRevalidated, banner, base, demo, isOffline, isReadOnly, keepTouch, loadAttachmentTicket, NO_INTERNET, school, state, student, studentFirstName, syncFinished, syncStarted, tg, token,
 } from './core.js';
 import { initDay, loadDay } from './day.js';
 import { initSchedule, loadSchedule } from './schedule.js';
@@ -18,7 +18,7 @@ import { ICONS } from './icons.js';
 import { dropInstallHints, initInstallPrompt, openInstall } from './install.js';
 import {
   applyStoredTheme, closeDrawer, initStudentSwitch, isDrawerOpen, loadProfile, loadSettings, offerPushOnFirstLaunch, openDrawer,
-  syncTimezone,
+  prefetchHistory, syncTimezone,
 } from './profile.js';
 import { loadAssistantTab, openAssistant } from './assistant.js';
 import { navTabs, renderNav } from './tabs.js';
@@ -227,6 +227,13 @@ function bindPullToRefresh() {
     start = null;
     if (pulled <= PULL_ARM) {
       hide();
+      return;
+    }
+    // Без сети обновлять не из чего — объясняем, а не крутим загрузку.
+    if (isOffline()) {
+      hide();
+      notify('error');
+      banner(`${NO_INTERNET} — обновить данные не получится`, true, 3500);
       return;
     }
     // Данные остаются на экране, пока идёт запрос, и меняются на месте —
@@ -500,6 +507,21 @@ function initLiveSync() {
   });
 }
 
+// Без сети и после неё. Изменения, сделанные без сети, ушли на сервер
+// (outbox.js) — перечитываем их уже оттуда. Сеть вернулась — показанное
+// из сохранённого сверяем заново, как после возврата в приложение.
+function initNetwork() {
+  document.addEventListener('netschool:outbox-sent', () => {
+    ['homework', 'notes', 'prefs', 'settings'].forEach((topic) => applySync(topic).catch(() => {}));
+  });
+  document.addEventListener('netschool:network', ({ detail }) => {
+    if (detail.offline || demo) return;
+    forgetRevalidated();
+    if (!state.tab || $('screens').childElementCount || state.refreshing) return;
+    quietly(() => TABS[state.tab]());
+  });
+}
+
 // Какие вкладки показывают данные с этого адреса API.
 const FRESH_TABS = {
   '/api/diary': ['day', 'schedule'],
@@ -608,6 +630,7 @@ async function prefetch() {
       /* вкладка догрузится при заходе */
     }
   }
+  prefetchHistory();
 }
 
 function initChrome() {
@@ -617,6 +640,7 @@ function initChrome() {
   initResume();
   initLiveDiary();
   initLiveSync();
+  initNetwork();
   document.addEventListener('netschool:refresh', refreshCurrentTab);
   $('refreshBtn').addEventListener('click', () => refreshCurrentTab());
   $('menuBtn').addEventListener('click', openDrawer);

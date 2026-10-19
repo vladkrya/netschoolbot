@@ -5,6 +5,7 @@
 'use strict';
 
 import { api, demo } from './core.js';
+import { pendingOp, send } from './outbox.js';
 
 const KEYS = {
   theme: 'ns-theme', design: 'ns-design-v2', designNotice: 'ns-design-notice', weekends: 'ns-weekends', hwStatus: 'ns-hw-status', scheduleTab: 'ns-schedule-tab', answers: 'ns-answers', answerHint: 'ns-answer-hint', accent: 'ns-accent', accents: 'ns-accents', weights: 'ns-weights', thresholds: 'ns-thresholds', tabs: 'ns-tabs', pins: 'ns-pins', pwa: 'ns-pwa', lessonEdits: 'ns-lesson-edits', confetti: 'ns-confetti', motion: 'ns-motion',
@@ -58,9 +59,11 @@ async function flush() {
   const body = pending;
   pending = {};
   try {
-    await api('/api/prefs', { method: 'POST', body: JSON.stringify(body) });
+    // Без сети — в очередь (outbox.js): уйдёт, когда сеть появится, даже
+    // если приложение до тех пор закроют.
+    await send('prefs', '/api/prefs', { ...pendingOp('prefs')?.body, ...body });
   } catch {
-    /* без сети — останется на этом устройстве, уйдёт со следующим изменением */
+    /* сервер не принял — останется на этом устройстве, уйдёт со следующим изменением */
     pending = { ...body, ...pending };
   }
 }
@@ -76,15 +79,20 @@ export async function syncPrefs() {
   let server;
   syncStarted = true;
   try {
-    ({ data: server } = await api('/api/prefs'));
+    const payload = await api('/api/prefs');
+    // Сохранённая копия без сети старше того, что выбрано здесь.
+    if (payload.offline) return false;
+    server = payload.data;
   } catch {
     return false;
   } finally {
     syncStarted = false;
   }
+  // Изменённое без сети ещё не дошло до сервера — его значение главнее.
+  const waiting = pendingOp('prefs')?.body || {};
   let changed = false;
   for (const name of Object.keys(KEYS)) {
-    if (editedDuringSync.has(name)) continue;
+    if (editedDuringSync.has(name) || name in waiting) continue;
     const local = readLocal(name);
     if (name in server) {
       if (JSON.stringify(server[name]) !== JSON.stringify(local)) {

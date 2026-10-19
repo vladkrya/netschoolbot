@@ -9,6 +9,7 @@
 import { addDays, api, banner, esc, isoToday, mondayOf, plural, refuseReadOnly, state, weekdayIndex } from './core.js';
 import { closeSheet, openSheet } from './sheet.js';
 import { notify, select, tap } from './haptics.js';
+import { dequeue, pendingOp, pendingOps, realId, send } from './outbox.js';
 
 /* ───────────────────────── Проверочные работы ───────────────────────── */
 
@@ -29,12 +30,53 @@ export async function loadNotes(force = false) {
   try {
     const today = isoToday();
     const { data } = await api(`/api/notes?from=${addDays(today, -30)}&to=${addDays(today, 120)}`);
-    state.notes = data.items || [];
+    state.notes = withPending(data.items || []);
   } catch {
-    state.notes = state.notes || [];
+    state.notes = state.notes || withPending([]);
   }
   return state.notes;
 }
+
+// Без сети задача меняется только здесь, а изменение ждёт в очереди
+// (outbox.js) одной записью на задачу: новая — под временным отрицательным
+// id и путём создания, уже известная серверу — правкой по её id.
+const NOTE_FIELDS = ['date', 'text', 'subject', 'time', 'remind', 'done'];
+const opId = (id) => `note:${id}`;
+const isTemp = (id) => Number(id) < 0;
+
+/** Задачи с сервера (или его сохранённая копия) плюс ждущие отправки. */
+function withPending(notes) {
+  let result = [...notes];
+  for (const { id, path, body } of pendingOps('note:')) {
+    const noteId = Number(id.slice(5));
+    if (path === '/api/notes') {
+      result = result.filter((n) => n.id !== noteId);
+      result.push({ id: noteId, date: body.date, text: body.text, subject: body.subject || '',
+        time: body.time || '', remind: body.remind ?? null, done: Boolean(body.done) });
+    } else if (body.delete) {
+      result = result.filter((n) => n.id !== noteId);
+    } else {
+      result = result.map((n) => (n.id === noteId ? { ...n, ...pick(body) } : n));
+    }
+  }
+  return sortNotes(result);
+}
+
+const pick = (body) => Object.fromEntries(NOTE_FIELDS.filter((key) => key in body).map((key) => [key, body[key]]));
+
+/** Изменение задачи: к ждущему изменению той же задачи — дописать. */
+function saveNote(id, changes) {
+  const prev = pendingOp(opId(id));
+  if (isTemp(id) && prev) return send(opId(id), '/api/notes', { ...prev.body, ...changes });
+  const base = prev && !prev.body.delete ? prev.body : {};
+  return send(opId(id), `/api/notes/${id}`, { ...base, ...changes });
+}
+
+// Созданная без сети задача дошла до сервера — временный id меняем на настоящий.
+document.addEventListener('netschool:note-created', ({ detail: { temp, note } }) => {
+  if (!state.notes) return;
+  state.notes = state.notes.map((n) => (n.id === temp ? { ...n, id: note.id } : n));
+});
 
 /** Задачи в виде заданий для общего списка «Заданий». */
 export function notesAsItems(notes = state.notes || []) {
@@ -46,12 +88,13 @@ export function notesAsItems(notes = state.notes || []) {
 
 export async function setNoteDone(item, done) {
   if (refuseReadOnly()) return false;
-  const note = (state.notes || []).find((n) => n.id === item.id);
+  const id = realId(item.id);
+  const note = (state.notes || []).find((n) => n.id === id);
   if (note) note.done = done;
   item.done = done;
   done ? notify('success') : tap('soft');
   try {
-    await api(`/api/notes/${item.id}`, { method: 'POST', body: JSON.stringify({ done }) });
+    await saveNote(id, { done });
   } catch (error) {
     if (note) note.done = !done;
     item.done = !done;
@@ -64,9 +107,12 @@ export async function setNoteDone(item, done) {
 
 export async function deleteNote(item) {
   if (refuseReadOnly()) return false;
+  const id = realId(item.id);
   try {
-    await api(`/api/notes/${item.id}`, { method: 'POST', body: JSON.stringify({ delete: true }) });
-    state.notes = (state.notes || []).filter((n) => n.id !== item.id);
+    // Ещё не дошла до сервера — достаточно забыть.
+    if (isTemp(id) && pendingOp(opId(id))) dequeue(opId(id));
+    else await send(opId(id), `/api/notes/${id}`, { delete: true });
+    state.notes = (state.notes || []).filter((n) => n.id !== id);
     notify('success');
     return true;
   } catch (error) {
@@ -155,7 +201,12 @@ export function openNoteEditor(subjects, onSaved, { date = null, subject = '', n
     };
     button.disabled = true;
     try {
-      const { data } = await api(note ? `/api/notes/${note.id}` : '/api/notes', { method: 'POST', body: JSON.stringify(payload) });
+      const id = note ? realId(note.id) : -Date.now();
+      const { queued, data: sent } = note
+        ? await saveNote(id, payload)
+        : await send(opId(id), '/api/notes', payload);
+      // Без сети задача пока только здесь — такой, какой её ввели.
+      const data = queued ? { done: false, ...note, ...payload, id } : sent;
       const others = (state.notes || []).filter((n) => n.id !== data.id);
       state.notes = sortNotes([...others, data]);
       notify('success');

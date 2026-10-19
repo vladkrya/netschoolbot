@@ -12,10 +12,11 @@ import { openLessonEditor } from './edits.js';
 import { ICONS } from './icons.js';
 import { isNewDesign } from './appearance.js';
 import { answerSlot, bindDistance, distanceButton, loadAnswers } from './answer.js';
+import { pendingOps, send } from './outbox.js';
 
 /* ───────────────────── Отметка «выполнено» ───────────────────── */
 // Общая для «Д/З», экрана урока и экрана задания; хранится на сервере и
-// видна в /dz бота.
+// видна в /dz бота. Без сети отметка ждёт в очереди (outbox.js).
 
 export async function loadDone() {
   try {
@@ -23,6 +24,11 @@ export async function loadDone() {
     state.hwDone = new Set(data.keys);
   } catch {
     state.hwDone = state.hwDone || new Set();
+  }
+  // Сохранённая копия с сервера ещё не знает отметок, сделанных без сети.
+  for (const { body } of pendingOps('hw:')) {
+    if (body.done) state.hwDone.add(body.key);
+    else state.hwDone.delete(body.key);
   }
 }
 
@@ -58,7 +64,7 @@ export async function saveDone(item, next, apply, source = '') {
   set(next);
   next ? notify('success') : tap('soft');
   try {
-    await api('/api/homework/done', { method: 'POST', body: JSON.stringify({ key: item.key, done: next }) });
+    await send(`hw:${item.key}`, '/api/homework/done', { key: item.key, done: next });
   } catch (error) {
     set(!next);
     notify('error');

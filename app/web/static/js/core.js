@@ -197,6 +197,109 @@ export function banner(text, isError, hideAfter = 0) {
   if (text && hideAfter) bannerTimer = setTimeout(() => banner(''), hideAfter);
 }
 
+/* ─────────────────────────── Без сети ─────────────────────────── */
+// Одна плашка на всё приложение вместо разных сообщений на каждом экране.
+// То, что без сети не работает (вложения, чаты, почта, вход), бледнеет, а
+// касание объясняет почему. Отметки, свои задачи и настройки работают и так:
+// они копятся в очереди (outbox.js) и уходят на сервер, когда сеть вернётся.
+
+export const NO_INTERNET = 'Нет подключения к интернету';
+const ONLINE_ONLY_TEXT = 'Нет подключения к интернету — это заработает, когда появится сеть';
+// Что без сети не работает. Тот же список — в app.css (html.offline).
+const ONLINE_ONLY = [
+  'a.attach', '[data-online]', '#refreshBtn', '#composeBtn', '#composeSend', '#aiFab',
+  '.nav-item[data-tab="assistant"]', '[data-mail-mode="chat"]', '#drawerAccount', '#drawerLock',
+  '#drawerDevices', '#drawerAssistant', '#drawerStatus', '#drawerExport', '#drawerFamily',
+  '#drawerCalendar', '#drawerEvents', '#drawerReferences', '#drawerBug', '#drawerLogout',
+  '.view-switch [data-view]', '[data-student]', '#pushToggle', '#keepFiles', '#sgoUpdates',
+  '[data-answer-save]', '[data-answer-edit]', '[data-answer-clear]', '[data-answer-delete]',
+  '[data-reference]', '.distance-join',
+].join(', ');
+const PROBE_EVERY_MS = 8000;
+const PROBE_LIMIT_MS = 5000;
+
+let offline = !demo && navigator.onLine === false;
+let outboxCount = 0;
+let probeTimer = 0;
+document.documentElement.classList.toggle('offline', offline);
+
+/** Нет связи с сервером приложения: сети нет или он недоступен. */
+export const isOffline = () => offline;
+
+const offlineTitle = () => (navigator.onLine === false ? 'Нет интернета' : 'Нет связи с сервером');
+
+function paintOfflinePill() {
+  let pill = $('netPill');
+  if (!offline) { pill?.remove(); return; }
+  if (!pill) {
+    pill = document.createElement('button');
+    pill.id = 'netPill';
+    pill.type = 'button';
+    pill.className = 'net-pill';
+    pill.setAttribute('role', 'status');
+    pill.addEventListener('click', () => banner(outboxCount
+      ? 'Изменения сохранены на этом устройстве и отправятся на сервер, когда появится сеть.'
+      : 'Показаны сохранённые данные. Можно отмечать задания, добавлять свои задачи и менять оформление — всё отправится на сервер, когда появится сеть.', false, 6000));
+    document.body.append(pill);
+  }
+  const waiting = outboxCount
+    ? `${outboxCount} ${plural(outboxCount, 'изменение ждёт', 'изменения ждут', 'изменений ждут')} сети`
+    : 'Показано сохранённое';
+  pill.innerHTML = `${ICONS.offline}<span><b>${offlineTitle()}</b><small>${waiting}</small></span>`;
+}
+
+export function setOffline(value) {
+  if (demo) return;
+  clearTimeout(probeTimer);
+  if (value) probeTimer = setTimeout(probe, PROBE_EVERY_MS);
+  if (offline === value) return;
+  offline = value;
+  document.documentElement.classList.toggle('offline', value);
+  paintOfflinePill();
+  // Плашки «не удалось обновить» без сети ничего не добавляют к общей.
+  if (value && notice) banner('');
+  dismissedNotice = '';
+  // Worker после обрыва минуту отдаёт сохранённое, не дожидаясь сети: сеть
+  // вернулась — пусть снова спрашивает её.
+  if (!value) navigator.serviceWorker?.controller?.postMessage('online');
+  document.dispatchEvent(new CustomEvent('netschool:network', { detail: { offline: value } }));
+}
+
+/** Есть ли связь с сервером: короткий запрос мимо кэша worker. */
+let probing = null;
+export function probe() {
+  if (demo) return Promise.resolve(true);
+  if (probing) return probing;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), PROBE_LIMIT_MS);
+  probing = fetch(`${base}/sw.js`, { method: 'HEAD', cache: 'no-store', signal: controller.signal })
+    .then(() => { setOffline(false); return true; }, () => { setOffline(true); return false; })
+    .finally(() => { clearTimeout(timer); probing = null; });
+  return probing;
+}
+
+if (!demo) {
+  window.addEventListener('offline', () => setOffline(true));
+  window.addEventListener('online', probe);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && offline) probe(); });
+  document.addEventListener('netschool:outbox', ({ detail }) => {
+    outboxCount = detail.count;
+    paintOfflinePill();
+  });
+  if (offline) {
+    if (document.body) paintOfflinePill();
+    else document.addEventListener('DOMContentLoaded', paintOfflinePill, { once: true });
+    probeTimer = setTimeout(probe, PROBE_EVERY_MS);
+  }
+  // Касание того, что без сети не работает: объяснение вместо ошибки.
+  document.addEventListener('click', (event) => {
+    if (!offline || !event.target.closest?.(ONLINE_ONLY)) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    banner(ONLINE_ONLY_TEXT, true, 3500);
+  }, true);
+}
+
 // Плашки о работе без связи: одна на состояние. Закрытая не всплывает при
 // каждом следующем запросе, пока связь не вернётся.
 let notice = '';
@@ -225,7 +328,6 @@ const REQUEST_TIMEOUT_MS = 75000;
 // Кэш моложе минуты — его только что получили со школьного сервера,
 // перепроверять незачем.
 const REVALIDATE_AFTER_S = 60;
-const OFFLINE_TEXT = 'Нет связи — показаны сохранённые данные';
 const STALE_TEXT = 'Не удалось обновить дневник. Показаны сохранённые данные.';
 // Школьный сервер не отвечает (техработы, сбой): ничего делать не нужно.
 const APP_SERVER_TEXT = 'Не удалось подключиться к серверу приложения. Показаны сохранённые данные.';
@@ -253,6 +355,8 @@ export function forgetRevalidated() {
 }
 
 function staleBanner(show, reason, source) {
+  // Без сети обновить нельзя ничего — об этом уже говорит общая плашка.
+  if (show && offline) return;
   // Карточку простоя снимает только markSgoUp после ответа самой школы.
   if (!show) {
     clearNotices();
@@ -310,7 +414,8 @@ export function markSgoDown() {
 const withoutRefresh = (path) => path.replace(/([?&])refresh=1(&|$)/, (_, lead, tail) => (tail ? lead : ''));
 
 function sgoHint(failed = false, slow = false) {
-  if (demo) return;
+  // Без сети не ответит никто — дело не в «Сетевом городе».
+  if (demo || offline) return;
   const generation = sgoRecoveryGeneration;
   import('./sgo.js').then((module) => {
     if (generation === sgoRecoveryGeneration) module.checkServer({ failed, slow });
@@ -440,11 +545,15 @@ async function request(path, options = {}) {
       await new Promise((resolve) => setTimeout(resolve, 700));
       return request(path, { ...options, networkRetried: true });
     }
-    const failure = new Error(error.name === 'AbortError'
-      ? 'Сервер приложения не ответил вовремя. Проверьте интернет и повторите попытку.'
-      : 'Не удалось подключиться к серверу приложения. Проверьте интернет и повторите попытку.');
+    // До сервера не достучались совсем — это «нет сети», одна плашка на всё.
+    if (error.name !== 'AbortError' || navigator.onLine === false) setOffline(true);
+    const failure = new Error(offline ? NO_INTERNET
+      : error.name === 'AbortError'
+        ? 'Сервер приложения не ответил вовремя. Проверьте интернет и повторите попытку.'
+        : 'Не удалось подключиться к серверу приложения. Проверьте интернет и повторите попытку.');
     failure.reason = 'server';
     failure.source = 'app';
+    failure.offline = offline;
     throw failure;
   } finally {
     sgoRequests.delete(controller);
@@ -474,16 +583,16 @@ async function request(path, options = {}) {
     throw error;
   }
   if (response.headers.get('X-Netschool-Offline')) {
-    // Ответ из копии service worker: сети нет совсем.
-    showNotice(OFFLINE_TEXT);
+    // Ответ из копии service worker: сеть не ответила вовремя. Проверяем,
+    // есть ли она вообще, — без неё общая плашка.
+    if (!offline) probe();
     return { ...payload, offline: true, stale: false };
   }
+  // Ответ пришёл по сети — связь есть.
+  setOffline(false);
   // У кэшированного ответа есть age. Только ответ самой школы снимает
   // сообщение о простое; /profile и сохранённая копия ничего не доказывают.
   if (watched && payload.stale === false && payload.age == null) markSgoUp();
-  // Ответ пришёл по сети — связь вернулась.
-  if (notice === OFFLINE_TEXT) banner('');
-  if (dismissedNotice === OFFLINE_TEXT) dismissedNotice = '';
   return payload;
 }
 
@@ -702,6 +811,14 @@ export function attachmentsHtml(items) {
 }
 
 export function errorCard(error, retryId) {
+  // Без сети — одинаково на всех экранах: сохранённого здесь ещё нет.
+  if (error.offline || (offline && error.source === 'app')) {
+    return `<div class="card error-card offline-card">
+      <p><b>${NO_INTERNET}</b></p>
+      <p class="muted small">Этого ещё нет на устройстве — откроется, когда появится сеть.</p>
+      ${retryId ? `<button class="btn outline" id="${retryId}">Повторить</button>` : ''}
+    </div>`;
+  }
   const needsLogin = error.reason === 'login' || Boolean(LOGIN_TEXTS[error.reason]);
   return `<div class="card error-card">
       <p>${esc(String(error.message).replace(/\s*Войти заново: \/login$/, ''))}</p>

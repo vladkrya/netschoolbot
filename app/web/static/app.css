@@ -360,6 +360,46 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 }
 #sgoDown .btn.outline { background: rgba(255, 255, 255, .55); color: #5d4037; border: 1.5px solid currentColor; box-shadow: none; }
 .banner { cursor: pointer; touch-action: none; transition: transform .15s, opacity .15s; }
+
+/* ─────────────────────────── Без сети ─────────────────────────── */
+/* Одна плашка на всё приложение (core.js) — над нижней панелью, по центру:
+   не закрывает шапку и сообщения под ней и видна поверх открытых экранов. */
+.net-pill {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--nav-h) + 12px);
+  z-index: 45;
+  transform: translateX(-50%);
+  max-width: calc(100vw - 164px);
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 14px 7px 11px;
+  border: 0; border-radius: 999px;
+  font: inherit; text-align: left;
+  color: #fff;
+  background: color-mix(in srgb, #37404d 92%, transparent);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, .25);
+  animation: net-pill-in .3s var(--ease);
+}
+.net-pill .icon { flex: none; opacity: .9; }
+.net-pill span { display: grid; min-width: 0; line-height: 1.2; }
+.net-pill b { font-size: 13px; font-weight: 650; }
+.net-pill small { font-size: 11px; opacity: .78; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@keyframes net-pill-in { from { opacity: 0; transform: translate(-50%, 12px); } }
+/* То, что без сети не работает, бледнеет; касание объясняет почему.
+   Тот же список — ONLINE_ONLY в core.js. */
+html.offline :is(a.attach, [data-online], #refreshBtn, #composeBtn, #composeSend, #aiFab,
+  .nav-item[data-tab="assistant"], [data-mail-mode="chat"], #drawerAccount, #drawerLock,
+  #drawerDevices, #drawerAssistant, #drawerStatus, #drawerExport, #drawerFamily,
+  #drawerCalendar, #drawerEvents, #drawerReferences, #drawerBug, #drawerLogout,
+  .view-switch [data-view], [data-student], [data-answer-save], [data-answer-edit], [data-answer-clear],
+  [data-answer-delete], [data-reference], .distance-join),
+html.offline .switch-row:has(#pushToggle, #keepFiles, #sgoUpdates) {
+  opacity: .42;
+  filter: grayscale(.7);
+}
+.offline-card .muted { margin-top: 2px; }
 /* Перерисовка дня по таймеру — без анимации появления. */
 .list.quiet, .list.quiet * { animation: none !important; }
 

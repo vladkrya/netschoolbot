@@ -46,6 +46,15 @@ let offlineUntil = 0;
 const seemsOffline = () => Date.now() < offlineUntil;
 const markOffline = () => { offlineUntil = Date.now() + OFFLINE_HOLD_MS; };
 const markOnline = () => { offlineUntil = 0; };
+// Приложение достучалось до сервера мимо worker (проверка связи, core.js).
+self.addEventListener('message', (event) => { if (event.data === 'online') markOnline(); });
+
+// Последняя открытая страница приложения — под одним ключом, какой бы адрес
+// ни открыли. Раньше копия бралась только по точному адресу: иконка «Домой»,
+// ссылка с токеном или ?install=1 открывали другой адрес, и без сети
+// показывалось «Сохранённых данных нет», хотя дневник на устройстве был.
+const SHELL_KEY = new URL('./__app', self.registration.scope).href;
+const isShell = (url) => url.pathname === new URL(self.registration.scope).pathname;
 
 // Предел самому запросу в сеть. Он продолжается в фоне после того, как
 // показана копия, а белые списки держат соединение минутами: зависшие
@@ -93,11 +102,15 @@ async function networkFirst(request, event) {
   const navigate = request.mode === 'navigate';
   const network = limitedFetch(request, limit).then((response) => {
     markOnline();
-    if (response.ok) cache.put(cacheKey(request), response.clone());
+    if (response.ok) {
+      cache.put(cacheKey(request), response.clone());
+      if (navigate && isShell(new URL(request.url))) cache.put(SHELL_KEY, response.clone());
+    }
     return response;
   });
   const fromCache = async (error) => {
-    const saved = await cache.match(cacheKey(request));
+    const saved = await cache.match(cacheKey(request))
+      || (navigate && isShell(new URL(request.url)) ? await cache.match(SHELL_KEY) : undefined);
     if (!saved && navigate && error) return offlinePage();
     if (!saved) throw error;
     // Помечаем, чтобы приложение сказало «нет сети, показаны сохранённые данные».

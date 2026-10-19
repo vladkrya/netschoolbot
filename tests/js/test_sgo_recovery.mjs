@@ -15,12 +15,13 @@ function setup() {
   let offline = false;
   const document = new EventTarget();
   document.getElementById = (id) => elements.get(id) || null;
+  document.documentElement = { classList: { toggle() {} } };
   document.createElement = () => { throw new Error('Old outage must not create a new card'); };
   elements.set('banner', { dataset: { dismiss: '1' }, style: {}, classList: { toggle() {} } });
   elements.set('sgoDown', { dataset: {}, remove() { removed += 1; elements.delete('sgoDown'); } });
   const globals = {
     document, Event, CustomEvent: class extends Event {}, AbortController,
-    window: { NETSCHOOL: { base: '', token: '', demo: false }, matchMedia: () => ({ matches: false }) },
+    window: { NETSCHOOL: { base: '', token: '', demo: false }, matchMedia: () => ({ matches: false }), addEventListener() {} },
     navigator: {}, sessionStorage: {
       getItem: (key) => storage.get(key), setItem: (key, value) => storage.set(key, value),
       removeItem: (key) => storage.delete(key),
