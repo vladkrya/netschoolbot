@@ -31,6 +31,8 @@ import { initIosHaptics, notify, tap } from './haptics.js';
 import { getPref, setPref, syncPrefs } from './prefs.js';
 import { loadDone } from './details.js';
 import { loadNotes } from './notes.js';
+import { loadGames, warmGames } from './games.js';
+import { initRepin } from './repin.js';
 
 const TABS = {
   day: loadDay,
@@ -39,6 +41,7 @@ const TABS = {
   homework: loadHomework,
   totals: loadTotals,
   mail: loadMail,
+  games: loadGames,
   settings: loadSettings,
 };
 
@@ -929,6 +932,7 @@ async function start() {
   bindPullToRefresh();
   initSwipeBack();
   initTrackpad();
+  initRepin();
   setFallbackBack(fallbackBack);
 
   // С PIN сервер не кладёт имя в страницу, а профиль без сети приходит
@@ -941,6 +945,8 @@ async function start() {
   // Первая вкладка панели — та, с которой открывается приложение.
   const firstTab = switchTab(navTabs()[0]);
   firstTab.then(() => setTimeout(prefetch, 600)).catch(() => {});
+  // Игры качаются заранее: так они откроются и без сети.
+  setTimeout(warmGames, 8000);
 
   // Профиль нужен только меню, но имя ученика в шапке берём из него,
   // если страница открыта без токена (по initData Telegram).

@@ -19,13 +19,14 @@ export const TAB_DEFS = {
   homework: { icon: 'checklist', old: 'Д/З', fresh: 'Задания' },
   totals: { icon: 'book', old: 'Итоги', fresh: 'Оценки' },
   mail: { icon: 'chat', old: 'Сообщения', fresh: 'Сообщения' },
+  games: { icon: 'game', old: 'Игры', fresh: 'Игры' },
   settings: { icon: 'gear', old: 'Настройки', fresh: 'Настройки' },
 };
 
 /** Названия для списка в настройках — полные, без сокращений. */
 export const TAB_NAMES = {
   day: 'День', schedule: 'Звонки / неделя', assistant: 'ИИ-помощник', homework: 'Задания',
-  totals: 'Оценки', mail: 'Сообщения (почта и чаты)', settings: 'Настройки',
+  totals: 'Оценки', mail: 'Сообщения (почта и чаты)', games: 'Игры', settings: 'Настройки',
 };
 
 // Вкладок в новом дизайне пять (звонки и помощник переехали на «День»), и
