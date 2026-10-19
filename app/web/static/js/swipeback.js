@@ -80,7 +80,7 @@ export function initSwipeBack() {
     // Вправо — с любого места поверх экрана и на вкладках: своих жестов вбок
     // там нет. На «Дне» — только от края, иначе спутается с листанием дней.
     // Панель вкладок тянут пальцем, в полях выделяют текст — там жест свой.
-    const ownGesture = event.target.closest?.('#bottomNav, input, textarea, select, [contenteditable]');
+    const ownGesture = event.target.closest?.('#bottomNav, input, textarea, select, [contenteditable], [data-own-gesture]');
     const calendarForm = event.target.closest?.('.calendar-screen');
     const anywhere = !calendarForm && (overlay || state.tab !== 'day') && !ownGesture && !scrollsSideways(event.target);
     if (touch.clientX > EDGE_PX && !anywhere && !(fromRight && !ownGesture)) return;

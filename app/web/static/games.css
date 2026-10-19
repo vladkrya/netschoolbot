@@ -1,0 +1,312 @@
+/* Вкладка «Игры» и сами игры (js/games.js, js/games/*.js). */
+
+/* ─────────────────────────── Вкладка ─────────────────────────── */
+
+.games-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
+  padding: 12px;
+}
+.game-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 14px;
+  border-radius: 18px;
+  background: var(--card);
+  text-align: left;
+  transition: transform .15s;
+}
+.game-tile:active { transform: scale(.96); }
+.game-emoji { font-size: 34px; line-height: 1.1; margin-bottom: 6px; }
+.game-name { font-weight: 650; font-size: 16px; }
+.game-note { font-size: 12.5px; color: var(--text2); }
+.games-foot { grid-column: 1 / -1; text-align: center; padding: 4px 8px 8px; }
+
+/* ─────────────────────────── Общее ─────────────────────────── */
+
+.game-body { -webkit-user-select: none; user-select: none; }
+.game { display: flex; flex-direction: column; gap: 10px; max-width: 520px; margin: 0 auto; }
+.game-stats { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 14px; font-size: 14px; color: var(--text2); }
+.game-stats b { color: var(--text); font-variant-numeric: tabular-nums; }
+.game-stats .win, .win { color: var(--g5); }
+.game-stats .lose { color: var(--g2); }
+.game-chips { justify-content: center; }
+.game-stage { position: relative; display: flex; justify-content: center; }
+.game-canvas { display: block; border-radius: 14px; touch-action: none; background: var(--card); }
+.game-hint { text-align: center; }
+.game button:disabled { opacity: .45; }
+
+.dpad, .game-pad { display: grid; gap: 8px; touch-action: manipulation; }
+.dpad {
+  grid-template: ". up ." 52px "left down right" 52px / 64px 64px 64px;
+  justify-content: center;
+}
+.dpad [data-dir="up"] { grid-area: up; }
+.dpad [data-dir="left"] { grid-area: left; }
+.dpad [data-dir="down"] { grid-area: down; }
+.dpad [data-dir="right"] { grid-area: right; }
+.game-pad { grid-template-columns: repeat(5, 1fr); }
+.dpad button, .game-pad button {
+  height: 52px;
+  border-radius: 14px;
+  background: var(--card);
+  font-size: 20px;
+  text-align: center;
+  touch-action: manipulation;
+}
+.dpad button:active, .game-pad button:active { background: var(--card-2); transform: scale(.94); }
+
+/* Карточка поверх поля: начало, проигрыш, победа. */
+.game-over {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--bg) 55%, transparent);
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+  animation: rise-in .25s var(--ease) both;
+}
+.game-over-card {
+  width: min(300px, 100%);
+  padding: 18px;
+  border-radius: 18px;
+  background: var(--card);
+  text-align: center;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .2);
+}
+.game-over-title { font-size: 20px; font-weight: 700; margin-bottom: 4px; }
+
+/* ─────────────────────────── Карты ─────────────────────────── */
+
+.pc {
+  position: relative;
+  display: inline-block;
+  flex: none;
+  width: 52px;
+  aspect-ratio: 5 / 7;
+  border-radius: 7px;
+  background: #fff;
+  color: #1d2430;
+  border: 1px solid rgba(0, 0, 0, .14);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .15);
+  font-size: 15px;
+  line-height: 1;
+  transition: transform .15s, opacity .15s;
+}
+.pc.red { color: #d93a3f; }
+.pc b { position: absolute; top: 4px; left: 4px; font-weight: 700; letter-spacing: -.5px; }
+.pc i { position: absolute; top: 4px; right: 4px; font-style: normal; font-size: .85em; }
+.pc em { position: absolute; inset: 0; display: grid; place-items: center; padding-top: 25%; font-style: normal; font-size: 1.7em; }
+.pc.back {
+  background:
+    repeating-linear-gradient(45deg, rgba(255, 255, 255, .16) 0 4px, transparent 4px 8px),
+    var(--primary);
+  border: 2px solid #fff;
+}
+.pc.empty {
+  display: inline-grid;
+  place-items: center;
+  background: transparent;
+  border: 1.5px dashed var(--border);
+  box-shadow: none;
+  color: var(--text2);
+  font-weight: 600;
+}
+.pc.mini { width: 22px; border-width: 1px; border-radius: 4px; }
+
+/* ─────────────────────────── Пасьянс ─────────────────────────── */
+
+.sol-board { width: 100%; }
+.sol-top, .sol-cols { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; }
+.sol-top { margin-bottom: 12px; }
+.sol-top .pc, .sol-col .pc { width: 100%; font-size: min(3.6vw, 17px); }
+.sol-gap { visibility: hidden; }
+.sol-col { display: flex; flex-direction: column; min-height: 160px; }
+/* Проценты у margin-top считаются от ширины колонки, то есть карты. */
+.sol-col .pc + .pc.stack-down { margin-top: -122%; }
+.sol-col .pc + .pc.stack-up { margin-top: -100%; }
+.sol-col .pc.stack-down + .pc.stack-up { margin-top: -110%; }
+.pc.recycle { font-size: 22px; }
+
+/* ─────────────────────────── Судоку ─────────────────────────── */
+
+.sudoku-grid {
+  display: grid;
+  grid-template-columns: repeat(9, 1fr);
+  width: min(100%, 440px);
+  aspect-ratio: 1;
+  border: 2px solid var(--text);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--card);
+}
+.sudoku-wait { grid-column: 1 / -1; align-self: center; text-align: center; }
+.sk {
+  display: grid;
+  place-items: center;
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  font-size: min(5.4vw, 24px);
+  font-weight: 500;
+  color: var(--primary);
+  text-align: center;
+}
+.sk.br { border-right: 2px solid var(--text); }
+.sk.bb { border-bottom: 2px solid var(--text); }
+.sk.given { color: var(--text); font-weight: 650; }
+.sk.peer { background: var(--card-2); }
+.sk.same { background: color-mix(in srgb, var(--primary) 18%, transparent); }
+.sk.sel { background: color-mix(in srgb, var(--primary) 32%, transparent); }
+.sk.wrong { color: var(--g2); }
+.sk-notes { display: grid; grid-template-columns: repeat(3, 1fr); width: 100%; height: 100%; padding: 1px; }
+.sk-notes i { display: grid; place-items: center; font-style: normal; font-size: min(2.3vw, 10px); color: var(--text2); }
+.sudoku-pad { display: grid; grid-template-columns: repeat(9, 1fr); gap: 5px; }
+.sudoku-pad button {
+  height: 48px;
+  border-radius: 10px;
+  background: var(--card);
+  font-size: 21px;
+  font-weight: 600;
+  color: var(--primary);
+  text-align: center;
+}
+.sudoku-pad button.used { opacity: .3; }
+.sudoku-pad button:active { transform: scale(.92); }
+.sudoku-tools { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+
+/* ─────────────────────────── Тетрис ─────────────────────────── */
+
+.tetris-wrap { display: flex; justify-content: center; gap: 10px; }
+.tetris-side { display: flex; flex-direction: column; gap: 6px; align-items: center; min-width: 64px; }
+.tetris-side canvas { background: var(--card); border-radius: 10px; }
+
+/* ─────────────────────────── Дурак ─────────────────────────── */
+
+.dk-stage { flex-direction: column; gap: 10px; }
+.dk-bots { display: flex; justify-content: space-around; gap: 6px; }
+.dk-bot { display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: 13px; padding: 6px; border-radius: 12px; transition: background .2s; }
+.dk-bot.thinking { background: color-mix(in srgb, var(--primary) 14%, transparent); }
+.dk-bot.out { opacity: .5; }
+.dk-backs { display: flex; height: 31px; }
+.dk-backs .pc + .pc { margin-left: -14px; }
+.dk-name { font-weight: 600; }
+.dk-role { font-size: 11.5px; color: var(--text2); min-height: 14px; }
+.dk-mid { display: flex; align-items: center; gap: 12px; min-height: 120px; padding: 10px; border-radius: 16px; background: var(--card); }
+.dk-deck { position: relative; display: flex; flex-direction: column; align-items: center; width: 64px; flex: none; }
+.dk-trump { transform: rotate(90deg) translateX(8px); width: 46px; }
+.dk-pile { position: absolute; top: 0; width: 46px; }
+.dk-suit { font-size: 34px; }
+.dk-count { font-size: 12px; color: var(--text2); margin-top: 6px; }
+.dk-table { flex: 1; display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: flex-start; }
+.dk-pair { position: relative; width: 46px; height: 82px; }
+.dk-pair .pc { width: 46px; font-size: 14px; }
+.dk-pair .dk-cover { position: absolute; left: 10px; top: 16px; transform: rotate(8deg); }
+.dk-pair.target > .pc:first-child { outline: 2.5px solid var(--primary); outline-offset: 1px; }
+.dk-status { text-align: center; min-height: 20px; font-size: 14px; }
+.dk-status .btn { margin-top: 10px; }
+.dk-actions { display: flex; justify-content: center; gap: 8px; min-height: 0; }
+.dk-actions .btn { width: auto; margin: 0; padding: 9px 22px; }
+.dk-hand { display: flex; justify-content: center; padding: 10px 0 4px; }
+.dk-hand .pc { width: 54px; }
+.dk-hand .pc + .pc { margin-left: min(4px, calc((100% - 54px * var(--n)) / (var(--n) - 1))); }
+.dk-hand .pc.playable { transform: translateY(-8px); }
+.dk-hand .pc.dim { filter: brightness(.82); }
+
+/* ─────────────────────────── Paper.io ─────────────────────────── */
+
+.pio-board { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 12px; font-size: 12.5px; min-height: 17px; }
+.pio-board span::before {
+  content: '';
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-right: 4px;
+  border-radius: 3px;
+  background: var(--c);
+}
+
+/* ─────────────────────────── Слоты ─────────────────────────── */
+
+.slot-machine {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  padding: 14px;
+  border-radius: 20px;
+  background: linear-gradient(180deg, var(--head), var(--head-2));
+}
+.slot-reel { height: 76px; overflow: hidden; border-radius: 12px; background: var(--card); }
+.slot-strip { will-change: transform; }
+.slot-strip span { display: grid; place-items: center; height: 76px; font-size: 44px; }
+.slot-line { position: absolute; left: 8px; right: 8px; top: 50%; height: 2px; background: rgba(255, 255, 255, .55); pointer-events: none; }
+.slot-spin { font-size: 17px; padding: 14px; }
+.slot-table { display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px 10px; font-size: 13px; color: var(--text2); text-align: center; }
+
+/* ─────────────────────────── Русская рулетка ─────────────────────────── */
+
+.rr-stage { flex-direction: column; align-items: center; gap: 14px; }
+.rr-players { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+.rr-player { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 10px; min-width: 70px; border-radius: 14px; background: var(--card); font-size: 12.5px; transition: transform .2s, background .2s; }
+.rr-player.now { background: color-mix(in srgb, var(--primary) 22%, var(--card)); transform: scale(1.06); }
+.rr-player.out { opacity: .45; }
+.rr-face { font-size: 26px; }
+.rr-drum {
+  position: relative;
+  width: 150px;
+  height: 150px;
+  border-radius: 50%;
+  background: radial-gradient(circle, #8a929e, #4a515c);
+  box-shadow: inset 0 0 0 6px rgba(0, 0, 0, .2), 0 6px 18px rgba(0, 0, 0, .25);
+  transition: transform .6s cubic-bezier(.2, .8, .3, 1);
+}
+.rr-drum.spinning { transition-duration: .7s; }
+.rr-drum.bang { animation: rr-bang .45s; }
+@keyframes rr-bang { 30% { box-shadow: 0 0 0 14px rgba(255, 160, 40, .7); } }
+.rr-hole {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 34px;
+  height: 34px;
+  margin: -17px;
+  border-radius: 50%;
+  background: #23272e;
+  transform: rotate(var(--a)) translateY(-44px);
+}
+.rr-axis { position: absolute; left: 50%; top: 50%; width: 22px; height: 22px; margin: -11px; border-radius: 50%; background: #6b737f; }
+.rr-status { min-height: 22px; font-weight: 600; text-align: center; }
+.rr-actions { display: flex; flex-direction: column; gap: 0; width: 100%; }
+
+/* ─────────────────────────── Блэкджек ─────────────────────────── */
+
+.bj-table {
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 20px;
+  background: radial-gradient(ellipse at top, #2f8a5a, #1d5e3c);
+  color: #fff;
+}
+.bj-table .muted { color: rgba(255, 255, 255, .7); }
+.bj-name { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+.bj-cards { display: flex; min-height: 62px; }
+.bj-cards .pc { width: 44px; font-size: 13px; }
+.bj-cards .pc + .pc { margin-left: -16px; }
+.bj-score { font-size: 13px; margin-top: 4px; min-height: 16px; }
+.bj-dealer { display: flex; flex-direction: column; align-items: center; }
+.bj-seats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.bj-seat { display: flex; flex-direction: column; align-items: center; padding: 6px 2px; border-radius: 12px; transition: background .2s; }
+.bj-seat.me { background: rgba(255, 255, 255, .1); }
+.bj-seat.active { background: rgba(255, 255, 255, .22); }
+.bj-message { text-align: center; font-weight: 600; min-height: 18px; }
+.bj-buttons { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.bj-buttons .btn { margin: 0; }

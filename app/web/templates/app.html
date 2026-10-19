@@ -71,6 +71,7 @@
 <link rel="stylesheet" href="{{ base }}/static/v{{ version }}/wide.css">
 <!-- Хеллоуин: правила под html[data-holiday="halloween"], включает appearance.js. -->
 <link rel="stylesheet" href="{{ base }}/static/v{{ version }}/halloween.css">
+<link rel="stylesheet" href="{{ base }}/static/v{{ version }}/games.css">
 <!-- До app.js: приложению нужен Telegram.WebApp уже при старте, чтобы
      забрать initData до первого запроса. Копия у нас, а не с telegram.org:
      без VPN telegram.org заблокирован, и синхронный скрипт в head не давал
@@ -200,6 +201,7 @@
     <button class="fab" id="composeBtn" aria-label="Написать письмо" data-icon="plus"></button>
   </section>
   <section class="panel" id="panel-assistant"><div id="assistantContent"></div></section>
+  <section class="panel" id="panel-games"><div class="games-grid" id="gamesContent"></div></section>
   <section class="panel" id="panel-settings"><div class="settings-page" id="settingsContent"></div></section>
 </main>
 

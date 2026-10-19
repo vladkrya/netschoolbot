@@ -1573,8 +1573,8 @@ async def mark_history(request: web.Request) -> web.Response:
 
 THEMES = ("auto", "light", "dark")
 # Вкладки нижней панели (tabs.js); «Настройки» убрать нельзя — иначе их не вернуть.
-NAV_TABS = ("day", "schedule", "assistant", "homework", "totals", "mail", "settings")
-MAX_NAV_TABS = 7
+NAV_TABS = ("day", "schedule", "assistant", "homework", "totals", "mail", "games", "settings")
+MAX_NAV_TABS = 8
 # Закреплённые предметы в «Оценках» — с запасом на все предметы года.
 MAX_PINS = 40
 # Свои цвета акцента, сохранённые рядом с готовыми.

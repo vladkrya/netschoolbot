@@ -849,6 +849,7 @@ function render() {
       <div class="drawer-sub">Полезное</div>`}
       <div class="tool-grid">
       ${data.assistant && !demo && !readonly && !navTabs().includes('assistant') ? toolTile('drawerAssistant', 'sparkles', 'ИИ-помощник') : ''}
+      ${navTabs().includes('games') ? '' : toolTile('drawerGames', 'game', 'Игры')}
       ${toolTile('drawerCalc', 'calc', 'Калькулятор баллов')}
       ${toolTile('drawerHistory', 'clock', 'История оценок')}
       ${toolTile('drawerStatus', 'pulse', 'Статус серверов')}
@@ -1160,6 +1161,10 @@ function bindDrawer() {
     loadCalc();
   });
   $('drawerAssistant')?.addEventListener('click', () => { closeDrawer(); openAssistant(); });
+  $('drawerGames')?.addEventListener('click', () => {
+    closeDrawer();
+    window.dispatchEvent(new CustomEvent('netschool:tab', { detail: 'games' }));
+  });
   $('drawerHistory').addEventListener('click', () => { tap(); openHistory(); });
   $('drawerStatus').addEventListener('click', async () => {
     closeDrawer();

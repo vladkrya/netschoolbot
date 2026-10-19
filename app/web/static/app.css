@@ -1364,6 +1364,9 @@ body::after {
   -webkit-mask-image: linear-gradient(to top, #000 45%, transparent);
   mask-image: linear-gradient(to top, #000 45%, transparent);
 }
+/* На одну раскладку без отрисовки: WebKit заново ставит fixed-элементы по
+   окну (repin.js). Не display: none — тот перезапускал бы их анимации. */
+html.repin body::after, html.repin .bottom-nav, html.repin .fab { position: absolute !important; }
 
 /* «Что если»: свои оценки в итогах по предмету. */
 .whatif-add { display: flex; gap: 8px; margin: 4px 0 10px; }
