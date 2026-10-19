@@ -335,6 +335,7 @@ function clearNotices() {
 
 let unlockToken = '';
 export function setUnlock(value) { unlockToken = value; }
+export function unlock() { return unlockToken; }
 // Вход был без сети: на 423 пробуем войти на сервере и повторить запрос.
 let lockedHandler = null;
 export function onLocked(handler) { lockedHandler = handler; }

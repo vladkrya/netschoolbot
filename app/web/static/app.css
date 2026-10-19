@@ -2498,3 +2498,7 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
   border: 0; border-radius: 12px; background: var(--card-2); color: var(--text); font: inherit; font-size: 14px; cursor: pointer; }
 .device-more .icon { width: 18px; height: 18px; color: var(--text2); }
 :root .btn.outline.danger.device-end, :root .btn.outline.danger.device-end-all { color: var(--g2); border-color: color-mix(in srgb, var(--g2) 45%, transparent); background: color-mix(in srgb, var(--g2) 10%, transparent); }
+
+/* Подпись автора ретро-сайта под переключателем (retro.js). */
+.retro-credit { margin: -2px 2px 8px; }
+.retro-credit a { color: var(--primary); }
