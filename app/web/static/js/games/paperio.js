@@ -1,20 +1,24 @@
 // Paper.io: выходи со своей территории, рисуй хвост и возвращайся — всё,
 // что обведено, становится твоим. Наехал на чужой хвост — соперник
 // выбывает; на свой или в край поля — выбываешь сам. Три бота играют так же
-// и охотятся за вашим хвостом.
+// и охотятся за вашим хвостом. Территория рисуется объёмными плитками, как
+// в оригинале, камера плавно едет за игроком, в углу — мини-карта.
 'use strict';
 
-import { DIRS, best, fitCanvas, frames, notify, onDirection, overlay, rand, saveBest, tap, themeColor } from './kit.js';
+import {
+  DIRS, best, bump, fitCanvas, frames, hud, intro, onDirection, overlay, particles, popText, quake, rand, saveBest, sfx,
+  shade, tap,
+} from './kit.js';
 
 const N = 48;
-const VIEW = 22;
-const STEP = 0.12;
+const VIEW = 18;
+const STEP = 0.125;
 const OPPOSITE = { up: 'down', down: 'up', left: 'right', right: 'left' };
 const PLAYERS = [
-  { name: 'Вы', color: null },
-  { name: 'Рыжий', color: '#f08a24' },
-  { name: 'Зелёный', color: '#3fb950' },
-  { name: 'Фиолетовый', color: '#a46ee0' },
+  { name: 'Вы', color: '#4a7cf3' },
+  { name: 'Рыжий', color: '#ff8a3d' },
+  { name: 'Мятный', color: '#2ec4a0' },
+  { name: 'Сиреневый', color: '#b26cf0' },
 ];
 
 /** Вернулся домой: хвост и всё, что он обвёл, — твоё. Обведено то, до чего
@@ -55,40 +59,53 @@ export function capture(owner, trail, id, n = N) {
   return gained;
 }
 
+const countOf = (owner, id) => owner.reduce((sum, v) => sum + (v === id), 0);
+
 export function start(root, ctx) {
   root.innerHTML = `<div class="game">
-      <div class="game-stats"><span>Ваша территория: <b data-score>0%</b></span><span>Рекорд: <b data-best>${best('paperio')}%</b></span></div>
-      <div class="pio-board" data-board></div>
-      <div class="game-stage"><canvas class="game-canvas" data-canvas></canvas></div>
+      ${hud([['score', 'Территория', '0%'], ['kills', 'Срезано', 0], ['best', '🏆', `${best('paperio')}%`]])}
+      <div class="game-stage pio-stage"><canvas class="game-canvas" data-canvas></canvas>
+        <div class="pio-board" data-board></div><canvas class="pio-map" data-map></canvas></div>
       <div class="dpad">
-        <button data-dir="up" aria-label="Вверх">▲</button>
-        <button data-dir="left" aria-label="Влево">◀</button>
-        <button data-dir="down" aria-label="Вниз">▼</button>
-        <button data-dir="right" aria-label="Вправо">▶</button>
+        <button data-dir="up" aria-label="Вверх"><i></i></button>
+        <button data-dir="left" aria-label="Влево"><i></i></button>
+        <button data-dir="down" aria-label="Вниз"><i></i></button>
+        <button data-dir="right" aria-label="Вправо"><i></i></button>
       </div></div>`;
   const stage = root.querySelector('.game-stage');
   const canvas = root.querySelector('[data-canvas]');
-  const width = Math.min(stage.clientWidth || 340, 440);
-  const height = Math.min(width, innerHeight - 300);
+  const width = Math.min(root.querySelector('.game').clientWidth || 340, 460);
+  const height = Math.round(Math.min(width * 1.15, innerHeight - 330));
   const cell = width / VIEW;
   const g = fitCanvas(canvas, width, height);
-  const me = themeColor('--primary', '#3b6fc4');
-  const colors = { bg: themeColor('--card', '#fff'), grid: themeColor('--border', '#ddd') };
-  const palette = PLAYERS.map((p) => p.color || me);
+  const map = fitCanvas(root.querySelector('[data-map]'), 64, 64);
+  const mini = document.createElement('canvas');
+  mini.width = N;
+  mini.height = N;
+  const miniCtx = mini.getContext('2d');
+  const fx = particles();
+  const rgb = PLAYERS.map(({ color }) => [1, 3, 5].map((o) => parseInt(color.slice(o, o + 2), 16)));
 
   let owner;
   let trail;
+  let flashAt;
   let players;
   let running = false;
   let acc = 0;
   let peak = 0;
+  let kills = 0;
+  let camX = 0;
+  let camY = 0;
 
   const idx = (x, y) => y * N + x;
   const inside = (x, y) => x >= 0 && y >= 0 && x < N && y < N;
 
   function home(p, x, y) {
     for (let dy = -1; dy <= 1; dy += 1) {
-      for (let dx = -1; dx <= 1; dx += 1) owner[idx(x + dx, y + dy)] = p.id;
+      for (let dx = -1; dx <= 1; dx += 1) {
+        owner[idx(x + dx, y + dy)] = p.id;
+        flashAt[idx(x + dx, y + dy)] = performance.now();
+      }
     }
     Object.assign(p, { x, y, px: x, py: y, alive: true, trail: [], plan: [], dir: ['up', 'down', 'left', 'right'][rand(4)] });
   }
@@ -109,19 +126,38 @@ export function start(root, ctx) {
   function reset() {
     owner = new Uint8Array(N * N);
     trail = new Uint8Array(N * N);
-    players = PLAYERS.map((p, i) => ({ id: i + 1, name: p.name, bot: i > 0, color: palette[i] }));
-    const corners = [[8, N - 9], [N - 9, 8], [8, 8], [N - 9, N - 9]];
+    flashAt = new Float64Array(N * N);
+    players = PLAYERS.map((p, i) => ({ id: i + 1, name: p.name, bot: i > 0, color: p.color }));
+    const corners = [[9, N - 10], [N - 10, 9], [9, 9], [N - 10, N - 10]];
     players.forEach((p, i) => home(p, ...corners[i]));
     // Человек начинает лицом к центру: иначе мог сразу уехать в край поля.
     players[0].dir = 'up';
+    camX = players[0].x;
+    camY = players[0].y;
     peak = 0;
+    kills = 0;
+    bump(root.querySelector('[data-kills]'), 0);
+    paintMap();
   }
 
-  function kill(p) {
+  const screenOf = (x, y) => [(x - camX + VIEW / 2 - 0.5) * cell, (y - camY + height / cell / 2 - 0.5) * cell];
+
+  function kill(p, by = null) {
     p.alive = false;
+    const [sx, sy] = screenOf(p.x, p.y);
+    fx.burst(sx + cell / 2, sy + cell / 2, p.color, 30, 4);
     for (let i = 0; i < owner.length; i += 1) {
       if (owner[i] === p.id) owner[i] = 0;
       if (trail[i] === p.id) trail[i] = 0;
+    }
+    if (by && !by.bot) {
+      kills += 1;
+      bump(root.querySelector('[data-kills]'), kills);
+      popText(stage, `Срезал: ${p.name}!`, { y: '30%', cls: 'gold' });
+      sfx('good');
+      tap('medium');
+    } else if (p.bot) {
+      sfx('drop');
     }
     if (!p.bot) return;
     setTimeout(() => {
@@ -192,6 +228,16 @@ export function start(root, ctx) {
     return want;
   }
 
+  function paintMap() {
+    const image = miniCtx.createImageData(N, N);
+    for (let i = 0; i < owner.length; i += 1) {
+      const o = owner[i] || trail[i];
+      const [r, gg, b] = o ? rgb[o - 1] : [236, 232, 222];
+      image.data.set([r, gg, b, o && !owner[i] ? 140 : 255], i * 4);
+    }
+    miniCtx.putImageData(image, 0, 0);
+  }
+
   function step() {
     players.forEach((p) => {
       if (!p.alive) return;
@@ -222,10 +268,7 @@ export function start(root, ctx) {
       }
       if (trail[i]) {
         const victim = players[trail[i] - 1];
-        if (victim.alive) {
-          kill(victim);
-          if (!p.bot) tap('medium');
-        }
+        if (victim.alive) kill(victim, p);
       }
       // Лоб в лоб: проигрывает тот, кто не у себя дома.
       players.forEach((o, j) => {
@@ -237,11 +280,19 @@ export function start(root, ctx) {
       p.y = y;
       if (owner[i] === p.id) {
         if (p.trail.length) {
+          const before = owner.slice();
           capture(owner, trail, p.id);
+          const now = performance.now();
+          for (let c = 0; c < owner.length; c += 1) if (owner[c] !== before[c]) flashAt[c] = now;
           p.trail = [];
-          if (!p.bot) tap('light');
+          if (!p.bot) {
+            tap('light');
+            const share = Math.round(((countOf(owner, p.id) - countOf(before, p.id)) / owner.length) * 1000) / 10;
+            sfx(share >= 3 ? 'line' : 'coin');
+            if (share >= 0.5) popText(stage, `+${share}%`, { y: '42%' });
+          }
           // У кого отобрали всю территорию — тот выбывает.
-          players.forEach((o) => { if (o.alive && o !== p && !owner.includes(o.id)) kill(o); });
+          players.forEach((o) => { if (o.alive && o !== p && !owner.includes(o.id)) kill(o, p); });
         }
       } else {
         trail[i] = p.id;
@@ -250,76 +301,139 @@ export function start(root, ctx) {
     });
     // Хвост, через который проехали и стёрли, больше не хвост.
     players.forEach((p) => { p.trail = p.trail.filter((i) => trail[i] === p.id); });
-    const mine = owner.reduce((sum, v) => sum + (v === 1), 0);
-    const percent = Math.round((mine / (N * N)) * 1000) / 10;
+    const counts = players.map((p) => countOf(owner, p.id));
+    const percent = Math.round((counts[0] / (N * N)) * 1000) / 10;
     peak = Math.max(peak, percent);
     root.querySelector('[data-score]').textContent = `${percent}%`;
-    const counts = players.map((p) => owner.reduce((sum, v) => sum + (v === p.id), 0));
-    root.querySelector('[data-board]').innerHTML = players.map((p, i) => `<span style="--c:${p.color}">${p.name} ${
-      p.alive ? `${Math.round((counts[i] / (N * N)) * 100)}%` : '💥'}</span>`).join('');
+    const ranking = players.map((p, i) => ({ p, share: counts[i] / (N * N) })).sort((a, b) => b.share - a.share);
+    root.querySelector('[data-board]').innerHTML = ranking.map(({ p, share }, place) => `<div class="pio-row${p.bot ? '' : ' me'}" style="--c:${p.color};--w:${Math.min(100, Math.max(6, share * 200))}%">
+        <span>${place + 1}. ${p.name}</span><b>${p.alive ? `${(share * 100).toFixed(1)}%` : '💥'}</b></div>`).join('');
+    paintMap();
     if (!players[0].alive) gameOver();
     else if (percent >= 50) gameOver(true);
   }
 
   function gameOver(won = false) {
     running = false;
-    notify(won ? 'success' : 'error');
+    if (!won) quake(stage, 10);
     const score = Math.round(peak);
     const record = saveBest('paperio', score);
     root.querySelector('[data-best]').textContent = `${best('paperio')}%`;
-    overlay(stage, `<div class="game-over-title">${won ? 'Половина поля ваша!' : record ? 'Новый рекорд!' : 'Вас подрезали'}</div>
-        <div class="muted">Лучший захват: ${score}%</div>`, [{ label: 'Ещё раз', run: begin }]);
+    setTimeout(() => {
+      if (ctx.signal.aborted) return;
+      overlay(stage, `<div class="game-over-title">${won ? 'Половина поля ваша!' : record ? 'Новый рекорд!' : 'Вас подрезали'}</div>
+          <div class="game-over-text">Лучший захват: <b>${score}%</b> · срезано соперников: <b>${kills}</b></div>`,
+      [{ label: 'Ещё раз', run: begin }], { icon: won || record ? '🏆' : '✂️', win: won || record, lose: !won && !record });
+    }, won ? 200 : 700);
   }
 
-  function draw(t) {
-    const p = players[0];
-    const cx = p.px + (p.x - p.px) * t;
-    const cy = p.py + (p.y - p.py) * t;
-    const ox = cx - VIEW / 2 + 0.5;
-    const oy = cy - (height / cell) / 2 + 0.5;
-    g.fillStyle = colors.bg;
+  function draw(t, dt) {
+    const me = players[0];
+    const tx = me.px + (me.x - me.px) * t;
+    const ty = me.py + (me.y - me.py) * t;
+    // Камера догоняет игрока плавно, а не дёргается по клеткам.
+    camX += (tx - camX) * Math.min(1, dt * 10);
+    camY += (ty - camY) * Math.min(1, dt * 10);
+    const rows = height / cell;
+    const ox = camX - VIEW / 2 + 0.5;
+    const oy = camY - rows / 2 + 0.5;
+    g.fillStyle = '#cfc8b6';
     g.fillRect(0, 0, width, height);
+    // Бумага: светлое поле с тонкой сеткой.
+    const fx0 = Math.max(0, -ox) * cell;
+    const fy0 = Math.max(0, -oy) * cell;
+    const fx1 = Math.min(width, (N - ox) * cell);
+    const fy1 = Math.min(height, (N - oy) * cell);
+    g.fillStyle = '#f4f1e9';
+    g.fillRect(fx0, fy0, fx1 - fx0, fy1 - fy0);
+    g.strokeStyle = 'rgba(120, 110, 90, .09)';
+    g.lineWidth = 1;
+    for (let x = Math.ceil(ox); x <= Math.floor(ox + VIEW) + 1; x += 1) {
+      if (x < 0 || x > N) continue;
+      g.beginPath(); g.moveTo((x - ox) * cell, fy0); g.lineTo((x - ox) * cell, fy1); g.stroke();
+    }
+    for (let y = Math.ceil(oy); y <= Math.floor(oy + rows) + 1; y += 1) {
+      if (y < 0 || y > N) continue;
+      g.beginPath(); g.moveTo(fx0, (y - oy) * cell); g.lineTo(fx1, (y - oy) * cell); g.stroke();
+    }
     const x0 = Math.max(0, Math.floor(ox));
     const y0 = Math.max(0, Math.floor(oy));
     const x1 = Math.min(N, Math.ceil(ox + VIEW) + 1);
-    const y1 = Math.min(N, Math.ceil(oy + height / cell) + 1);
-    // Край поля.
-    g.fillStyle = colors.grid;
-    g.globalAlpha = 0.5;
-    if (ox < 0) g.fillRect(0, 0, -ox * cell, height);
-    if (oy < 0) g.fillRect(0, 0, width, -oy * cell);
-    if (ox + VIEW > N) g.fillRect((N - ox) * cell, 0, width, height);
-    if (oy + height / cell > N) g.fillRect(0, (N - oy) * cell, width, height);
-    g.globalAlpha = 1;
+    const y1 = Math.min(N, Math.ceil(oy + rows) + 1);
+    const now = performance.now();
+    const lift = cell * 0.18;
+    // Территория — приподнятые плитки: верх цветом, снизу кромка темнее.
     for (let y = y0; y < y1; y += 1) {
       for (let x = x0; x < x1; x += 1) {
         const i = idx(x, y);
+        const o = owner[i];
+        if (!o) continue;
+        const color = PLAYERS[o - 1].color;
         const sx = (x - ox) * cell;
         const sy = (y - oy) * cell;
-        if (owner[i]) {
-          g.fillStyle = palette[owner[i] - 1];
-          g.globalAlpha = 0.55;
-          g.fillRect(sx, sy, cell + 0.5, cell + 0.5);
+        const edge = (y + 1 < N ? owner[i + N] : 0) !== o;
+        if (edge) {
+          g.fillStyle = shade(color, -0.3);
+          g.fillRect(sx, sy + cell - lift, cell + 0.6, lift + 0.6);
         }
-        if (trail[i]) {
-          g.fillStyle = palette[trail[i] - 1];
-          g.globalAlpha = 0.3;
-          g.fillRect(sx + cell * 0.15, sy + cell * 0.15, cell * 0.7, cell * 0.7);
-        }
+        const age = (now - flashAt[i]) / 400;
+        g.fillStyle = age < 1 ? shade(color, 0.55 * (1 - age)) : color;
+        g.fillRect(sx, sy - (edge ? lift : 0), cell + 0.6, cell + 0.6);
+      }
+    }
+    // Хвосты — полупрозрачные дорожки.
+    g.globalAlpha = 0.5;
+    for (let y = y0; y < y1; y += 1) {
+      for (let x = x0; x < x1; x += 1) {
+        const o = trail[idx(x, y)];
+        if (!o) continue;
+        g.fillStyle = PLAYERS[o - 1].color;
+        g.fillRect((x - ox) * cell, (y - oy) * cell, cell + 0.6, cell + 0.6);
       }
     }
     g.globalAlpha = 1;
-    players.forEach((o) => {
-      if (!o.alive) return;
-      const hx = (o.px + (o.x - o.px) * t - ox) * cell;
-      const hy = (o.py + (o.y - o.py) * t - oy) * cell;
-      g.fillStyle = o.color;
-      g.strokeStyle = 'rgba(0,0,0,.35)';
-      g.lineWidth = 1.5;
+    players.forEach((p) => {
+      if (!p.alive) return;
+      const hx = (p.px + (p.x - p.px) * t - ox) * cell;
+      const hy = (p.py + (p.y - p.py) * t - oy) * cell;
+      const s = cell * 1.05;
+      const off = (s - cell) / 2;
+      g.fillStyle = 'rgba(0,0,0,.18)';
       g.beginPath();
-      g.roundRect(hx + 1, hy + 1, cell - 2, cell - 2, cell * 0.25);
+      g.roundRect(hx - off + 2, hy - off + lift + 2, s, s, s * 0.22);
       g.fill();
-      g.stroke();
+      g.fillStyle = shade(p.color, -0.35);
+      g.beginPath();
+      g.roundRect(hx - off, hy - off, s, s + lift, s * 0.22);
+      g.fill();
+      g.fillStyle = shade(p.color, 0.15);
+      g.beginPath();
+      g.roundRect(hx - off, hy - off - lift * 0.3, s, s, s * 0.22);
+      g.fill();
+      g.font = `600 ${Math.max(10, cell * 0.42)}px -apple-system, system-ui, sans-serif`;
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      const tw = g.measureText(p.name).width + 12;
+      const ly = hy - off - cell * 0.65;
+      g.fillStyle = 'rgba(0,0,0,.45)';
+      g.beginPath();
+      g.roundRect(hx + cell / 2 - tw / 2, ly - cell * 0.3, tw, cell * 0.6, cell * 0.3);
+      g.fill();
+      g.fillStyle = '#fff';
+      g.fillText(p.name, hx + cell / 2, ly + 1);
+    });
+    fx.draw(g, dt);
+    // Мини-карта: всё поле и рамка того, что видно.
+    map.clearRect(0, 0, 64, 64);
+    map.imageSmoothingEnabled = false;
+    map.drawImage(mini, 0, 0, 64, 64);
+    map.strokeStyle = 'rgba(0,0,0,.6)';
+    map.lineWidth = 1;
+    map.strokeRect((ox / N) * 64, (oy / N) * 64, (VIEW / N) * 64, (rows / N) * 64);
+    players.forEach((p) => {
+      if (!p.alive) return;
+      map.fillStyle = p.bot ? shade(p.color, -0.4) : '#fff';
+      map.fillRect((p.x / N) * 64 - 1.5, (p.y / N) * 64 - 1.5, 3, 3);
     });
   }
 
@@ -327,8 +441,9 @@ export function start(root, ctx) {
     const p = players?.[0];
     if (!running || !p?.alive) return;
     const current = p.next || p.dir;
-    if (dir === OPPOSITE[current] && p.trail.length) return;
+    if (dir === current || (dir === OPPOSITE[current] && p.trail.length)) return;
     p.next = dir;
+    sfx('move');
   }
 
   function begin() {
@@ -354,10 +469,12 @@ export function start(root, ctx) {
         step();
       }
     }
-    draw(running ? Math.min(1, acc / STEP) : 1);
+    draw(running ? Math.min(1, acc / STEP) : 1, dt);
   });
   reset();
-  overlay(stage, `<div class="game-over-title">Paper.io</div>
-      <div class="muted">Обводи клетки и возвращайся домой. Не дай ботам наехать на твой хвост!</div>`,
-  [{ label: 'Играть', run: begin }]);
+  intro(stage, {
+    icon: '🟦', title: 'Paper.io',
+    text: 'Выезжай со своей территории и возвращайся — обведённое станет твоим. Не дай ботам наехать на твой хвост!',
+    record: best('paperio') ? `Рекорд: ${best('paperio')}%` : '', run: begin,
+  });
 }

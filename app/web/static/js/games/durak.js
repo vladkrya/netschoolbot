@@ -5,7 +5,7 @@
 'use strict';
 
 import {
-  best, bindChips, cardHtml, chipsRow, deck, load, notify, save, saveBest, shake, tap, wait,
+  best, bindChips, cardHtml, chipsRow, deck, flip, load, overlay, popText, save, saveBest, sfx, shake, tap, wait,
 } from './kit.js';
 
 export function beats(attack, defend, trump) {
@@ -186,28 +186,50 @@ export function botDefend(g) {
 // ───────────── Экран ─────────────
 
 const SUIT_ORDER = ['♠', '♣', '♥', '♦'];
-const BOT_NAMES = ['Бот Вася', 'Бот Маша', 'Бот Петя'];
+const BOTS = [
+  { name: 'Вася', face: '🤖', color: '#ff7a59' },
+  { name: 'Маша', face: '👾', color: '#b06bff' },
+  { name: 'Петя', face: '🦊', color: '#2fb7a3' },
+];
+const PHRASES = {
+  take: ['Беру!', 'Забираю', 'Ладно, беру'],
+  pass: ['Бито', 'Пас', 'Хватит'],
+  beat: ['Отбился!', 'Легко', 'Ха!'],
+  fool: ['Эх…', 'Ну вот', 'Нечестно!'],
+};
+const pick = (list) => list[Math.floor(Math.random() * list.length)];
 
 export function start(root, ctx) {
   let bots = Number(load('durak-bots', 1)) || 1;
   let g;
   let target = -1;
   let busy = false;
-  let message = '';
+  // Номер партии: новая партия обрывает ходы ботов в старой.
+  let gen = 0;
+  let discarded = 0;
+  let status = '';
+  const bubbles = {};
+  const origin = new Map();
 
   root.innerHTML = `<div class="game durak">
       ${chipsRow('bots', [['1', '1 бот'], ['2', '2 бота'], ['3', '3 бота']], String(bots))}
-      <div class="game-stage dk-stage" data-stage></div>
-      <div class="muted small game-hint">Побед: <b data-best>${best('durak')}</b></div></div>`;
+      <div class="game-stage felt dk-stage" data-stage></div>
+      <div class="dk-foot">🏆 Побед: <b data-best>${best('durak')}</b></div></div>`;
   const stage = root.querySelector('[data-stage]');
 
   const sorted = (hand) => [...hand].sort((a, b) => ((a.s === g.trump) - (b.s === g.trump))
     || SUIT_ORDER.indexOf(a.s) - SUIT_ORDER.indexOf(b.s) || a.r - b.r);
   const key = (card) => `${card.r}${card.s}`;
+  const rectOf = (sel) => stage.querySelector(sel)?.getBoundingClientRect() || null;
 
-  function render() {
+  function say(i, text) {
+    bubbles[i] = { text, until: performance.now() + 1500 };
+  }
+
+  function html() {
     const turn = pending(g);
     const me = g.players[0];
+    const now = performance.now();
     const role = (i) => {
       if (g.players[i].out) return g.finished.indexOf(i) === 0 ? 'вышел первым' : 'вышел';
       if (i === g.defender) return 'отбивается';
@@ -216,47 +238,103 @@ export function start(root, ctx) {
     };
     const opponents = g.players.slice(1).map((p, k) => {
       const i = k + 1;
-      const thinking = turn.who === i ? ' thinking' : '';
-      return `<div class="dk-bot${thinking}${p.out ? ' out' : ''}">
-          <div class="dk-backs">${p.hand.slice(0, 8).map(() => '<span class="pc back mini"></span>').join('')}</div>
-          <div class="dk-name">${p.name} · ${p.hand.length}</div><div class="dk-role">${role(i)}</div></div>`;
+      const bot = BOTS[k];
+      const bubble = bubbles[i]?.until > now ? `<span class="bubble">${bubbles[i].text}</span>` : '';
+      const fan = Math.min(p.hand.length, 7);
+      return `<div class="dk-opp${turn.who === i ? ' thinking' : ''}${p.out ? ' out' : ''}${i === g.defender ? ' defending' : ''}" data-opp="${i}">
+          ${bubble}
+          <div class="dk-avatar" style="--c:${bot.color}">${p.out ? '🏁' : bot.face}<span class="dk-badge">${p.hand.length}</span></div>
+          <div class="dk-backs">${Array.from({ length: fan }, (_, j) => `<span class="pc back mini" style="rotate:${(j - (fan - 1) / 2) * 7}deg"></span>`).join('')}</div>
+          <div class="dk-name">${bot.name}</div><div class="dk-role">${role(i)}</div></div>`;
     }).join('');
     const table = g.table.map((pair, i) => `<div class="dk-pair${i === target && !pair.d ? ' target' : ''}" data-pair="${i}">
-        ${cardHtml(pair.a)}${pair.d ? cardHtml(pair.d, { cls: 'dk-cover' }) : ''}</div>`).join('');
-    let status = message;
-    if (!status) {
-      if (g.over) status = '';
-      else if (me.out) status = 'Вы вышли — боты доигрывают';
-      else if (turn.who === 0 && turn.kind === 'open') status = 'Ваш ход — выложите карту';
-      else if (turn.who === 0 && turn.kind === 'defend') status = 'Отбивайтесь или заберите карты';
-      else if (turn.who === 0 && turn.kind === 'throw') status = g.taking ? 'Можно подкинуть ещё' : 'Подкинуть или «Бито»';
-      else if (turn.who !== undefined) status = `${g.players[turn.who].name} думает…`;
-    }
+        ${cardHtml(pair.a, { key: key(pair.a) })}${pair.d ? cardHtml(pair.d, { key: key(pair.d), cls: 'dk-cover' }) : ''}</div>`).join('');
     const actions = [];
-    if (turn.who === 0 && turn.kind === 'defend') actions.push('<button class="btn outline" data-act="take">Беру</button>');
+    if (turn.who === 0 && turn.kind === 'defend') actions.push('<button class="game-btn warn" data-act="take">Беру</button>');
     if (turn.who === 0 && turn.kind === 'throw') {
-      actions.push(`<button class="btn outline" data-act="pass">${g.taking ? 'Пусть берёт' : 'Бито'}</button>`);
+      actions.push(`<button class="game-btn" data-act="pass">${g.taking ? 'Пусть берёт' : 'Бито'}</button>`);
     }
-    const hand = sorted(me.hand).map((card) => {
+    const mine = sorted(me.hand);
+    const n = mine.length;
+    const hand = mine.map((card, i) => {
       const playable = (turn.who === 0 && (turn.kind === 'open' || turn.kind === 'throw') && canPlay(g, 0, card))
         || (turn.who === 0 && turn.kind === 'defend' && g.table.some((pair) => !pair.d && beats(pair.a, card, g.trump)));
-      return cardHtml(card, { attrs: `data-card="${key(card)}"`, cls: playable ? 'playable' : 'dim' });
+      const angle = (i - (n - 1) / 2) * Math.min(5, 40 / n);
+      return cardHtml(card, {
+        key: key(card),
+        attrs: `data-card="${key(card)}" style="rotate:${angle}deg;--lift:${Math.abs(angle) * 0.9}px"`,
+        cls: `${playable ? 'playable' : turn.who === 0 ? 'dim' : ''}${card.s === g.trump ? ' trump' : ''}`,
+      });
     }).join('');
-    stage.innerHTML = `<div class="dk-bots">${opponents}</div>
+    const myTurn = turn.who === 0 && !me.out;
+    return `<div class="dk-opps">${opponents}</div>
       <div class="dk-mid">
-        <div class="dk-deck">${g.deck.length ? `${cardHtml(g.trumpCard, { cls: 'dk-trump' })}${g.deck.length > 1 ? '<span class="pc back dk-pile"></span>' : ''}` : `<span class="dk-suit">${g.trump}</span>`}
-          <span class="dk-count">${g.deck.length || 'пусто'}</span></div>
-        <div class="dk-table">${table || '<span class="muted small">Стол пуст</span>'}</div>
+        <div class="dk-deck" data-deck>${g.deck.length
+          ? `${cardHtml(g.trumpCard, { cls: 'dk-trump' })}${g.deck.length > 1 ? '<span class="pc back dk-pile"></span><span class="pc back dk-pile two"></span>' : ''}<span class="dk-count">${g.deck.length}</span>`
+          : `<span class="dk-suit${['♥', '♦'].includes(g.trump) ? ' red' : ''}">${g.trump}</span><span class="dk-count">козырь</span>`}</div>
+        <div class="dk-table">${table || '<span class="dk-empty">Стол пуст</span>'}</div>
+        <div class="dk-discard" data-discard>${discarded ? '<span class="pc back dk-pile tilt"></span><span class="pc back dk-pile tilt two"></span>' : ''}<span class="dk-count">${discarded ? 'бито' : ''}</span></div>
       </div>
-      <div class="dk-status">${status}</div>
+      <div class="dk-status${myTurn ? ' mine' : ''}">${status}</div>
       <div class="dk-actions">${actions.join('')}</div>
-      <div class="dk-hand${me.hand.length > 8 ? ' tight' : ''}" style="--n:${me.hand.length}">${hand}</div>`;
+      <div class="dk-hand" style="--n:${n}">${hand}</div>`;
+  }
+
+  function statusText() {
+    const turn = pending(g);
+    const me = g.players[0];
+    if (g.over) return '';
+    if (me.out) return 'Вы вышли — боты доигрывают';
+    if (turn.who === 0 && turn.kind === 'open') return 'Ваш ход — выложите карту';
+    if (turn.who === 0 && turn.kind === 'defend') return 'Отбивайтесь — или заберите карты';
+    if (turn.who === 0 && turn.kind === 'throw') return g.taking ? 'Можно подкинуть ещё' : 'Подкиньте карту или «Бито»';
+    if (turn.who !== undefined) return `${BOTS[turn.who - 1].name} думает…`;
+    return '';
+  }
+
+  /** Перерисовка с перелётом карт: из руки на стол, с колоды в руку, от бота на стол. */
+  function render() {
+    status = statusText();
+    const deckRect = rectOf('[data-deck]');
+    flip(stage, () => { stage.innerHTML = html(); }, {
+      duration: 380,
+      stagger: 70,
+      enterFrom: (el) => {
+        if (el.closest('.dk-hand')) return deckRect;
+        const who = origin.get(el.dataset.k);
+        return who ? rectOf(`[data-opp="${who}"] .dk-avatar`) : null;
+      },
+    });
     root.querySelector('[data-best]').textContent = String(best('durak'));
+  }
+
+  /** Карты со стола улетают к тому, кто забрал, или в отбой. */
+  function sweep(toSelector) {
+    const to = rectOf(toSelector);
+    if (!to) return;
+    stage.querySelectorAll('.dk-table .pc').forEach((el, i) => {
+      const from = el.getBoundingClientRect();
+      const ghost = el.cloneNode(true);
+      ghost.classList.add('ghost-card');
+      Object.assign(ghost.style, { left: `${from.left}px`, top: `${from.top}px`, width: `${from.width}px`, height: `${from.height}px` });
+      document.body.append(ghost);
+      const anim = ghost.animate?.([
+        { translate: '0 0', rotate: '0deg', opacity: 1 },
+        { translate: `${to.left + to.width / 2 - from.left - from.width / 2}px ${to.top + to.height / 2 - from.top - from.height / 2}px`, rotate: `${(i % 2 ? 1 : -1) * 25}deg`, opacity: 0.2, scale: '0.6' },
+      ], { duration: 420, delay: i * 30, easing: 'cubic-bezier(.4, 0, .6, 1)', fill: 'forwards' });
+      if (anim) anim.onfinish = () => ghost.remove();
+      else ghost.remove();
+    });
   }
 
   async function advance() {
     if (busy) return;
     busy = true;
+    const mine = gen;
+    const pause = async (ms) => {
+      await wait(ctx, ms);
+      if (mine !== gen) throw new Error('новая партия');
+    };
     try {
       for (;;) {
         render();
@@ -267,81 +345,114 @@ export function start(root, ctx) {
         }
         const fast = g.players[0].out;
         if (turn.kind === 'end') {
-          await wait(ctx, fast ? 250 : 700);
-          message = !g.taking ? 'Бито' : g.defender === 0 ? 'Вы забираете' : `${g.players[g.defender].name} забирает`;
-          render();
-          await wait(ctx, fast ? 200 : 600);
-          message = '';
-          endBout(g);
+          await pause(fast ? 250 : 600);
+          const taker = g.defender;
+          if (g.taking) {
+            if (taker !== 0) {
+              say(taker, pick(PHRASES.take));
+              sweep(`[data-opp="${taker}"] .dk-avatar`);
+            } else {
+              popText(stage, 'Вы забираете', { y: '62%' });
+            }
+          } else {
+            discarded += g.table.length * 2;
+            if (taker !== 0) say(taker, pick(PHRASES.beat));
+            else popText(stage, 'Отбились! 💪', { y: '62%', cls: 'gold' });
+            sweep('[data-discard]');
+          }
+          sfx('deal');
+          // Взявший человек забирает карты в руку — это покажет перелёт.
+          if (g.taking && taker === 0) {
+            endBout(g);
+          } else {
+            stage.querySelectorAll('.dk-table .pc').forEach((el) => { el.style.visibility = 'hidden'; });
+            endBout(g);
+          }
           target = -1;
+          await pause(120);
           continue;
         }
         if (turn.who === 0) {
           // Подкинуть нечего — пасуем за человека, чтобы не жать кнопку зря.
           if (turn.kind === 'throw' && !g.players[0].hand.some((card) => canPlay(g, 0, card))) {
-            await wait(ctx, 350);
+            await pause(450);
             pass(g, 0);
             continue;
           }
           return;
         }
-        await wait(ctx, fast ? 250 : 650 + Math.random() * 300);
-        if (turn.kind === 'open') {
-          play(g, turn.who, botOpen(g, turn.who));
-        } else if (turn.kind === 'throw') {
-          const card = botThrow(g, turn.who);
-          if (card) play(g, turn.who, card);
-          else pass(g, turn.who);
+        await pause(fast ? 250 : 700 + Math.random() * 400);
+        if (turn.kind === 'open' || turn.kind === 'throw') {
+          const card = turn.kind === 'open' ? botOpen(g, turn.who) : botThrow(g, turn.who);
+          if (card) {
+            origin.set(key(card), turn.who);
+            play(g, turn.who, card);
+            sfx('card');
+          } else {
+            pass(g, turn.who);
+            say(turn.who, pick(PHRASES.pass));
+          }
         } else if (turn.kind === 'defend') {
           const move = botDefend(g);
-          if (move) defend(g, move.card, move.index);
-          else take(g);
+          if (move) {
+            origin.set(key(move.card), turn.who);
+            defend(g, move.card, move.index);
+            sfx('card');
+          } else {
+            take(g);
+            say(turn.who, pick(PHRASES.take));
+            sfx('tap');
+          }
         }
         tap('soft');
       }
     } catch {
       /* игру закрыли — боты замолкают */
     } finally {
-      busy = false;
+      if (mine === gen) busy = false;
     }
   }
 
   function finish() {
     const won = g.loser !== null && g.loser !== 0;
-    if (won) {
-      notify('success');
-      saveBest('durak', best('durak') + 1);
-    } else {
-      notify('error');
-    }
+    if (won) saveBest('durak', best('durak') + 1);
+    if (g.loser && g.loser !== 0) say(g.loser, pick(PHRASES.fool));
     render();
-    const title = g.loser === null ? 'Ничья' : won ? 'Вы выиграли!' : 'Вы — дурак 🙃';
-    const note = g.loser === null || g.loser === 0 ? '' : `Дурак — ${g.players[g.loser].name}`;
-    stage.querySelector('.dk-status').innerHTML = `<b>${title}</b> ${note}
-      <button class="btn" data-act="again">Ещё партию</button>`;
+    const title = g.loser === null ? 'Ничья' : won ? 'Победа!' : 'Вы — дурак';
+    const note = g.loser === null ? 'Все вышли одновременно' : won ? `Дураком остался ${BOTS[g.loser - 1].name}` : 'Повезёт в следующий раз';
+    setTimeout(() => {
+      if (ctx.signal.aborted) return;
+      overlay(stage, `<div class="game-over-title">${title}</div><div class="game-over-text">${note}</div>`,
+        [{ label: 'Ещё партию', run: newGame }], { icon: won ? '🏆' : g.loser === null ? '🤝' : '🃏', win: won, lose: g.loser === 0 });
+    }, 700);
   }
 
   function newGame() {
-    g = createGame(['Вы', ...BOT_NAMES.slice(0, bots)]);
+    gen += 1;
+    busy = false;
+    g = createGame(['Вы', ...BOTS.slice(0, bots).map((b) => b.name)]);
     target = -1;
-    message = g.attacker === 0 ? '' : `Первым ходит ${g.players[g.attacker].name} — у него младший козырь`;
+    discarded = 0;
+    origin.clear();
+    stage.innerHTML = '';
+    stage.querySelector('.game-over')?.remove();
     render();
-    setTimeout(() => { message = ''; advance(); }, g.attacker === 0 ? 0 : 1200);
+    for (let i = 0; i < 4; i += 1) setTimeout(() => sfx('deal'), i * 110);
+    if (g.attacker !== 0) {
+      say(g.attacker, `Хожу первым — у меня младший козырь`);
+      render();
+    }
+    setTimeout(advance, g.attacker === 0 ? 300 : 1400);
   }
 
   stage.addEventListener('click', (event) => {
-    const again = event.target.closest('[data-act="again"]');
-    if (again) {
-      tap();
-      newGame();
-      return;
-    }
     if (busy || !g || g.over) return;
     const turn = pending(g);
     if (turn.who !== 0) return;
     const act = event.target.closest('[data-act]');
     if (act) {
       tap();
+      sfx('tap');
       if (act.dataset.act === 'take') take(g);
       else pass(g, 0);
       advance();
@@ -353,6 +464,7 @@ export function start(root, ctx) {
       if (!g.table[index].d) {
         target = index;
         tap('soft');
+        sfx('tap');
         render();
       }
       return;
@@ -368,6 +480,7 @@ export function start(root, ctx) {
     } else if (!play(g, 0, card)) {
       return shake(cardEl);
     }
+    sfx('card');
     tap('light');
     target = -1;
     advance();
