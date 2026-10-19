@@ -387,6 +387,8 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .net-pill b { font-size: 13px; font-weight: 650; }
 .net-pill small { font-size: 11px; opacity: .78; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 @keyframes net-pill-in { from { opacity: 0; transform: translate(-50%, 12px); } }
+/* Запас снизу под плашку: иначе она закрывала конец списка и кнопки внизу экрана. */
+html.offline body, html.offline .screen { padding-bottom: calc(var(--nav-h) + 68px); }
 /* То, что без сети не работает, бледнеет; касание объясняет почему.
    Тот же список — ONLINE_ONLY в core.js. */
 html.offline :is(a.attach, [data-online], #refreshBtn, #composeBtn, #composeSend, #aiFab,
