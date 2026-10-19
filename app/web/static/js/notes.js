@@ -64,12 +64,13 @@ function withPending(notes) {
 
 const pick = (body) => Object.fromEntries(NOTE_FIELDS.filter((key) => key in body).map((key) => [key, body[key]]));
 
-/** Изменение задачи: к ждущему изменению той же задачи — дописать. */
-function saveNote(id, changes) {
+/** Изменение задачи: к ждущему изменению той же задачи — дописать.
+ *  was — те же поля до изменения: вернули как было — отправлять нечего. */
+function saveNote(id, changes, was = null) {
   const prev = pendingOp(opId(id));
   if (isTemp(id) && prev) return send(opId(id), '/api/notes', { ...prev.body, ...changes });
   const base = prev && !prev.body.delete ? prev.body : {};
-  return send(opId(id), `/api/notes/${id}`, { ...base, ...changes });
+  return send(opId(id), `/api/notes/${id}`, { ...base, ...changes }, was);
 }
 
 // Созданная без сети задача дошла до сервера — временный id меняем на настоящий.
@@ -94,7 +95,7 @@ export async function setNoteDone(item, done) {
   item.done = done;
   done ? notify('success') : tap('soft');
   try {
-    await saveNote(id, { done });
+    await saveNote(id, { done }, { done: !done });
   } catch (error) {
     if (note) note.done = !done;
     item.done = !done;
@@ -203,7 +204,9 @@ export function openNoteEditor(subjects, onSaved, { date = null, subject = '', n
     try {
       const id = note ? realId(note.id) : -Date.now();
       const { queued, data: sent } = note
-        ? await saveNote(id, payload)
+        ? await saveNote(id, payload, {
+          date: note.date, text: note.text, subject: note.subject || '', time: note.time || '', remind: note.remind ?? null,
+        })
         : await send(opId(id), '/api/notes', payload);
       // Без сети задача пока только здесь — такой, какой её ввели.
       const data = queued ? { done: false, ...note, ...payload, id } : sent;

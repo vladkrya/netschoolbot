@@ -64,7 +64,7 @@ export async function saveDone(item, next, apply, source = '') {
   set(next);
   next ? notify('success') : tap('soft');
   try {
-    await send(`hw:${item.key}`, '/api/homework/done', { key: item.key, done: next });
+    await send(`hw:${item.key}`, '/api/homework/done', { key: item.key, done: next }, { done: !next });
   } catch (error) {
     set(!next);
     notify('error');

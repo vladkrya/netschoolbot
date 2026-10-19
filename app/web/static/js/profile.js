@@ -46,9 +46,10 @@ function localSettings(path, body) {
   return {};
 }
 
-/** Настройка уведомлений: сразу или, без сети, в очередь. → notifications. */
-async function saveSettings(id, path, body) {
-  const { queued, data } = await send(`settings:${id}`, path, body);
+/** Настройка уведомлений: сразу или, без сети, в очередь. → notifications.
+ *  was — прежнее значение: вернули как было — отправлять нечего. */
+async function saveSettings(id, path, body, was) {
+  const { queued, data } = await send(`settings:${id}`, path, body, was);
   return queued ? { ...state.profile.notifications, ...localSettings(path, body) } : data;
 }
 
@@ -1016,7 +1017,7 @@ function bindDrawer() {
       input.disabled = true;
       try {
         state.profile.notifications = await saveSettings(`notify:${input.dataset.notify}`, '/api/settings/notifications',
-          { key: input.dataset.notify, value: input.checked });
+          { key: input.dataset.notify, value: input.checked }, { value: !input.checked });
       } catch (error) {
         notify('error');
         input.checked = !input.checked;
@@ -1068,7 +1069,8 @@ function bindDrawer() {
   $('reminderHour')?.addEventListener('change', async (event) => {
     select();
     try {
-      state.profile.notifications = await saveSettings('reminder', '/api/settings/reminder', { hour: Number(event.target.value) });
+      state.profile.notifications = await saveSettings('reminder', '/api/settings/reminder', { hour: Number(event.target.value) },
+        { hour: state.profile.notifications.reminder_hour ?? 18 });
     } catch (error) {
       notify('error');
       banner(error.message, true);
@@ -1089,7 +1091,10 @@ function bindDrawer() {
     select();
     chips.forEach((c) => c.setAttribute('aria-pressed', String(c.classList.contains('active'))));
     try {
-      state.profile.notifications = await saveSettings('marks-filter', '/api/settings/marks-filter', { values });
+      // Прежний выбор в том же порядке, что у кнопок: пустой список — все оценки.
+      const before = state.profile.notifications.marks_filter || [];
+      state.profile.notifications = await saveSettings('marks-filter', '/api/settings/marks-filter', { values },
+        { values: chips.map((c) => Number(c.dataset.markValue)).filter((v) => !before.length || before.includes(v)) });
     } catch (error) {
       chip.classList.toggle('active');
       notify('error');

@@ -110,3 +110,30 @@ test('a note edited while it was being created is updated by its real id', async
   assert.deepEqual(h.sent.map(([path]) => path), ['/api/notes', '/api/notes/42']);
   assert.equal(h.sent[1][1].text, 'Циркуль и линейка');
 });
+
+test('a change undone offline leaves nothing to send', async () => {
+  const h = setup();
+  h.state.offline = true;
+  await h.outbox.send('hw:a', '/api/homework/done', { key: 'a', done: true }, { done: false });
+  assert.equal(h.queued().length, 1);
+  await h.outbox.send('hw:a', '/api/homework/done', { key: 'a', done: false }, { done: true });
+  assert.deepEqual(h.queued(), []);
+  // Настройки: поменяли две, одну вернули — ждёт только другая.
+  await h.outbox.send('prefs', '/api/prefs', { theme: 'dark' }, { theme: 'light' });
+  await h.outbox.send('prefs', '/api/prefs', { theme: 'dark', weekends: '1' }, { weekends: '0' });
+  await h.outbox.send('prefs', '/api/prefs', { theme: 'light', weekends: '1' }, {});
+  assert.equal(h.queued().length, 1);
+  await h.outbox.send('prefs', '/api/prefs', { theme: 'light', weekends: '0' }, {});
+  assert.deepEqual(h.queued(), []);
+});
+
+test('undoing a change that is already on its way is still sent', async () => {
+  const h = setup([{ id: 'hw:a', path: '/api/homework/done', body: { key: 'a', done: true }, base: { done: false }, v: 1 }]);
+  h.state.reply = (path, body) => {
+    if (body.done) h.outbox.send('hw:a', '/api/homework/done', { key: 'a', done: false }, { done: true });
+    return { ok: true, data: body };
+  };
+  await h.outbox.flush();
+  await h.outbox.flush();
+  assert.deepEqual(h.sent.map(([, body]) => body.done), [true, false]);
+});

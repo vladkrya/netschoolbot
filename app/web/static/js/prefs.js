@@ -39,6 +39,9 @@ export function getPref(name) {
 
 // Частые изменения (несколько крестиков подряд) уходят одним запросом.
 let pending = {};
+// Какими настройки были до изменений в pending: вернули как было без сети —
+// в очереди (outbox.js) ничего не ждёт.
+let pendingBase = {};
 let timer = null;
 // Что поменяли на устройстве, пока шёл запрос настроек с сервера: пришедший
 // ответ старше, и его значение откатило бы переключение (дизайн «не
@@ -47,6 +50,7 @@ let syncStarted = false;
 const editedDuringSync = new Set();
 
 export function setPref(name, value) {
+  if (!(name in pendingBase)) pendingBase[name] = readLocal(name);
   writeLocal(name, value);
   if (syncStarted) editedDuringSync.add(name);
   if (demo) return;
@@ -57,14 +61,17 @@ export function setPref(name, value) {
 
 async function flush() {
   const body = pending;
+  const base = pendingBase;
   pending = {};
+  pendingBase = {};
   try {
     // Без сети — в очередь (outbox.js): уйдёт, когда сеть появится, даже
     // если приложение до тех пор закроют.
-    await send('prefs', '/api/prefs', { ...pendingOp('prefs')?.body, ...body });
+    await send('prefs', '/api/prefs', { ...pendingOp('prefs')?.body, ...body }, base);
   } catch {
     /* сервер не принял — останется на этом устройстве, уйдёт со следующим изменением */
     pending = { ...body, ...pending };
+    pendingBase = { ...base, ...pendingBase };
   }
 }
 

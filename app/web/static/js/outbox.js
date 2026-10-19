@@ -41,9 +41,22 @@ export const pendingOps = (prefix) => queue.filter((op) => op.id.startsWith(pref
 
 export const realId = (id) => realIds.get(id) ?? id;
 
-export function enqueue(id, path, body) {
-  const v = (pendingOp(id)?.v || 0) + 1;
-  queue = [...queue.filter((op) => op.id !== id), { id, path, body, v }];
+const same = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+let inFlight = null;
+
+/** base — какими были на сервере меняемые поля до первого изменения. Вернули
+ *  всё как было (отметили и тут же сняли) — менять на сервере нечего, и
+ *  изменение из очереди уходит, а не считается ждущим. */
+export function enqueue(id, path, body, base = null) {
+  const prev = pendingOp(id);
+  // Прежнее уже в пути: после него сервер будет другим, сравнивать не с чем.
+  const origin = inFlight?.id === id ? null : { ...base, ...prev?.base };
+  if (origin && Object.keys(origin).length && Object.keys(origin).every((key) => same(body[key], origin[key]))) {
+    dequeue(id);
+    return;
+  }
+  const v = (prev?.v || 0) + 1;
+  queue = [...queue.filter((op) => op.id !== id), { id, path, body, v, ...(origin && Object.keys(origin).length ? { base: origin } : {}) }];
   save();
 }
 
@@ -60,10 +73,10 @@ const rejected = (error) => !unreachable(error) && !error?.reason;
 
 /** Отправить сразу, а без связи — в очередь. → { queued, data }. Ошибку
  *  сервера по существу (неверные данные) отдаёт как есть. */
-export async function send(id, path, body) {
+export async function send(id, path, body, base = null) {
   if (!demo && (isOffline() || pendingOp(id))) {
     // Уже ждёт более раннее изменение того же — новое встаёт на его место.
-    enqueue(id, path, body);
+    enqueue(id, path, body, base);
     if (!isOffline()) flush();
     return { queued: true, data: null };
   }
@@ -72,7 +85,7 @@ export async function send(id, path, body) {
     return { queued: false, data };
   } catch (error) {
     if (!unreachable(error)) throw error;
-    enqueue(id, path, body);
+    enqueue(id, path, body, base);
     return { queued: true, data: null };
   }
 }
@@ -92,12 +105,15 @@ async function drain() {
   while (queue.length && !isOffline()) {
     const op = queue[0];
     let data;
+    inFlight = op;
     try {
       ({ data } = await api(op.path, { method: 'POST', body: JSON.stringify(op.body) }));
     } catch (error) {
       if (!rejected(error)) break;
       if (pendingOp(op.id)?.v === op.v) dequeue(op.id);
       continue;
+    } finally {
+      inFlight = null;
     }
     sent += 1;
     delivered(op, data);
