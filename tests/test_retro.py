@@ -34,9 +34,12 @@ async def test_page_renders_their_markup(client):
     text = await response.text()
     assert response.status == 200
     assert "Котики делают" in text and 'id="grid"' in text
-    assert "/retro/bridge.js" in text and "/retro/app.js" in text
+    assert "/retro/bridge.js" in text and "/retro/settings.js" in text
     assert '"demo": true' in text
-    assert 'data-retro-exit="settings"' in text
+    assert 'data-retro-settings' in text
+    assert 'id="retroSettings"' in text and 'id="retroLock"' in text
+    assert "/retro/settings.js" in text
+    assert "/retro/app.js" not in text
     assert "Вернуть обычный дизайн" in text
 
 
@@ -117,3 +120,23 @@ async def test_retro_is_not_enabled_by_default(client, token):
     response = await client.get(f"{BASE}/api/prefs", params={"token": token})
     prefs = (await response.json())["data"]
     assert prefs.get("retro", "off") == "off"
+
+
+async def test_retro_pin_guards_data_and_supports_unlock_and_change(client, token):
+    headers = {"X-Netschool-Token": token}
+    response = await client.post(f"{BASE}/api/lock/pin", headers=headers, json={"pin": "1234"})
+    assert response.status == 200
+    assert (await client.get(f"{BASE}/api/retro/guestbook", headers=headers)).status == 423
+    assert (await client.get(f"{BASE}/api/lock/status", headers=headers)).status == 200
+    response = await client.post(f"{BASE}/api/lock/unlock", headers=headers, json={"pin": "0000"})
+    assert response.status == 403
+    response = await client.post(f"{BASE}/api/lock/unlock", headers=headers, json={"pin": "1234"})
+    headers["X-Netschool-Unlock"] = (await response.json())["data"]["unlock"]
+    assert (await client.get(f"{BASE}/api/retro/guestbook", headers=headers)).status == 200
+    response = await client.post(f"{BASE}/api/lock/pin", headers=headers, json={"pin": "5678"})
+    assert response.status == 200
+    assert (await client.get(f"{BASE}/api/retro/guestbook", headers=headers)).status == 423
+    headers["X-Netschool-Unlock"] = (await response.json())["data"]["unlock"]
+    assert (await client.get(f"{BASE}/api/retro/guestbook", headers=headers)).status == 200
+    await client.post(f"{BASE}/api/lock/logout", headers=headers, json={})
+    assert (await client.get(f"{BASE}/api/retro/guestbook", headers=headers)).status == 423

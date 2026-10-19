@@ -20,7 +20,7 @@
   } catch { /* приватный режим */ }
 
   let unlock = '';
-  try { unlock = sessionStorage.getItem('ns-retro-unlock') || ''; } catch { /* приватный режим */ }
+  try { unlock = sessionStorage.getItem('ns-retro-unlock') || ''; sessionStorage.removeItem('ns-retro-unlock'); } catch { /* приватный режим */ }
 
   function headers(extra) {
     const result = new Headers(extra || {});
@@ -54,7 +54,19 @@
     return json({ ok: true });
   }
 
-  window.retroBridge = { toApp };
+  async function request(path, body) {
+    const response = await realFetch(`${base}/api/${path}`, {
+      method: body === undefined ? 'GET' : 'POST',
+      headers: headers({ 'Content-Type': 'application/json' }),
+      cache: 'no-store',
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+    const payload = await response.json();
+    if (!response.ok || !payload.ok) throw Object.assign(new Error(payload.error || 'Не удалось выполнить запрос'), { status: response.status });
+    return payload.data;
+  }
+
+  window.retroBridge = { toApp, request, setUnlock: value => { unlock = value || ''; }, hasUnlock: () => Boolean(unlock) };
 
   document.addEventListener('click', async (event) => {
     const button = event.target.closest && event.target.closest('[data-retro-exit]');
@@ -79,11 +91,12 @@
     }
     options.headers = headers(options.headers);
     options.cache = 'no-store';
-    const response = await realFetch(`${base}/api/retro/${url.slice(5)}`, options);
-    // 423 — дневник закрыт PIN-кодом: ввести его можно только в приложении.
+    let response = await realFetch(`${base}/api/retro/${url.slice(5)}`, options);
+    // Просроченный PIN: вводим здесь и повторяем исходный запрос.
     if (response.status === 423) {
-      toApp();
-      return new Promise(() => {});
+      await window.retroBridge.ensureUnlocked(true);
+      options.headers = headers(options.headers);
+      response = await realFetch(`${base}/api/retro/${url.slice(5)}`, options);
     }
     if (response.ok) return response;
     // Ошибки нашего сервера ({error}) — в их виде ({detail}): api.ts показывает detail.

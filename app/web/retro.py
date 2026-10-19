@@ -111,6 +111,7 @@ def _int(request: web.Request, name: str, default: int | None = None) -> int:
 async def retro_page(request: web.Request) -> web.Response:
     """Их index.html (templates/retro.html). Удостоверение — как у главной
     страницы: токен из ссылки или cookie, в Telegram — initData в браузере."""
+    from .. import __version__
     from .server import STATIC_VERSION, _base
 
     app = context(request)
@@ -130,6 +131,7 @@ async def retro_page(request: web.Request) -> web.Response:
         request,
         {
             "static": static,
+            "app_version": __version__,
             "icons": f"{static}/retro/icons",
             "config": {
                 "base": base,
