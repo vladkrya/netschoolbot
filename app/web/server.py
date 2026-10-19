@@ -17,6 +17,7 @@ import asyncio
 import hashlib
 import logging
 import re
+import time
 from pathlib import Path
 
 import aiohttp_jinja2
@@ -470,6 +471,14 @@ async def manifest(request: web.Request) -> web.Response:
         ],
     }
     return web.json_response(payload, content_type="application/manifest+json")
+
+
+@page_routes.get("/time")
+async def server_time(request: web.Request) -> web.Response:
+    # Часы телефонов расходятся на десятки секунд, и таймер урока на двух
+    # телефонах показывал разное. Он сверяется с этими часами. Путь вне
+    # /api/: без входа и мимо service worker — копия времени не нужна.
+    return web.json_response({"now": time.time()}, headers={"Cache-Control": "no-store"})
 
 
 @page_routes.get("/sw.js")

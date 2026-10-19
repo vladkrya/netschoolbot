@@ -9,6 +9,7 @@ import asyncio
 import datetime as dt
 import json
 import re
+import time
 
 import pytest
 from aiohttp.test_utils import TestClient, TestServer
@@ -257,6 +258,14 @@ class TestPages:
         assert response.status == 200
         # Область видимости — префикс приложения, а не корень домена.
         assert response.headers["Service-Worker-Allowed"] == f"{BASE}/"
+
+    async def test_server_time_without_login(self, client):
+        before = time.time()
+        response = await client.get(f"{BASE}/time")
+        assert response.status == 200
+        assert response.headers["Cache-Control"] == "no-store"
+        # Таймер урока сверяет по ним часы телефона.
+        assert before <= (await response.json())["now"] <= time.time()
 
     async def test_health(self, client):
         response = await client.get("/health")
