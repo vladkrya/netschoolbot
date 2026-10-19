@@ -36,9 +36,9 @@
 
   /** В обычное приложение. Один раз за сессию оно не отправит обратно сюда:
    *  иначе ошибка входа гоняла бы между страницами по кругу. */
-  function toApp() {
+  function toApp(settings = false) {
     try { sessionStorage.setItem('ns-retro-skip', '1'); } catch { /* приватный режим */ }
-    location.replace(config.app_url || `${base}/`);
+    location.replace((config.app_url || `${base}/`) + (settings ? '#settings' : ''));
   }
 
   /** «Выйти» на странице «Обо мне»: ретро выключается, открывается приложение. */
@@ -55,6 +55,17 @@
   }
 
   window.retroBridge = { toApp };
+
+  document.addEventListener('click', async (event) => {
+    const button = event.target.closest && event.target.closest('[data-retro-exit]');
+    if (!button) return;
+    event.preventDefault();
+    // Сразу блокируем возврат в ретро, даже если сохранение ещё идёт.
+    try { sessionStorage.setItem('ns-retro-skip', '1'); } catch { /* приватный режим */ }
+    const saving = leave();
+    await Promise.race([saving, new Promise(resolve => setTimeout(resolve, 1500))]);
+    toApp(button.dataset.retroExit === 'settings');
+  });
 
   window.fetch = async function (input, init) {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;

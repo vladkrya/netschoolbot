@@ -36,6 +36,8 @@ async def test_page_renders_their_markup(client):
     assert "Котики делают" in text and 'id="grid"' in text
     assert "/retro/bridge.js" in text and "/retro/app.js" in text
     assert '"demo": true' in text
+    assert 'data-retro-exit="settings"' in text
+    assert "Вернуть обычный дизайн" in text
 
 
 async def test_week_in_their_shape(client, token, app_context, monkeypatch):
@@ -109,3 +111,9 @@ async def test_retro_pref_is_validated(client, token):
     assert (await response.json())["data"]["retro"] == "on"
     response = await client.post(url, params={"token": token}, json={"retro": True})
     assert (await response.json())["ok"] is False
+
+
+async def test_retro_is_not_enabled_by_default(client, token):
+    response = await client.get(f"{BASE}/api/prefs", params={"token": token})
+    prefs = (await response.json())["data"]
+    assert prefs.get("retro", "off") == "off"

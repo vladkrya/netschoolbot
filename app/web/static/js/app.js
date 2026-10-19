@@ -943,7 +943,10 @@ async function start() {
   // когда школьный сервер висел, вместе с ним висели имя, меню и настройки.
   const profileLoad = loadProfile().catch(() => null);
   // Первая вкладка панели — та, с которой открывается приложение.
-  const firstTab = switchTab(navTabs()[0]);
+  const requestedSettings = location.hash === '#settings';
+  if (requestedSettings) history.replaceState(history.state, '', location.pathname + location.search);
+  const firstTab = switchTab(requestedSettings && isNewDesign() ? 'settings' : navTabs()[0]);
+  if (requestedSettings && !isNewDesign()) openDrawer();
   firstTab.then(() => setTimeout(prefetch, 600)).catch(() => {});
   // Игры качаются заранее: так они откроются и без сети.
   setTimeout(warmGames, 8000);
