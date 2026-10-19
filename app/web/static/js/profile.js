@@ -1238,12 +1238,16 @@ async function switchStudent(button) {
   }
 }
 
+/**
+ * Тот же адрес worker, что в registerWorker (app.js): другой адрес ставил бы
+ * worker заново при каждом вызове. Подписаться на push можно только у
+ * активного worker — ждём его, иначе на первом запуске subscribe() падал
+ * и переключатель «Пуш на этом устройстве» не включался.
+ */
 async function workerRegistration() {
-  const { base, token } = window.NETSCHOOL;
-  return navigator.serviceWorker.register(
-    `${base}/sw.js?token=${encodeURIComponent(token)}`,
-    { scope: `${base}/` }
-  );
+  const { base } = window.NETSCHOOL;
+  await navigator.serviceWorker.register(`${base}/sw.js`, { scope: `${base}/` });
+  return navigator.serviceWorker.ready;
 }
 
 async function currentSubscription() {
