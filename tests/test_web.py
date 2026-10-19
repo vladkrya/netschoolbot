@@ -536,6 +536,7 @@ class TestNewFeatures:
         history = await (await client.get(f"{BASE}/api/history", params={"token": token})).json()
         item = history["data"]["items"][0]
         assert (item["kind"], item["old"], item["new"]) == ("changed", "3", "5")
+        assert (item["date"], item["lesson"]) == ("2026-03-02", 1)
         assert item["seen"].endswith("Z")
         profile = await (await client.get(f"{BASE}/api/profile", params={"token": token})).json()
         assert profile["data"]["status"]["last_ok_at"].endswith("Z")

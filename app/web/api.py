@@ -1560,6 +1560,8 @@ async def mark_history(request: web.Request) -> web.Response:
                 "subject": record.subject,
                 "date": record.date.isoformat(),
                 "title": record.title,
+                # Номер урока: по нажатию на запись открывается сам урок.
+                "lesson": record.lesson_number,
                 "mark": record.mark,
                 "old": row["old_mark"],
                 "new": row["new_mark"],

@@ -1480,6 +1480,10 @@ main.leaving { transition: transform .22s var(--ease); box-shadow: -8px 0 24px r
   animation: rise-in .38s var(--ease) both;
   animation-delay: var(--d, 0ms);
 }
+/* Нажатие открывает урок, на котором поставили оценку. */
+.history-item[data-history] { cursor: pointer; transition: transform .15s var(--ease); }
+.history-item[data-history]:active { transform: scale(.98); }
+.history-item.loading { opacity: .6; }
 .history-item.hi-changed { --k: var(--g3, #e8770c); }
 .history-item.hi-deleted { --k: var(--g2, #e0383e); }
 .hi-main { flex: 1; min-width: 0; }
