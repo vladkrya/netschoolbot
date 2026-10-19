@@ -167,6 +167,9 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 }
 .topbar-btn { width: 44px; height: 44px; color: #fff; display: flex; align-items: center; justify-content: center; border-radius: 50%; transition: background .15s, transform .15s; }
 .topbar-btn:active { background: rgba(255, 255, 255, .18); box-shadow: var(--press-glass); transform: scale(.92); }
+/* Слева две кнопки (☰ и обновление), справа одна — колокольчик сдвинут на
+   ширину кнопки, чтобы имя стояло ровно по центру шапки. */
+#bellBtn { margin-left: 44px; }
 .icon { display: block; flex: none; }
 
 .date-bar {
