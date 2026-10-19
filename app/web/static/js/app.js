@@ -11,7 +11,7 @@ import { loadTotals } from './totals.js';
 import { chatEvents } from './chat-live.js';
 import { initMail, loadMail, openAnnouncements, openCompose, selectChats } from './mail.js';
 import {
-  applyAccent, applyDesign, applyHalloween, applyScheduleTab, halloweenAvailable, initFullscreen, isHalloween,
+  applyAccent, applyDesign, applyHalloween, applyRetro, applyScheduleTab, halloweenAvailable, initFullscreen, isHalloween,
   isNewDesign, navIcon, setHalloweenAccess,
 } from './appearance.js';
 import { ICONS } from './icons.js';
@@ -458,6 +458,7 @@ function initLiveDiary() {
 function applySyncedPrefs() {
   applyStoredTheme();
   // Хеллоуин выключили или включили на другом устройстве.
+  applyRetro();
   applyHalloween();
   applyAccent();
   applyDesign();
@@ -903,6 +904,7 @@ async function start() {
   // из нажатия, ждать сети в этот момент нельзя.
   loadAttachmentTicket();
   applyStoredTheme();
+  applyRetro();
   applyHalloween();
   applyAccent();
   applyDesign();

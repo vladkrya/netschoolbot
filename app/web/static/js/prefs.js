@@ -11,6 +11,8 @@ const KEYS = {
   theme: 'ns-theme', design: 'ns-design-v2', designNotice: 'ns-design-notice', weekends: 'ns-weekends', hwStatus: 'ns-hw-status', scheduleTab: 'ns-schedule-tab', answers: 'ns-answers', answerHint: 'ns-answer-hint', accent: 'ns-accent', accents: 'ns-accents', weights: 'ns-weights', thresholds: 'ns-thresholds', tabs: 'ns-tabs', pins: 'ns-pins', pwa: 'ns-pwa', lessonEdits: 'ns-lesson-edits', confetti: 'ns-confetti', motion: 'ns-motion',
   // Хеллоуин: явный выбор тумблером ('on'/'off') и свой цвет на праздник.
   halloween: 'ns-halloween-choice', halloweenAccent: 'ns-halloween-accent',
+  // Ретро-оформление по желанию ('on'/'off'), retro.css.
+  retro: 'ns-retro',
 };
 // Тема, дизайн и цвет лежат строкой (их читает скрипт в <head>), остальное — JSON.
 const JSON_PREFS = new Set(['weights', 'thresholds', 'tabs', 'pins', 'accents', 'lessonEdits']);
