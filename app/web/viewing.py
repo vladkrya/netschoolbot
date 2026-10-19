@@ -30,11 +30,14 @@ OWNER_READS = frozenset((
     "/api/diary", "/api/homework", "/api/homework/done", "/api/marks", "/api/marks/period",
     "/api/marks/subject", "/api/subject", "/api/history", "/api/notes", "/api/student-class",
     "/api/announcements", "/api/profile", "/api/export.xlsx", "/api/bells",
+    # Ретро-сайт (retro.py): неделя, карточки заданий, отчёты. Почта и
+    # гостевая книга — от лица ученика, их при просмотре нет.
+    "/api/retro/me", "/api/retro/week", "/api/retro/reports/totals", "/api/retro/reports/subject",
 ))
 # /api/homework/{id}/comment и …/answer (ответ виден, но не меняется — только
 # GET), вложения и выгрузка Excel. Вход на дистанционный урок, справки и
 # олимпиады — от лица ученика, их при просмотре нет.
-OWNER_READ_PREFIXES = ("/api/homework/", "/api/attachment/", "/api/export/")
+OWNER_READ_PREFIXES = ("/api/homework/", "/api/attachment/", "/api/export/", "/api/retro/assignment/")
 
 # Это всегда про самого приглашённого.
 VIEWER_PREFIXES = (

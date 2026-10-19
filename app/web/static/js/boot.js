@@ -116,6 +116,16 @@ async function boot() {
       return;
     }
   }
+  // Ретро-сайт включён (retro.js) — туда, когда ясно, что выбрано: настройка
+  // общая с другими устройствами. Сервер бота медлит — решаем по сохранённой.
+  if (!demo) await Promise.race([state.prefsSync, new Promise(resolve => setTimeout(resolve, 1500))]);
+  {
+    const { openRetro, wantsRetro } = await import('./retro.js');
+    if (wantsRetro()) {
+      openRetro();
+      return;
+    }
+  }
   // Первый запрос идёт параллельно загрузке модулей интерфейса, после разблокировки.
   if (!demo) state.initialDiary = api('/api/diary?week=0&window=current', {
     onFresh: fresh => {

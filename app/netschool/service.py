@@ -681,6 +681,12 @@ class DiaryService:
     async def logout(self, user: User) -> None:
         await self._pool.invalidate(user.telegram_id, forget_saved=True)
 
+    async def with_client(self, user: User, call: Callable[[Any], Awaitable[T]]) -> T:
+        """Свой вызов клиента netschoolpy этого пользователя — с пулом сессий и
+        повторами, как у остальных запросов. Нужен ретро-сайту (web/retro.py):
+        его ответы строятся прямо из объектов библиотеки."""
+        return await self._with_session(user, call)
+
     async def _with_session(self, user: User, call: Callable[[Any], Awaitable[T]]) -> T:
         """Выполнить операцию, повторяя её только при временных ошибках.
 

@@ -1,0 +1,1351 @@
+:root {
+  --navy: #070a2a;
+  --frame: #8a8a8a;
+  --side: #d4d0c8;
+  --link: #0000cc;
+  --head-blue: #1238e8;
+  --cell-empty: #c6c9cf;
+  --cell-line: #9ea3ab;
+  --yellow: #fff35c;
+  --red: #f59a9a;
+  --violet: #d7b4ff;
+  --mono: "Courier New", Courier, monospace;
+  --ui: Tahoma, Verdana, "Segoe UI", Arial, sans-serif;
+  --pixel: "Press Start 2P", var(--mono);
+  --label: 700 13px/1.4 var(--mono);
+}
+
+* {
+  box-sizing: border-box;
+}
+html,
+body {
+  margin: 0;
+}
+body {
+  background: #000;
+  font: 13px/1.25 var(--ui);
+  color: #000;
+}
+a {
+  color: var(--link);
+}
+.hidden {
+  display: none !important;
+}
+.px {
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  vertical-align: middle;
+}
+.i16 {
+  width: 16px;
+  height: 16px;
+  vertical-align: -3px;
+}
+
+.page {
+  height: 100vh;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 3px solid var(--frame);
+  background: var(--side);
+}
+
+/* звёздное небо */
+.stars {
+  background-color: var(--navy);
+  background-image:
+    radial-gradient(1.5px 1.5px at 20px 30px, #fff, transparent),
+    radial-gradient(1px 1px at 90px 70px, #fff, transparent),
+    radial-gradient(2px 2px at 160px 20px, #ffd, transparent),
+    radial-gradient(1px 1px at 230px 90px, #fff, transparent),
+    radial-gradient(1.5px 1.5px at 300px 45px, #fff, transparent),
+    radial-gradient(1px 1px at 50px 120px, #ccf, transparent);
+  background-size: 340px 140px;
+}
+
+/* радужный пиксельный текст */
+.rainbow {
+  font-family: var(--pixel);
+  font-weight: 700;
+  background: linear-gradient(90deg, #ff2a2a, #ff9a00, #ffee00, #2cff2c, #00e5ff, #3a6bff, #c040ff, #ff2a9a);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* ===== шапка ===== */
+.top {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 6px 20px;
+  border-bottom: 3px solid var(--frame);
+  min-height: 82px;
+}
+.globe-img {
+  width: 64px;
+  height: 64px;
+  display: block;
+}
+.top h1 {
+  margin: 0;
+  font-size: 38px;
+  letter-spacing: 1px;
+  text-shadow: none;
+  -webkit-text-stroke: 1px rgba(255, 255, 255, 0.25);
+  white-space: nowrap;
+}
+.winflag {
+  margin-left: 20px;
+}
+.winlogo {
+  width: 48px;
+  height: 48px;
+  display: block;
+}
+.welcome {
+  font: 700 20px/1.25 var(--mono);
+  color: #ffef6b;
+  text-align: center;
+  margin-left: auto;
+}
+.welcome u {
+  text-decoration-thickness: 2px;
+}
+.cat.big img {
+  width: 72px;
+  height: 72px;
+  display: block;
+}
+.paw {
+  width: 20px;
+  height: 18px;
+}
+.cats-slogan {
+  font: 700 17px/1.25 var(--mono);
+  color: #33ff55;
+  text-align: center;
+}
+
+/* ===== тело ===== */
+.body {
+  flex: 1;
+  display: flex;
+  align-items: stretch;
+  min-height: 0;
+}
+
+.side {
+  width: 175px;
+  flex: none;
+  background: var(--side);
+  border-right: 3px solid var(--frame);
+  padding: 10px 8px;
+  overflow-y: auto;
+}
+.menu {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.menu li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 10px 4px;
+}
+.menu .ico {
+  width: 26px;
+  text-align: center;
+}
+.menu .ico img {
+  width: 24px;
+  height: 24px;
+  display: block;
+}
+.menu a {
+  font-size: 14px;
+}
+.side hr {
+  border: 0;
+  border-top: 2px solid #6d6d6d;
+  border-bottom: 1px solid #fff;
+  margin: 10px 0;
+}
+
+.today-box {
+  display: flex;
+  gap: 6px;
+  background: #000;
+  color: #ffef6b;
+  padding: 10px 6px;
+  font: 700 14px/1.4 var(--mono);
+}
+.today-box .moon img {
+  width: 32px;
+  height: 32px;
+  display: block;
+}
+.tb-label {
+  color: #fff;
+}
+.tb-date {
+  text-decoration: underline;
+}
+.tb-time {
+  color: #fff;
+}
+
+.cat.small {
+  text-align: center;
+  margin-top: 16px;
+}
+.cat.small img {
+  width: 56px;
+  height: 56px;
+}
+.wip {
+  text-align: center;
+  font: 700 13px/1.5 var(--pixel);
+  color: #000;
+  margin-bottom: 18px;
+  -webkit-text-stroke: 0.4px #000;
+}
+.ie-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #fff;
+  border: 2px outset #ccc;
+  padding: 3px 6px;
+  font-size: 10px;
+  line-height: 1.15;
+}
+.ie-img {
+  width: 32px;
+  height: 32px;
+}
+
+/* ===== основная колонка ===== */
+.main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: #b9b9b9;
+}
+.sky {
+  background:
+    radial-gradient(ellipse 120px 30px at 10% 30%, rgba(255, 255, 255, 0.9), transparent),
+    radial-gradient(ellipse 160px 35px at 40% 75%, rgba(255, 255, 255, 0.85), transparent),
+    radial-gradient(ellipse 140px 28px at 75% 25%, rgba(255, 255, 255, 0.9), transparent),
+    radial-gradient(ellipse 110px 25px at 92% 70%, rgba(255, 255, 255, 0.8), transparent),
+    linear-gradient(#a9c8ec, #d9e8f7);
+  border-bottom: 3px solid var(--frame);
+}
+.sky h2 {
+  margin: 0;
+  text-align: center;
+  font: 700 34px/1 var(--ui);
+  padding: 10px 0 6px;
+}
+.sky h2 a {
+  color: #0a1fb8;
+}
+.sky .smile {
+  width: 32px;
+  height: 32px;
+  vertical-align: -2px;
+}
+.weeknav {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 6px 12px 8px;
+  border-top: 2px solid #fff;
+  font: 700 16px/1 var(--ui);
+}
+.weeknav .range {
+  margin: 0 auto;
+}
+.weeknav .modes a {
+  font-weight: 700;
+}
+.weeknav .modes a.on {
+  color: #0a1fb8;
+}
+.btn {
+  font: 700 14px var(--ui);
+  background: #d4d0c8;
+  border: 2px outset #fff;
+  padding: 3px 14px;
+  cursor: pointer;
+}
+.btn:active {
+  border-style: inset;
+}
+
+.view {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+.view.pane {
+  display: block;
+}
+#view-calendar {
+  flex-direction: row;
+  min-height: 0;
+  overflow: hidden;
+}
+.view {
+  min-height: 0;
+  overflow: auto;
+}
+
+/* блок «Сегодня / Завтра / Дальше» */
+.upcoming {
+  width: 248px;
+  flex: none;
+  padding: 8px 6px;
+  border-right: 3px solid var(--frame);
+  overflow-y: auto;
+}
+.now {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: #ffef6b;
+  font: 700 14px/1.4 var(--mono);
+  text-align: center;
+  margin-bottom: 8px;
+}
+.now .moon img {
+  width: 40px;
+  height: 40px;
+  display: block;
+}
+.now .lbl {
+  color: #ffef6b;
+}
+.card {
+  border-radius: 10px;
+  padding: 6px 6px 8px;
+  margin-bottom: 10px;
+}
+.card.green {
+  background: #22c23a;
+}
+.card.violet {
+  background: #a974ef;
+}
+.card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 0 6px 6px;
+}
+.card-head a {
+  font: 700 16px var(--ui);
+  color: #0a1fb8;
+}
+.card-head span {
+  font-size: 12px;
+}
+.card-inner {
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 13px;
+}
+.card.green .card-inner {
+  background: #d9f8d6;
+}
+.card.violet .card-inner {
+  background: #ece0ff;
+}
+.card-inner .row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+}
+.card-inner .subj {
+  display: block;
+  margin: 10px 0 10px 12px;
+  font-size: 14px;
+}
+.card-inner .row + .row {
+  margin-top: 2px;
+}
+.card-empty {
+  color: #333;
+  font-style: italic;
+}
+
+/* ===== сетка недели ===== */
+.grid-wrap {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  background: #b9b9b9;
+  display: flex;
+  flex-direction: column;
+}
+.grid {
+  display: grid;
+  grid-template-columns: 96px repeat(6, minmax(0, 1fr));
+  grid-auto-rows: minmax(72px, 1fr);
+  grid-template-rows: auto;
+  gap: 3px;
+  padding: 3px;
+  min-width: 780px;
+  flex: 1;
+}
+.dh {
+  background: var(--head-blue);
+  color: #fff;
+  text-align: center;
+  padding: 6px 4px 5px;
+  font-size: 15px;
+  border: 1px solid #000a7a;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+.dh a {
+  color: #fff;
+}
+.dh .sub {
+  display: block;
+  font-size: 11px;
+  margin-top: 3px;
+  text-decoration: underline;
+}
+.dh.today {
+  background: #0a1db0;
+  outline: 2px solid #ffef6b;
+  outline-offset: -3px;
+}
+.dh .clock {
+  position: absolute;
+  left: 8px;
+  top: 6px;
+}
+.tc {
+  background: var(--cell-empty);
+  border: 1px solid var(--cell-line);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font: 700 15px var(--mono);
+  color: #0a1460;
+  flex-direction: column;
+  gap: 2px;
+}
+.tc .num {
+  font: 11px var(--ui);
+  color: #333;
+}
+.c .own-time {
+  margin-left: auto;
+  white-space: nowrap;
+  font: 700 11px var(--mono);
+  background: #fff;
+  border: 1px solid #000;
+  padding: 0 3px;
+}
+.c {
+  background: var(--cell-empty);
+  border: 1px solid var(--cell-line);
+  padding: 4px 6px;
+  font-size: 11px;
+  line-height: 1.22;
+  overflow: hidden;
+}
+.c.yellow {
+  background: var(--yellow);
+  border-color: #c2b200;
+}
+.c.red {
+  background: var(--red);
+  border-color: #c46a6a;
+}
+.c.violet {
+  background: var(--violet);
+  border-color: #9a6ad6;
+}
+.c .kind {
+  font-size: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+.c .subj {
+  font-size: 12px;
+  font-weight: 700;
+  margin: 1px 0 2px;
+}
+.c .what {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.c .room,
+.c .teacher {
+  display: block;
+}
+.mark {
+  background: #fff;
+}
+.c .mark {
+  float: right;
+  border: 1px solid #000;
+  font: 700 12px var(--mono);
+  padding: 0 4px;
+  margin-left: 4px;
+}
+.c.lesson {
+  cursor: pointer;
+}
+.mark.m5 {
+  background: #b8ffb0;
+}
+.mark.m4 {
+  background: #d8f0ff;
+}
+.mark.m3 {
+  background: #fff0a0;
+}
+.mark.m2 {
+  background: #ff9a9a;
+}
+.mark.debt {
+  color: #c00;
+}
+.mark.absence {
+  background: #000;
+  color: #ffef6b;
+}
+.periods .mark {
+  display: inline-block;
+  border: 1px solid #000;
+  font: 700 12px var(--mono);
+  padding: 0 4px;
+  margin-right: 3px;
+}
+
+.empty-note {
+  position: sticky;
+  left: 0;
+  margin: 3px;
+  background: #ffffe1;
+  border: 1px solid #000;
+  padding: 8px 10px;
+  font-weight: 700;
+}
+
+/* периоды */
+.periods {
+  grid-column: 1 / -1;
+  padding: 10px;
+  color: #000;
+}
+.periods h4 {
+  margin: 12px 0 4px;
+  color: #0a1fb8;
+  font: 700 12px var(--pixel);
+}
+.periods table {
+  border-collapse: collapse;
+  width: 100%;
+  background: #fff;
+  color: #000;
+}
+.periods .prow {
+  cursor: pointer;
+}
+.periods .prow:hover {
+  background: #ffffe1;
+}
+.periods td {
+  border: 1px solid #888;
+  padding: 3px 6px;
+}
+
+/* ===== окна в стиле Win98 ===== */
+#view-login {
+  flex-direction: row;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 28px 12px;
+  background: #008080;
+}
+.win {
+  width: 380px;
+  max-width: 100%;
+  background: #d4d0c8;
+  border: 2px outset #fff;
+  box-shadow: 2px 2px 0 #000;
+}
+.win-title {
+  display: flex;
+  justify-content: space-between;
+  background: linear-gradient(90deg, #000080, #1084d0);
+  color: #fff;
+  font-weight: 700;
+  padding: 3px 6px;
+}
+.win-title .x {
+  background: #d4d0c8;
+  color: #000;
+  padding: 0 5px;
+  border: 1px outset #fff;
+  font-size: 11px;
+}
+.win-body {
+  padding: 12px;
+}
+.win label {
+  display: block;
+  margin-bottom: 8px;
+  font-weight: 700;
+}
+.win input,
+.win select {
+  display: block;
+  width: 100%;
+  margin-top: 2px;
+  font: 13px var(--ui);
+  padding: 3px;
+  border: 2px inset #fff;
+}
+.win-actions {
+  display: flex;
+  gap: 8px;
+}
+.err {
+  color: #c00;
+  min-height: 1.2em;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+.hint {
+  font-size: 11px;
+  color: #444;
+}
+
+.pane {
+  background: #fff;
+  padding: 16px 20px;
+}
+.pane h3 {
+  font: 700 16px var(--pixel);
+  margin-top: 0;
+}
+.h3i {
+  width: 24px;
+  height: 24px;
+}
+#notes {
+  width: 100%;
+  min-height: 320px;
+  font: 14px var(--mono);
+  background: #ffffe0;
+  border: 2px inset #fff;
+}
+.gb {
+  list-style: none;
+  padding: 0;
+}
+.gb li {
+  border-bottom: 1px dashed #888;
+  padding: 6px 0;
+}
+.gb-replies {
+  list-style: none;
+  margin: 6px 0 0 18px;
+  padding-left: 10px;
+  border-left: 3px solid #9cf;
+}
+.gb-replies li:last-child {
+  border-bottom: 0;
+}
+.gb-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.gb-to {
+  color: #36c;
+  font-weight: 700;
+}
+.gb-links {
+  font-size: 12px;
+}
+.gb-form {
+  display: grid;
+  gap: 6px;
+  max-width: 520px;
+}
+.gb-form textarea {
+  resize: vertical;
+  font: inherit;
+}
+.gb-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.gb-msg:not(:empty) {
+  color: #c00;
+  font-weight: 700;
+}
+.gb-reply {
+  background: #ffffe0;
+  border: 1px dashed #888;
+  padding: 2px 6px;
+}
+.trap {
+  position: absolute;
+  left: -9999px;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+/* ===== окно урока ===== */
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: rgba(0, 0, 40, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+.lesson-win {
+  width: 520px;
+  max-height: calc(100dvh - 32px);
+  display: flex;
+  flex-direction: column;
+}
+.lesson-win .win-title {
+  align-items: center;
+}
+.lesson-win .win-title span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.win-title button.x {
+  cursor: pointer;
+  font: 700 11px var(--ui);
+  line-height: 14px;
+}
+.lesson-win .win-body {
+  overflow-y: auto;
+}
+.lesson-actions {
+  justify-content: flex-end;
+  padding: 0 12px 12px;
+}
+.info {
+  width: 100%;
+  border-collapse: collapse;
+  background: #fff;
+  border: 2px inset #fff;
+  margin-bottom: 10px;
+}
+.info th {
+  text-align: left;
+  width: 90px;
+  padding: 4px 8px;
+  background: #ece9d8;
+  vertical-align: top;
+  font-size: 12px;
+}
+.info td {
+  padding: 4px 8px;
+}
+.info .mark {
+  display: inline-block;
+  border: 1px solid #000;
+  font: 700 12px var(--mono);
+  padding: 0 4px;
+  margin-right: 3px;
+}
+fieldset {
+  border: 2px groove #fff;
+  margin: 0 0 10px;
+  padding: 6px 10px 8px;
+}
+legend {
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 4px;
+}
+.tasks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.task {
+  background: var(--yellow);
+  border: 1px solid #c2b200;
+  padding: 6px 8px;
+  margin-top: 6px;
+}
+.task.control {
+  background: var(--red);
+  border-color: #c46a6a;
+}
+.task-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+.task-kind {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.task-head .mark {
+  border: 1px solid #000;
+  font: 700 12px var(--mono);
+  padding: 0 4px;
+}
+.task-text {
+  margin-top: 3px;
+  font-weight: 700;
+}
+.task-more {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #333;
+  white-space: pre-wrap;
+}
+.task-more p {
+  margin: 0;
+}
+.files {
+  margin: 4px 0 0;
+  padding-left: 16px;
+}
+.tasks .none {
+  color: #555;
+  font-style: italic;
+  padding: 4px 0;
+}
+.tasks .err {
+  color: #c00;
+}
+.c.lesson:hover {
+  outline: 2px dotted #000;
+  outline-offset: -3px;
+}
+.c.lesson:focus-visible {
+  outline: 2px solid #0a1fb8;
+  outline-offset: -3px;
+}
+
+/* ===== подвал ===== */
+.bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-top: 3px solid var(--frame);
+  padding: 4px 24px;
+  min-height: 42px;
+}
+.bottom .star {
+  width: 24px;
+  height: 24px;
+}
+.bottom .foot {
+  font-size: 14px;
+}
+.bottom .dancer img {
+  width: 36px;
+  height: 36px;
+  display: block;
+}
+.bottom .smile {
+  width: 28px;
+  height: 28px;
+}
+.rainbar {
+  width: 240px;
+  height: 16px;
+  background: linear-gradient(90deg, #6000ff, #0080ff, #00e0ff, #00ff40, #ffee00, #ff8000, #ff0040, #ff00c0);
+}
+.green-text {
+  color: #33ff55;
+  font: 700 13px var(--pixel);
+}
+
+/* ===== узкие экраны ===== */
+@media (max-width: 900px) {
+  .page {
+    height: auto;
+    min-height: 100dvh;
+    overflow: visible;
+  }
+  .view,
+  #view-calendar {
+    overflow: visible;
+  }
+  .grid-wrap {
+    overflow-x: auto;
+    overflow-y: visible;
+  }
+  .top {
+    flex-wrap: wrap;
+    justify-content: center;
+    padding: 6px 16px;
+  }
+  .top h1 {
+    font-size: 22px;
+  }
+  .winflag,
+  .cat.big {
+    display: none;
+  }
+  .globe-img {
+    width: 40px;
+    height: 40px;
+  }
+  .welcome {
+    margin: 0;
+    font-size: 16px;
+  }
+  .cats-slogan {
+    font-size: 14px;
+  }
+  .body {
+    flex-direction: column;
+  }
+  .side {
+    width: auto;
+    border-right: 0;
+    border-bottom: 3px solid var(--frame);
+  }
+  .menu {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 14px;
+  }
+  .menu li {
+    margin: 0;
+  }
+  .side hr,
+  .today-box,
+  .cat.small,
+  .wip,
+  .ie-badge {
+    display: none;
+  }
+  #view-calendar {
+    flex-direction: column;
+  }
+  .upcoming {
+    width: auto;
+    border-right: 0;
+    border-bottom: 3px solid var(--frame);
+  }
+  .weeknav {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .weeknav .range {
+    padding: 0;
+    margin: 0 auto;
+  }
+  .weeknav .modes {
+    order: 5;
+    flex-basis: 100%;
+    text-align: center;
+  }
+  .sky h2 {
+    font-size: 24px;
+  }
+  .bottom {
+    flex-wrap: wrap;
+    justify-content: center;
+    padding: 4px 16px;
+  }
+  .rainbar {
+    width: 120px;
+  }
+  .grid {
+    grid-template-columns: 64px repeat(6, minmax(110px, 1fr));
+    min-width: 720px;
+  }
+  .tc {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+  }
+  .win {
+    width: 100%;
+  }
+}
+
+@media (max-width: 520px) {
+  .top h1 {
+    font-size: 18px;
+  }
+  .welcome,
+  .cats-slogan {
+    font-size: 13px;
+  }
+  .sky h2 {
+    font-size: 20px;
+  }
+  .sky .smile {
+    width: 24px;
+    height: 24px;
+  }
+  .weeknav {
+    font-size: 14px;
+  }
+  .bottom .foot,
+  .green-text {
+    font-size: 10px;
+  }
+  .rainbar,
+  .bottom .dancer {
+    display: none;
+  }
+}
+
+.dh.corner {
+  background: #b9b9b9;
+  border-color: #b9b9b9;
+}
+.loading {
+  grid-column: 1 / -1;
+  padding: 30px;
+  text-align: center;
+  font: 700 12px var(--pixel);
+}
+.loading.error {
+  color: #c00;
+  font: 700 13px var(--ui);
+}
+
+/* Режим фото: оценки и учителя скрыты звёздочками, предметы видны. */
+body.photo .mark {
+  background: #fff;
+  color: #000;
+  font-size: 0;
+}
+body.photo .mark::after {
+  content: "*";
+  font: 700 12px var(--mono);
+}
+body.photo .teacher,
+body.photo .what,
+body.photo .task-text {
+  font-size: 0;
+}
+body.photo .teacher::after,
+body.photo .what::after,
+body.photo .task-text::after {
+  content: "* * *";
+  font-size: 12px;
+}
+body.photo .task-more {
+  display: none;
+}
+
+/* ===== почта ===== */
+.badge {
+  background: #c00;
+  color: #fff;
+  font: 700 11px var(--ui);
+  padding: 0 5px;
+  border: 1px solid #000;
+}
+.mail-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.mail-bar .on,
+.modes a.on {
+  font-weight: 700;
+}
+.mail-list table,
+.report,
+.marks-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: #fff;
+  border: 2px inset #fff;
+  color: #000;
+}
+.mail-list th,
+.mail-list td,
+.report th,
+.report td,
+.marks-table th,
+.marks-table td {
+  border: 1px solid #c0c0c0;
+  padding: 3px 6px;
+  text-align: left;
+  vertical-align: top;
+}
+.mail-list th,
+.report th,
+.marks-table th {
+  background: #d4d0c8;
+}
+.mail-list tr[data-mail] {
+  cursor: pointer;
+}
+.mail-list tr[data-mail]:hover,
+.mail-list tr[data-mail]:focus {
+  background: #ffffe0;
+  outline: none;
+}
+.mail-list tr.unread {
+  font-weight: 700;
+}
+.mail-list td:last-child {
+  white-space: nowrap;
+}
+.pager {
+  margin-top: 6px;
+  text-align: center;
+}
+.mail-form {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 10px;
+  padding: 8px;
+  background: #d4d0c8;
+  border: 2px outset #fff;
+  color: #000;
+}
+.mail-form input,
+.mail-form textarea {
+  font: 13px var(--ui);
+  padding: 3px;
+  border: 2px inset #fff;
+}
+.mail-to {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+.mail-to input {
+  flex: 1;
+  min-width: 160px;
+}
+.chip {
+  background: #fff;
+  border: 1px solid #000;
+  padding: 0 4px;
+  cursor: pointer;
+}
+.mail-text {
+  background: #fff;
+  border: 2px inset #fff;
+  padding: 8px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+#winExtra:not(:empty) {
+  margin-right: auto;
+}
+
+/* ===== отчёты ===== */
+.report td a {
+  font-weight: 700;
+}
+.report td[data-subject] {
+  cursor: pointer;
+}
+.report .cur {
+  background: #ffffe0;
+}
+.report .mark,
+.win .mark.avg,
+.marks-table .mark,
+.bar .mark {
+  display: inline-block;
+  color: #000;
+  border: 1px solid #000;
+  font: 700 12px var(--mono);
+  padding: 0 4px;
+}
+.bars {
+  display: grid;
+  gap: 4px;
+}
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.bar i {
+  height: 12px;
+  background: linear-gradient(90deg, #000080, #1084d0);
+  border: 1px solid #000;
+  min-width: 2px;
+}
+.marks-table td:nth-child(3),
+.marks-table td:nth-child(4) {
+  text-align: center;
+}
+@media (max-width: 640px) {
+  .report {
+    font-size: 12px;
+  }
+  .report th,
+  .report td {
+    padding: 2px 3px;
+  }
+}
+
+.report .mark.final {
+  outline: 1px solid #000;
+  outline-offset: 1px;
+}
+
+/* Широкие таблицы листаются внутри себя, а не двигают всю страницу. */
+#reportTable,
+.mail-list,
+.lesson-win .win-body {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+html,
+body {
+  overflow-x: clip;
+}
+
+/* ===== вход: способы, список школ, шаги Госуслуг ===== */
+.tabs {
+  display: flex;
+  gap: 2px;
+  margin-bottom: 10px;
+  border-bottom: 2px solid #fff;
+}
+.tabs button {
+  flex: 1;
+  font: 13px var(--ui);
+  padding: 4px 6px;
+  background: #c0bcb4;
+  border: 2px outset #fff;
+  border-bottom: 0;
+  cursor: pointer;
+}
+.tabs button.on {
+  background: #d4d0c8;
+  font-weight: 700;
+  position: relative;
+  top: 2px;
+}
+.tabs button:disabled {
+  color: #888;
+  cursor: not-allowed;
+}
+.combo {
+  position: relative;
+  margin: 2px 0 8px;
+}
+.combo input {
+  margin: 0;
+}
+.combo-list {
+  position: absolute;
+  z-index: 20;
+  left: 0;
+  right: 0;
+  max-height: 260px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  background: #fff;
+  border: 2px solid #000;
+  box-shadow: 2px 2px 0 #000;
+}
+.combo-list li {
+  padding: 4px 6px;
+  border-bottom: 1px dotted #c0c0c0;
+  cursor: pointer;
+  font: 13px var(--ui);
+}
+.combo-list li small {
+  display: block;
+  color: #555;
+}
+.combo-list li.on {
+  background: #000080;
+  color: #fff;
+}
+.combo-list li.on small {
+  color: #ddd;
+}
+.combo-list .combo-head {
+  cursor: default;
+  font-weight: 700;
+  background: #d4d0c8;
+}
+.combo-list .tag {
+  font-size: 11px;
+  padding: 0 3px;
+  border: 1px solid currentColor;
+}
+#schoolNote {
+  font-weight: 400;
+  color: #555;
+}
+.esia-step {
+  margin: 8px 0;
+  padding: 8px;
+  background: #ffffe0;
+  border: 1px dashed #888;
+  text-align: center;
+}
+.esia-step label {
+  text-align: left;
+}
+.esia-step .choose {
+  display: grid;
+  gap: 4px;
+}
+.esia-step .qr {
+  width: 200px;
+  max-width: 100%;
+  margin: 0 auto;
+  background: #fff;
+}
+.esia-step .qr svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.esia-step a.btn {
+  display: inline-block;
+  text-decoration: none;
+  color: #000;
+}

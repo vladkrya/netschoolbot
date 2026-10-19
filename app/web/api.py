@@ -1857,7 +1857,7 @@ async def save_prefs(request: web.Request) -> web.Response:
         changes["halloweenAccent"] = body["halloweenAccent"].lower()
     if "retro" in body:
         if body["retro"] not in ("on", "off"):
-            return json_error("Некорректная настройка оформления")
+            return json_error("Некорректная настройка ретро-сайта")
         changes["retro"] = body["retro"]
     if "confetti" in body:
         if body["confetti"] not in ("show", "hide"):

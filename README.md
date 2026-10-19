@@ -443,13 +443,31 @@ python -m pytest
 Тесты не ходят в сеть и не требуют базы на диске — база поднимается во
 временном каталоге на каждый тест.
 
+## Ретро-сайт
+
+Настройки → Оформление → «Ретро-сайт» (по желанию, по умолчанию выключен):
+дневник открывается сайтом [netschool-retro](https://github.com/faustyu1/netschool-retro)
+— звёздная шапка, сетка недели, окна Windows 98, почта, отчёты, заметки и
+гостевая книга. «Выйти» на странице «Обо мне» возвращает обычное приложение.
+
+- `retro/src` — их фронт без изменений, `retro/index.html` — их страница;
+- `retro/build.mjs` собирает его в `app/web/static/retro/app.js` и `app.css`
+  (вход в «Сетевой город» заменён возвратом в приложение — `retro/bridge/login.ts`);
+- `app/web/templates/retro.html` — их `index.html`, `static/retro/bridge.js`
+  отправляет их запросы `/api/…` в `/api/retro/…` (`app/web/retro.py`) с
+  удостоверением приложения; ответы там — в точности их сервера.
+
+Пересборка после обновления их исходников:
+
+```bash
+npm i --prefix /tmp/esb esbuild@0.24.0 && ESBUILD=/tmp/esb/node_modules/esbuild/lib/main.js node retro/build.mjs
+```
+
 ## Благодарности
 
-Оформление «Ретро» (Настройки → Оформление, по желанию) разработано
-[faustyu1](https://github.com/faustyu1) в проекте
-[netschool-retro](https://github.com/faustyu1/netschool-retro): звёздная шапка,
-радужный пиксельный заголовок, окна Windows 98 и пиксельные картинки оттуда.
-Шрифт Press Start 2P — SIL Open Font License.
+Ретро-сайт разработан [faustyu1](https://github.com/faustyu1) — проект
+[netschool-retro](https://github.com/faustyu1/netschool-retro): дизайн, фронт и
+пиксельные картинки оттуда. Шрифт Press Start 2P — SIL Open Font License.
 
 ## Лицензия
 

@@ -26,7 +26,7 @@ from aiohttp import web
 
 from .. import __version__
 from ..context import AppContext
-from . import account, api, assistant, bugreport, caldav, captcha_proxy, chat, devices, extras, lock, status, sync
+from . import account, api, assistant, bugreport, caldav, captcha_proxy, chat, devices, extras, lock, retro, status, sync
 from .api import BOT, CONTEXT
 
 logger = logging.getLogger("netschoolbot.web")
@@ -143,7 +143,9 @@ def create_app(context: AppContext, bot=None) -> web.Application:
     inner.add_routes(extras.routes)
     inner.add_routes(captcha_proxy.routes)
     inner.add_routes(status.routes)
+    inner.add_routes(retro.routes)
     inner.add_routes(page_routes)
+    inner.add_routes(retro.page_routes)
     # Те же файлы под путём с версией. Модули JS импортируют друг друга
     # относительными путями без ?v=, а Cloudflare навязывает браузеру кэш
     # на 4 часа поверх наших заголовков — после деплоя экраны оставались

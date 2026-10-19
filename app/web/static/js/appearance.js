@@ -32,9 +32,8 @@ function shade(hex, amount) {
 
 export function applyAccent(color = currentAccent()) {
   if (!/^#[0-9a-f]{6}$/i.test(color)) color = ACCENTS[0][0];
-  // У хеллоуинского и ретро-оформления свой акцент — обычный выбранный цвет не трогаем.
+  // У хеллоуинского оформления свой акцент — обычный выбранный цвет не трогаем.
   if (isHalloween()) color = halloweenAccent();
-  if (isRetro()) color = RETRO_ACCENT;
   const root = document.documentElement.style;
   const dark = shade(color, -0.18);
   root.setProperty('--head', color);
@@ -66,8 +65,7 @@ export function syncChromeColor() {
     return Math.round(glass ? foreground * 0.8 + background * 0.2 : foreground);
   });
   // В новом дизайне шапка в тон фону — и системная область тоже.
-  // В ретро шапка — звёздное небо, системная область в его цвет.
-  const color = isRetro() ? RETRO_SKY : isNewDesign() ? bg
+  const color = isNewDesign() ? bg
     : `#${channels.map((value) => value.toString(16).padStart(2, '0')).join('')}`;
   document.documentElement.style.setProperty('--chrome-head', color);
   document.querySelector('meta[name="theme-color"]')?.setAttribute('content', color);
@@ -150,8 +148,6 @@ export function halloweenAvailable() {
 }
 
 export function isHalloween() {
-  // Ретро и Хеллоуин не смешиваются: включили ретро — праздник прячется.
-  if (isRetro()) return false;
   // Пока профиль не пришёл — верим прошлому запуску, чтобы не мигать.
   if (halloweenAllowed === null) return readHalloween() === 'on';
   return halloweenAllowed && getPref('halloween') !== 'off';
@@ -246,45 +242,7 @@ export function setHalloweenAccess(allowed) {
 
 export function saveHalloween(on) {
   setPref('halloween', on ? 'on' : 'off');
-  if (on && isRetro()) {
-    setPref('retro', 'off');
-    applyRetro();
-  }
   applyHalloween();
-}
-
-/*
- * Ретро — оформление по желанию в духе сайтов конца 90-х: звёздная шапка,
- * радужный пиксельный заголовок, серые окна Windows 98. Взято из проекта
- * netschool-retro (github.com/faustyu1/netschool-retro), автор — faustyu1.
- * Атрибут data-skin="retro" на <html> (его же ставит скрипт в <head> по
- * общей настройке retro), правила — в retro.css.
- */
-const RETRO_ACCENT = '#000080';
-const RETRO_SKY = '#070a2a';
-
-export function isRetro() {
-  return getPref('retro') === 'on';
-}
-
-export function applyRetro() {
-  const root = document.documentElement;
-  const on = isRetro();
-  if (on === (root.getAttribute('data-skin') === 'retro')) return;
-  if (on) root.setAttribute('data-skin', 'retro');
-  else root.removeAttribute('data-skin');
-  // Фон из скрипта в <head> — по прошлому запуску.
-  root.style.removeProperty('background');
-  root.style.removeProperty('--boot-bg');
-  applyAccent();
-}
-
-export function saveRetro(on) {
-  setPref('retro', on ? 'on' : 'off');
-  applyRetro();
-  // Хеллоуин уступает ретро (isHalloween) — снять его украшения.
-  applyHalloween();
-  window.dispatchEvent(new CustomEvent('netschool:design'));
 }
 
 /** Субботу и воскресенье без уроков прячем, если не включено «Показывать выходные». */

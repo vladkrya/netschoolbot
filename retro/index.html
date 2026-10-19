@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Моё расписание</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet" />
+    <link rel="icon" href="/icons/globe.png" />
+  </head>
+  <body>
+    <div class="page">
+      <!-- ===== ШАПКА ===== -->
+      <header class="top stars">
+        <div class="globe"><img class="px globe-img" src="/icons/globe.png" alt="" /></div>
+        <h1 class="rainbow" id="logo">Моё расписание</h1>
+        <div class="winflag" aria-hidden="true">
+          <img class="px winlogo" src="/icons/winlogo.png" alt="" />
+        </div>
+        <div class="welcome">Добро пожаловать<br /><u>на</u> <u>мою</u> <u>страничку</u>!</div>
+        <div class="cat big" aria-hidden="true"><img class="px" src="/icons/cat.svg" alt="" /></div>
+        <div class="cats-slogan">
+          Котики делают<br /><u>жизнь лучше!</u> <img class="px paw" src="/icons/paw.svg" alt="" />
+        </div>
+      </header>
+
+      <div class="body">
+        <!-- ===== ЛЕВОЕ МЕНЮ ===== -->
+        <nav class="side">
+          <ul class="menu">
+            <li>
+              <span class="ico"><img class="px" src="/icons/home.png" alt="" /></span
+              ><a href="#home" data-view="calendar">Главная</a>
+            </li>
+            <li>
+              <span class="ico"><img class="px" src="/icons/calendar.png" alt="" /></span
+              ><a href="#schedule" data-view="calendar">Расписание</a>
+            </li>
+            <li>
+              <span class="ico"><img class="px" src="/icons/mail.png" alt="" /></span
+              ><a href="#mail" data-view="mail">Почта</a> <b class="badge hidden" id="mailBadge"></b>
+            </li>
+            <li>
+              <span class="ico"><img class="px" src="/icons/book.png" alt="" /></span
+              ><a href="#reports" data-view="reports">Отчёты</a>
+            </li>
+            <li>
+              <span class="ico"><img class="px" src="/icons/notes.png" alt="" /></span
+              ><a href="#notes" data-view="notes">Заметки</a>
+            </li>
+            <li>
+              <span class="ico"><img class="px" src="/icons/smiley.svg" alt="" /></span
+              ><a href="#about" data-view="about">Обо мне</a>
+            </li>
+            <li>
+              <span class="ico"><img class="px" src="/icons/globe.png" alt="" /></span
+              ><a href="#links" data-view="links">Ссылки</a>
+            </li>
+            <li>
+              <span class="ico"><img class="px" src="/icons/star.png" alt="" /></span
+              ><a href="#guestbook" data-view="guestbook">Гостевая книга</a>
+            </li>
+          </ul>
+          <hr />
+          <div class="today-box">
+            <div class="moon"><img class="px" src="/icons/moon.svg" alt="" /></div>
+            <div>
+              <div class="tb-label">Сегодня:</div>
+              <div class="tb-date" id="sideDate"></div>
+              <div class="tb-time" id="sideTime"></div>
+            </div>
+          </div>
+          <div class="cat small" aria-hidden="true"><img class="px" src="/icons/cat.svg" alt="" /></div>
+          <div class="wip">
+            <span class="rainbow">Сайт</span><br />в <span class="rainbow">процессе</span><br /><span
+              class="rainbow"
+              >разработки...</span
+            >
+          </div>
+          <hr />
+          <div class="ie-badge">
+            <img class="px ie-img" src="/icons/ie.png" alt="" /><span
+              >Best viewed with<br /><b>Microsoft Internet Explorer</b></span
+            >
+          </div>
+        </nav>
+
+        <!-- ===== ОСНОВНАЯ ОБЛАСТЬ ===== -->
+        <main class="main">
+          <div class="sky">
+            <h2>
+              <img class="px smile" src="/icons/smiley.svg" alt="" />
+              <a href="#schedule" data-view="calendar" id="mainTitle">Календарь занятий</a>
+              <img class="px smile" src="/icons/smiley.svg" alt="" />
+            </h2>
+            <div class="weeknav" id="weeknav">
+              <button class="btn" id="prev">&lt;&lt;</button>
+              <a href="#" class="range" id="range">…</a>
+              <span class="modes"
+                ><a href="#" id="modeWeek" class="on">Неделя</a> |
+                <a href="#" id="modePeriods">Периоды</a></span
+              >
+              <button class="btn" id="next">&gt;&gt;</button>
+            </div>
+          </div>
+
+          <!-- календарь -->
+          <section class="view" id="view-calendar">
+            <aside class="upcoming stars">
+              <div class="now">
+                <span class="moon"><img class="px" src="/icons/moon.svg" alt="" /></span
+                ><span><span class="lbl">Сегодня:</span><br /><b id="mood">…</b></span>
+              </div>
+              <div class="card green" id="card1"></div>
+              <div class="card violet" id="card2"></div>
+            </aside>
+            <div class="grid-wrap">
+              <div class="empty-note hidden" id="emptyNote"></div>
+              <div class="grid" id="grid"></div>
+            </div>
+          </section>
+
+          <!-- вход -->
+          <section class="view hidden" id="view-login">
+            <form class="win" id="loginForm" autocomplete="on" novalidate>
+              <div class="win-title"><span>Вход в «Сетевой город»</span><span class="x">✕</span></div>
+              <div class="win-body">
+                <div class="tabs" role="tablist" id="loginTabs">
+                  <button type="button" role="tab" data-method="password" class="on">Логин</button>
+                  <button type="button" role="tab" data-method="esia">Госуслуги</button>
+                  <button type="button" role="tab" data-method="qr">QR-код</button>
+                </div>
+                <label
+                  >Регион
+                  <select id="region"></select>
+                </label>
+                <label
+                  >Адрес сервера
+                  <input id="url" placeholder="https://sgo.example.ru" />
+                </label>
+                <label for="school">Школа <small id="schoolNote"></small></label>
+                <div class="combo" id="schoolCombo">
+                  <input
+                    id="school"
+                    role="combobox"
+                    aria-autocomplete="list"
+                    aria-expanded="false"
+                    aria-controls="schoolOptions"
+                    placeholder="название, номер или посёлок"
+                    autocomplete="off"
+                    spellcheck="false"
+                  />
+                  <ul class="combo-list hidden" id="schoolOptions" role="listbox"></ul>
+                </div>
+                <div data-for="password">
+                  <label
+                    >Логин
+                    <input id="login" autocomplete="username" />
+                  </label>
+                  <label
+                    >Пароль
+                    <input id="password" type="password" autocomplete="current-password" />
+                  </label>
+                </div>
+                <div data-for="esia" class="hidden">
+                  <label
+                    >Телефон, почта или СНИЛС
+                    <input id="esiaLogin" autocomplete="username" />
+                  </label>
+                  <label
+                    >Пароль Госуслуг
+                    <input id="esiaPassword" type="password" autocomplete="current-password" />
+                  </label>
+                  <p class="hint">
+                    Если на Госуслугах включено подтверждение входа, код придёт в SMS или в «Макс» — введёшь
+                    его здесь.
+                  </p>
+                </div>
+                <div data-for="qr" class="hidden">
+                  <p class="hint">
+                    Откроется QR-код: отсканируй его приложением «Госуслуги» и подтверди вход. С телефона —
+                    кнопкой «Открыть Госуслуги».
+                  </p>
+                </div>
+                <div class="esia-step hidden" id="esiaStep" aria-live="polite"></div>
+                <div class="err" id="loginErr" role="status"></div>
+                <div class="win-actions">
+                  <button class="btn" type="submit" id="loginBtn">Войти</button>
+                  <button class="btn" type="button" id="demoBtn">Демо</button>
+                </div>
+                <p class="hint">
+                  Данные уходят только на этот сервер и дальше в «Сетевой город» и Госуслуги.
+                </p>
+              </div>
+            </form>
+          </section>
+
+          <!-- прочие страницы -->
+          <section class="view hidden pane" id="view-notes">
+            <h3><img class="px h3i" src="/icons/notes.png" alt="" /> Заметки</h3>
+            <textarea id="notes" placeholder="Пиши сюда… (сохраняется в браузере)"></textarea>
+          </section>
+          <section class="view hidden pane" id="view-about">
+            <h3><img class="px h3i" src="/icons/smiley.svg" alt="" /> Обо мне</h3>
+            <p id="aboutText"></p>
+            <button class="btn" id="logoutBtn">Выйти</button>
+          </section>
+          <section class="view hidden pane" id="view-links">
+            <h3><img class="px h3i" src="/icons/globe.png" alt="" /> Ссылки</h3>
+            <ul class="links">
+              <li>
+                <a href="https://git.dc09.xyz/ikrya/netschoolpy" target="_blank" rel="noopener"
+                  >netschoolpy</a
+                >
+                — библиотека, на которой работает сайт
+              </li>
+              <li><a href="https://www.gosuslugi.ru" target="_blank" rel="noopener">Госуслуги</a></li>
+              <li>
+                <a href="https://ru.wikipedia.org" target="_blank" rel="noopener">Википедия</a> — для
+                рефератов
+              </li>
+            </ul>
+          </section>
+          <section class="view hidden pane" id="view-mail">
+            <h3><img class="px h3i" src="/icons/mail.png" alt="" /> Почта</h3>
+            <div class="mail-bar">
+              <span class="modes" id="mailFolders"
+                ><a href="#" data-folder="Inbox" class="on">Входящие</a> |
+                <a href="#" data-folder="Sent">Отправленные</a> |
+                <a href="#" data-folder="Deleted">Удалённые</a></span
+              >
+              <button class="btn" type="button" id="mailNew">Написать</button>
+            </div>
+            <form id="mailForm" class="mail-form hidden" autocomplete="off">
+              <div class="mail-to">
+                <b>Кому:</b> <span id="mailChips"></span>
+                <input id="mailToInput" list="mailPeople" placeholder="начни вводить фамилию" />
+                <datalist id="mailPeople"></datalist>
+              </div>
+              <input id="mailSubject" placeholder="Тема" maxlength="200" />
+              <textarea id="mailText" rows="8" placeholder="Текст письма" maxlength="10000"></textarea>
+              <div class="gb-actions">
+                <span class="gb-msg" id="mailMsg" role="status"></span>
+                <span
+                  ><button type="button" class="btn" id="mailCancel">Отмена</button>
+                  <button class="btn" id="mailSend">Отправить</button></span
+                >
+              </div>
+            </form>
+            <div id="mailList" class="mail-list"></div>
+            <div class="pager" id="mailPager"></div>
+          </section>
+          <section class="view hidden pane" id="view-reports">
+            <h3><img class="px h3i" src="/icons/book.png" alt="" /> Отчёты</h3>
+            <p class="hint">Средний балл по периодам. Нажми на предмет или клетку — покажу все оценки.</p>
+            <div id="reportTable"></div>
+          </section>
+          <section class="view hidden pane" id="view-guestbook">
+            <h3><img class="px h3i" src="/icons/mail.png" alt="" /> Гостевая книга</h3>
+            <form id="gbForm" class="gb-form" autocomplete="off">
+              <div class="gb-reply hidden" id="gbReply">
+                Ответ для <b id="gbReplyName"></b> <a href="#" id="gbReplyCancel">[отмена]</a>
+              </div>
+              <input id="gbName" placeholder="Имя" maxlength="32" required />
+              <textarea id="gbText" placeholder="Сообщение" maxlength="500" rows="3" required></textarea>
+              <!-- ловушка для ботов: человек её не видит -->
+              <input id="gbWebsite" name="website" class="trap" tabindex="-1" aria-hidden="true" />
+              <div class="gb-actions">
+                <small id="gbCount">0/500</small>
+                <button class="btn" id="gbSend">Написать</button>
+              </div>
+              <div class="gb-msg" id="gbMsg" role="status"></div>
+            </form>
+            <p class="gb-login hidden" id="gbLogin">
+              Чтобы писать, <a href="#schedule" data-view="calendar">войди</a> через «Сетевой город».
+            </p>
+            <ul id="gbList" class="gb"></ul>
+          </section>
+        </main>
+      </div>
+
+      <!-- ===== ПОДВАЛ ===== -->
+      <footer class="bottom stars">
+        <img class="px star" src="/icons/star.png" alt="" />
+        <span class="rainbow foot">Вперёд к знаниям!</span>
+        <span class="dancer"><img class="px" src="/icons/cat.svg" alt="" /></span>
+        <img class="px smile" src="/icons/smiley.svg" alt="" />
+        <span class="rainbar"></span>
+        <span class="green-text">Успехов в учёбе!</span>
+        <img class="px star" src="/icons/star.png" alt="" />
+      </footer>
+    </div>
+    <div class="overlay hidden" id="lessonWin" role="dialog" aria-modal="true" aria-labelledby="lessonTitle">
+      <div class="win lesson-win">
+        <div class="win-title">
+          <span id="lessonTitle"></span
+          ><button class="x" type="button" data-close aria-label="Закрыть">✕</button>
+        </div>
+        <div class="win-body" id="lessonBody"></div>
+        <div class="win-actions lesson-actions">
+          <span id="winExtra"></span>
+          <button class="btn" type="button" id="lessonOk" data-close>OK</button>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

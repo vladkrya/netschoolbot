@@ -25,15 +25,8 @@
     // «Анимации» выключены в настройках — до первой отрисовки, без мигания.
     if (localStorage.getItem('ns-motion') === 'off') document.documentElement.classList.add('no-motion');
     var bg = fresh ? (dark ? '#0f1217' : '#f3f4f8') : (dark ? '#141a22' : '#eef1f6');
-    // Ретро-оформление по желанию (retro.css): серые окна под звёздным небом.
-    var retro = {{ 'true' if token or demo else 'false' }} && localStorage.getItem('ns-retro') === 'on';
-    if (retro) {
-      document.documentElement.setAttribute('data-skin', 'retro');
-      bg = '#c0c0c0';
-      accent = '#000080';
-    }
     // Хеллоуинское оформление (в сезон у всех) — ночное, со своим цветом акцента.
-    if (!retro && {{ 'true' if token or demo else 'false' }} && localStorage.getItem('ns-halloween') === 'on'
+    if ({{ 'true' if token or demo else 'false' }} && localStorage.getItem('ns-halloween') === 'on'
         && localStorage.getItem('ns-signed-out') !== {{ token | tojson }}) {
       document.documentElement.setAttribute('data-holiday', 'halloween');
       bg = '#120d18';
@@ -49,7 +42,6 @@
     }).join('');
     // В новом дизайне шапка не цветная, а в тон фону.
     if (fresh) chrome = bg;
-    if (retro) chrome = '#070a2a';
     // Фон темы — сразу, до стилей: пока они грузятся, экран не чёрный.
     document.documentElement.style.background = bg;
     document.documentElement.style.setProperty('--boot-bg', bg);
@@ -80,8 +72,6 @@
 <!-- Хеллоуин: правила под html[data-holiday="halloween"], включает appearance.js. -->
 <link rel="stylesheet" href="{{ base }}/static/v{{ version }}/halloween.css">
 <link rel="stylesheet" href="{{ base }}/static/v{{ version }}/games.css">
-<!-- Ретро по желанию: правила под html[data-skin="retro"], включает appearance.js. -->
-<link rel="stylesheet" href="{{ base }}/static/v{{ version }}/retro.css">
 <!-- До app.js: приложению нужен Telegram.WebApp уже при старте, чтобы
      забрать initData до первого запроса. Копия у нас, а не с telegram.org:
      без VPN telegram.org заблокирован, и синхронный скрипт в head не давал
