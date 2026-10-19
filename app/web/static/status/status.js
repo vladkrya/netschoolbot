@@ -109,19 +109,50 @@ function bucketLabel(index) {
 // ───────────────────────────── подсказка ─────────────────────────────
 
 const tip = $('#tooltip');
+// Мышью подсказка ходит за курсором; пальцем наведения нет — она открывается
+// касанием и висит, пока не коснутся другого места.
+let touchInput = false;
+document.addEventListener('pointerdown', (event) => { touchInput = event.pointerType !== 'mouse'; }, true);
+let tipKey = null, tipUndo = null;
+
 function showTip(event, html) {
   tip.innerHTML = html;
   tip.hidden = false;
   const pad = 12;
   const { innerWidth: w, innerHeight: h } = window;
   const box = tip.getBoundingClientRect();
-  let x = event.clientX + pad, y = event.clientY + pad;
-  if (x + box.width > w - 8) x = event.clientX - box.width - pad;
-  if (y + box.height > h - 8) y = event.clientY - box.height - pad;
+  let x, y;
+  if (touchInput) {
+    // Над пальцем, иначе он закроет текст.
+    x = Math.min(event.clientX - box.width / 2, w - box.width - 8);
+    y = event.clientY - box.height - 2 * pad;
+    if (y < 8) y = event.clientY + 2 * pad;
+  } else {
+    x = event.clientX + pad; y = event.clientY + pad;
+    if (x + box.width > w - 8) x = event.clientX - box.width - pad;
+    if (y + box.height > h - 8) y = event.clientY - box.height - pad;
+  }
   tip.style.left = `${Math.max(8, x)}px`;
   tip.style.top = `${Math.max(8, y)}px`;
 }
-const hideTip = () => { tip.hidden = true; };
+function hideTip() {
+  tip.hidden = true;
+  tipUndo?.();
+  tipKey = tipUndo = null;
+}
+/** Подсказка по касанию: повторное касание того же места её закрывает.
+ *  highlight подсвечивает выбранное и возвращает, как подсветку снять. */
+function tapTip(event, key, html, highlight) {
+  event.stopPropagation();
+  event.preventDefault();
+  const same = !tip.hidden && tipKey === key;
+  hideTip();
+  if (same) return;
+  showTip(event, html);
+  tipKey = key;
+  tipUndo = highlight?.() || null;
+}
+document.addEventListener('click', () => { if (touchInput) hideTip(); });
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 // ───────────────────────────── графики ─────────────────────────────
@@ -160,11 +191,23 @@ function barChart(container, title, values, color, describe) {
       }));
     }
     const hit = svg('rect', { class: 'hit', x, y: top, width: slot, height: plotH });
-    hit.addEventListener('pointermove', (event) => {
+    const text = () => `<b>${esc(bucketLabel(i))}</b>${describe(i, value)}`;
+    const highlight = () => {
       hover.setAttribute('x', x); hover.setAttribute('visibility', 'visible');
-      showTip(event, `<b>${esc(bucketLabel(i))}</b>${describe(i, value)}`);
+      return () => hover.setAttribute('visibility', 'hidden');
+    };
+    hit.addEventListener('pointermove', (event) => {
+      if (event.pointerType !== 'mouse') return;
+      highlight();
+      showTip(event, text());
     });
-    hit.addEventListener('pointerleave', () => { hover.setAttribute('visibility', 'hidden'); hideTip(); });
+    hit.addEventListener('pointerleave', (event) => {
+      if (event.pointerType !== 'mouse') return;
+      hover.setAttribute('visibility', 'hidden'); hideTip();
+    });
+    hit.addEventListener('click', (event) => {
+      if (touchInput) tapTip(event, `${title}:${i}`, text(), highlight);
+    });
     chart.append(hit);
   });
   const ticks = Math.min(6, values.length);
@@ -257,16 +300,31 @@ function hostRow(host) {
   if (blocked) {
     strip.append(el('span', {}, 'пока нет истории проверок'));
   } else {
-    host.bars.forEach((share, i) => {
-      const reports = host.report_bars[i];
-      const cell = el('div', { class: `cell ${tone(share)}${reports ? ' has-reports' : ''}` });
-      cell.addEventListener('pointermove', (event) => showTip(event,
-        `<b>${esc(bucketLabel(i))}</b>`
+    const cellTip = (i) => {
+      const share = host.bars[i], reports = host.report_bars[i];
+      return `<b>${esc(bucketLabel(i))}</b>`
         + `<div class="row"><i class="sw ${tone(share)}"></i>${share == null ? 'Нет проверок' : 'Отвечал'}`
         + `${share == null ? '' : `<span class="num">${Math.round(share * 1000) / 10}%</span>`}</div>`
-        + (reports ? `<div class="row">Жалоб<span class="num">${reports}</span></div>` : '')));
-      cell.addEventListener('pointerleave', hideTip);
+        + (reports ? `<div class="row">Жалоб<span class="num">${reports}</span></div>` : '');
+    };
+    host.bars.forEach((share, i) => {
+      const cell = el('div', { class: `cell ${tone(share)}${host.report_bars[i] ? ' has-reports' : ''}` });
+      cell.addEventListener('pointermove', (event) => { if (event.pointerType === 'mouse') showTip(event, cellTip(i)); });
+      cell.addEventListener('pointerleave', (event) => { if (event.pointerType === 'mouse') hideTip(); });
       strip.append(cell);
+    });
+    // Пальцем ячейки в пару пикселей не попасть — берём ближайшую по X,
+    // включая зазоры. Касание полоски показывает данные, а не раскрывает регион.
+    strip.addEventListener('click', (event) => {
+      if (!touchInput) return;
+      const box = strip.getBoundingClientRect();
+      const count = host.bars.length;
+      const i = Math.min(count - 1, Math.max(0, Math.floor(((event.clientX - box.left) / box.width) * count)));
+      const cell = strip.children[i];
+      tapTip(event, `${host.host}:${i}`, cellTip(i), () => {
+        cell.classList.add('active');
+        return () => cell.classList.remove('active');
+      });
     });
   }
   const isOpen = expanded.has(host.host);
