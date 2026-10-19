@@ -151,6 +151,7 @@ button.small { padding: 4px 10px; font-size: 13px; }
   background: repeating-linear-gradient(135deg, transparent 0 6px, color-mix(in srgb, var(--none) 70%, transparent) 6px 8px);
 }
 .cell { flex: 1; min-width: 2px; border-radius: 2px; position: relative; }
+.cell.active { outline: 2px solid var(--text); outline-offset: 1px; z-index: 1; }
 .cell.has-reports::after {
   content: ""; position: absolute; left: 50%; top: -5px; width: 4px; height: 4px; margin-left: -2px;
   border-radius: 50%; background: var(--series-reports);
