@@ -5,7 +5,7 @@
 'use strict';
 
 import {
-  DIRS, best, bindChips, bump, chipsRow, fitCanvas, frames, hud, intro, load, onDirection, overlay, particles, popText,
+  DIRS, angleToDir, best, bindChips, bump, chipsRow, fitCanvas, frames, hud, intro, joystick, load, overlay, particles, popText,
   quake, rand, save, saveBest, sfx, shade, tap,
 } from './kit.js';
 
@@ -60,15 +60,10 @@ export function start(root, ctx) {
       ${hud([['score', '🍎', 0], ['best', '🏆', best('snake')]])}
       ${chipsRow('mode', [['solo', 'Одна'], ['bots', 'Против ботов']], mode)}
       <div class="game-stage snake-stage"><canvas class="game-canvas" data-board></canvas></div>
-      <div class="dpad">
-        <button data-dir="up" aria-label="Вверх"><i></i></button>
-        <button data-dir="left" aria-label="Влево"><i></i></button>
-        <button data-dir="down" aria-label="Вниз"><i></i></button>
-        <button data-dir="right" aria-label="Вправо"><i></i></button>
-      </div></div>`;
+      <div class="joy-hint">Ведите пальцем в любом месте экрана — змейка поползёт туда</div></div>`;
   const stage = root.querySelector('.game-stage');
   const canvas = root.querySelector('[data-board]');
-  const size = Math.min(stage.clientWidth || 340, 440, innerHeight - 330);
+  const size = Math.min(root.querySelector('.game').clientWidth || 340, 460, innerHeight - 270);
   const cell = size / N;
   const g = fitCanvas(canvas, size, size);
   const fx = particles();
@@ -340,14 +335,8 @@ export function start(root, ctx) {
     running = true;
   }
 
-  onDirection(canvas, ctx.signal, turn);
-  root.querySelector('.dpad').addEventListener('pointerdown', (event) => {
-    const button = event.target.closest('[data-dir]');
-    if (!button) return;
-    event.preventDefault();
-    tap('soft');
-    turn(button.dataset.dir);
-  }, { signal: ctx.signal });
+  // Палец ведёт змейку: джойстик под пальцем в любом месте экрана игры.
+  joystick(root, ctx.signal, (angle) => turn(angleToDir(angle)));
   bindChips(root, 'mode', (value) => {
     mode = value;
     save('snake-mode', mode);

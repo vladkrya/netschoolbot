@@ -422,6 +422,84 @@ export function onDirection(el, signal, handler, { minSwipe = 16 } = {}) {
   });
 }
 
+/** Джойстик под пальцем: касание в любом месте area ставит основание, ведение
+ *  пальца задаёт направление — угол в радианах (0 — вправо, по часовой).
+ *  Палец ушёл дальше края — основание тянется за ним, поэтому развернуться
+ *  можно, не отрывая пальца. На клавиатуре — стрелки и WASD, включая
+ *  диагонали. Кнопки внутри area работают как обычно. */
+export function joystick(area, signal, onAngle, { radius = 46, dead = 10 } = {}) {
+  const base = document.createElement('div');
+  base.className = 'joy';
+  base.innerHTML = '<i></i>';
+  base.hidden = true;
+  area.append(base);
+  const knob = base.firstElementChild;
+  area.classList.add('joy-area');
+  let touch = null;
+  const place = () => {
+    const rect = area.getBoundingClientRect();
+    base.style.left = `${touch.ox - rect.left}px`;
+    base.style.top = `${touch.oy - rect.top}px`;
+  };
+  area.addEventListener('pointerdown', (event) => {
+    if (touch || event.target.closest('button, .game-over, .seg')) return;
+    touch = { id: event.pointerId, ox: event.clientX, oy: event.clientY };
+    area.setPointerCapture?.(event.pointerId);
+    place();
+    knob.style.translate = '0 0';
+    base.hidden = false;
+  }, { signal });
+  area.addEventListener('pointermove', (event) => {
+    if (!touch || event.pointerId !== touch.id) return;
+    let dx = event.clientX - touch.ox;
+    let dy = event.clientY - touch.oy;
+    const dist = Math.hypot(dx, dy);
+    if (dist > radius) {
+      // Основание едет за пальцем.
+      touch.ox = event.clientX - (dx / dist) * radius;
+      touch.oy = event.clientY - (dy / dist) * radius;
+      dx = event.clientX - touch.ox;
+      dy = event.clientY - touch.oy;
+      place();
+    }
+    knob.style.translate = `${dx}px ${dy}px`;
+    if (Math.hypot(dx, dy) >= dead) onAngle(Math.atan2(dy, dx));
+  }, { signal });
+  const stop = (event) => {
+    if (!touch || event.pointerId !== touch.id) return;
+    touch = null;
+    base.hidden = true;
+  };
+  area.addEventListener('pointerup', stop, { signal });
+  area.addEventListener('pointercancel', stop, { signal });
+  const keys = new Set();
+  const fromKeys = () => {
+    const x = (keys.has('right') ? 1 : 0) - (keys.has('left') ? 1 : 0);
+    const y = (keys.has('down') ? 1 : 0) - (keys.has('up') ? 1 : 0);
+    if (x || y) onAngle(Math.atan2(y, x));
+  };
+  const KEYS = {
+    ArrowUp: 'up', KeyW: 'up', ArrowDown: 'down', KeyS: 'down', ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right',
+  };
+  document.addEventListener('keydown', (event) => {
+    const key = KEYS[event.code];
+    if (!key) return;
+    event.preventDefault();
+    keys.add(key);
+    fromKeys();
+  }, { signal });
+  document.addEventListener('keyup', (event) => { keys.delete(KEYS[event.code]); }, { signal });
+}
+
+/** Угол джойстика — одно из четырёх направлений (для змейки). */
+export function angleToDir(angle) {
+  const a = ((angle * 180) / Math.PI + 360) % 360;
+  if (a >= 315 || a < 45) return 'right';
+  if (a < 135) return 'down';
+  if (a < 225) return 'left';
+  return 'up';
+}
+
 /** Клавиши на время игры: по event.code. */
 export function onKeys(signal, map) {
   document.addEventListener('keydown', (event) => {

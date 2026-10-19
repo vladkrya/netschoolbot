@@ -160,3 +160,8 @@ test('слоты: выплаты', () => {
   assert.equal(slots.payout(['🍋', '🍒', '🔔']), 1);
   assert.equal(slots.payout(['🍋', '⭐', '🔔']), 0);
 });
+
+test('paper.io: поворот выбирает короткую сторону', () => {
+  assert.ok(Math.abs(paperio.angleDiff(0.1, -0.1) - 0.2) < 1e-9);
+  assert.ok(Math.abs(paperio.angleDiff(-3, 3) - (2 * Math.PI - 6)) < 1e-9, 'через ±π, а не через ноль');
+});

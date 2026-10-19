@@ -65,31 +65,33 @@ export function start(root, ctx) {
   root.innerHTML = `<div class="game">
       ${hud([['score', 'Очки', 0], ['lines', 'Линии', 0], ['level', 'Уровень', 1]])}
       <div class="tetris-wrap">
+        <div class="game-stage tetris-stage"><canvas class="game-canvas" data-board></canvas></div>
         <div class="tetris-side">
-          <div class="tetris-box"><span>Запас</span><canvas data-hold></canvas></div>
+          <div class="tetris-box"><span>Дальше</span><canvas data-next></canvas></div>
+          <div class="tetris-box hold" data-act="hold"><span>Запас</span><canvas data-hold></canvas></div>
           <div class="tetris-box"><span>Рекорд</span><b data-best>${best('tetris')}</b></div>
         </div>
-        <div class="game-stage tetris-stage"><canvas class="game-canvas" data-board></canvas></div>
-        <div class="tetris-side"><div class="tetris-box"><span>Дальше</span><canvas data-next></canvas></div></div>
       </div>
-      <div class="game-pad">
-        <button data-act="hold" aria-label="Отложить">⇄</button>
-        <button data-act="left" aria-label="Влево"><i class="arrow l"></i></button>
-        <button data-act="rotate" aria-label="Повернуть">⟳</button>
-        <button data-act="right" aria-label="Вправо"><i class="arrow r"></i></button>
-        <button data-act="down" aria-label="Вниз"><i class="arrow d"></i></button>
-        <button data-act="drop" aria-label="Сбросить">⤓</button>
+      <div class="tetris-pad game-pad">
+        <button class="t-hold" data-act="hold" aria-label="Отложить фигуру">⇄<small>запас</small></button>
+        <button class="t-rotate" data-act="rotate" aria-label="Повернуть">⟳<small>повернуть</small></button>
+        <button class="t-drop" data-act="drop" aria-label="Сбросить">⤓<small>сброс</small></button>
+        <button class="t-left" data-act="left" aria-label="Влево"><i class="arrow l"></i></button>
+        <button class="t-down" data-act="down" aria-label="Вниз"><i class="arrow d"></i></button>
+        <button class="t-right" data-act="right" aria-label="Вправо"><i class="arrow r"></i></button>
       </div></div>`;
   const stage = root.querySelector('.game-stage');
   const canvas = root.querySelector('[data-board]');
-  // Поле между двумя боковыми колонками по 60px.
-  const available = Math.min((root.querySelector('.tetris-wrap').clientWidth || 340) - 136, 300);
-  const cell = Math.floor(Math.min(available / W, (innerHeight - 300) / H, 30));
+  // Поле рядом с боковой колонкой (68px), кнопки снизу — два ряда по 66px.
+  const available = Math.min((root.querySelector('.tetris-wrap').clientWidth || 340) - 76, 340);
+  const cell = Math.floor(Math.min(available / W, (innerHeight - 330) / H, 34));
   const bw = cell * W;
   const bh = cell * H;
   const g = fitCanvas(canvas, bw, bh);
   const next = fitCanvas(root.querySelector('[data-next]'), 52, 130);
   const hold = fitCanvas(root.querySelector('[data-hold]'), 52, 40);
+  // Касание окошка «Запас» — тоже отложить фигуру.
+  root.querySelector('.tetris-box.hold').addEventListener('click', () => swapHold());
   const fx = particles();
 
   let board;
@@ -351,7 +353,7 @@ export function start(root, ctx) {
   };
   // Удержание кнопки сдвига повторяет ход.
   let repeat = 0;
-  const pad = root.querySelector('.game-pad');
+  const pad = root.querySelector('.tetris-pad');
   pad.addEventListener('pointerdown', (event) => {
     const button = event.target.closest('[data-act]');
     if (!button) return;

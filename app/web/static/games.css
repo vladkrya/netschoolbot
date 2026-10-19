@@ -483,7 +483,16 @@ html.in-game .game-screen { padding-bottom: max(12px, env(safe-area-inset-bottom
 /* ─────────────────────────── Тетрис ─────────────────────────── */
 
 .tetris-wrap { display: flex; justify-content: center; align-items: flex-start; gap: 8px; }
-.tetris-side { display: flex; flex-direction: column; gap: 8px; width: 60px; }
+.tetris-side { display: flex; flex-direction: column; gap: 8px; width: 64px; }
+.tetris-box.hold { cursor: pointer; }
+.tetris-box.hold:active { background: rgba(255, 255, 255, .18); }
+/* Крупные кнопки в два ряда: сверху запас, поворот, сброс; снизу влево, вниз, вправо. */
+.tetris-pad { grid-template-columns: 1fr 1.6fr 1fr; gap: 10px; }
+.tetris-pad button { height: 66px; border-radius: 20px; font-size: 28px; line-height: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; }
+.tetris-pad button small { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; opacity: .75; }
+.tetris-pad .t-rotate { background: linear-gradient(180deg, #8a6bff, #5b3fe0); box-shadow: 0 5px 0 #3a2399, 0 10px 20px rgba(91, 63, 224, .4), inset 0 1px 0 rgba(255, 255, 255, .35); }
+.tetris-pad .t-drop { background: linear-gradient(180deg, #ff6b8a, #e0315a); box-shadow: 0 5px 0 #8f1636, inset 0 1px 0 rgba(255, 255, 255, .35); }
+.tetris-pad .arrow { border-width: 12px; border-bottom-width: 17px; }
 .tetris-box {
   display: flex;
   flex-direction: column;
@@ -850,3 +859,31 @@ html.in-game .game-screen { padding-bottom: max(12px, env(safe-area-inset-bottom
 @media (prefers-reduced-motion: reduce) {
   .game-tile, .game-over-icon, .bubble, .slot-lights, .dk-opp.thinking .dk-avatar { animation: none; }
 }
+
+/* ─────────────────────────── Джойстик ─────────────────────────── */
+
+/* Касание в любом месте экрана игры ставит джойстик под палец. */
+.joy-area { position: relative; touch-action: none; min-height: 100%; }
+.joy {
+  position: absolute;
+  z-index: 40;
+  width: 104px;
+  height: 104px;
+  margin: -52px 0 0 -52px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 255, 255, .08), rgba(255, 255, 255, .2));
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, .45), 0 6px 20px rgba(0, 0, 0, .25);
+  pointer-events: none;
+}
+.joy i {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 46px;
+  height: 46px;
+  margin: -23px 0 0 -23px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #fff, #dfe5f2);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, .35);
+}
+.joy-hint { text-align: center; font-size: 13px; font-weight: 600; opacity: .75; padding: 4px 16px 40px; }
