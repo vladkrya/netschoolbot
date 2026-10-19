@@ -904,7 +904,7 @@ function bindDrawer() {
   });
   $('hwStatusShow').addEventListener('change', (event) => {
     select();
-    saveHomeworkStatus(event.target.checked);
+    smoothRepaint(() => saveHomeworkStatus(event.target.checked));
   });
   $('answersShow')?.addEventListener('change', (event) => {
     select();
@@ -920,11 +920,11 @@ function bindDrawer() {
   });
   $('weekendsShow').addEventListener('change', (event) => {
     select();
-    saveWeekends(event.target.checked);
+    smoothRepaint(() => saveWeekends(event.target.checked));
   });
   $('bellsTab')?.addEventListener('change', (event) => {
     select();
-    saveBells(event.target.checked);
+    smoothRepaint(() => saveBells(event.target.checked));
   });
   $('halloweenOn')?.addEventListener('change', (event) => {
     select();
@@ -935,7 +935,7 @@ function bindDrawer() {
   });
   $('designOld').addEventListener('change', (event) => {
     select();
-    saveDesign(!event.target.checked);
+    smoothRepaint(() => saveDesign(!event.target.checked));
   });
   body.querySelectorAll('[data-accent]').forEach((button) =>
     button.addEventListener('click', () => {
@@ -947,9 +947,11 @@ function bindDrawer() {
     })
   );
   $('accentCustom').addEventListener('change', (event) => {
-    (isHalloween() ? saveHalloweenAccent : saveAccent)(event.target.value);
     select();
-    render();
+    smoothRepaint(() => {
+      (isHalloween() ? saveHalloweenAccent : saveAccent)(event.target.value);
+      render();
+    });
   });
   $('accentRemember')?.addEventListener('click', () => {
     select();

@@ -167,6 +167,9 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 }
 .topbar-btn { width: 44px; height: 44px; color: #fff; display: flex; align-items: center; justify-content: center; border-radius: 50%; transition: background .15s, transform .15s; }
 .topbar-btn:active { background: rgba(255, 255, 255, .18); box-shadow: var(--press-glass); transform: scale(.92); }
+/* Слева две кнопки (☰ и обновление), справа одна — колокольчик сдвинут на
+   ширину кнопки, чтобы имя стояло ровно по центру шапки. */
+#bellBtn { margin-left: 44px; }
 .icon { display: block; flex: none; }
 
 .date-bar {
@@ -2254,6 +2257,16 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
 /* Смена темы и акцента — одно перетекание всей страницы (smoothRepaint). */
 ::view-transition-old(root), ::view-transition-new(root) { animation-duration: .35s; }
 .no-motion::view-transition-old(root), .no-motion::view-transition-new(root) { animation: none; }
+/* Во время перетекания страница под снимком меняется сразу, без своих
+   переходов, а бесконечные анимации Хеллоуина замирают. Тумблеры и
+   переключатель темы досматривают свой ход — его и нажали. */
+.repainting :not(.switch, .theme-seg, .theme-seg *),
+.repainting :not(.switch, .theme-seg, .theme-seg *)::before,
+.repainting :not(.switch, .theme-seg, .theme-seg *)::after { transition: none !important; }
+.repainting :is(.hw-decor, .hw-stars, .hw-fog) *,
+.repainting :is(.hw-decor, .hw-stars, .hw-fog) *::before,
+.repainting :is(.hw-decor, .hw-stars, .hw-fog) *::after,
+.repainting .hw-fog { animation-play-state: paused !important; }
 
 /* Кружок выбранной даты, перетекающий к новой (календарь в day.js). */
 .cal-grid { position: relative; }
