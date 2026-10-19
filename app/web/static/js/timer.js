@@ -7,7 +7,7 @@
 // перерисовывается по своему таймеру, и анимация не должна обрываться.
 'use strict';
 
-import { esc, lessonNo, stillMotion } from './core.js';
+import { base, demo, esc, lessonNo, stillMotion } from './core.js';
 import { notify } from './haptics.js';
 
 // До начала урока отсчёт показывается не раньше чем за столько минут — и
@@ -23,6 +23,10 @@ const ZERO_HOLD_MS = 900;
 const COLLAPSE_MS = 520;
 // Последние секунды — заметнее.
 const URGENT_S = 10;
+// Часы сверяются с сервером не чаще чем раз в столько; ответ дольше
+// MAX_RTT_MS не годится — погрешность выйдет больше, чем расхождение.
+const CLOCK_SYNC_MS = 10 * 60000;
+const MAX_RTT_MS = 3000;
 
 let lessons = [];
 let active = false;
@@ -33,6 +37,31 @@ let lastDigits = '';
 // День сменился (листание): карточка уезжает и въезжает вместе с уроками,
 // а не сворачивается и раскрывается — иначе уроки прыгали посреди листания.
 let instant = false;
+// Насколько часы сервера впереди часов телефона, мс. Часы телефонов
+// расходятся на десятки секунд, и у одного класса на двух телефонах урок
+// «кончался» в разное время.
+let clockOffset = 0;
+let clockSyncedAt = 0;
+
+const nowMs = () => Date.now() + clockOffset;
+const clock = () => new Date(nowMs());
+
+/** Сверить часы с сервером: середина запроса — момент его ответа. */
+async function syncClock() {
+  if (demo || Date.now() - clockSyncedAt < CLOCK_SYNC_MS) return;
+  clockSyncedAt = Date.now();
+  try {
+    const sent = Date.now();
+    const response = await fetch(`${base}/time`, { cache: 'no-store' });
+    const { now } = await response.json();
+    const received = Date.now();
+    if (!Number.isFinite(now) || received - sent > MAX_RTT_MS) return;
+    clockOffset = Math.round(now * 1000 - (sent + received) / 2);
+  } catch {
+    // Без сети считаем по часам телефона и попробуем позже.
+    clockSyncedAt = 0;
+  }
+}
 
 function at(time, base) {
   const [h, m] = String(time || '').split(':').map(Number);
@@ -125,7 +154,7 @@ function paintClock(box, text) {
   card?.classList.toggle('urgent', text.length <= 5 && text <= `00:${String(URGENT_S).padStart(2, '0')}`);
 }
 
-function paint(box, phase, now = new Date()) {
+function paint(box, phase, now = clock()) {
   const left = Math.ceil((phase.until - now) / 1000);
   paintClock(box, clockText(left));
   const total = phase.until - phase.from;
@@ -197,7 +226,7 @@ async function tick() {
   if (!box || busy) return;
   const daySwitch = instant;
   instant = false;
-  const phase = active ? timerPhase(lessons) : null;
+  const phase = active ? timerPhase(lessons, clock()) : null;
   const key = phase?.key || '';
   if (key === shownKey) {
     if (phase) paint(box, phase);
@@ -214,7 +243,7 @@ async function tick() {
         // Отсчёт дошёл до нуля: «Урок окончен», затем — следующий отсчёт
         // на том же месте, а если дальше ничего — карточка сворачивается.
         await celebrate(box);
-        const next = active ? timerPhase(lessons) : null;
+        const next = active ? timerPhase(lessons, clock()) : null;
         if (next) {
           await wait(NEXT_PAUSE_MS);
           await morph(box, next);
@@ -227,7 +256,7 @@ async function tick() {
       return;
     }
   }
-  const fresh = active ? timerPhase(lessons) : null;
+  const fresh = active ? timerPhase(lessons, clock()) : null;
   if (fresh) await show(box, fresh, daySwitch);
 }
 
@@ -238,7 +267,7 @@ function schedule() {
   timer = setTimeout(() => {
     schedule();
     tick();
-  }, 1000 - (Date.now() % 1000) + 20);
+  }, 1000 - (nowMs() % 1000) + 20);
 }
 
 /** День перерисован: уроки сегодняшнего дня или null (другой день, нет уроков). */
@@ -251,7 +280,12 @@ export function updateTimer(list, isToday) {
   active = next;
   if (!timer) {
     schedule();
-    document.addEventListener('visibilitychange', () => { if (!document.hidden) tick(); });
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) return;
+      tick();
+      syncClock().then(tick);
+    });
   }
   tick();
+  syncClock().then(tick);
 }
