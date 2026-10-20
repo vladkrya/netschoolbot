@@ -1411,6 +1411,12 @@ html.repin body::after, html.repin .bottom-nav, html.repin .fab { position: abso
 .whatif-item { position: relative; display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 11px; color: var(--text2); }
 .whatif-item .mark-box { border-style: dashed; }
 .whatif-item .x { position: absolute; top: -6px; right: -6px; width: 18px; height: 18px; border-radius: 50%; background: var(--text2); color: var(--card); font-size: 12px; line-height: 18px; text-align: center; }
+/* Настоящие оценки, которые можно убрать из расчёта. */
+.whatif-pick { display: block; margin: 0 0 10px; font-size: 13px; color: var(--primary); }
+.whatif-real { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.whatif-item.real .mark-box { border-style: solid; }
+.whatif-item.off { opacity: .45; }
+.whatif-item.off .mark-box { text-decoration: line-through; }
 .whatif-result { display: flex; justify-content: space-between; align-items: center; font-weight: 600; }
 .whatif-result strong { font-size: 22px; }
 .whatif-result strong.g2 { color: var(--g2); }

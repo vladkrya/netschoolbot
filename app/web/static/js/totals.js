@@ -692,13 +692,15 @@ function openSubject(subject, key, existingBody = null, data = state.totals) {
     </div>
     <div class="card whatif"${data.archived ? ' hidden' : ''}>
       <div class="whatif-head">
-        <div class="card-title">Если получить ещё</div>
+        <div class="card-title">Что если</div>
         <button class="whatif-clear" data-clear hidden>Очистить всё</button>
       </div>
       <div class="whatif-weights">Вес <span class="whatif-chips"></span>
         <input class="whatif-custom" inputmode="decimal" enterkeyhint="done" placeholder="+ свой" aria-label="Добавить свой вес"></div>
       <div class="whatif-add">${[5, 4, 3, 2]
         .map((value) => `<button class="mark-box mark m${value}" data-add="${value}">${value}</button>`).join('')}</div>
+      <button class="whatif-pick" data-pick hidden aria-expanded="false">Убрать оценку</button>
+      <div class="whatif-real" hidden></div>
       <div class="whatif-list"></div>
       <div class="whatif-result"></div>
       <div class="muted small whatif-goals"></div>
@@ -820,10 +822,33 @@ function savedWeights() {
     : [...DEFAULT_WEIGHTS];
 }
 
+/**
+ * Ключи настоящих оценок, чтобы убранная осталась убранной после обновления
+ * журнала: объекты оценок пересоздаются, а дата, урок и значение — нет.
+ */
+function markKeys(marks) {
+  const seen = new Map();
+  return marks.map((mark) => {
+    const base = [mark.date, mark.lesson_number, mark.type, mark.mark, mark.weight].join('|');
+    const n = seen.get(base) || 0;
+    seen.set(base, n + 1);
+    return `${base}|${n}`;
+  });
+}
+
 function bindWhatIf(card, marks, id, subjectName) {
   const weights = savedWeights();
-  if (!whatIf.has(id)) whatIf.set(id, { weight: weights[0], extra: [] });
+  if (!whatIf.has(id)) whatIf.set(id, { weight: weights[0], extra: [], removed: [] });
   const plan = whatIf.get(id);
+  // Убрать можно только оценку, которая входит в средний, — не пропуск.
+  const keys = markKeys(marks);
+  const graded = marks
+    .map((mark, index) => ({ mark, key: keys[index] }))
+    .filter(({ mark }) => !isAttendance(mark) && weightedAverage([mark]) != null);
+  // Оценку исправили или удалили в журнале — её ключа больше нет.
+  plan.removed = plan.removed.filter((key) => graded.some((item) => item.key === key));
+  let picking = false;
+  const kept = () => marks.filter((_, index) => !plan.removed.includes(keys[index]));
   if (!weights.includes(plan.weight)) plan.weight = weights[0];
   const custom = card.querySelector('.whatif-custom');
 
@@ -838,29 +863,50 @@ function bindWhatIf(card, marks, id, subjectName) {
       .map((w) => `<span class="wchip"><button class="chip ${w === plan.weight ? 'active' : ''}" data-weight="${w}">${formatWeight(w)}</button>${
         weights.length > 1 ? `<button class="wchip-x" data-drop="${w}" aria-label="Убрать вес ${formatWeight(w)}">×</button>` : ''}</span>`)
       .join('');
-    card.querySelector('[data-clear]').hidden = !plan.extra.length;
+    const changed = plan.extra.length || plan.removed.length;
+    card.querySelector('[data-clear]').hidden = !changed;
+
+    const pick = card.querySelector('[data-pick]');
+    pick.hidden = !graded.length;
+    pick.textContent = picking ? 'Готово' : plan.removed.length ? `Убрано ${plan.removed.length} · изменить` : 'Убрать оценку';
+    pick.setAttribute('aria-expanded', String(picking));
+    const real = card.querySelector('.whatif-real');
+    real.hidden = !picking;
+    real.innerHTML = picking
+      ? graded
+        .map(({ mark, key }) => {
+          const off = plan.removed.includes(key);
+          return `<button class="whatif-item real ${off ? 'off' : ''}" data-toggle="${esc(key)}" aria-pressed="${off}"
+              aria-label="${off ? 'Вернуть' : 'Убрать'} ${esc(mark.mark)} за ${esc(shortDate(mark.date))}">
+            <span class="mark-box mark m${esc(mark.mark)}">${esc(mark.mark)}</span>
+            <span>${esc(shortDate(mark.date))}${Number(mark.weight) > 1 ? ` · ${formatWeight(Number(mark.weight))}` : ''}</span>
+            ${off ? '<span class="x">↺</span>' : ''}
+          </button>`;
+        })
+        .join('')
+      : '';
 
     card.querySelector('.whatif-list').innerHTML = plan.extra
       .map((item, index) => `<button class="whatif-item" data-remove="${index}" aria-label="Убрать">
           <span class="mark-box mark m${item.mark}">${item.mark}</span>
           <span>вес ${formatWeight(item.weight)}</span><span class="x">×</span>
         </button>`)
-      .join('') || '<div class="muted small">Нажмите оценку, чтобы добавить её к настоящим</div>';
+      .join('') || (picking ? '' : '<div class="muted small">Нажмите оценку, чтобы добавить её к настоящим</div>');
 
     const before = weightedAverage(marks);
-    const after = weightedAverage([...marks, ...plan.extra]);
+    const after = weightedAverage([...kept(), ...plan.extra]);
     const delta = before != null && after != null ? after - before : 0;
-    card.querySelector('.whatif-result').innerHTML = plan.extra.length
+    card.querySelector('.whatif-result').innerHTML = changed
       ? `<span>Средний балл станет:</span><span><strong class="${after == null ? '' : avgClass(after, thresholds)}">${formatAverage(after)}</strong>${
         Math.abs(delta) >= 0.005
           ? `<span class="whatif-delta ${delta > 0 ? 'up' : 'down'}">${delta > 0 ? '+' : '−'}${Math.abs(delta).toFixed(2).replace('.', ',')}</span>`
           : ''}</span>`
       : '';
     // Добавили или убрали оценку — средний плавно переходит к новому значению.
-    if (plan.extra.length) tweenNumber(card.querySelector('.whatif-result strong'), shown, after);
-    shown = plan.extra.length && after != null ? after : before;
+    if (changed) tweenNumber(card.querySelector('.whatif-result strong'), shown, after);
+    shown = changed && after != null ? after : before;
 
-    const all = [...marks, ...plan.extra];
+    const all = [...kept(), ...plan.extra];
     card.querySelector('.whatif-goals').innerHTML = [5, 4]
       .map((target) => {
         const needed = neededMarks(all, thresholds[target], 5, plan.weight);
@@ -877,7 +923,18 @@ function bindWhatIf(card, marks, id, subjectName) {
     const add = event.target.closest('[data-add]');
     const remove = event.target.closest('[data-remove]');
     const clear = event.target.closest('[data-clear]');
-    if (drop) {
+    const pick = event.target.closest('[data-pick]');
+    const toggle = event.target.closest('[data-toggle]');
+    if (pick) {
+      picking = !picking;
+      select();
+    } else if (toggle) {
+      const key = toggle.dataset.toggle;
+      const index = plan.removed.indexOf(key);
+      if (index < 0) plan.removed.push(key);
+      else plan.removed.splice(index, 1);
+      tap('soft');
+    } else if (drop) {
       const index = weights.indexOf(Number(drop.dataset.drop));
       if (index < 0 || weights.length < 2) return;
       weights.splice(index, 1);
@@ -895,6 +952,7 @@ function bindWhatIf(card, marks, id, subjectName) {
       tap('soft');
     } else if (clear) {
       plan.extra = [];
+      plan.removed = [];
       plan.weight = weights[0];
       tap('soft');
     } else {
