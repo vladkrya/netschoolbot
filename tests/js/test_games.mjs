@@ -27,6 +27,7 @@ const snake = await import(new URL('snake.js', games));
 const solitaire = await import(new URL('solitaire.js', games));
 const slots = await import(new URL('slots.js', games));
 const poker = await import(new URL('poker.js', games));
+const casino = await import(new URL('casino.js', games));
 
 const c = (r, s) => ({ r, s });
 
@@ -251,6 +252,29 @@ test('слоты: выплаты', () => {
   assert.equal(slots.payout(['🍒', '🍒', '🔔']), 2);
   assert.equal(slots.payout(['🍋', '🍒', '🔔']), 1);
   assert.equal(slots.payout(['🍋', '⭐', '🔔']), 0);
+});
+
+test('рулетка: колесо — 37 лунок, цвета чередуются', () => {
+  assert.deepEqual([...casino.WHEEL].sort((a, b) => a - b), Array.from({ length: 37 }, (_, i) => i));
+  assert.equal(casino.RED.size, 18);
+  for (let i = 1; i < casino.WHEEL.length - 1; i += 1) {
+    assert.notEqual(casino.colorOf(casino.WHEEL[i]), casino.colorOf(casino.WHEEL[i + 1]), `лунки ${i} и ${i + 1}`);
+  }
+});
+
+test('рулетка: выплаты и отдача 36/37', () => {
+  assert.equal(casino.payout('red', 10, 1), 20);
+  assert.equal(casino.payout('black', 10, 1), 0);
+  assert.equal(casino.payout('red', 10, 0), 0, 'зеро не красное');
+  assert.equal(casino.payout('n0', 10, 0), 360);
+  assert.equal(casino.payout('n17', 10, 17), 360);
+  assert.equal(casino.payout('n17', 10, 18), 0);
+  assert.equal(casino.totalPayout({ red: 10, n3: 5 }, 3), 20 + 180);
+  // Любая одиночная ставка в среднем возвращает 36/37 — рулетка забирает 2,7%.
+  for (const field of ['red', 'black', 'n0', 'n7']) {
+    const back = casino.WHEEL.reduce((sum, n) => sum + casino.payout(field, 1, n), 0) / 37;
+    assert.ok(Math.abs(back - 36 / 37) < 1e-9, `${field}: ${back}`);
+  }
 });
 
 test('paper.io: поворот выбирает короткую сторону', () => {
