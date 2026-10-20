@@ -189,6 +189,8 @@ systemctl stop netschoolbot && ./venv/bin/python -m app.tools.backup --restore F
 привязывается к боту в @BotFather (`/setdomain`), тот же домен без схемы —
 в `NETSCHOOL_TG_LOGIN_DOMAIN` в `.env`. Telegram пускает виджет только с этого
 домена, поэтому на зеркалах кнопки нет; пустая переменная её выключает.
+Если домен привязан не к основному боту (у бота домен один), токен того бота —
+в `NETSCHOOL_TG_LOGIN_BOT_TOKEN`.
 
 Приложение отдаётся с корня домена. Старые ссылки `/mini/netschool/...`
 переадресуются на те же пути от корня.

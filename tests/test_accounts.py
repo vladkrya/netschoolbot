@@ -361,6 +361,17 @@ class TestSiteLoginThroughWidget:
         assert response.cookies["netschool_token"].value == token
         assert (await app_context.users.get(4243)).display_name == "Иван"
 
+    async def test_widget_can_live_on_another_bot(self, client, app_context, widget_on):
+        other = "888:reserve-bot-token"
+        app_context.settings = replace(
+            app_context.settings, web=replace(app_context.settings.web, login_widget_bot_token=other))
+        config = await (await client.get(f"{BASE}/api/account/config")).json()
+        assert config["data"]["widget"] == 888
+        # Подпись — от того бота, к которому привязан домен, а не от основного.
+        assert (await post(client, "/api/account/tg-widget", make_widget_data(WIDGET_TOKEN)))[0] == 401
+        status, body, _ = await post(client, "/api/account/tg-widget", make_widget_data(other, id="4244"))
+        assert status == 200 and await app_context.miniapp.resolve_token(body["data"]["token"]) == 4244
+
     async def test_forged_data_rejected(self, client, app_context, widget_on):
         data = {**make_widget_data(WIDGET_TOKEN), "id": "1"}
         status, body, response = await post(client, "/api/account/tg-widget", data)
