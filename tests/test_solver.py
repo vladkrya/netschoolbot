@@ -93,6 +93,14 @@ class TestTextbooks:
         found = book.find(parse("§6; вопросы"), "Табличные модели")
         assert found.pages == [2, 3, 4]
 
+    def test_teacher_numbering_is_explained(self, library):
+        # «§6» у учителя — «§ 2.4» в книге: модели говорим, что это он и есть.
+        book = library.books_for("Информатика и ИКТ")[0]
+        task = Task(subject="Информатика и ИКТ", due="2026-10-19", text="§6; вопросы", topic="Табличные модели")
+        found = book.find(task.refs(), task.topic)
+        assert found.section == "§ 2.4. Табличные информационные модели"
+        assert "в книге это «§ 2.4. Табличные информационные модели»" in user_content(task, [(book, found)], [])[0]["text"]
+
     def test_unknown_subject(self, library):
         assert library.books_for("Химия") == [] and library.grade() == 9
 
@@ -112,6 +120,22 @@ class TestTextbooks:
         with Image.open(io.BytesIO(base64.b64decode(images[0]["source"]["data"]))) as page:
             assert max(page.size) == 1100
         assert "№289: 289. а) 2; б) 4." in blocks[-1]["text"]
+
+    def test_pictures_over_budget_go_as_text(self, library, tmp_path, monkeypatch):
+        from PIL import Image
+
+        from app.solver import prompt
+
+        (tmp_path / "alg").mkdir()
+        Image.new("L", (1600, 2000), 255).save(tmp_path / "alg" / "0005.jpg")
+        (tmp_path / "library.json").touch()
+        library._loaded_mtime = None
+        monkeypatch.setattr(prompt, "MAX_IMAGE_BYTES", 10)
+        book = library.books_for("Алгебра")[0]
+        task = Task(subject="Алгебра", due="2026-10-19", text="№289(б)")
+        blocks = user_content(task, [(book, book.find(task.refs()))], [])
+        assert not [b for b in blocks if b["type"] == "image"]
+        assert "289. Решите уравнение:" in blocks[0]["text"]
 
 
 class TestDraft:
@@ -172,6 +196,18 @@ class TestCacheKey:
         assert cache_key("sgo", a, "1", "m") == cache_key("sgo", b, "1", "m")
         assert cache_key("sgo", a, "1", "m") != cache_key("sgo", a, "2", "m")
         assert cache_key("sgo", a, "1", "m") != cache_key("other", a, "1", "m")
+        # Комментарий учителя меняет задание: «1 ряд — …» решается иначе.
+        assert cache_key("sgo", a, "1", "m") != cache_key("sgo", dataclasses.replace(a, comment="1 ряд"), "1", "m")
+
+
+class TestComment:
+    def test_comment_goes_to_model(self):
+        task = Task(subject="ОБЗР", due="2026-10-20", text="Подготовить доклад", comment="1 ряд - метеорологические ЧС")
+        assert "Комментарий учителя к заданию:\n1 ряд - метеорологические ЧС" in user_content(task, [], [])[0]["text"]
+
+    def test_comment_repeating_the_task_is_dropped(self):
+        task = solver._task({**TASK, "comment": " №289(б) "})
+        assert task.comment == ""
 
 
 @pytest.fixture
@@ -216,6 +252,49 @@ class TestApi:
         second = await client.post(f"{BASE}/api/solve", params={"token": token}, json=TASK)
         assert (await second.json())["data"]["cached"] is True
         assert len(calls) == 1 and allowed.solver_usage[1][1] == 1
+
+    async def test_comment_fetched_when_app_did_not_send_it(self, client, token, allowed, monkeypatch):
+        asked, calls = [], []
+
+        async def comment(user, assignment_id):
+            asked.append(assignment_id)
+            return "2 ряд - геологические ЧС"
+
+        async def fake(settings, system, content, **kwargs):
+            calls.append(content)
+            yield "Доклад"
+
+        monkeypatch.setattr(allowed.diary, "fetch_assignment_comment", comment, raising=False)
+        monkeypatch.setattr(solver, "stream_messages", fake)
+        response = await client.post(f"{BASE}/api/solve", params={"token": token}, json={**TASK, "id": 77})
+        assert events(await response.read())[-1]["ok"] is True
+        assert asked == [77] and "2 ряд - геологические ЧС" in calls[0][0]["text"]
+        # Прислало приложение — в СГО не ходим.
+        await client.post(f"{BASE}/api/solve", params={"token": token}, json={**TASK, "id": 77, "comment": ""})
+        assert asked == [77]
+
+    async def test_solving_goes_on_after_app_closed(self, client, token, allowed, monkeypatch):
+        import asyncio
+
+        release = asyncio.Event()
+
+        async def slow(settings, system, content, **kwargs):
+            yield "### №289\n"
+            await release.wait()
+            yield "**Ответ:** 4"
+
+        monkeypatch.setattr(solver, "stream_messages", slow)
+        response = await client.post(f"{BASE}/api/solve", params={"token": token}, json=TASK)
+        await response.content.readline()
+        response.close()
+        release.set()
+        for _ in range(100):
+            if not solver._running:
+                break
+            await asyncio.sleep(0.02)
+        again = await client.post(f"{BASE}/api/solve", params={"token": token}, json=TASK)
+        assert (await again.json())["data"] == {"text": "### №289\n**Ответ:** 4", "cached": True}
+        assert allowed.solver_usage[1][1] == 1
 
     async def test_failure_refunds_quota(self, client, token, allowed, monkeypatch):
         async def broken(settings, system, content, **kwargs):
