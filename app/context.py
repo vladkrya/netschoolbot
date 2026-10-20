@@ -89,6 +89,8 @@ class AppContext:
     textbooks: Library | None = None
     solver_usage: dict[int, tuple] = field(default_factory=dict)
     solving: dict[str, asyncio.Lock] = field(default_factory=dict)
+    # Кто одноклассник владельца (web/solver.py:classmate): ключ → (до когда, да/нет).
+    classmates: dict[tuple, tuple[float, bool]] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if self.solutions is None:

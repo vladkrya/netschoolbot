@@ -15,6 +15,7 @@ import { textStream } from './text-stream.js';
 
 // Модель пишет большое решение минуты две; поток ждём с запасом.
 const STREAM_TIMEOUT_MS = 330000;
+const WAITING = '<div class="solve-wait">Ищу в учебнике и решаю…</div>';
 
 /** Место под кнопку: заполняется, когда известно, что решения доступны. */
 export function solveSlot(item, index) {
@@ -46,7 +47,7 @@ export function openSolution(item) {
         <div class="detail-label">Задание</div>
         <div class="detail-text">${esc(item.text || '—')}</div>
       </div>
-      <div class="solve-out md" data-out><div class="solve-wait">Ищу в учебнике и решаю…</div></div>
+      <div class="solve-out md" data-out>${WAITING}</div>
       <div class="solve-actions" data-actions hidden>
         <button class="btn outline" data-copy>Скопировать</button>
         <button class="btn outline" data-again>Решить заново</button>
@@ -62,8 +63,9 @@ export function openSolution(item) {
     if (busy) return;
     busy = true;
     actions.hidden = true;
-    out.innerHTML = '<div class="solve-wait">Ищу в учебнике и решаю…</div>';
-    const live = textStream((partial) => { out.innerHTML = renderMarkdown(partial); });
+    out.innerHTML = WAITING;
+    // Пустой текст — сервер начал попытку заново (reset): снова «решаю».
+    const live = textStream((partial) => { out.innerHTML = partial ? renderMarkdown(partial) : WAITING; });
     try {
       const { data } = await api('/api/solve', {
         method: 'POST',

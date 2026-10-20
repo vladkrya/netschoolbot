@@ -494,7 +494,7 @@ async def _sgo_updates(app: AppContext, telegram_id: int, url: str) -> bool:
 
 @routes.get("/api/profile")
 async def profile(request: web.Request) -> web.Response:
-    from . import viewing
+    from . import solver, viewing
 
     app, user = context(request), current_user(request)
     status = await app.state.watch_status(user.telegram_id)
@@ -525,7 +525,10 @@ async def profile(request: web.Request) -> web.Response:
                 "enabled": user.enabled,
                 "assistant": app.settings.assistant.enabled,
                 # Кнопка «Решение» под заданием (web/solver.py).
-                "solver": app.settings.assistant.enabled and app.settings.solver.allowed((viewer or user).telegram_id),
+                "solver": await solver.solver_access(app, viewer or user),
+                # Тумблер «Решения заданий всему классу» — только у владельца.
+                "solver_class": {"on": await solver.class_open(app)}
+                if app.settings.assistant.enabled and solver.is_owner(app, viewer or user) else None,
                 # Хеллоуинское оформление — у всех в праздничный сезон;
                 # выключается тумблером в настройках.
                 "halloween": halloween_season(user.today()),
