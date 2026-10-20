@@ -75,7 +75,8 @@ class Book:
         continued — продолжение с прошлой страницы: от верха до следующего."""
         if index >= len(self.lines):
             return None
-        rows = self.lines[index]
+        page = str(self.printed(index))
+        rows = [row for row in self.lines[index] if str(row[0]).strip() != page]  # без колонтитула
         own = re.compile(rf"^\s*{number}\s*(?:[.)]|$|\s)")
         following = re.compile(rf"^\s*{number + 1}\s*(?:[.)]|$|\s)")
         if continued:
@@ -134,15 +135,29 @@ class Book:
 
         within — где искать сначала: «§5 … упр. 2-3» — это номера внутри
         параграфа, а не второе упражнение книги."""
-        pattern = self._exercise_pattern(number)
         for index in [*(within or []), *self._body()]:
-            if pattern.search(self.pages[index]):
+            if self.has_exercise(index, number):
                 return index
         return None
 
     @staticmethod
     def _exercise_pattern(number: int) -> re.Pattern[str]:
         return re.compile(rf"(?m)^\s*{number}\s*(?:[.)]\s*\S|$)")
+
+    def has_exercise(self, index: int, number: int) -> bool:
+        """Есть ли на странице начало упражнения. Смотрим и строки скана: в
+        тексте страницы распознавание порой теряет номер («62. a) Read…»).
+        Число отдельной строкой, равное номеру страницы, — колонтитул."""
+        texts = [self.pages[index]]
+        if index < len(self.lines):
+            texts.append("\n".join(str(row[0]) for row in self.lines[index]))
+        pattern = self._exercise_pattern(number)
+        footer = number == self.printed(index)
+        for text in texts:
+            for match in pattern.finditer(text):
+                if not (footer and match.group().strip() == str(number)):
+                    return True
+        return False
 
     def answer(self, number: int) -> str:
         """Ответ к номеру из раздела «Ответы», если он есть."""
@@ -241,11 +256,11 @@ class Book:
         # есть, берём и эту страницу; что подходит, решит модель по теме.
         if explicit and refs.exercises:
             for exercise in refs.exercises:
-                if any(self._exercise_pattern(exercise.number).search(self.pages[i]) for i in explicit):
+                if any(self.has_exercise(i, exercise.number) for i in explicit):
                     continue
                 for printed in refs.pages:
                     swapped = self.page_index(exercise.number)
-                    if swapped is not None and self._exercise_pattern(printed).search(self.pages[swapped]):
+                    if swapped is not None and self.has_exercise(swapped, printed):
                         add(swapped)
                         found.exercises.setdefault(swapped, []).append((printed, False))
                         found.swapped = True
@@ -260,7 +275,7 @@ class Book:
             found.exercises.setdefault(index, []).append((exercise.number, False))
             # Условие переходит на следующую страницу, если следующего номера
             # на этой нет.
-            if index + 1 < len(self.pages) and not self._exercise_pattern(exercise.number + 1).search(self.pages[index]):
+            if index + 1 < len(self.pages) and not self.has_exercise(index, exercise.number + 1):
                 add(index + 1)
                 found.exercises.setdefault(index + 1, []).append((exercise.number, True))
             if answer := self.answer(exercise.number):

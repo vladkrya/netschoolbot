@@ -101,6 +101,21 @@ class TestTextbooks:
         assert found.section == "§ 2.4. Табличные информационные модели"
         assert "в книге это «§ 2.4. Табличные информационные модели»" in user_content(task, [(book, found)], [])[0]["text"]
 
+    def test_number_lost_in_page_text_found_in_scan_lines(self, tmp_path):
+        # «Упр. 4 стр. 2-3»: в тексте страницы 2 номер «4.» потерялся, а в
+        # строках скана он есть; «4» внизу страницы 4 — её номер, не упражнение.
+        pages = ["0", "1", page("Read the text and say what lines…", "2"), page("3"), page("Test yourself", "4")]
+        (tmp_path / "eng.pages.json").write_text(json.dumps({"pages": pages, "offset": 0}), "utf-8")
+        lines = [[], [], [["4. a) Read the text and say what lines…", 0.07, 0.66, 0.9, 0.68], ["2", 0.4, 0.92, 0.45, 0.94]],
+                 [], [["Test yourself", 0.1, 0.1, 0.5, 0.12], ["4", 0.5, 0.91, 0.55, 0.93]]]
+        (tmp_path / "eng.lines.json").write_text(json.dumps(lines), "utf-8")
+        (tmp_path / "library.json").write_text(json.dumps({"books": [
+            {"id": "eng", "subjects": ["Английский язык"], "title": "English"}]}), "utf-8")
+        book = Library(tmp_path).books_for("Английский язык")[0]
+        found = book.find(parse("Упр. 4 стр. 2-3"))
+        assert found.pages == [2, 3] and found.exercises == {2: [(4, False)], 3: [(4, True)]}
+        assert book._band(2, 4, continued=False)[0] < 0.66
+
     def test_unknown_subject(self, library):
         assert library.books_for("Химия") == [] and library.grade() == 9
 
