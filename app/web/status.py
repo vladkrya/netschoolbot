@@ -23,7 +23,7 @@ def _service(request: web.Request):
 
 @routes.get("/status")
 async def status_page(request: web.Request) -> web.Response:
-    from .server import STATIC_VERSION, _base
+    from .server import STATIC_VERSION, _base, _site_url
 
     # embed=1 — экран «Статус серверов» в приложении: без заголовка (он у
     # экрана свой) и в теме приложения.
@@ -32,7 +32,8 @@ async def status_page(request: web.Request) -> web.Response:
         "status.html", request,
         {"base": _base(request), "version": STATIC_VERSION, "app_version": __version__,
          "embed": request.query.get("embed") == "1",
-         "theme": theme if theme in ("light", "dark") else ""},
+         "theme": theme if theme in ("light", "dark") else "",
+         "canonical": f"{_site_url(request)}status"},
     )
     response.headers["Cache-Control"] = "no-cache"
     return response

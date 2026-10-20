@@ -212,7 +212,13 @@ class TestPages:
     async def test_sitemap_lists_main_page(self, client):
         response = await client.get("/sitemap.xml")
         assert response.content_type == "application/xml"
-        assert "<loc>https://example.ru/mini/</loc>" in await response.text()
+        text = await response.text()
+        assert "<loc>https://example.ru/mini/</loc>" in text
+        assert "<loc>https://example.ru/mini/status</loc>" in text
+
+    async def test_status_page_has_canonical(self, client):
+        text = await (await client.get(f"{BASE}/status")).text()
+        assert '<link rel="canonical" href="https://example.ru/mini/status">' in text
 
     async def test_index_with_token_renders_app(self, client, token):
         response = await client.get(f"{BASE}/", params={"token": token})

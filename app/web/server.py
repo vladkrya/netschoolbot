@@ -266,7 +266,7 @@ def _site_url(request: web.Request) -> str:
 
 
 async def robots(request: web.Request) -> web.Response:
-    """В поиск попадают только главная и демо.
+    """В поиск попадают только главная, демо и статус серверов.
 
     Остальное — личные страницы и API; адреса с токеном (`/?token=…`)
     правило `/$` не пропускает. Статику и настройки входа поисковик
@@ -277,6 +277,8 @@ async def robots(request: web.Request) -> web.Response:
         "User-agent: *",
         f"Allow: {base}/$",
         f"Allow: {base}/demo$",
+        f"Allow: {base}/status$",
+        f"Allow: {base}/status/data",
         f"Allow: {base}/static/",
         f"Allow: {base}/api/account/config$",
         "Disallow: /",
@@ -293,6 +295,7 @@ async def sitemap(request: web.Request) -> web.Response:
         '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
         f"  <url><loc>{url}</loc></url>\n"
         f"  <url><loc>{url}demo</loc></url>\n"
+        f"  <url><loc>{url}status</loc></url>\n"
         "</urlset>\n"
     )
     return web.Response(text=body, content_type="application/xml")
