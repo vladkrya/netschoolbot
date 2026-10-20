@@ -36,7 +36,13 @@ window.addEventListener('netschool:diaryfresh', event => {
   if (state.date && state.tab === 'day') renderDay();
 });
 
+// Оценки дня — чтобы заметить, что дневник принёс новую или изменённую.
+const marksOf = (day) => JSON.stringify([day.marks, (day.lessons || []).map((lesson) => lesson.marks)]);
+
 function keepDay(day) {
+  const known = schoolDays.get(day.date);
+  // «Оценки» загружены раньше и держатся в памяти — пусть переспросят школу.
+  if (known && marksOf(known) !== marksOf(day)) window.dispatchEvent(new CustomEvent('netschool:marksoutdated'));
   schoolDays.set(day.date, day);
   days.set(day.date, applyEdits(day));
 }
