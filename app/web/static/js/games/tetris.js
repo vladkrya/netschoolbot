@@ -275,7 +275,11 @@ export function start(root, ctx) {
   }
 
   /** Партия на паузе — и сохранена: выйти и вернуться можно когда угодно. */
-  const snapshot = () => ({ board, piece, bag, queue, held, canHold, score, lines, level, difficulty });
+  // Закрыли посреди вспышки собранных линий: фигуры ещё нет, а линии ещё на
+  // поле — сохраняем поле уже без них, следующая фигура появится при возврате.
+  const snapshot = () => ({
+    board: clearing ? clearLines(board).board : board, piece, bag, queue, held, canHold, score, lines, level, difficulty,
+  });
   function pause() {
     if (!running || paused || clearing) return;
     paused = true;
@@ -460,9 +464,10 @@ export function start(root, ctx) {
   board = Array.from({ length: H }, () => Array(W).fill(null));
   showBest();
   const saved = load('tetris-game');
-  if (saved?.board?.length === H && saved.piece) {
+  if (saved?.board?.length === H && Array.isArray(saved.queue)) {
     ({ board, piece, bag, queue, held, canHold, score, lines, level, difficulty } = saved);
     running = true;
+    if (!piece) spawn();
     ['score', 'lines', 'level'].forEach((key) => bump(root.querySelector(`[data-${key}]`), { score, lines, level }[key]));
     showBest();
     pause();
