@@ -571,8 +571,8 @@ async function openCalendar() {
   await load();
 }
 
-const HISTORY_KINDS = { new: 'Новая', changed: 'Исправлена', deleted: 'Удалена' };
-const HISTORY_FILTERS = [['all', 'Все'], ['new', 'Новые'], ['changed', 'Исправленные'], ['deleted', 'Удалённые']];
+const HISTORY_KINDS = { new: 'Поставлена', changed: 'Исправлена', deleted: 'Удалена' };
+const HISTORY_FILTERS = [['all', 'Все'], ['new', 'Поставленные'], ['changed', 'Исправленные'], ['deleted', 'Удалённые']];
 const dayFormat = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long' });
 const clockFormat = new Intl.DateTimeFormat('ru-RU', { hour: '2-digit', minute: '2-digit' });
 
@@ -586,17 +586,19 @@ function historyDay(date) {
   return diff === 0 ? 'Сегодня' : diff === 1 ? 'Вчера' : dayFormat.format(date);
 }
 
-function historyItem(item, index) {
+function historyItem(item, index, unseen) {
   const seen = new Date(item.seen);
   const date = item.date.split('-').reverse().slice(0, 2).join('.');
   const marks = item.kind === 'changed'
     ? `${markBox(item.old, 'old')}<span class="hi-arrow">${ICONS.right}</span>${markBox(item.new, 'fresh')}`
     : markBox(item.mark, item.kind === 'deleted' ? 'old' : 'fresh');
-  return `<div class="history-item hi-${esc(item.kind)}" data-history="${esc(item.id)}" role="button" tabindex="0" style="--d:${Math.min(index, 12) * 35}ms">
+  // «Новая» — только пока запись не видели; потом остаётся «Поставлена» и время.
+  const kind = unseen && item.kind === 'new' ? 'Новая' : HISTORY_KINDS[item.kind] || '';
+  return `<div class="history-item hi-${esc(item.kind)}${unseen ? ' hi-unseen' : ''}" data-history="${esc(item.id)}" role="button" tabindex="0" style="--d:${Math.min(index, 12) * 35}ms">
       <div class="hi-main">
         <div class="hi-subject">${esc(item.subject)}</div>
         <div class="hi-title">${esc(item.title || 'Оценка')} · за ${esc(date)}</div>
-        <div class="hi-meta"><span class="hi-kind">${HISTORY_KINDS[item.kind] || ''}</span>${esc(clockFormat.format(seen))}</div>
+        <div class="hi-meta"><span class="hi-kind">${kind}</span>${esc(clockFormat.format(seen))}</div>
       </div>
       <div class="hi-marks">${marks}</div>
     </div>`;
@@ -605,6 +607,16 @@ function historyItem(item, index) {
 // Первая страница истории — и на устройстве: без сети её видно, даже если
 // service worker нет (Telegram) или он её ещё не сохранил.
 const HISTORY_KEY = 'ns-history';
+
+// Последняя запись, которую уже показывали: всё, что старше, — не новое.
+const HISTORY_SEEN_KEY = 'ns-history-seen';
+
+function historySeenId() {
+  try {
+    const value = Number(localStorage.getItem(HISTORY_SEEN_KEY));
+    return Number.isFinite(value) && value > 0 ? value : null;
+  } catch { return null; }
+}
 
 function savedHistory() {
   try { return JSON.parse(localStorage.getItem(HISTORY_KEY) || 'null'); } catch { return null; }
@@ -655,6 +667,11 @@ async function openHistory() {
   let filter = 'all';
   let more = true;
   let loading = false;
+  // Отметку снимаем при следующем открытии, а не сразу: новые видно, пока
+  // экран открыт. Отметки ещё не было — новыми считаем записи за сутки.
+  const seenId = historySeenId();
+  const dayAgo = Date.now() - 86400000;
+  const unseen = (item) => (seenId == null ? new Date(item.seen) > dayAgo : item.id > seenId);
 
   const draw = () => {
     const shown = items.filter((item) => filter === 'all' || item.kind === filter);
@@ -665,7 +682,7 @@ async function openHistory() {
       const day = historyDay(new Date(item.seen));
       const head = day !== lastDay ? `<div class="hi-day">${esc(day)}</div>` : '';
       lastDay = day;
-      return head + historyItem(item, index++);
+      return head + historyItem(item, index++, unseen(item));
     }).join('');
     screen.innerHTML = `
       <div class="chips history-filters">${HISTORY_FILTERS.map(([key, label]) =>
@@ -704,6 +721,10 @@ async function openHistory() {
         data = saved;
       }
       items.push(...data.items);
+      if (!demo && !before && data.items.length) {
+        const top = Math.max(...data.items.map((item) => item.id));
+        try { if (top > (seenId || 0)) localStorage.setItem(HISTORY_SEEN_KEY, String(top)); } catch { /* хранилище недоступно */ }
+      }
       // Сервер отдаёт по 50: меньше — значит, старше ничего нет.
       more = data.items.length >= 50;
       if (!items.length) {

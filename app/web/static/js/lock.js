@@ -511,7 +511,7 @@ function addSignOut(root) {
 export async function clearOffline() {
   try {
     // Имя, история оценок и неотправленные изменения без сети (outbox.js).
-    for (const key of ['studentName', 'ns-history', 'ns-outbox']) localStorage.removeItem(key);
+    for (const key of ['studentName', 'ns-history', 'ns-history-seen', 'ns-outbox']) localStorage.removeItem(key);
   } catch { /* приватный режим */ }
   if (!('caches' in window)) return;
   for (const name of await caches.keys()) {
