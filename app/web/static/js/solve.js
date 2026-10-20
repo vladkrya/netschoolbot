@@ -49,7 +49,10 @@ const jobs = new Map();
 let pill = null;
 
 function jobKey(item) {
-  return JSON.stringify([item.subject, item.date, item.text || '']);
+  // Как ключ решения на сервере: два задания с одним текстом, но разными
+  // файлами — разные решения.
+  return JSON.stringify([item.subject, item.date, item.text || '', item.id ?? null,
+    (item.attachments || []).map(({ id }) => id).sort()]);
 }
 
 function startJob(item, refresh = false) {
