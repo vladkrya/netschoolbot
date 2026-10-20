@@ -164,6 +164,7 @@ def create_app(context: AppContext, bot=None) -> web.Application:
         inner.router.add_get("/health", health)
         inner.router.add_get("/robots.txt", robots)
         inner.router.add_get("/sitemap.xml", sitemap)
+        inner.router.add_get("/{name:google[0-9a-f]+\\.html}", google_verification)
         return inner
 
     outer = web.Application(middlewares=[caldav.root_discovery, _make_redirect_middleware(prefix)])
@@ -176,6 +177,7 @@ def create_app(context: AppContext, bot=None) -> web.Application:
     outer.router.add_get("/health", health)
     outer.router.add_get("/robots.txt", robots)
     outer.router.add_get("/sitemap.xml", sitemap)
+    outer.router.add_get("/{name:google[0-9a-f]+\\.html}", google_verification)
     return outer
 
 
@@ -294,6 +296,18 @@ async def sitemap(request: web.Request) -> web.Response:
         "</urlset>\n"
     )
     return web.Response(text=body, content_type="application/xml")
+
+
+# Файлы подтверждения прав на сайт в Google Search Console. Их нельзя
+# удалять: без файла Google снимает подтверждение.
+GOOGLE_VERIFICATIONS = frozenset({"googled7947c6e3217a546.html"})
+
+
+async def google_verification(request: web.Request) -> web.Response:
+    name = request.match_info["name"]
+    if name not in GOOGLE_VERIFICATIONS:
+        raise web.HTTPNotFound()
+    return web.Response(text=f"google-site-verification: {name}", content_type="text/html")
 
 
 def _base(request: web.Request) -> str:

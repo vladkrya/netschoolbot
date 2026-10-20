@@ -204,6 +204,11 @@ class TestPages:
         assert "Disallow: /" in text
         assert "Sitemap: https://example.ru/sitemap.xml" in text
 
+    async def test_google_verification_file(self, client):
+        response = await client.get("/googled7947c6e3217a546.html")
+        assert await response.text() == "google-site-verification: googled7947c6e3217a546.html"
+        assert (await client.get("/google0000.html")).status == 404
+
     async def test_sitemap_lists_main_page(self, client):
         response = await client.get("/sitemap.xml")
         assert response.content_type == "application/xml"
