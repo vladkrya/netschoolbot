@@ -140,6 +140,12 @@ async def account_config(request: web.Request) -> web.Response:
     }})
 
 
+def _widget_bot_token(request: web.Request) -> str:
+    """Токен бота, к которому в BotFather привязан домен виджета."""
+    settings = context(request).settings
+    return settings.web.login_widget_bot_token or settings.telegram.bot_token
+
+
 def login_widget_bot_id(request: web.Request) -> int:
     """id бота для Telegram Login Widget — только на домене из BotFather.
 
@@ -149,7 +155,7 @@ def login_widget_bot_id(request: web.Request) -> int:
     domain = context(request).settings.web.login_widget_domain
     if not domain or request.host.split(":")[0].lower() != domain:
         return 0
-    bot_id, _, _ = context(request).settings.telegram.bot_token.partition(":")
+    bot_id, _, _ = _widget_bot_token(request).partition(":")
     return int(bot_id) if bot_id.isdigit() else 0
 
 
@@ -165,7 +171,7 @@ async def tg_widget_login(request: web.Request) -> web.Response:
     if IP_FAILURES.blocked(ip):
         return json_error("Слишком много попыток входа — подождите 15 минут", status=429)
     try:
-        tg_user = verify_login_widget(await _body(request), context(request).settings.telegram.bot_token,
+        tg_user = verify_login_widget(await _body(request), _widget_bot_token(request),
                                       max_age=WIDGET_MAX_AGE_S)
     except InitDataError as exc:
         IP_FAILURES.hit(ip)

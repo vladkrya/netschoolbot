@@ -314,7 +314,7 @@ const TG_ICON = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="tr
 function startWidgetLogin() {
   const back = `${location.origin}${base}/`;
   location.assign('https://oauth.telegram.org/auth?' + new URLSearchParams({
-    bot_id: String(landingConfig.widget), origin: location.origin, request_access: 'write', return_to: back,
+    bot_id: String(landingConfig.widget), origin: location.origin, return_to: back,
   }));
 }
 

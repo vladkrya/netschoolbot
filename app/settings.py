@@ -114,6 +114,9 @@ class WebSettings:
     # Widget. Telegram пускает виджет только с него, поэтому на зеркалах
     # кнопки нет. Пусто — вход через виджет выключен.
     login_widget_domain: str = ""
+    # Бот, к которому этот домен привязан. У бота домен один, поэтому виджет
+    # может жить на другом боте (резервном). Пусто — основной бот.
+    login_widget_bot_token: str = ""
 
     @property
     def miniapp_url(self) -> str:
@@ -341,6 +344,7 @@ def load_settings(*, require_bot_token: bool = True) -> Settings:
             captcha_url=_env("NETSCHOOL_CAPTCHA_URL", "https://captcha.ikrya.ru").rstrip("/"),
             captcha_rounds=max(1, _env_int("NETSCHOOL_CAPTCHA_ROUNDS", 2)),
             login_widget_domain=_env("NETSCHOOL_TG_LOGIN_DOMAIN").strip().lower(),
+            login_widget_bot_token=_env("NETSCHOOL_TG_LOGIN_BOT_TOKEN"),
             miniapp_path=miniapp_path,
             token_ttl=_env_int("NETSCHOOL_MINIAPP_TOKEN_TTL", 900),
             login_code_ttl=_env_int("NETSCHOOL_LOGIN_CODE_TTL", 600),
