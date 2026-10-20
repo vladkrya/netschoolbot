@@ -10,8 +10,8 @@ data/
 *.bak_*
 __pycache__/
 *.py[cod]
-venv/
-.venv/
+venv
+.venv
 netschoolpy/
 .DS_Store
 
