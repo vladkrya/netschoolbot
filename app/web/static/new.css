@@ -297,6 +297,8 @@
 :root[data-design="new"] .whatif-item .mark-box:is(.m2, .m3, .m4, .m5) {
   border: 1.5px dashed var(--c, var(--text2));
 }
+:root[data-design="new"] .whatif-item.real .mark-box,
+:root[data-design="new"] .whatif-item.real .mark-box:is(.m2, .m3, .m4, .m5) { border: 0; }
 :root[data-design="new"] .whatif-add .mark-box { height: 44px; border-radius: 14px; }
 
 :root[data-design="new"] .avg { border-radius: 10px; font-weight: 700; font-variant-numeric: tabular-nums; }
