@@ -121,6 +121,26 @@ class TestTextbooks:
             assert max(page.size) == 1100
         assert "№289: 289. а) 2; б) 4." in blocks[-1]["text"]
 
+    def test_remembered_condition_replaces_picture(self, library, tmp_path):
+        from PIL import Image
+
+        (tmp_path / "alg").mkdir()
+        Image.new("L", (1600, 2000), 255).save(tmp_path / "alg" / "0005.jpg")
+        (tmp_path / "library.json").touch()
+        library._loaded_mtime = None
+        book = library.books_for("Алгебра")[0]
+        task = Task(subject="Алгебра", due="2026-10-19", text="№289(б)")
+        found = book.find(task.refs())
+
+        imaged = []
+        user_content(task, [(book, found)], [], {}, imaged)
+        assert imaged == [("alg", 289)]
+
+        imaged = []
+        blocks = user_content(task, [(book, found)], [], {("alg", 289): "Решите уравнение: а) $x=1$; б) $x^3=8$"}, imaged)
+        assert not [b for b in blocks if b["type"] == "image"] and imaged == []
+        assert "№289, стр. 5 (условие, прочитано с картинки раньше) ---\nРешите уравнение: а) $x=1$; б) $x^3=8$" in blocks[0]["text"]
+
     def test_pictures_over_budget_go_as_text(self, library, tmp_path, monkeypatch):
         from PIL import Image
 
@@ -252,6 +272,39 @@ class TestApi:
         second = await client.post(f"{BASE}/api/solve", params={"token": token}, json=TASK)
         assert (await second.json())["data"]["cached"] is True
         assert len(calls) == 1 and allowed.solver_usage[1][1] == 1
+
+    async def test_condition_read_from_picture_is_remembered(self, client, token, allowed, library, tmp_path, monkeypatch):
+        from PIL import Image
+
+        (tmp_path / "alg").mkdir()
+        Image.new("L", (1600, 2000), 255).save(tmp_path / "alg" / "0005.jpg")
+        (tmp_path / "library.json").touch()
+        library._loaded_mtime = None
+        allowed.textbooks = library
+        calls = []
+
+        async def fake(settings, system, content, **kwargs):
+            calls.append(content)
+            yield "<черновик><условие №289>Решите уравнение: а) $x=1$; б) $x^3=8$</условие> x=2</черновик>"
+            yield "### №289\n**Ответ:** 2"
+
+        monkeypatch.setattr(solver, "stream_messages", fake)
+        first = await client.post(f"{BASE}/api/solve", params={"token": token}, json=TASK)
+        assert events(await first.read())[-1]["data"]["text"] == "### №289\n**Ответ:** 2"
+        assert [b for b in calls[0] if b["type"] == "image"]
+        assert await allowed.conditions.get_many("alg", [289]) == {289: "Решите уравнение: а) $x=1$; б) $x^3=8$"}
+
+        # Другой пункт того же номера — условие уже текстом, картинки нет.
+        second = await client.post(f"{BASE}/api/solve", params={"token": token}, json={**TASK, "text": "№289(а)"})
+        assert events(await second.read())[-1]["ok"] is True
+        assert not [b for b in calls[1] if b["type"] == "image"]
+        assert "$x^3=8$" in calls[1][0]["text"]
+
+        # «Решить заново» читает картинку снова.
+        allowed.solver_usage.clear()
+        again = await client.post(f"{BASE}/api/solve", params={"token": token}, json={**TASK, "refresh": True})
+        assert events(await again.read())[-1]["ok"] is True
+        assert [b for b in calls[2] if b["type"] == "image"]
 
     async def test_comment_fetched_when_app_did_not_send_it(self, client, token, allowed, monkeypatch):
         asked, calls = [], []

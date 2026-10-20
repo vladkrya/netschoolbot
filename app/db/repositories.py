@@ -2093,6 +2093,29 @@ class SgoStatusRepository:
         await self._db.execute("DELETE FROM sgo_reports WHERE created_at < ?", (reports_before,))
 
 
+class ConditionRepository:
+    """Условия упражнений со сканов, прочитанные моделью (solver/): общие для
+    всех, кто учится по этой книге."""
+
+    def __init__(self, db: Database) -> None:
+        self._db = db
+
+    async def get_many(self, book: str, numbers: list[int]) -> dict[int, str]:
+        if not numbers:
+            return {}
+        marks = ",".join("?" * len(numbers))
+        rows = await self._db.fetch_all(
+            f"SELECT number, text FROM exercise_conditions WHERE book = ? AND number IN ({marks})", (book, *numbers))
+        return {int(row["number"]): row["text"] for row in rows}
+
+    async def put(self, book: str, number: int, text: str, now: float) -> None:
+        await self._db.execute(
+            "INSERT INTO exercise_conditions (book, number, text, created_at) VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(book, number) DO UPDATE SET text = excluded.text, created_at = excluded.created_at",
+            (book, number, text, now),
+        )
+
+
 class SolutionRepository:
     """Готовые решения домашних заданий — общие для класса (solver/)."""
 

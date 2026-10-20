@@ -803,6 +803,17 @@ MIGRATIONS: list[str] = [
     ALTER TABLE miniapp_tokens ADD COLUMN model TEXT NOT NULL DEFAULT '';
     ALTER TABLE miniapp_tokens ADD COLUMN ip TEXT NOT NULL DEFAULT '';
     """,
+    # Условия упражнений со сканов, однажды прочитанные моделью с картинки:
+    # дальше номер уходит в модель текстом — картинка стоит в 30 раз дороже.
+    """
+    CREATE TABLE exercise_conditions (
+        book TEXT NOT NULL,
+        number INTEGER NOT NULL,
+        text TEXT NOT NULL,
+        created_at REAL NOT NULL,
+        PRIMARY KEY (book, number)
+    );
+    """,
 ]
 
 

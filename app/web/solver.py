@@ -27,7 +27,7 @@ from ..context import AppContext
 from ..domain.models import User
 from ..solver.extract import extract_text
 from ..solver.llm import stream_messages
-from ..solver.prompt import DraftFilter, Task, cache_key, system_prompt, user_content
+from ..solver.prompt import DraftFilter, Task, cache_key, conditions, system_prompt, user_content
 from .api import attachment_payload, context, current_user, json_error
 from .assistant import AssistantError
 
@@ -197,16 +197,27 @@ async def _file_text(app: AppContext, user: User, attachment_id: int, name: str)
     return await asyncio.to_thread(extract_text, name, payload)
 
 
-async def build_request(app: AppContext, user: User, task: Task) -> tuple[str, list[dict]]:
+async def build_request(app: AppContext, user: User, task: Task, *, reread: bool = False,
+                        imaged: list[tuple[str, int]] | None = None) -> tuple[str, list[dict]]:
     """Системные правила и материалы: учебник (сканы — картинками страниц
-    с условиями) и текст файлов задания."""
+    с условиями) и текст файлов задания.
+
+    Условия, уже прочитанные с картинок, уходят текстом; reread («Решить
+    заново») читает картинку снова — вдруг в прошлый раз прочиталось неверно.
+    В imaged — номера, отправленные картинкой: их условия потом сохраняются."""
     refs = task.refs()
     books = [(book, book.find(refs, task.topic)) for book in app.textbooks.books_for(task.subject)]
+    known: dict[tuple[str, int], str] = {}
+    if not reread:
+        for book, found in books:
+            if book.images:
+                numbers = sorted({n for nums in found.exercises.values() for n, _ in nums})
+                known.update({(book.id, n): text for n, text in (await app.conditions.get_many(book.id, numbers)).items()})
     files = [(name, await _file_text(app, user, attachment_id, name)) for attachment_id, name in task.attachments]
-    content = user_content(task, books, files)
+    content = user_content(task, books, files, known, imaged)
     images = [len(b["source"]["data"]) * 3 // 4 for b in content if b["type"] == "image"]
-    logger.info("Решение: %s, текст %s симв., картинок %s на %s КБ", task.subject,
-                sum(len(b.get("text", "")) for b in content), len(images), sum(images) // 1024)
+    logger.info("Решение: %s, текст %s симв., картинок %s на %s КБ, условий из базы %s", task.subject,
+                sum(len(b.get("text", "")) for b in content), len(images), sum(images) // 1024, len(known))
     return system_prompt(app.textbooks.grade()), content
 
 
@@ -232,8 +243,9 @@ async def _with_pings(chunks, interval: float = PING_S):
             await asyncio.gather(pending, return_exceptions=True)
 
 
-async def _attempt(app: AppContext, system: str, content: list[dict], model: str, send) -> str:
-    """Одна попытка: поток модели без черновика, пока молчит — «wait»."""
+async def _attempt(app: AppContext, system: str, content: list[dict], model: str, send) -> tuple[str, str]:
+    """Одна попытка: поток модели без черновика, пока молчит — «wait».
+    Возвращает чистовик и спрятанный черновик."""
     text = ""
     async with aclosing(stream_messages(app.settings.assistant, system, content, model=model,
                                         max_tokens=MAX_TOKENS, timeout=TIMEOUT)) as chunks:
@@ -249,16 +261,17 @@ async def _attempt(app: AppContext, system: str, content: list[dict], model: str
         if rest := drafts.rest():
             text += rest
             await send({"type": "delta", "text": rest})
-    return text.strip()
+    return text.strip(), drafts.draft
 
 
-async def _solve_with_retries(app: AppContext, system: str, content: list[dict], model: str, send) -> str:
+async def _solve_with_retries(app: AppContext, system: str, content: list[dict], model: str, send) -> tuple[str, str]:
     """До ATTEMPTS попыток. Перед повтором — «reset»: приложение стирает
     начатый текст. Перегрузку не повторяем — там поможет только подождать."""
     for attempt in range(1, ATTEMPTS + 1):
         try:
-            if text := await _attempt(app, system, content, model, send):
-                return text
+            text, draft = await _attempt(app, system, content, model, send)
+            if text:
+                return text, draft
             why = "пустой ответ"
         except AssistantError as exc:
             if exc.reason == "busy" or attempt == ATTEMPTS:
@@ -268,6 +281,20 @@ async def _solve_with_retries(app: AppContext, system: str, content: list[dict],
             logger.info("Решение: попытка %s не удалась (%s), повторяю", attempt, why)
             await send({"type": "reset"})
     raise AssistantError("Модель не придумала решение. Попробуйте ещё раз.")
+
+
+async def _remember_conditions(app: AppContext, imaged: list[tuple[str, int]], draft: str) -> None:
+    """Условия, которые модель переписала с картинок, — в базу: в следующий
+    раз эти номера уйдут текстом. Только те, что действительно были картинкой."""
+    if not imaged:
+        return
+    read = conditions(draft)
+    saved = 0
+    for book, number in dict.fromkeys(imaged):
+        if text := read.get(number):
+            await app.conditions.put(book, number, text, time.time())
+            saved += 1
+    logger.info("Решение: условий прочитано с картинок %s из %s", saved, len(set(imaged)))
 
 
 def _finished(job: asyncio.Task) -> None:
@@ -340,9 +367,11 @@ async def solve(request: web.Request) -> web.StreamResponse:
                         raise AssistantError("На сегодня решения закончились. Возвращайтесь завтра!",
                                              status=429, reason="limit")
                     charged = True
-                system, content = await build_request(app, user, task)
-                text = await _solve_with_retries(app, system, content, model, send)
+                imaged: list[tuple[str, int]] = []
+                system, content = await build_request(app, user, task, reread=fresh, imaged=imaged)
+                text, draft = await _solve_with_retries(app, system, content, model, send)
                 await app.solutions.put(key, task.subject, task.due, model, text, time.time())
+                await _remember_conditions(app, imaged, draft)
                 succeeded = True
                 return text, False
         finally:

@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from .attachments.keeper import AttachmentKeeper
     from .caldav.service import CaldavService
-    from .db.repositories import SolutionRepository
+    from .db.repositories import ConditionRepository, SolutionRepository
     from .domain.models import User
     from .solver.textbooks import Library
     from .status.alerts import SgoAlerts
@@ -86,6 +86,8 @@ class AppContext:
     # Решения заданий (solver/): готовые решения, учебники, лимит за сутки и
     # решения, которые пишутся прямо сейчас, — второй запрос ждёт первый.
     solutions: SolutionRepository | None = None
+    # Условия упражнений со сканов, уже прочитанные моделью.
+    conditions: ConditionRepository | None = None
     textbooks: Library | None = None
     solver_usage: dict[int, tuple] = field(default_factory=dict)
     solving: dict[str, asyncio.Lock] = field(default_factory=dict)
@@ -97,6 +99,10 @@ class AppContext:
             from .db.repositories import SolutionRepository
 
             self.solutions = SolutionRepository(self.db)
+        if self.conditions is None:
+            from .db.repositories import ConditionRepository
+
+            self.conditions = ConditionRepository(self.db)
         if self.textbooks is None:
             from .solver.textbooks import Library
 

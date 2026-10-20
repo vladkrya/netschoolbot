@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import re
 from dataclasses import dataclass, field
 
 from .refs import Refs, parse
@@ -25,6 +26,7 @@ RULES = """\
 - Если дан ответ из конца учебника — сверься с ним до того, как писать. Не сошлось — почти всегда это ты неверно прочитал условие, а не опечатка в учебнике. Самые частые ошибки чтения: «=» вместо «−» и наоборот (соседние пункты устроены по-разному — не переноси схему одного пункта на другой), «+» и «−», показатель степени, где кончается дробь. Перебери такие прочтения, найди то, при котором ответ учебника подходит, и сверь его с картинкой знак за знаком. Подошло — решай его. Только если ни одно прочтение не подходит — дай своё решение и одной строкой отметь расхождение с учебником.
 - Сначала реши всё начерно внутри {draft_open}…{draft_close}: перепиши условие с картинки, реши, подставь ответ в исходное уравнение и сверься с учебником. Черновик ученик не увидит. После {draft_close} — только чистовик, как в тетрадь: без проверок наугад, сомнений и «перепроверю».
 - Условие со скана переписывай внимательно: оно может отличаться от распознанного текста — верь картинке.
+- Каждый номер, данный картинкой, в начале черновика перепиши целиком — со всеми пунктами, а не только заданными, — между {cond_open}N> и {cond_close}, например {cond_open}291>…{cond_close}. Формулы — в LaTeX. Этот текст сохранится и в следующий раз заменит картинку, поэтому без сокращений и пояснений.
 
 Как оформлять:
 - Алгебра: преобразования по шагам, каждый шаг с новой строки. Дробно-рациональные уравнения — сначала ОДЗ, в конце проверка корней по ОДЗ. Неравенства — с промежутками. Строка «**Ответ:** …» в конце каждого пункта.
@@ -71,10 +73,23 @@ def cache_key(host: str, task: Task, library_version: str, model: str) -> str:
 MAX_IMAGE_BYTES = 200_000
 
 DRAFT_OPEN, DRAFT_CLOSE = "<черновик>", "</черновик>"
+# Условие номера, прочитанное с картинки: «<условие №291>…</условие>».
+COND_OPEN, COND_CLOSE = "<условие №", "</условие>"
+_CONDITION = re.compile(r"<условие №(\d{1,4})>(.*?)</условие>", re.S)
 
 
 def system_prompt(grade: int | None) -> str:
-    return RULES.format(grade=f"{grade} класса " if grade else "", draft_open=DRAFT_OPEN, draft_close=DRAFT_CLOSE)
+    return RULES.format(grade=f"{grade} класса " if grade else "", draft_open=DRAFT_OPEN, draft_close=DRAFT_CLOSE,
+                        cond_open=COND_OPEN, cond_close=COND_CLOSE)
+
+
+def conditions(draft: str) -> dict[int, str]:
+    """Условия, которые модель переписала в черновике с картинок."""
+    found = {}
+    for number, text in _CONDITION.findall(draft):
+        if 20 <= len(text := text.strip()) <= 4000:
+            found[int(number)] = text
+    return found
 
 
 class DraftFilter:
@@ -84,6 +99,8 @@ class DraftFilter:
     def __init__(self) -> None:
         self._buffer = ""
         self._state = "start"  # start → draft → clean
+        # Спрятанный черновик: из него берутся прочитанные условия.
+        self.draft = ""
 
     def feed(self, chunk: str) -> str:
         if self._state == "clean":
@@ -102,6 +119,7 @@ class DraftFilter:
         if end < 0:
             return ""
         self._state = "clean"
+        self.draft = self._buffer[:end]
         out = self._buffer[end + len(DRAFT_CLOSE):].lstrip("\n")
         self._buffer = ""
         return out
@@ -142,9 +160,15 @@ def _shrink(image: bytes, side: int = 1100) -> bytes:
     return out.getvalue()
 
 
-def user_content(task: Task, books: list[tuple[Book, Found]], files: list[tuple[str, str]]) -> list[dict]:
+def user_content(task: Task, books: list[tuple[Book, Found]], files: list[tuple[str, str]],
+                 known: dict[tuple[str, int], str] | None = None,
+                 imaged: list[tuple[str, int]] | None = None) -> list[dict]:
     """Задание и материалы блоками Anthropic Messages: страницы учебника
-    текстом, а у сканов страницы с условиями — картинкой."""
+    текстом, а у сканов страницы с условиями — картинкой.
+
+    known — условия, уже прочитанные раньше: такой номер уходит текстом, без
+    картинки. В imaged дописываются номера, отправленные картинкой."""
+    known = known or {}
     blocks: list[dict] = []
     parts = [f"Предмет: {task.subject}", f"Срок: {task.due}"]
     if task.topic:
@@ -168,13 +192,23 @@ def user_content(task: Task, books: list[tuple[Book, Found]], files: list[tuple[
             parts.append(f"(Параграф подобран по теме урока: в книге это «{found.section}». "
                          "Номер в задании — нумерация учителя, задан именно он.)")
         for index in found.pages:
-            pictures = _pictures(book, index, found.exercises.get(index, [])) if book.images else []
+            numbers = found.exercises.get(index, [])
+            remembered = sorted({n for n, _ in numbers if (book.id, n) in known})
+            for number in remembered:
+                parts.append(f"--- №{number}, стр. {book.printed(index)} (условие, прочитано с картинки раньше) ---\n"
+                             f"{known[(book.id, number)]}")
+            numbers = [(n, c) for n, c in numbers if (book.id, n) not in known]
+            if remembered and not numbers:
+                continue  # всё нужное на этой странице уже есть текстом
+            pictures = _pictures(book, index, numbers) if book.images else []
             size = sum(len(picture) for _, picture in pictures)
             if size > budget:
                 pictures = []
             else:
                 budget -= size
             if pictures:
+                if imaged is not None:
+                    imaged.extend((book.id, n) for n, continued in numbers if not continued)
                 for caption, picture in pictures:
                     parts.append(f"--- {caption} (картинка ниже) ---")
                     flush()
