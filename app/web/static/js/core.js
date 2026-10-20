@@ -228,22 +228,49 @@ export const isOffline = () => offline;
 
 const offlineTitle = () => (navigator.onLine === false ? 'Нет интернета' : 'Нет связи с сервером');
 
-// Плашка — кружок справа над панелью, как у решения в фоне. Раскрывается на
-// три секунды: когда сеть пропала, по касанию и когда изменение встало в очередь.
+// Плашка — кружок справа над панелью, как у решения в фоне (и на месте
+// кнопки помощника: без сети она прячется). Раскрывается на три секунды:
+// когда сеть пропала и по касанию — с заголовком; когда изменение встало
+// в очередь — одной строкой «1 изменение ждёт сети».
 const PILL_OPEN_MS = 3000;
 let pillTimer = 0;
 
-function openOfflinePill() {
+// Ширина плашки — по тексту, а не max-width с запасом: иначе закрытие
+// сначала «съедало» пустой запас и только потом заметно сжималось.
+function fitOfflinePill(pill) {
+  if (!pill.classList.contains('open')) { pill.style.width = ''; return; }
+  const lines = [...pill.querySelectorAll('.net-pill-text > *')].filter((line) => line.offsetParent);
+  const text = Math.max(0, ...lines.map((line) => line.scrollWidth));
+  const limit = Math.min(300, window.innerWidth - 92);
+  pill.style.width = `${Math.min(limit, 6 + 40 + 8 + text + 18)}px`;
+}
+
+function openOfflinePill(brief = false) {
   const pill = $('netPill');
   if (!pill) return;
+  // Уже раскрыта полностью — касание не сворачивает её до одной строки.
+  pill.classList.toggle('brief', brief && !(pill.classList.contains('open') && !pill.classList.contains('brief')));
   pill.classList.add('open');
+  fitOfflinePill(pill);
   clearTimeout(pillTimer);
-  pillTimer = setTimeout(() => pill.classList.remove('open'), PILL_OPEN_MS);
+  pillTimer = setTimeout(() => {
+    pill.classList.remove('open');
+    pill.style.width = '';
+  }, PILL_OPEN_MS);
 }
 
 function paintOfflinePill() {
   let pill = $('netPill');
-  if (!offline) { pill?.remove(); clearTimeout(pillTimer); return; }
+  if (!offline) {
+    clearTimeout(pillTimer);
+    if (pill) {
+      // Сеть вернулась — плашка тает, а не пропадает рывком.
+      pill.removeAttribute('id');
+      pill.classList.add('leaving');
+      setTimeout(() => pill.remove(), 300);
+    }
+    return;
+  }
   const fresh = !pill;
   if (fresh) {
     pill = document.createElement('button');
@@ -251,7 +278,11 @@ function paintOfflinePill() {
     pill.type = 'button';
     pill.className = 'net-pill';
     pill.setAttribute('role', 'status');
-    pill.addEventListener('click', openOfflinePill);
+    pill.addEventListener('click', () => openOfflinePill());
+    // Одна строка остаётся до конца сворачивания: иначе текст прыгал.
+    pill.addEventListener('transitionend', (event) => {
+      if (event.propertyName === 'width' && !pill.classList.contains('open')) pill.classList.remove('brief');
+    });
     document.body.append(pill);
   }
   const waiting = outboxCount
@@ -262,6 +293,7 @@ function paintOfflinePill() {
     + `<span class="net-pill-text"><b>${offlineTitle()}</b><small>${waiting}</small></span>`
     + (outboxCount ? `<span class="net-pill-count">${outboxCount}</span>` : '');
   if (fresh) openOfflinePill();
+  else fitOfflinePill(pill);
 }
 
 export function setOffline(value) {
@@ -317,7 +349,7 @@ if (!demo) {
     const more = detail.count > outboxCount;
     outboxCount = detail.count;
     paintOfflinePill();
-    if (more) openOfflinePill();
+    if (more) openOfflinePill(true);
   });
   if (offline) {
     if (document.body) paintOfflinePill();
