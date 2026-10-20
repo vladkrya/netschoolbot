@@ -183,6 +183,32 @@ class TestPages:
         # Без VPN telegram.org заблокирован, а скрипт в head держит отрисовку.
         assert "src=\"https://telegram.org" not in text
 
+    async def test_guest_index_is_ready_for_search(self, client):
+        response = await client.get(f"{BASE}/")
+        text = await response.text()
+        assert "X-Robots-Tag" not in response.headers
+        assert '<link rel="canonical" href="https://example.ru/mini/">' in text
+        assert '<meta name="description"' in text
+
+    async def test_index_with_token_is_hidden_from_search(self, client, token):
+        response = await client.get(f"{BASE}/", params={"token": token})
+        text = await response.text()
+        assert response.headers["X-Robots-Tag"] == "noindex"
+        # У вошедших прежний заголовок: от него зависит имя иконки на iOS.
+        assert "canonical" not in text
+
+    async def test_robots_lets_in_only_public_pages(self, client):
+        response = await client.get("/robots.txt")
+        text = await response.text()
+        assert "Allow: /mini/$" in text
+        assert "Disallow: /" in text
+        assert "Sitemap: https://example.ru/sitemap.xml" in text
+
+    async def test_sitemap_lists_main_page(self, client):
+        response = await client.get("/sitemap.xml")
+        assert response.content_type == "application/xml"
+        assert "<loc>https://example.ru/mini/</loc>" in await response.text()
+
     async def test_index_with_token_renders_app(self, client, token):
         response = await client.get(f"{BASE}/", params={"token": token})
         assert response.status == 200

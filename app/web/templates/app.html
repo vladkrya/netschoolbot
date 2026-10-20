@@ -58,7 +58,21 @@
   @keyframes boot-spin { to { transform: rotate(360deg); } }
   @media (prefers-reduced-motion: reduce) { .boot-spinner { animation: none; } }
 </style>
+{% if site_url and not token %}
+<!-- Для поиска и превью ссылок — только гостевая главная. У вошедших
+     заголовок прежний: по нему старые iOS называли иконку на экране «Домой». -->
+<title>Сетевой город — электронный дневник в Telegram</title>
+<meta name="description" content="Оценки, домашние задания и расписание из «Сетевого города» в одном удобном приложении. Работает в Telegram, в браузере и на домашнем экране телефона.">
+<link rel="canonical" href="{{ site_url }}">
+<meta property="og:type" content="website">
+<meta property="og:url" content="{{ site_url }}">
+<meta property="og:title" content="Сетевой город — удобно и быстро">
+<meta property="og:description" content="Оценки, домашние задания и расписание из электронного дневника в одном приложении.">
+<meta property="og:image" content="{{ site_url }}static/icon-512.png">
+<meta property="og:locale" content="ru_RU">
+{% else %}
 <title>{{ school or "Дневник" }}</title>
+{% endif %}
 {% if not demo %}<link rel="manifest" href="{{ base }}/manifest.webmanifest?token={{ token }}">{% endif %}
 <link rel="icon" type="image/png" href="{{ base }}/static/icon-192.png">
 <!-- PNG, а не SVG: iOS не берёт SVG для иконки на домашнем экране и

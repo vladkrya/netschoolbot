@@ -162,6 +162,8 @@ def create_app(context: AppContext, bot=None) -> web.Application:
         inner.middlewares.insert(0, _legacy_prefix_middleware)
         inner.router.add_route("*", "/.well-known/caldav", caldav.discovery)
         inner.router.add_get("/health", health)
+        inner.router.add_get("/robots.txt", robots)
+        inner.router.add_get("/sitemap.xml", sitemap)
         return inner
 
     outer = web.Application(middlewares=[caldav.root_discovery, _make_redirect_middleware(prefix)])
@@ -172,6 +174,8 @@ def create_app(context: AppContext, bot=None) -> web.Application:
     # которым незачем знать про префикс приложения.
     outer.router.add_route("*", "/.well-known/caldav", caldav.discovery)
     outer.router.add_get("/health", health)
+    outer.router.add_get("/robots.txt", robots)
+    outer.router.add_get("/sitemap.xml", sitemap)
     return outer
 
 
@@ -248,6 +252,48 @@ async def health(request: web.Request) -> web.Response:
             "sessions": len(context.pool._entries),
         }
     )
+
+
+def _site_url(request: web.Request) -> str:
+    """Главная страница на основном домене — её и показываем поисковикам.
+
+    Зеркала (netschool, ns2, yavds) отдают ту же страницу, и без явного
+    адреса поиск счёл бы их дублями или выбрал бы любое из них.
+    """
+    return f"{request.app[CONTEXT].settings.web.miniapp_url}/"
+
+
+async def robots(request: web.Request) -> web.Response:
+    """В поиск попадают только главная и демо.
+
+    Остальное — личные страницы и API; адреса с токеном (`/?token=…`)
+    правило `/$` не пропускает. Статику и настройки входа поисковик
+    должен получить: лендинг рисует скрипт.
+    """
+    base = _base(request)
+    lines = [
+        "User-agent: *",
+        f"Allow: {base}/$",
+        f"Allow: {base}/demo$",
+        f"Allow: {base}/static/",
+        f"Allow: {base}/api/account/config$",
+        "Disallow: /",
+        "",
+        f"Sitemap: {request.app[CONTEXT].settings.web.public_url}/sitemap.xml",
+    ]
+    return web.Response(text="\n".join(lines) + "\n")
+
+
+async def sitemap(request: web.Request) -> web.Response:
+    url = _site_url(request)
+    body = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+        f"  <url><loc>{url}</loc></url>\n"
+        f"  <url><loc>{url}demo</loc></url>\n"
+        "</urlset>\n"
+    )
+    return web.Response(text=body, content_type="application/xml")
 
 
 def _base(request: web.Request) -> str:
@@ -335,8 +381,13 @@ async def index(request: web.Request) -> web.Response:
             "push_enabled": context.settings.push.configured,
             "assistant": context.settings.assistant.enabled,
             "attachment_hosts": context.settings.web.attachment_hosts,
+            "site_url": _site_url(request),
         },
     )
+    # В поиск — только чистая главная: адрес с токеном или кодом входа
+    # (а его могли где-то опубликовать) не индексируется.
+    if token or request.query_string:
+        response.headers["X-Robots-Tag"] = "noindex"
     if not token and request.cookies.get("netschool_token"):
         response.del_cookie("netschool_token")
     if token:
