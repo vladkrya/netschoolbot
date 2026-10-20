@@ -26,6 +26,7 @@ const tetris = await import(new URL('tetris.js', games));
 const snake = await import(new URL('snake.js', games));
 const solitaire = await import(new URL('solitaire.js', games));
 const slots = await import(new URL('slots.js', games));
+const poker = await import(new URL('poker.js', games));
 
 const c = (r, s) => ({ r, s });
 
@@ -182,6 +183,62 @@ test('пасьянс: ходов нет — только когда и коло�
   assert.deepEqual(solitaire.reachable(stuck, 3, 0).map((card) => card.r), [1, 3]);
   assert.equal(solitaire.hasMoves(stuck, 3, 0), true);
   assert.equal(deal.pass, 1);
+});
+
+test('покер: старшинство комбинаций', () => {
+  const hand = (...cards) => poker.evaluate(cards.map(([r, s]) => c(r, s)));
+  const royal = hand([14, '♠'], [13, '♠'], [12, '♠'], [11, '♠'], [10, '♠'], [2, '♥'], [3, '♦']);
+  const wheel = hand([14, '♠'], [2, '♥'], [3, '♦'], [4, '♣'], [5, '♠'], [9, '♥'], [12, '♦']);
+  const six = hand([2, '♥'], [3, '♦'], [4, '♣'], [5, '♠'], [6, '♠'], [9, '♥'], [12, '♦']);
+  const full = hand([9, '♠'], [9, '♥'], [9, '♦'], [4, '♠'], [4, '♦'], [4, '♣'], [2, '♥']);
+  const flush = hand([2, '♥'], [7, '♥'], [9, '♥'], [11, '♥'], [13, '♥'], [13, '♠'], [13, '♦']);
+  assert.equal(royal.cat, 8);
+  assert.equal(wheel.cat, 4);
+  assert.ok(six.score > wheel.score, 'стрит до шестёрки старше колеса');
+  assert.equal(full.cat, 6, 'два сета — это фулл-хаус');
+  assert.ok(full.score > flush.score);
+  assert.equal(poker.handName([c(14, '♠'), c(13, '♠'), c(12, '♠'), c(11, '♠'), c(10, '♠')]), 'Роял-флеш');
+  // Кикер решает: пара тузов с королём сильнее пары тузов с дамой.
+  assert.ok(hand([14, '♠'], [14, '♥'], [13, '♦'], [7, '♣'], [3, '♠']).score > hand([14, '♦'], [14, '♣'], [12, '♦'], [7, '♥'], [3, '♥']).score);
+});
+
+test('покер: побочный банк при ва-банке', () => {
+  const t = poker.createTable(['А', 'Б', 'В'], [100, 300, 300]);
+  t.dealer = 2;
+  t.players.forEach((p) => Object.assign(p, { hand: [], bet: 0, folded: false, allIn: false, out: false }));
+  // А (100, ва-банк) — лучшая рука, Б — вторая, В — худшая; Б и В поставили по 300.
+  t.players[0].total = 100;
+  t.players[1].total = 300;
+  t.players[2].total = 300;
+  t.players.forEach((p) => { p.stack = 0; });
+  t.board = [c(2, '♠'), c(7, '♥'), c(9, '♦'), c(12, '♣'), c(4, '♠')];
+  t.players[0].hand = [c(14, '♠'), c(14, '♥')];
+  t.players[1].hand = [c(13, '♠'), c(13, '♥')];
+  t.players[2].hand = [c(3, '♦'), c(5, '♣')];
+  poker.settle(t);
+  assert.deepEqual(t.players.map((p) => p.stack), [300, 400, 0], 'А берёт основной банк 3×100, Б — побочный 2×200');
+});
+
+test('покер: боты всех уровней доигрывают раздачи, фишки не теряются', () => {
+  const levels = Object.keys(poker.LEVELS);
+  for (let round = 0; round < 9; round += 1) {
+    const n = 2 + (round % 3);
+    const t = poker.createTable(Array.from({ length: n }, (_, i) => `P${i}`), Array(n).fill(500));
+    for (let hand = 0; hand < 15; hand += 1) {
+      t.players.forEach((p) => { if (p.stack <= 0) p.stack = 500; });
+      const before = t.players.reduce((sum, p) => sum + p.stack, 0);
+      poker.newHand(t);
+      let steps = 0;
+      while (t.street !== 'showdown') {
+        steps += 1;
+        assert.ok(steps < 200, 'раздача зациклилась');
+        const level = levels[(t.toAct + round) % levels.length];
+        assert.ok(poker.act(t, poker.botAct(t, level, 20)), 'бот сделал недопустимый ход');
+      }
+      poker.settle(t);
+      assert.equal(t.players.reduce((sum, p) => sum + p.stack, 0), before);
+    }
+  }
 });
 
 test('слоты: автомат в среднем забирает фишки', () => {
