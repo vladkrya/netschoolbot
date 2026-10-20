@@ -402,9 +402,9 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
   transition: opacity .2s ease; }
 .net-pill.open .net-pill-count { opacity: 0; }
 @media (prefers-reduced-motion: reduce) { .net-pill, .net-pill-text { animation: none; transition: none; } }
-/* Без сети помощник не работает, а его кнопка стоит там же, где плашка, —
-   плашка встаёт вместо неё. */
-:root.offline[data-design] .ai-fab:not([hidden]) { display: none; }
+/* Без сети ни помощник, ни новое письмо не работают, а их кнопки стоят там же,
+   где плашка, — плашка встаёт вместо них. */
+:root.offline[data-design] :is(.ai-fab, #composeBtn):not([hidden]) { display: none; }
 /* Запас снизу под плашку: иначе она закрывала конец списка и кнопки внизу экрана. */
 html.offline body, html.offline .screen { padding-bottom: calc(var(--nav-h) + 68px); }
 /* То, что без сети не работает, бледнеет; касание объясняет почему.
