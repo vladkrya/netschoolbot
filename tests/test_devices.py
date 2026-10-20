@@ -289,3 +289,56 @@ def test_ws_ticket_carries_device():
     assert verify_ws_ticket(app, forged, now=120) is None
     plain = issue_ws_ticket(app, 7, now=100)
     assert verify_ws_ticket(app, plain, now=120) == 7 and ws_ticket_device(plain) == ""
+
+
+async def test_login_method_model_and_ip_are_shown(client, token, app_context):
+    phone = await app_context.miniapp.issue_token(1, device=True, method="telegram")
+    response = await client.get(f"{BASE}/api/devices", headers={
+        "X-Netschool-Token": phone, "X-Real-IP": "95.24.10.20",
+        "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 Version/18.1 Mobile/15E148 Safari/604.1"})
+    me = next(item for item in (await response.json())["data"]["items"] if item["current"])
+    assert me["method"] == "telegram" and me["ip"] == "95.24.*.*"
+    assert me["label"] == "Safari на iPhone" and me["details"] == "iOS 18.1"
+    # Иконка на экране «Домой» берёт свой токен, а способ входа — от Safari.
+    status, body = await post(client, phone, "/api/devices/own")
+    assert await app_context.miniapp.token_method(body["data"]["token"]) == "telegram"
+
+
+async def test_email_login_records_method(client, app_context):
+    from tests.test_accounts import register
+    _, body, _ = await register(client)
+    assert await app_context.miniapp.token_method(body["data"]["token"]) == "register"
+
+
+async def test_inactive_sessions_end_by_choice(client, token, app_context):
+    import time
+
+    phone = await app_context.miniapp.issue_token(1, device=True)
+    old = await app_context.miniapp.issue_token(1, device=True)
+    calendar = await app_context.miniapp.issue_calendar_token(1)
+    long_ago = time.time() - 40 * 86400
+    await app_context.db.execute("UPDATE miniapp_tokens SET last_used = ? WHERE token IN (?, ?)",
+                                 (long_ago, old, calendar))
+    listed = await (await client.get(f"{BASE}/api/devices", headers={"X-Netschool-Token": phone})).json()
+    assert listed["data"]["inactive_days"] == 0 and await app_context.miniapp.resolve_token(old) == 1
+
+    assert (await post(client, phone, "/api/devices/auto-end", {"days": 5}))[0] == 400
+    assert (await post(client, phone, "/api/devices/auto-end", {"days": True}))[0] == 400
+    status, body = await post(client, phone, "/api/devices/auto-end", {"days": 30})
+    assert status == 200 and body["data"]["inactive_days"] == 30
+    # Сеанс без активности 40 дней завершён; этот, свежая ссылка из бота и
+    # календарь (он не завершается) — нет.
+    assert await app_context.miniapp.resolve_token(old) is None
+    assert await app_context.miniapp.resolve_token(phone) == 1
+    assert await app_context.miniapp.resolve_token(token) == 1
+    assert await app_context.miniapp.resolve_calendar_token(calendar) == 1
+
+    # Часовая уборка на всех — через месяц без активности уходит и этот, а у
+    # того, кто срок не выбирал, ничего не трогается.
+    from tests.test_repositories import make_user
+    await app_context.users.save(make_user(2))
+    stranger = await app_context.miniapp.issue_token(2, device=True)
+    ended = await app_context.miniapp.end_inactive_sessions(now=time.time() + 31 * 86400)
+    assert ended == 2 and await app_context.miniapp.resolve_token(phone) is None
+    assert await app_context.miniapp.resolve_token(stranger) == 2
+    assert await app_context.miniapp.resolve_calendar_token(calendar) == 1

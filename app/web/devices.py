@@ -94,7 +94,8 @@ def build(rows: list[dict], current: str, in_telegram: bool, clients: list[dict]
         if row["device"] and row["scope"] == "":
             items.append({
                 "id": fingerprint(row["token"]), "kind": "device", "label": row["label"] or "Браузер",
-                "name": row.get("name") or "",
+                "name": row.get("name") or "", "method": row.get("method") or "",
+                "details": row.get("model") or "", "ip": row.get("ip") or "",
                 "current": row["token"] == current, "created": _when(row["created_at"]),
                 "last_used": _when(row["last_used"]),
             })
@@ -114,14 +115,45 @@ def build(rows: list[dict], current: str, in_telegram: bool, clients: list[dict]
     return items
 
 
+# «Завершать, если сеанс неактивен»: как в Telegram. 0 — никогда.
+INACTIVE_CHOICES = (0, 7, 30, 90, 180, 365)
+INACTIVE_PREF = "devicesInactiveDays"
+
+
+async def _inactive_days(app, telegram_id: int) -> int:
+    value = (await app.miniapp.prefs(telegram_id)).get(INACTIVE_PREF, 0)
+    return value if value in INACTIVE_CHOICES else 0
+
+
 @routes.get("/api/devices")
 async def devices(request: web.Request) -> web.Response:
     app, user = context(request), current_user(request)
+    # Уборка идёт раз в час на всех; здесь — сразу, чтобы список был честным.
+    await app.miniapp.end_inactive_sessions(user.telegram_id)
     rows = await app.miniapp.sessions(user.telegram_id)
     clients = await app.miniapp.link_clients(user.telegram_id)
     in_telegram = bool(request.get("verified_telegram"))
     return web.json_response({"ok": True, "data": {
-        "items": build(rows, "" if in_telegram else request_token(request), in_telegram, clients)}})
+        "items": build(rows, "" if in_telegram else request_token(request), in_telegram, clients),
+        "inactive_days": await _inactive_days(app, user.telegram_id),
+    }})
+
+
+@routes.post("/api/devices/auto-end")
+async def auto_end(request: web.Request) -> web.Response:
+    """Завершать сеансы, неактивные дольше N дней (0 — не завершать)."""
+    app, user = context(request), current_user(request)
+    try:
+        body = await request.json()
+    except ValueError:
+        body = {}
+    days = body.get("days") if isinstance(body, dict) else None
+    if days not in INACTIVE_CHOICES or isinstance(days, bool):
+        return json_error("Некорректный срок")
+    await app.miniapp.save_prefs(user.telegram_id, {INACTIVE_PREF: days})
+    from .sync import publish
+    await publish(app, user.telegram_id, "devices")
+    return await devices(request)
 
 
 @routes.post("/api/devices/revoke")
@@ -189,7 +221,9 @@ async def own_token(request: web.Request) -> web.Response:
     current = "" if request.get("verified_telegram") else request_token(request)
     if not current or not await app.miniapp.is_device_token(current):
         return web.json_response({"ok": True, "data": {"token": ""}})
-    token = await app.miniapp.issue_token(user.telegram_id, device=True)
+    # Иконка — то же устройство, что и Safari: способ входа тот же.
+    method = await app.miniapp.token_method(current)
+    token = await app.miniapp.issue_token(user.telegram_id, device=True, method=method or "icon")
     response = web.json_response({"ok": True, "data": {"token": token}})
     response.set_cookie("netschool_token", token, max_age=365 * 24 * 3600, httponly=True, samesite="Lax",
                         secure=request.url.scheme == "https")

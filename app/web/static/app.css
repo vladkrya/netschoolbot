@@ -2571,6 +2571,12 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
 .device-end { align-self: flex-start; width: auto; margin-top: 4px; padding: 8px 14px; }
 .device-end-all { width: 100%; margin-top: 4px; }
 .device-note { margin: 12px 4px; }
+.device-intro { margin-top: 0; }
+.device-group { margin: 18px 4px 8px; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--text2); }
+.device-auto { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+.device-auto-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; }
+.device-auto-row select { width: auto; min-width: 140px; margin: 0; }
+.device-auto p { margin: 0; }
 .device-detail { margin: 0; font-size: 14px; }
 .device-rename { font-size: 13px; }
 .device-row.editing .device-title { flex: 1; min-width: 0; }

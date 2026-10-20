@@ -284,7 +284,7 @@ async def index(request: web.Request) -> web.Response:
     if (icon := request.query.get("icon")) and (telegram_id := await context.miniapp.use_icon_code(icon)):
         # #own — токен уже свой, заводить его заново незачем (boot.js, ownToken).
         response = web.HTTPFound(f"{_base(request)}/#own")
-        _set_token_cookie(request, response, await context.miniapp.issue_token(telegram_id, device=True))
+        _set_token_cookie(request, response, await context.miniapp.issue_token(telegram_id, device=True, method="icon"))
         raise response
     # Ссылка установки прежнего /app_install (новых не выдаём, старые живут
     # до суток): адрес с кодом не меняем — из
@@ -296,7 +296,7 @@ async def index(request: web.Request) -> web.Response:
         if current == telegram_id and await context.miniapp.is_device_token(request.cookies["netschool_token"]):
             entered = request.cookies["netschool_token"]  # обновили страницу — токен уже есть
         else:
-            entered = await context.miniapp.issue_token(telegram_id, device=True)
+            entered = await context.miniapp.issue_token(telegram_id, device=True, method="install")
     # Ссылка с экрана «Добавить устройство»: открывается один раз — токен
     # уходит в cookie, а адрес сразу чистый. Погасший код в адресе (обновили
     # страницу, добавили на экран «Домой») больше нигде не остаётся.
@@ -509,6 +509,12 @@ async def start_web(context: AppContext, bot=None) -> None:
     )
     try:
         while True:
+            # «Завершать неактивные сеансы» (экран «Устройства»): раз в час.
+            try:
+                if ended := await context.miniapp.end_inactive_sessions():
+                    logger.info("Завершено неактивных сеансов: %s", ended)
+            except Exception:
+                logger.exception("Не удалось завершить неактивные сеансы")
             await asyncio.sleep(3600)
     finally:
         await runner.cleanup()
