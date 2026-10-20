@@ -1156,7 +1156,9 @@ class MiniappRepository:
         self._db = db
         self._login_code_ttl = login_code_ttl
 
-    async def issue_token(self, telegram_id: int, *, revoke_existing: bool = False, device: bool = False) -> str:
+    async def issue_token(
+        self, telegram_id: int, *, revoke_existing: bool = False, device: bool = False, method: str = "",
+    ) -> str:
         """Выдать (или переиспользовать) постоянный токен доступа к PWA.
 
         device=True — новый токен для входа на одном устройстве: его
@@ -1175,10 +1177,36 @@ class MiniappRepository:
 
         token = secrets.token_urlsafe(32)
         await self._db.execute(
-            "INSERT INTO miniapp_tokens (token, telegram_id, device) VALUES (?,?,?)",
-            (token, telegram_id, int(device)),
+            "INSERT INTO miniapp_tokens (token, telegram_id, device, method) VALUES (?,?,?,?)",
+            (token, telegram_id, int(device), method),
         )
         return token
+
+    async def token_method(self, token: str) -> str:
+        row = await self._db.fetch_one("SELECT method FROM miniapp_tokens WHERE token = ?", (token,))
+        return row["method"] if row else ""
+
+    async def end_inactive_sessions(self, telegram_id: int | None = None, now: float | None = None) -> int:
+        """Завершить сеансы, где давно не открывали дневник, — у тех, кто
+        включил это в «Устройствах» (web_prefs.devicesInactiveDays).
+
+        Только устройства и ссылки из бота: Telegram не токен, а календарь
+        открывает одно расписание и опрашивается сам. Отсчёт — от последней
+        активности, а если её не было — от входа."""
+        now = time.time() if now is None else now
+        where = "AND t.telegram_id = ?" if telegram_id is not None else ""
+        async with self._db.transaction() as db:
+            cursor = await db.execute(
+                f"""UPDATE miniapp_tokens AS t SET revoked_at = datetime('now')
+                    FROM web_prefs AS p
+                    WHERE p.telegram_id = t.telegram_id AND t.revoked_at IS NULL AND t.scope = ''
+                      AND CAST(json_extract(p.payload, '$.devicesInactiveDays') AS INTEGER) > 0
+                      AND COALESCE(t.last_used, CAST(strftime('%s', t.created_at) AS REAL))
+                          < ? - CAST(json_extract(p.payload, '$.devicesInactiveDays') AS INTEGER) * 86400
+                      {where}""",
+                (now, telegram_id) if telegram_id is not None else (now,),
+            )
+            return cursor.rowcount
 
     async def revoke_device_token(self, token: str) -> bool:
         """Выход на одном устройстве: отозвать его токен, если он «устройственный»."""
@@ -1263,9 +1291,9 @@ class MiniappRepository:
         now = time.time()
         async with self._db.transaction() as db:
             await db.execute(
-                """UPDATE miniapp_tokens SET last_used = ?, label = ?
+                """UPDATE miniapp_tokens SET last_used = ?, label = ?, model = ?, ip = ?
                    WHERE token = ? AND revoked_at IS NULL""",
-                (now, label, token),
+                (now, label, model, ip, token),
             )
             cursor = await db.execute(
                 "SELECT telegram_id, device, scope FROM miniapp_tokens WHERE token = ? AND revoked_at IS NULL",
@@ -1323,7 +1351,7 @@ class MiniappRepository:
     async def sessions(self, telegram_id: int) -> list[dict]:
         """Действующие токены пользователя — для экрана «Устройства»."""
         rows = await self._db.fetch_all(
-            """SELECT token, device, scope, label, name, created_at, last_used FROM miniapp_tokens
+            """SELECT token, device, scope, label, name, method, model, ip, created_at, last_used FROM miniapp_tokens
                WHERE telegram_id = ? AND revoked_at IS NULL ORDER BY created_at""",
             (telegram_id,),
         )
@@ -1389,7 +1417,7 @@ class MiniappRepository:
                 return None
             cursor = await db.execute("SELECT telegram_id FROM install_codes WHERE code = ?", (code,))
             telegram_id = int((await cursor.fetchone())[0])
-        token = await self.issue_token(telegram_id, device=True)
+        token = await self.issue_token(telegram_id, device=True, method="device-link")
         await self._db.execute("UPDATE install_codes SET token = ? WHERE code = ?", (token, code))
         return token
 

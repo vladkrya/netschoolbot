@@ -100,10 +100,10 @@ async def _body(request: web.Request) -> dict[str, Any]:
     return body if isinstance(body, dict) else {}
 
 
-async def _signed_in(request: web.Request, telegram_id: int) -> web.Response:
+async def _signed_in(request: web.Request, telegram_id: int, method: str) -> web.Response:
     """Ответ с постоянным токеном в cookie — страница перезагрузится уже с ним."""
     # Свой токен на каждое устройство: «Выйти» отзывает только его.
-    token = await context(request).miniapp.issue_token(telegram_id, device=True)
+    token = await context(request).miniapp.issue_token(telegram_id, device=True, method=method)
     # Новый сеанс — в «Устройствах» на остальных; после сброса пароля
     # отозванные устройства выходят сразу.
     from .sync import publish
@@ -239,7 +239,7 @@ async def tg_oidc_callback(request: web.Request) -> web.Response:
         logger.warning("Вход через Telegram (OIDC) не удался: %s", exc)
         raise _oidc_back(request, "failed")
     await context(request).users.get_or_create(tg_user.id, display_name=tg_user.full_name)
-    signed = await _signed_in(request, tg_user.id)
+    signed = await _signed_in(request, tg_user.id, "telegram")
     response = _oidc_back(request)
     for name, morsel in signed.cookies.items():
         response.cookies[name] = morsel
@@ -267,7 +267,7 @@ async def tg_widget_login(request: web.Request) -> web.Response:
         return json_error("Telegram не подтвердил вход — попробуйте ещё раз", status=401, reason="auth")
     await context(request).users.get_or_create(tg_user.id, display_name=tg_user.full_name)
     logger.info("Вход на сайт через виджет Telegram: %s", tg_user.id)
-    return await _signed_in(request, tg_user.id)
+    return await _signed_in(request, tg_user.id, "telegram-widget")
 
 
 @routes.post("/api/account/tg-login")
@@ -303,7 +303,7 @@ async def tg_login_status(request: web.Request) -> web.Response:
     if item is None:
         return web.json_response({"ok": True, "data": {"status": "expired"}})
     logger.info("Вход на сайт через бота: %s", item.telegram_id)
-    return await _signed_in(request, item.telegram_id)
+    return await _signed_in(request, item.telegram_id, "bot")
 
 
 @routes.post("/api/account/register")
@@ -325,7 +325,7 @@ async def register(request: web.Request) -> web.Response:
     REGISTRATIONS.hit(ip)
     await _send_verification(request, email)
     logger.info("Новый аккаунт без Telegram: %s", telegram_id)
-    return await _signed_in(request, telegram_id)
+    return await _signed_in(request, telegram_id, "register")
 
 
 @routes.post("/api/account/login")
@@ -342,7 +342,7 @@ async def login(request: web.Request) -> web.Response:
         IP_FAILURES.hit(ip)
         return json_error("Неверная почта или пароль", status=401, reason="account")
     LOGIN_FAILURES.reset(email)
-    return await _signed_in(request, account["telegram_id"])
+    return await _signed_in(request, account["telegram_id"], "email")
 
 
 @routes.post("/api/account/reset/request")
@@ -390,7 +390,7 @@ async def reset_confirm(request: web.Request) -> web.Response:
     # ссылки и входы на других устройствах перестают работать.
     await app.miniapp.revoke_tokens(account["telegram_id"])
     LOGIN_FAILURES.reset(email)
-    return await _signed_in(request, account["telegram_id"])
+    return await _signed_in(request, account["telegram_id"], "reset")
 
 
 async def _mail(request: web.Request, email: str, subject: str, text: str, html_body: str | None = None) -> bool:

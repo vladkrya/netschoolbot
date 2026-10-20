@@ -796,6 +796,13 @@ MIGRATIONS: list[str] = [
     );
     CREATE INDEX idx_homework_solutions_created ON homework_solutions(created_at);
     """,
+    # «Устройства»: каким способом вошли (почта, бот, Telegram, ссылка…),
+    # и модель с примерным адресом не только у общих ссылок, но и у устройств.
+    """
+    ALTER TABLE miniapp_tokens ADD COLUMN method TEXT NOT NULL DEFAULT '';
+    ALTER TABLE miniapp_tokens ADD COLUMN model TEXT NOT NULL DEFAULT '';
+    ALTER TABLE miniapp_tokens ADD COLUMN ip TEXT NOT NULL DEFAULT '';
+    """,
 ]
 
 

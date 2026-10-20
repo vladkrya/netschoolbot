@@ -20,13 +20,31 @@ function when(seconds) {
 
 const ICON = { telegram: 'send', device: 'install', links: 'share', calendar: 'calendar' };
 
+// Как вошли на устройство (miniapp_tokens.method, app/web/account.py и др.).
+const METHODS = {
+  telegram: 'через Telegram',
+  'telegram-widget': 'через Telegram',
+  bot: 'через Telegram-бота',
+  email: 'по почте и паролю',
+  register: 'при регистрации по почте',
+  reset: 'после сброса пароля по почте',
+  'device-link': 'по ссылке «Добавить устройство»',
+  icon: 'с иконки на экране «Домой»',
+  install: 'по ссылке установки из бота',
+};
+
+// «Завершать, если сеанс неактивен»: дни, как в /api/devices/auto-end.
+const INACTIVE = [[0, 'Никогда'], [7, '1 неделя'], [30, '1 месяц'], [90, '3 месяца'], [180, '6 месяцев'], [365, '1 год']];
+
 function describe(item) {
   if (item.kind === 'telegram') return 'Основной сеанс — мини-приложение в боте. Завершить его нельзя.';
   if (item.kind === 'links') {
     return `Старые ссылки и иконки на экране «Домой», где ключ доступа прямо в адресе${item.count > 1 ? ` (${item.count} ${plural(item.count, 'ключ', 'ключа', 'ключей')})` : ''}. Отличить их друг от друга нельзя — завершаются разом.`;
   }
   if (item.kind === 'calendar') return 'Календарь телефона забирает расписание. Ничего, кроме расписания, по этой ссылке не открыть.';
-  return item.created ? `Вход ${when(item.created)}` : '';
+  if (!METHODS[item.method]) return item.created ? `Вход ${when(item.created)}` : '';
+  const how = `Вход ${METHODS[item.method]}`;
+  return item.created ? `${how} · ${when(item.created)}` : how;
 }
 
 function row(item) {
@@ -42,10 +60,16 @@ function row(item) {
       <span class="device-icon">${ICONS[ICON[item.kind]] || ICONS.install}</span>
       <div class="device-title"><b>${esc(item.name || item.label)}</b>${badge}</div>
     </div>
-    ${item.name ? `<p class="device-detail">${esc(item.label)}</p>` : ''}
+    ${deviceDetail(item)}
     <p class="muted small">${esc(describe(item))} ${rename}</p>
     ${seen}${clients}${action}
   </div>`;
+}
+
+/** «Safari · iPhone» под своей подписью, модель с версией системы и адрес. */
+function deviceDetail(item) {
+  const parts = [item.name ? item.label : '', item.details, item.ip ? `адрес ${item.ip}` : ''].filter(Boolean);
+  return parts.length ? `<p class="device-detail">${esc(parts.join(' · '))}</p>` : '';
 }
 
 function confirmText(item) {
@@ -251,12 +275,44 @@ async function openNewDevice(onConnected) {
 
 export function openDevices() {
   const body = pushScreen('Устройства');
-  const draw = (items) => {
+  let inactiveDays = 0;
+  const draw = (items, days = inactiveDays) => {
+    inactiveDays = days;
     const others = items.some((item) => !item.main && !item.current && item.kind !== 'calendar');
-    body.innerHTML = `<button class="btn device-add" data-add>${ICONS.plus} Добавить устройство</button>
-      ${items.map(row).join('')}
+    // Сначала это устройство, потом остальные по свежести, в конце — особые доступы.
+    const recent = (a, b) => (b.last_used || b.created || 0) - (a.last_used || a.created || 0);
+    const current = items.filter((item) => item.current);
+    const devices = items.filter((item) => !item.current && (item.kind === 'telegram' || item.kind === 'device'))
+      .sort((a, b) => (Number(Boolean(b.main)) - Number(Boolean(a.main))) || recent(a, b));
+    const special = items.filter((item) => !item.current && (item.kind === 'links' || item.kind === 'calendar'));
+    const group = (title, list) => (list.length ? `<h3 class="device-group">${title}</h3>${list.map(row).join('')}` : '');
+    const options = INACTIVE.map(([value, label]) => `<option value="${value}"${value === days ? ' selected' : ''}>${label}</option>`).join('');
+    body.innerHTML = `<p class="muted small device-note device-intro">Здесь все места, где открыт ваш дневник: у каждого видно, как и когда вошли, с какого устройства и откуда.
+        Не узнаёте сеанс — завершите его.</p>
+      <button class="btn device-add" data-add>${ICONS.plus} Добавить устройство</button>
+      ${group('Это устройство', current)}
+      ${group(current.length ? 'Другие устройства' : 'Устройства', devices)}
+      ${group('Другие доступы', special)}
       ${others ? '<button class="btn outline danger device-end-all" data-end-all>Завершить все другие сеансы</button>' : ''}
+      <div class="card device-auto">
+        <label class="device-auto-row"><span><b>Завершать сеанс, если он неактивен</b></span>
+          <select class="field" data-inactive aria-label="Через сколько завершать неактивные сеансы">${options}</select></label>
+        <p class="muted small">Если на устройстве не открывали дневник дольше этого срока, сеанс завершится сам — там понадобится войти заново. Telegram и подписка на календарь не завершаются.</p>
+      </div>
       <p class="muted small device-note">Если ссылка на дневник могла попасть к чужим — завершите лишние сеансы или отправьте боту /app_reset: он отзовёт все ссылки сразу.</p>`;
+    body.querySelector('[data-inactive]').addEventListener('change', async (event) => {
+      const select = event.currentTarget;
+      select.disabled = true;
+      try {
+        const { data } = await post('/api/devices/auto-end', { days: Number(select.value) });
+        draw(data.items, data.inactive_days);
+        notify('success');
+      } catch (error) {
+        select.value = String(inactiveDays);
+        select.disabled = false;
+        banner(error.message, true);
+      }
+    });
     body.querySelectorAll('[data-end]').forEach((button) => button.addEventListener('click', async () => {
       const item = items.find((entry) => entry.id === button.dataset.end);
       if (!item || !window.confirm(confirmText(item))) return;
@@ -304,7 +360,7 @@ export function openDevices() {
     });
   };
   // После входа нового устройства список обновляется, пока он под экраном ссылки.
-  const load = () => api('/api/devices').then(({ data }) => draw(data.items))
+  const load = () => api('/api/devices').then(({ data }) => draw(data.items, data.inactive_days))
     .catch((error) => { body.innerHTML = `<div class="card error-card"><p>${esc(error.message)}</p></div>`; });
   body.innerHTML = '<div class="card"><div class="muted">Загрузка…</div></div>';
   load();
