@@ -1,0 +1,17 @@
+[Unit]
+Description=SOCKS-туннель к Gemini API через vdsde: из России API закрыт
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# Бот читает условия со сканов через Gemini (NETSCHOOL_GEMINI_PROXY=socks5://127.0.0.1:1083).
+# Ключ на vdsde (geminitunnel) пускает только к generativelanguage.googleapis.com:443.
+ExecStart=/usr/bin/ssh -N -i /root/.ssh/gemini_tunnel_ed25519 \
+  -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=3 \
+  -o StrictHostKeyChecking=accept-new -o BatchMode=yes \
+  -D 127.0.0.1:1083 geminitunnel@vdsde.ikrya.ru
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

@@ -100,6 +100,10 @@ install_units() {
   if [ -f deploy/systemd/netschoolbot-smtp-tunnel.service ] && [ -f /root/.ssh/smtp_tunnel_ed25519 ]; then
     install -m 644 deploy/systemd/netschoolbot-smtp-tunnel.service /etc/systemd/system/
   fi
+  # Туннель к Gemini через vdsde — так же, только где есть ключ.
+  if [ -f deploy/systemd/netschoolbot-gemini-tunnel.service ] && [ -f /root/.ssh/gemini_tunnel_ed25519 ]; then
+    install -m 644 deploy/systemd/netschoolbot-gemini-tunnel.service /etc/systemd/system/
+  fi
   if [ -f deploy/systemd/netschoolbot-autodeploy.timer ]; then
     install -m 644 deploy/systemd/netschoolbot-autodeploy.service deploy/systemd/netschoolbot-autodeploy.timer /etc/systemd/system/
   fi
@@ -210,6 +214,9 @@ systemctl enable --now netschoolbot-health.timer >/dev/null 2>&1 || true
 systemctl enable --now netschoolbot-autodeploy.timer >/dev/null 2>&1 || true
 if [ -f /etc/systemd/system/netschoolbot-smtp-tunnel.service ]; then
   systemctl enable --now netschoolbot-smtp-tunnel >/dev/null 2>&1 || true
+fi
+if [ -f /etc/systemd/system/netschoolbot-gemini-tunnel.service ]; then
+  systemctl enable --now netschoolbot-gemini-tunnel >/dev/null 2>&1 || true
 fi
 
 step "Конфигурация nginx"
