@@ -449,6 +449,7 @@ function initLiveDiary() {
     if (detail.t !== 'diary') return;
     forgetRevalidated();
     const tabs = new Set((detail.kinds || []).flatMap((kind) => DIARY_TABS[kind] || []));
+    if (tabs.has('totals')) window.dispatchEvent(new CustomEvent('netschool:marksoutdated'));
     if (!tabs.has(state.tab) || $('screens').childElementCount || state.refreshing) return;
     quietly(() => TABS[state.tab](true));
   });

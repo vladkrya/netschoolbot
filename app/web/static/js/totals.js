@@ -3,7 +3,7 @@
 
 import {
   $, ABSENCES, DEFAULT_THRESHOLDS, api, avgClass, errorCard, esc, formatAverage, isAbsence, isoToday, dayMonth,
-  plural, shortDate, showFailure, showLoading, skeleton, state, weightedAverage, stillMotion, demo,
+  plural, shortDate, showFailure, showLoading, skeleton, state, syncFinished, syncStarted, weightedAverage, stillMotion, demo,
 } from './core.js';
 import { markBox, openMark } from './details.js';
 import { pushScreen } from './screens.js';
@@ -29,36 +29,54 @@ let selectedYear = null;
 let loadVersion = 0;
 let yearContext = null;
 
+// Дневник принёс новую оценку (day.js) или о ней сообщил сервер (app.js):
+// год, загруженный раньше, при следующем открытии сверяется со школой.
+let outdated = false;
+window.addEventListener('netschool:marksoutdated', () => { outdated = true; });
+
 export async function loadTotals(force = false) {
   const container = $('totalsContent');
-  const version = ++loadVersion;
-  if (!state.totals || force) {
-    const previous = state.totals || yearContext;
-    if (showLoading(container, (previous ? yearPicker(previous) : '') + skeleton(8))) bindYearPicker(previous);
-    const params = new URLSearchParams();
-    if (selectedYear != null) params.set('year', selectedYear);
-    if (force) params.set('refresh', '1');
-    const path = `/api/marks${params.size ? `?${params}` : ''}`;
-    const accept = (data) => {
-      if (version !== loadVersion) return;
-      state.totals = data;
-      yearContext = data;
-      if (!data.archived) state.grades = data;
-      render();
-    };
-    try {
-      const { data } = await api(path, { onFresh: (fresh) => accept(fresh.data) });
-      accept(data);
-      if (!force && data.years == null && version === loadVersion) loadTotals(true);
-    } catch (error) {
-      if (version !== loadVersion) return;
-      showFailure(container, error, (previous ? yearPicker(previous) : '') + errorCard(error, 'totalsRetry'));
-      bindYearPicker(previous);
-      $('totalsRetry')?.addEventListener('click', () => loadTotals(true));
-    }
+  // Устаревшее остаётся на экране, пока идёт запрос, — без скелетона.
+  const behind = !force && outdated && state.totals && !state.totals.archived;
+  if (state.totals && !force && !behind) {
+    render();
     return;
   }
-  render();
+  outdated = false;
+  const version = ++loadVersion;
+  const previous = state.totals || yearContext;
+  if (behind) {
+    render();
+    syncStarted();
+  } else if (showLoading(container, (previous ? yearPicker(previous) : '') + skeleton(8))) bindYearPicker(previous);
+  const params = new URLSearchParams();
+  if (selectedYear != null) params.set('year', selectedYear);
+  if (force || behind) params.set('refresh', '1');
+  const path = `/api/marks${params.size ? `?${params}` : ''}`;
+  const accept = (data) => {
+    if (version !== loadVersion) return;
+    state.totals = data;
+    yearContext = data;
+    if (!data.archived) state.grades = data;
+    render();
+  };
+  try {
+    const { data } = await api(path, { onFresh: (fresh) => accept(fresh.data) });
+    accept(data);
+    if (!force && data.years == null && version === loadVersion) loadTotals(true);
+  } catch (error) {
+    if (version !== loadVersion) return;
+    // Не вышло — на экране остаётся показанное, сверим в следующий раз.
+    if (behind) {
+      outdated = true;
+      return;
+    }
+    showFailure(container, error, (previous ? yearPicker(previous) : '') + errorCard(error, 'totalsRetry'));
+    bindYearPicker(previous);
+    $('totalsRetry')?.addEventListener('click', () => loadTotals(true));
+  } finally {
+    if (behind) syncFinished();
+  }
 }
 
 function yearPicker(data) {
