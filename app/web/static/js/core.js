@@ -228,24 +228,40 @@ export const isOffline = () => offline;
 
 const offlineTitle = () => (navigator.onLine === false ? 'Нет интернета' : 'Нет связи с сервером');
 
+// Плашка — кружок справа над панелью, как у решения в фоне. Раскрывается на
+// три секунды: когда сеть пропала, по касанию и когда изменение встало в очередь.
+const PILL_OPEN_MS = 3000;
+let pillTimer = 0;
+
+function openOfflinePill() {
+  const pill = $('netPill');
+  if (!pill) return;
+  pill.classList.add('open');
+  clearTimeout(pillTimer);
+  pillTimer = setTimeout(() => pill.classList.remove('open'), PILL_OPEN_MS);
+}
+
 function paintOfflinePill() {
   let pill = $('netPill');
-  if (!offline) { pill?.remove(); return; }
-  if (!pill) {
+  if (!offline) { pill?.remove(); clearTimeout(pillTimer); return; }
+  const fresh = !pill;
+  if (fresh) {
     pill = document.createElement('button');
     pill.id = 'netPill';
     pill.type = 'button';
     pill.className = 'net-pill';
     pill.setAttribute('role', 'status');
-    pill.addEventListener('click', () => banner(outboxCount
-      ? 'Изменения сохранены на этом устройстве и отправятся на сервер, когда появится сеть.'
-      : 'Показаны сохранённые данные. Можно отмечать задания, добавлять свои задачи и менять оформление — всё отправится на сервер, когда появится сеть.', false, 6000));
+    pill.addEventListener('click', openOfflinePill);
     document.body.append(pill);
   }
   const waiting = outboxCount
     ? `${outboxCount} ${plural(outboxCount, 'изменение ждёт', 'изменения ждут', 'изменений ждут')} сети`
     : 'Показано сохранённое';
-  pill.innerHTML = `${ICONS.offline}<span><b>${offlineTitle()}</b><small>${waiting}</small></span>`;
+  pill.setAttribute('aria-label', `${offlineTitle()}. ${waiting}`);
+  pill.innerHTML = `<span class="net-pill-icon">${ICONS.offline}</span>`
+    + `<span class="net-pill-text"><b>${offlineTitle()}</b><small>${waiting}</small></span>`
+    + (outboxCount ? `<span class="net-pill-count">${outboxCount}</span>` : '');
+  if (fresh) openOfflinePill();
 }
 
 export function setOffline(value) {
@@ -298,8 +314,10 @@ if (!demo) {
   window.addEventListener('online', probe);
   document.addEventListener('visibilitychange', () => { if (!document.hidden && offline) probe(); });
   document.addEventListener('netschool:outbox', ({ detail }) => {
+    const more = detail.count > outboxCount;
     outboxCount = detail.count;
     paintOfflinePill();
+    if (more) openOfflinePill();
   });
   if (offline) {
     if (document.body) paintOfflinePill();

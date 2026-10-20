@@ -362,31 +362,41 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .banner { cursor: pointer; touch-action: none; transition: transform .15s, opacity .15s; }
 
 /* ─────────────────────────── Без сети ─────────────────────────── */
-/* Одна плашка на всё приложение (core.js) — над нижней панелью, по центру:
-   не закрывает шапку и сообщения под ней и видна поверх открытых экранов. */
+/* Одна плашка на всё приложение (core.js) — кружок справа над нижней панелью,
+   как у решения в фоне слева (solve-pill). Раскрывается на три секунды:
+   по касанию, когда сеть пропала и когда изменение ждёт отправки. */
 .net-pill {
   position: fixed;
-  left: 50%;
-  bottom: calc(var(--nav-h) + 12px);
+  right: 16px;
+  bottom: calc(var(--nav-h) + 14px);
   z-index: 45;
-  transform: translateX(-50%);
-  max-width: calc(100vw - 164px);
   display: flex; align-items: center; gap: 8px;
-  padding: 7px 14px 7px 11px;
+  height: 52px; max-width: 52px;
+  padding: 0 6px; box-sizing: border-box;
   border: 0; border-radius: 999px;
+  overflow: hidden;
   font: inherit; text-align: left;
   color: #fff;
   background: color-mix(in srgb, #37404d 92%, transparent);
   -webkit-backdrop-filter: blur(12px);
   backdrop-filter: blur(12px);
   box-shadow: 0 6px 20px rgba(0, 0, 0, .25);
-  animation: net-pill-in .3s var(--ease);
+  animation: pop .35s var(--ease) both;
+  transition: max-width .45s var(--ease), padding .45s var(--ease), transform .15s var(--ease);
 }
-.net-pill .icon { flex: none; opacity: .9; }
-.net-pill span { display: grid; min-width: 0; line-height: 1.2; }
-.net-pill b { font-size: 13px; font-weight: 650; }
+.net-pill:active { transform: scale(.92); }
+.net-pill.open { max-width: min(300px, calc(100vw - 92px)); padding-right: 18px; }
+.net-pill-icon { flex: none; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; }
+.net-pill-text { display: grid; min-width: 0; line-height: 1.2; opacity: 0; transition: opacity .2s ease; }
+.net-pill.open .net-pill-text { opacity: 1; transition-delay: .12s; }
+.net-pill b { font-size: 13px; font-weight: 650; white-space: nowrap; }
 .net-pill small { font-size: 11px; opacity: .78; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-@keyframes net-pill-in { from { opacity: 0; transform: translate(-50%, 12px); } }
+/* Сколько изменений ждёт сети — бейдж на свёрнутом кружке. */
+.net-pill-count { position: absolute; top: 2px; left: 32px; min-width: 18px; padding: 1px 4px; box-sizing: border-box;
+  border-radius: 9px; font-size: 11px; font-weight: 700; text-align: center; color: #fff; background: var(--g2, #e0533d);
+  transition: opacity .2s ease; }
+.net-pill.open .net-pill-count { opacity: 0; }
+@media (prefers-reduced-motion: reduce) { .net-pill, .net-pill-text { animation: none; transition: none; } }
 /* Запас снизу под плашку: иначе она закрывала конец списка и кнопки внизу экрана. */
 html.offline body, html.offline .screen { padding-bottom: calc(var(--nav-h) + 68px); }
 /* То, что без сети не работает, бледнеет; касание объясняет почему.
