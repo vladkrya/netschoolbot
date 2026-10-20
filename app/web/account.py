@@ -19,6 +19,7 @@ from collections import deque
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any
 
+import aiohttp
 from aiohttp import web
 
 from ..accounts import has_telegram
@@ -32,6 +33,7 @@ from ..netschool.errors import NetSchoolError, Reason, login_message, wrap
 from . import viewing
 from .api import BOT, context, current_user, json_error
 from .telegram_auth import InitDataError, verify_login_widget
+from .telegram_oidc import OidcLogins
 
 if TYPE_CHECKING:
     from ..context import AppContext
@@ -47,7 +49,8 @@ MAX_SCHOOLS = 30
 # Без входа доступны только эти адреса.
 PUBLIC_PATHS = ("/api/account/register", "/api/account/login", "/api/account/reset/request",
                 "/api/account/reset/confirm", "/api/account/config", "/api/family/invite-info",
-                "/api/account/tg-login", "/api/account/tg-widget")
+                "/api/account/tg-login", "/api/account/tg-widget",
+                "/api/account/tg-oidc/start", "/api/account/tg-oidc/callback")
 
 
 def is_public(path: str) -> bool:
@@ -137,6 +140,7 @@ async def account_config(request: web.Request) -> web.Response:
         "mail": context(request).mailer.configured,
         "bot": f"https://t.me/{username}" if username else "",
         "widget": await login_widget_bot_id(request),
+        "oidc": _oidc_redirect_uri(request) is not None,
     }})
 
 
@@ -172,6 +176,75 @@ async def login_widget_bot_id(request: web.Request) -> int:
         return 0
     bot_id, _, _ = (await widget_bot_token(context(request))).partition(":")
     return int(bot_id) if bot_id.isdigit() else 0
+
+
+# ─────────────────── Вход через Telegram (OpenID Connect) ───────────────────
+
+OIDC = OidcLogins()
+OIDC_COOKIE = "tg_oidc_state"
+
+
+def _oidc_redirect_uri(request: web.Request) -> str | None:
+    """Адрес возврата для этого домена — если вход по OIDC здесь включён."""
+    web_settings = context(request).settings.web
+    host = request.host.lower()
+    if not web_settings.tg_oidc_enabled or host.split(":")[0] not in web_settings.tg_oidc_hosts:
+        return None
+    # За nginx запрос приходит по http, а Telegram знает https-адрес.
+    scheme = "http" if host.split(":")[0] in ("127.0.0.1", "localhost") else "https"
+    base = web_settings.miniapp_path.rstrip("/")
+    return f"{scheme}://{host}{base}/api/account/tg-oidc/callback"
+
+
+def _oidc_back(request: web.Request, error: str = "") -> web.HTTPFound:
+    """Назад на сайт: после входа страница откроется уже с новым токеном в cookie."""
+    base = context(request).settings.web.miniapp_path.rstrip("/")
+    response = web.HTTPFound(f"{base}/?refresh=1" if not error else f"{base}/#tgLoginError={error}")
+    response.del_cookie(OIDC_COOKIE, path=f"{base}/api/account/tg-oidc/")
+    return response
+
+
+@routes.get("/api/account/tg-oidc/start")
+async def tg_oidc_start(request: web.Request) -> web.Response:
+    """Кнопка «Войти через Telegram»: на страницу входа Telegram с PKCE."""
+    redirect_uri = _oidc_redirect_uri(request)
+    if redirect_uri is None:
+        raise _oidc_back(request, "off")
+    if SITE_LOGINS.blocked(_ip(request)):
+        raise _oidc_back(request, "limit")
+    SITE_LOGINS.hit(_ip(request))
+    state, url = OIDC.start(context(request).settings.web.tg_oidc_client_id, redirect_uri)
+    response = web.HTTPFound(url)
+    # state привязан к этому браузеру: чужую ссылку возврата сюда не подсунуть.
+    base = context(request).settings.web.miniapp_path.rstrip("/")
+    response.set_cookie(OIDC_COOKIE, state, max_age=600, httponly=True, samesite="Lax",
+                        secure=redirect_uri.startswith("https:"), path=f"{base}/api/account/tg-oidc/")
+    raise response
+
+
+@routes.get("/api/account/tg-oidc/callback")
+async def tg_oidc_callback(request: web.Request) -> web.Response:
+    """Telegram вернул код: меняем его на id_token, проверяем и входим."""
+    state = request.query.get("state", "")
+    if request.query.get("error") or not request.query.get("code"):
+        OIDC.take(state)
+        raise _oidc_back(request, "cancel")
+    if not state or request.cookies.get(OIDC_COOKIE) != state or (item := OIDC.take(state)) is None:
+        raise _oidc_back(request, "expired")
+    web_settings = context(request).settings.web
+    try:
+        tg_user = await OIDC.finish(item, request.query["code"], web_settings.tg_oidc_client_id,
+                                    web_settings.tg_oidc_client_secret)
+    except (InitDataError, aiohttp.ClientError, asyncio.TimeoutError, ValueError) as exc:
+        logger.warning("Вход через Telegram (OIDC) не удался: %s", exc)
+        raise _oidc_back(request, "failed")
+    await context(request).users.get_or_create(tg_user.id, display_name=tg_user.full_name)
+    signed = await _signed_in(request, tg_user.id)
+    response = _oidc_back(request)
+    for name, morsel in signed.cookies.items():
+        response.cookies[name] = morsel
+    logger.info("Вход на сайт через Telegram (OIDC): %s", tg_user.id)
+    raise response
 
 
 # Подписанный ответ виджета остаётся в истории браузера (в адресе после #),

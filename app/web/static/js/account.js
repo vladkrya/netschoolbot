@@ -133,11 +133,11 @@ async function bindLanding(root) {
 
 /** Вход через бота — когда бот доступен; через виджет — на домене из BotFather. */
 function showBotLinks(root) {
-  if (landingConfig?.widget) {
+  if (landingConfig?.oidc || landingConfig?.widget) {
     root.querySelectorAll('[data-landing-widget]').forEach((element) => { element.hidden = false; });
     root.querySelectorAll('.ld-tg-login[data-landing-bot]').forEach((element) => element.classList.add('ld-tg-alt'));
   }
-  if (landingConfig?.bot || landingConfig?.widget) {
+  if (landingConfig?.bot || landingConfig?.widget || landingConfig?.oidc) {
     root.querySelectorAll('[data-landing-or]').forEach((element) => { element.hidden = false; });
   }
   if (!landingConfig?.bot) return;
@@ -184,6 +184,11 @@ export function showAuth(view = 'login', email = '') {
   }
   const views = { login: renderLogin, register: renderRegister, reset: renderReset };
   views[view](email);
+  const oidcError = new URLSearchParams(location.hash.slice(1)).get('tgLoginError');
+  if (oidcError) {
+    history.replaceState(null, '', location.pathname + location.search);
+    showError(document.querySelector('#accountScreen .account-card'), OIDC_ERRORS[oidcError] || OIDC_ERRORS.failed);
+  }
   return new Promise(() => {}); // страница перезагрузится после входа
 }
 
@@ -312,11 +317,25 @@ const TG_ICON = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="tr
  * данными в адресе: #tgAuthResult=<base64 JSON>. Подпись проверяет сервер
  * (verify_login_widget в app/web/telegram_auth.py). */
 function startWidgetLogin() {
+  // Новый вход по OpenID Connect: сервер сам ведёт на Telegram и обратно
+  // (app/web/telegram_oidc.py), на странице ничего не делаем.
+  if (landingConfig.oidc) {
+    location.assign(`${base}/api/account/tg-oidc/start`);
+    return;
+  }
   const back = `${location.origin}${base}/`;
   location.assign('https://oauth.telegram.org/auth?' + new URLSearchParams({
     bot_id: String(landingConfig.widget), origin: location.origin, return_to: back,
   }));
 }
+
+const OIDC_ERRORS = {
+  cancel: 'Вход отменён в Telegram.',
+  expired: 'Время на вход вышло — нажмите «Войти через Telegram» ещё раз.',
+  limit: 'Слишком много попыток входа — подождите 15 минут.',
+  off: 'Вход через Telegram сейчас выключен — войдите через бота или по почте.',
+  failed: 'Telegram не подтвердил вход — попробуйте ещё раз.',
+};
 
 function widgetResult() {
   const raw = new URLSearchParams(location.hash.slice(1)).get('tgAuthResult') || '';
