@@ -131,8 +131,15 @@ async function bindLanding(root) {
   showBotLinks(root);
 }
 
-/** Вход через бота — когда бот доступен. */
+/** Вход через бота — когда бот доступен; через виджет — на домене из BotFather. */
 function showBotLinks(root) {
+  if (landingConfig?.widget) {
+    root.querySelectorAll('[data-landing-widget]').forEach((element) => { element.hidden = false; });
+    root.querySelectorAll('.ld-tg-login[data-landing-bot]').forEach((element) => element.classList.add('ld-tg-alt'));
+  }
+  if (landingConfig?.bot || landingConfig?.widget) {
+    root.querySelectorAll('[data-landing-or]').forEach((element) => { element.hidden = false; });
+  }
   if (!landingConfig?.bot) return;
   root.querySelectorAll('[data-landing-bot]').forEach((element) => { element.hidden = false; });
 }
@@ -171,6 +178,10 @@ const post = (path, body) => api(path, { method: 'POST', body: JSON.stringify(bo
 /* ─────────────────────────── Вход по почте ─────────────────────────── */
 
 export function showAuth(view = 'login', email = '') {
+  if (location.hash.includes('tgAuthResult=')) {
+    finishWidgetLogin();
+    return new Promise(() => {});
+  }
   const views = { login: renderLogin, register: renderRegister, reset: renderReset };
   views[view](email);
   return new Promise(() => {}); // страница перезагрузится после входа
@@ -179,10 +190,11 @@ export function showAuth(view = 'login', email = '') {
 function renderLogin(email = '') {
   const card = landing(`
     <h2>Вход в дневник</h2>
-    <button class="btn ld-tg-login" type="button" data-landing-bot hidden>
-      <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M9.8 15.2 9.6 19c.4 0 .6-.2.8-.4l1.9-1.8 4 2.9c.7.4 1.3.2 1.5-.7l2.7-12.6c.3-1.1-.4-1.6-1.1-1.3L3.6 10.9c-1 .4-1 1-.2 1.3l4 1.2 9.3-5.9c.4-.3.8-.1.5.2z"/></svg>
+    <button class="btn ld-tg-login ld-tg-widget" type="button" data-landing-widget hidden>${TG_ICON}
+      Войти через Telegram</button>
+    <button class="btn ld-tg-login" type="button" data-landing-bot hidden>${TG_ICON}
       Войти через Telegram-бота</button>
-    <p class="ld-or" data-landing-bot hidden><span>или по почте</span></p>
+    <p class="ld-or" data-landing-or hidden><span>или по почте</span></p>
     <form class="account-form">
       <input class="field" type="email" name="email" autocomplete="username" placeholder="Почта" required>
       <input class="field" type="password" name="password" autocomplete="current-password" placeholder="Пароль" required>
@@ -196,7 +208,8 @@ function renderLogin(email = '') {
     <a class="ld-demo-link" href="${base}/demo">Без входа — <b>попробовать демо-режим</b> на выдуманном ученике</a>`);
   bindLinks(card);
   fillEmail(card, email);
-  card.querySelector('.ld-tg-login').addEventListener('click', (event) => startBotLogin(event.currentTarget));
+  card.querySelector('[data-landing-bot]').addEventListener('click', (event) => startBotLogin(event.currentTarget));
+  card.querySelector('[data-landing-widget]').addEventListener('click', startWidgetLogin);
   const form = card.querySelector('form');
   form.addEventListener('submit', (event) => {
     event.preventDefault();
@@ -287,6 +300,54 @@ function renderReset(email = '') {
       }
     });
   });
+}
+
+const TG_ICON = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M9.8 15.2 9.6 19c.4 0 .6-.2.8-.4l1.9-1.8 4 2.9c.7.4 1.3.2 1.5-.7l2.7-12.6c.3-1.1-.4-1.6-1.1-1.3L3.6 10.9c-1 .4-1 1-.2 1.3l4 1.2 9.3-5.9c.4-.3.8-.1.5.2z"/></svg>';
+
+/* ─────────────────────── Вход через Telegram Login ─────────────────────── */
+
+/** Telegram Login Widget без его скрипта: telegram.org в России бывает
+ * недоступен, и виджет на странице просто не появился бы. Переходим на
+ * страницу входа Telegram сами, а она возвращает на сайт с подписанными
+ * данными в адресе: #tgAuthResult=<base64 JSON>. Подпись проверяет сервер
+ * (verify_login_widget в app/web/telegram_auth.py). */
+function startWidgetLogin() {
+  const back = `${location.origin}${base}/`;
+  location.assign('https://oauth.telegram.org/auth?' + new URLSearchParams({
+    bot_id: String(landingConfig.widget), origin: location.origin, request_access: 'write', return_to: back,
+  }));
+}
+
+function widgetResult() {
+  const raw = new URLSearchParams(location.hash.slice(1)).get('tgAuthResult') || '';
+  // Адрес с подписью не оставляем в истории и в строке браузера.
+  history.replaceState(null, '', location.pathname + location.search);
+  try {
+    const json = atob(raw.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(raw.length / 4) * 4, '='));
+    const data = JSON.parse(new TextDecoder().decode(Uint8Array.from(json, (c) => c.charCodeAt(0))));
+    return data && typeof data === 'object' && data.hash ? data : null;
+  } catch {
+    return null; // tgAuthResult=false — вход отменили на странице Telegram
+  }
+}
+
+async function finishWidgetLogin() {
+  const data = widgetResult();
+  if (!data) {
+    renderLogin();
+    return;
+  }
+  const card = landing(`
+    <h2>Входим…</h2>
+    <div class="account-wait"><span class="boot-spinner" aria-hidden="true"></span></div>`);
+  try {
+    await post('/api/account/tg-widget', data);
+    notify('success');
+    signedIn();
+  } catch (error) {
+    renderLogin();
+    showError(document.querySelector('#accountScreen .account-card') || card, error.message);
+  }
 }
 
 /* ─────────────────────── Вход через Telegram-бота ─────────────────────── */

@@ -102,3 +102,39 @@ def _parse_user(raw: str) -> TelegramUser:
         )
     except (json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
         raise InitDataError("Не удалось прочитать пользователя из initData") from exc
+
+
+# Telegram Login Widget на сайте: подпись проще, чем у мини-приложения, —
+# ключ это SHA256 от токена бота, а поля приходят плоским словарём, без JSON
+# в `user`. https://core.telegram.org/widgets/login#checking-authorization
+
+
+def verify_login_widget(
+    data: dict, bot_token: str, *, max_age: int = MAX_AGE_SECONDS
+) -> TelegramUser:
+    """Проверить ответ Telegram Login Widget и вернуть пользователя."""
+    if not bot_token:
+        raise InitDataError("Токен бота не задан, проверить подпись нечем")
+    received_hash = str(data.get("hash") or "")
+    if not received_hash:
+        raise InitDataError("В ответе виджета нет подписи")
+    # Подписаны все поля, кроме hash, — и те, о которых мы не знаем.
+    fields = {str(key): str(value) for key, value in data.items() if key != "hash" and value is not None}
+    data_check_string = "\n".join(f"{key}={fields[key]}" for key in sorted(fields))
+    secret = hashlib.sha256(bot_token.encode()).digest()
+    expected = hmac.new(secret, data_check_string.encode(), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(expected, received_hash):
+        raise InitDataError("Подпись виджета не совпала")
+    try:
+        issued_at = int(fields["auth_date"])
+        user_id = int(fields["id"])
+    except (KeyError, ValueError) as exc:
+        raise InitDataError("В ответе виджета нет даты или пользователя") from exc
+    if max_age and time.time() - issued_at > max_age:
+        raise InitDataError("Вход устарел, войдите ещё раз")
+    return TelegramUser(
+        id=user_id,
+        first_name=fields.get("first_name", ""),
+        last_name=fields.get("last_name", ""),
+        username=fields.get("username", ""),
+    )

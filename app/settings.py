@@ -110,6 +110,10 @@ class WebSettings:
     # раундов нужно пройти. Пустой адрес выключает кнопку.
     captcha_url: str = ""
     captcha_rounds: int = 2
+    # Домен, привязанный к боту в BotFather (/setdomain), для Telegram Login
+    # Widget. Telegram пускает виджет только с него, поэтому на зеркалах
+    # кнопки нет. Пусто — вход через виджет выключен.
+    login_widget_domain: str = ""
 
     @property
     def miniapp_url(self) -> str:
@@ -336,6 +340,7 @@ def load_settings(*, require_bot_token: bool = True) -> Settings:
             files_url=_env("NETSCHOOL_FILES_URL").rstrip("/"),
             captcha_url=_env("NETSCHOOL_CAPTCHA_URL", "https://captcha.ikrya.ru").rstrip("/"),
             captcha_rounds=max(1, _env_int("NETSCHOOL_CAPTCHA_ROUNDS", 2)),
+            login_widget_domain=_env("NETSCHOOL_TG_LOGIN_DOMAIN").strip().lower(),
             miniapp_path=miniapp_path,
             token_ttl=_env_int("NETSCHOOL_MINIAPP_TOKEN_TTL", 900),
             login_code_ttl=_env_int("NETSCHOOL_LOGIN_CODE_TTL", 600),
