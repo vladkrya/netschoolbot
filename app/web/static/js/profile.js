@@ -246,6 +246,16 @@ function keepFilesSection(keep) {
     </section>`;
 }
 
+/** «Решения заданий всему классу» — тумблер владельца (web/solver.py). */
+function solverClassSection(solverClass) {
+  if (!solverClass) return '';
+  return `<section class="drawer-section">
+      <div class="drawer-heading">Решения</div>
+      <label class="switch-row"><span>Решения заданий всему классу<span class="muted small switch-note">видно только вам: кнопка «Решение» появится у одноклассников, которые пользуются ботом</span></span>
+        <input type="checkbox" switch class="switch" id="solverClass" ${solverClass.on ? 'checked' : ''}></label>
+    </section>`;
+}
+
 // Атрибут switch — системный переключатель: в Safari на iPhone он сам
 // тактильно щёлкает от касания (vibrate там нет, см. haptics.js).
 function toggle(key, label, on) {
@@ -899,6 +909,7 @@ function render() {
     </section>
     ${isNewDesign() ? tabsSection() : ''}
     ${readonly ? '' : keepFilesSection(data.keep_attachments)}
+    ${readonly ? '' : solverClassSection(data.solver_class)}
     ${readonly ? `<section class="drawer-section">
       <div class="drawer-heading">Уведомления</div>
       <div class="muted small">Уведомления об этом ученике приходят, если он разрешил их в приглашении. Отказаться — «Родные».</div>
@@ -1092,6 +1103,24 @@ function bindDrawer() {
       }
     });
   }
+  $('solverClass')?.addEventListener('change', async (event) => {
+    select();
+    const input = event.target;
+    input.disabled = true;
+    try {
+      const { data } = await api('/api/settings/solver-class', {
+        method: 'POST', body: JSON.stringify({ on: input.checked }),
+      });
+      state.profile.solver_class = data;
+      input.checked = Boolean(data.on);
+    } catch (error) {
+      notify('error');
+      input.checked = !input.checked;
+      banner(error.message, true);
+    } finally {
+      input.disabled = false;
+    }
+  });
   $('sgoUpdates')?.addEventListener('change', async (event) => {
     select();
     const input = event.target;

@@ -232,3 +232,107 @@ class TestApi:
     async def test_rejects_bad_task(self, client, token, allowed, body):
         response = await client.post(f"{BASE}/api/solve", params={"token": token}, json=body)
         assert response.status == 400
+
+    async def test_dropped_stream_is_retried(self, client, token, allowed, monkeypatch):
+        calls = []
+
+        async def flaky(settings, system, content, **kwargs):
+            calls.append(1)
+            if len(calls) == 1:
+                yield "### №2"
+                raise solver.AssistantError("Решение сейчас недоступно. Попробуйте чуть позже.")
+            yield "**Ответ:** 4"
+
+        monkeypatch.setattr(solver, "stream_messages", flaky)
+        response = await client.post(f"{BASE}/api/solve", params={"token": token}, json=TASK)
+        stream = events(await response.read())
+        assert {"type": "reset"} in stream
+        assert stream[-1]["data"]["text"] == "**Ответ:** 4"
+        assert len(calls) == 2 and allowed.solver_usage[1][1] == 1
+        again = await client.post(f"{BASE}/api/solve", params={"token": token}, json=TASK)
+        assert (await again.json())["data"] == {"text": "**Ответ:** 4", "cached": True}
+
+    async def test_empty_answer_retried_then_refunded(self, client, token, allowed, monkeypatch):
+        calls = []
+
+        async def empty(settings, system, content, **kwargs):
+            calls.append(1)
+            yield "<черновик>думаю</черновик> "
+
+        monkeypatch.setattr(solver, "stream_messages", empty)
+        response = await client.post(f"{BASE}/api/solve", params={"token": token}, json=TASK)
+        stream = events(await response.read())
+        assert stream[-1]["ok"] is False and stream.count({"type": "reset"}) == solver.ATTEMPTS - 1
+        assert len(calls) == solver.ATTEMPTS and allowed.solver_usage[1][1] == 0
+
+    async def test_busy_is_not_retried(self, client, token, allowed, monkeypatch):
+        calls = []
+
+        async def busy(settings, system, content, **kwargs):
+            calls.append(1)
+            raise solver.AssistantError("Перегружена", status=503, reason="busy")
+            yield ""
+
+        monkeypatch.setattr(solver, "stream_messages", busy)
+        response = await client.post(f"{BASE}/api/solve", params={"token": token}, json=TASK)
+        assert events(await response.read())[-1]["reason"] == "busy" and len(calls) == 1
+
+
+HOMEWORK = {"items": [{"id": 101, "subject": "Алгебра"}, {"id": 102, "subject": "Физика"}]}
+
+
+class TestWholeClass:
+    """Владелец — telegram_id 1 (TG_ADMIN_ID в фикстуре), в .env только он."""
+
+    @pytest.fixture
+    async def classmates(self, allowed, users):
+        from tests.test_repositories import make_user
+
+        await users.save(make_user(2, student_name="Петров П."))
+        await users.save(make_user(3, student_name="Сидоров С."))
+        await users.save(make_user(4, school=dataclasses.replace(make_user().school, name="Школа №2")))
+        await allowed.cache.put(1, "homework", HOMEWORK)
+        await allowed.cache.put(2, "homework:past", {"items": [{"id": 102}]})
+        await allowed.cache.put(3, "homework", {"items": [{"id": 900}]})
+        await allowed.cache.put(4, "homework", HOMEWORK)
+        return {n: await allowed.miniapp.issue_token(n) for n in (2, 3, 4)}
+
+    async def profile(self, client, token):
+        return (await (await client.get(f"{BASE}/api/profile", params={"token": token})).json())["data"]
+
+    async def switch(self, client, token, on):
+        return await client.post(f"{BASE}/api/settings/solver-class", params={"token": token}, json={"on": on})
+
+    async def test_owner_opens_and_closes_for_class(self, client, token, classmates, allowed, monkeypatch):
+        async def fake(settings, system, content, **kwargs):
+            yield "Ответ"
+
+        monkeypatch.setattr(solver, "stream_messages", fake)
+        assert (await self.profile(client, token))["solver_class"] == {"on": False}
+        assert (await self.profile(client, classmates[2]))["solver"] is False
+
+        assert (await (await self.switch(client, token, True)).json())["data"] == {"on": True}
+        assert (await self.profile(client, classmates[2]))["solver"] is True
+        response = await client.post(f"{BASE}/api/solve", params={"token": classmates[2]}, json=TASK)
+        assert events(await response.read())[-1]["ok"] is True
+        # Другой класс той же школы и та же параллель другой школы — нет.
+        assert (await self.profile(client, classmates[3]))["solver"] is False
+        assert (await self.profile(client, classmates[4]))["solver"] is False
+        response = await client.post(f"{BASE}/api/solve", params={"token": classmates[3]}, json=TASK)
+        assert response.status == 404
+
+        await self.switch(client, token, False)
+        assert (await self.profile(client, classmates[2]))["solver"] is False
+        assert (await self.profile(client, token))["solver"] is True  # владелец в .env
+
+    async def test_class_name_decides_when_known(self, client, token, classmates, allowed):
+        await self.switch(client, token, True)
+        await allowed.cache.put(1, "class:None", "9б")
+        await allowed.cache.put(3, "class:None", "9 Б")
+        await allowed.cache.put(2, "class:None", "9а")
+        assert (await self.profile(client, classmates[3]))["solver"] is True
+        assert (await self.profile(client, classmates[2]))["solver"] is False
+
+    async def test_only_owner_switches(self, client, token, classmates):
+        assert (await self.switch(client, classmates[2], True)).status == 403
+        assert (await self.profile(client, classmates[2]))["solver_class"] is None
