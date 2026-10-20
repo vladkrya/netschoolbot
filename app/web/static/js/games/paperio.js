@@ -6,12 +6,22 @@
 // Двигаются свободно, в любую сторону на 360°, и поворачивают плавно, как в
 // оригинале: управление — джойстик под пальцем в любом месте экрана. Поле —
 // мелкая сетка: по её клеткам считаются территория, хвосты и захват, а
-// хвост рисуется гладкой линией.
+// хвост рисуется гладкой линией. Уровень сложности задаёт, насколько боты
+// быстры и как издалека замечают ваш хвост.
 'use strict';
 
 import {
-  best, bump, fitCanvas, frames, hud, intro, joystick, overlay, particles, popText, quake, rand, saveBest, sfx, shade, tap,
+  best, bindChips, bump, chipsRow, fitCanvas, frames, hud, intro, joystick, load, overlay, particles, popText, quake, rand, save,
+  saveBest, sfx, shade, tap,
 } from './kit.js';
+
+/** Уровни: скорость ботов (доля от вашей), с какого расстояния (в клетках)
+ *  они бросаются на ваш хвост и как далеко сами отходят от дома. */
+export const LEVELS = {
+  easy: { label: 'Лёгкий', speed: 0.8, hunt: 0, reach: 22 },
+  medium: { label: 'Средний', speed: 0.92, hunt: 5, reach: 30 },
+  hard: { label: 'Сложный', speed: 1, hunt: 8, reach: 34 },
+};
 
 const N = 96;
 const VIEW = 26;
@@ -77,7 +87,7 @@ const countOf = (owner, id) => owner.reduce((sum, v) => sum + (v === id), 0);
 
 export function start(root, ctx) {
   root.innerHTML = `<div class="game">
-      ${hud([['score', 'Территория', '0%'], ['kills', 'Срезано', 0], ['best', '🏆', `${best('paperio')}%`]])}
+      ${hud([['score', 'Территория', '0%'], ['kills', 'Срезано', 0], ['best', '🏆', '—']])}
       <div class="game-stage pio-stage"><canvas class="game-canvas" data-canvas></canvas>
         <div class="pio-board" data-board></div><canvas class="pio-map" data-map></canvas></div>
       <div class="joy-hint">Ведите пальцем в любом месте экрана — в любую сторону</div></div>`;
@@ -105,6 +115,11 @@ export function start(root, ctx) {
   let camX = 0;
   let camY = 0;
   let slow = 0;
+  let difficulty = LEVELS[load('paperio-level')] ? load('paperio-level') : 'medium';
+  const recordKey = () => `paperio-${difficulty}`;
+  const showBest = () => {
+    root.querySelector('[data-best]').textContent = best(recordKey()) ? `${best(recordKey())}%` : '—';
+  };
 
   const idx = (x, y) => y * N + x;
   const inside = (x, y) => x >= 0 && y >= 0 && x < N && y < N;
@@ -228,7 +243,7 @@ export function start(root, ctx) {
 
   function move(p, dt) {
     p.angle += Math.max(-TURN * dt, Math.min(TURN * dt, angleDiff(p.want, p.angle)));
-    let left = SPEED * dt;
+    let left = SPEED * (p.bot ? LEVELS[difficulty].speed : 1) * dt;
     const cos = Math.cos(p.angle);
     const sin = Math.sin(p.angle);
     if (p.leg) p.leg.left -= left;
@@ -294,8 +309,9 @@ export function start(root, ctx) {
     const human = players[0];
     let want = null;
     // Хвост человека рядом — в атаку.
-    if (human.alive && human.trail.length) {
-      let bestD = 64;
+    const hunt = LEVELS[difficulty].hunt;
+    if (hunt && human.alive && human.trail.length) {
+      let bestD = hunt * hunt;
       for (const i of human.trail) {
         const dx = (i % N) + 0.5 - p.x;
         const dy = Math.floor(i / N) + 0.5 - p.y;
@@ -308,7 +324,7 @@ export function start(root, ctx) {
     }
     if (want === null) {
       const threat = players.some((o) => o !== p && o.alive && Math.hypot(o.x - p.x, o.y - p.y) < away / 3 + 4);
-      if (away && (away > 34 || threat || p.leg?.phase === 'home' || !p.leg)) {
+      if (away && (away > LEVELS[difficulty].reach || threat || p.leg?.phase === 'home' || !p.leg)) {
         p.leg = { phase: 'home', left: Infinity };
         want = aim(p, nearestOwn(p));
       } else if (!away && owner[idx(p.cx, p.cy)] === p.id && (!p.leg || p.leg.phase === 'home')) {
@@ -390,14 +406,16 @@ export function start(root, ctx) {
     if (!running) return;
     running = false;
     if (!won) quake(stage, 10);
-    const score = Math.round(peak);
-    const record = saveBest('paperio', score);
-    root.querySelector('[data-best]').textContent = `${best('paperio')}%`;
+    const score = peak;
+    const record = saveBest(recordKey(), score);
+    saveBest('paperio', score);
+    showBest();
     setTimeout(() => {
       if (ctx.signal.aborted) return;
       overlay(stage, `<div class="game-over-title">${won ? 'Половина поля ваша!' : record ? 'Новый рекорд!' : 'Вас подрезали'}</div>
-          <div class="game-over-text">Лучший захват: <b>${score}%</b> · срезано соперников: <b>${kills}</b></div>`,
+          <div class="game-over-text">Лучший захват: <b>${score}%</b> · срезано соперников: <b>${kills}</b></div>${levelChips()}`,
       [{ label: 'Ещё раз', run: begin }], { icon: won || record ? '🏆' : '✂️', win: won || record, lose: !won && !record });
+      bindLevels();
     }, won ? 200 : 700);
   }
 
@@ -528,6 +546,18 @@ export function start(root, ctx) {
     running = true;
   }
 
+  const levelChips = () => `<div class="game-over-levels">${chipsRow('difficulty', Object.entries(LEVELS).map(([key, { label }]) => [key, label]), difficulty)}</div>`;
+  /** Сложность выбирается на стартовом и финальном экране — у поля нет места. */
+  function bindLevels() {
+    bindChips(root, 'difficulty', (value) => {
+      difficulty = value;
+      save('paperio-level', difficulty);
+      showBest();
+      const record = stage.querySelector('.game-record');
+      if (record) record.textContent = best(recordKey()) ? `🏆 Рекорд: ${best(recordKey())}%` : '🏆 Рекорда пока нет';
+    });
+  }
+
   // Палец задаёт направление: джойстик под пальцем в любом месте экрана.
   joystick(root, ctx.signal, (angle) => {
     const me = players?.[0];
@@ -539,9 +569,11 @@ export function start(root, ctx) {
     draw(dt);
   });
   reset();
+  showBest();
   intro(stage, {
-    icon: '🟦', title: 'Paper.io',
+    icon: '🟧', title: 'Paper.io',
     text: 'Ведите пальцем в любую сторону. Выезжайте со своей территории и возвращайтесь — обведённое станет вашим. Не дайте ботам наехать на ваш хвост!',
-    record: best('paperio') ? `Рекорд: ${best('paperio')}%` : '', run: begin,
+    record: best(recordKey()) ? `Рекорд: ${best(recordKey())}%` : 'Рекорда пока нет', extra: levelChips(), run: begin,
   });
+  bindLevels();
 }

@@ -1,16 +1,19 @@
 // Слоты: игровой автомат с тремя барабанами на игровые фишки. Три
 // одинаковых в центральной линии — выигрыш по таблице, две вишни — ставка
 // вдвое, одна — ставка обратно. Барабаны крутятся с размытием и
-// останавливаются по очереди с отскоком, выигрыш сыплется монетами.
+// останавливаются по очереди с отскоком, выигрыш сыплется монетами;
+// повторное касание «Крутить» останавливает их сразу.
 'use strict';
 
 import {
   addChips, bump, chips, load, notify, quake, rand, refillChips, save, sfx, tap, wait,
 } from './kit.js';
 
-// Символ, вес (чем больше, тем чаще) и множитель за три в ряд.
+// Символ, вес (чем больше, тем чаще) и множитель за три в ряд. Веса
+// подобраны так, что автомат в среднем возвращает ~95% ставок (rtp() ниже):
+// при отдаче больше 100% фишки росли от одного нажатия «Крутить».
 export const SYMBOLS = [
-  ['🍒', 30, 5], ['🍋', 25, 8], ['🍇', 20, 10], ['🔔', 14, 15], ['⭐', 9, 25], ['💎', 5, 50], ['7️⃣', 3, 100],
+  ['🍒', 20, 5], ['🍋', 25, 8], ['🍇', 20, 10], ['🔔', 14, 15], ['⭐', 9, 25], ['💎', 5, 50], ['7️⃣', 3, 100],
 ];
 const TOTAL = SYMBOLS.reduce((sum, [, w]) => sum + w, 0);
 const BETS = [10, 25, 50, 100, 250, 500];
@@ -22,6 +25,14 @@ function spinOne() {
     roll -= w;
   }
   return SYMBOLS[0][0];
+}
+
+/** Средняя доля ставки, которую автомат возвращает за спин. */
+export function rtp() {
+  const p = SYMBOLS.map(([, w]) => w / TOTAL);
+  const cherry = p[0];
+  return SYMBOLS.reduce((sum, [, , m], i) => sum + p[i] ** 3 * m, 0)
+    + 3 * cherry ** 2 * (1 - cherry) * 2 + 3 * cherry * (1 - cherry) ** 2;
 }
 
 /** Во сколько раз умножается ставка (0 — проигрыш). */
@@ -38,6 +49,8 @@ export function start(root, ctx) {
   let bet = Number(load('slots-bet', 25)) || 25;
   if (!BETS.includes(bet)) bet = 25;
   let spinning = false;
+  // Остановить барабаны сразу — повторное касание «Крутить».
+  let skip = null;
   const visible = [0, 1, 2].map(() => [spinOne(), spinOne(), spinOne()]);
 
   root.innerHTML = `<div class="game slots">
@@ -71,7 +84,9 @@ export function start(root, ctx) {
     bump(chipsEl, have, { count: true });
     root.querySelector('[data-bet-value]').textContent = String(bet);
     refill.hidden = have >= BETS[0];
-    spinBtn.disabled = spinning || have < bet;
+    spinBtn.disabled = !spinning && have < bet;
+    spinBtn.textContent = spinning ? 'СТОП' : 'КРУТИТЬ';
+    spinBtn.classList.toggle('stop', spinning);
     cabinet.classList.toggle('busy', spinning);
   };
 
@@ -124,17 +139,21 @@ export function start(root, ctx) {
     });
     // Пока крутится — тиканье.
     const ticker = setInterval(() => sfx('tick'), 90);
+    const skipped = new Promise((resolve) => { skip = resolve; });
     try {
-      await wait(ctx, 1200 + 2 * 450 + 150);
+      await Promise.race([wait(ctx, 1200 + 2 * 450 + 150), skipped]);
     } catch {
       clearInterval(ticker);
       stops.forEach(clearTimeout);
       return;
     } finally {
       clearInterval(ticker);
+      skip = null;
     }
+    stops.forEach(clearTimeout);
     // После остановки на барабане остаются только три видимых символа.
     strips.forEach((strip, i) => {
+      strip.classList.remove('blur');
       strip.style.transition = 'none';
       strip.style.transform = 'translateY(0)';
       strip.innerHTML = visible[i].map((s) => `<span>${s}</span>`).join('');
@@ -168,7 +187,16 @@ export function start(root, ctx) {
     sync();
   }
 
-  spinBtn.addEventListener('click', spin);
+  spinBtn.addEventListener('click', () => {
+    if (!spinning) {
+      spin();
+      return;
+    }
+    if (!skip) return;
+    sfx('stop');
+    tap('soft');
+    skip();
+  });
   // Рычаг: касание или рывок вниз — то же, что кнопка.
   const lever = root.querySelector('[data-lever]');
   lever.addEventListener('click', () => {
@@ -189,6 +217,6 @@ export function start(root, ctx) {
     sync();
   });
   refill.addEventListener('click', () => { tap(); sfx('coin'); refillChips(); sync(); });
-  document.addEventListener('keydown', (event) => { if (event.code === 'Space') { event.preventDefault(); spin(); } }, { signal: ctx.signal });
+  document.addEventListener('keydown', (event) => { if (event.code === 'Space') { event.preventDefault(); spinBtn.click(); } }, { signal: ctx.signal });
   sync();
 }

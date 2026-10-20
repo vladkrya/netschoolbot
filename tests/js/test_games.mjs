@@ -51,37 +51,46 @@ test('дурак: подкидывать только достоинства с�
   assert.equal(durak.pending(g).kind, 'end', 'отбивающемуся больше нечем');
 });
 
-test('дурак: боты доигрывают партию без потерянных карт', () => {
-  for (let round = 0; round < 200; round += 1) {
+test('дурак: боты любого уровня доигрывают партию без потерянных карт', () => {
+  const levels = Object.keys(durak.LEVELS);
+  for (let round = 0; round < 120; round += 1) {
+    const level = levels[round % levels.length];
     const g = durak.createGame(['А', 'Б', 'В', 'Г'].slice(0, 2 + (round % 3)));
-    const total = () => g.deck.length + g.players.reduce((sum, p) => sum + p.hand.length, 0)
-      + g.table.reduce((sum, pair) => sum + 1 + Boolean(pair.d), 0) + discarded;
-    let discarded = 0;
+    const onTable = () => g.table.reduce((sum, pair) => sum + 1 + Boolean(pair.d), 0);
+    const total = () => g.deck.length + g.players.reduce((sum, p) => sum + p.hand.length, 0) + onTable() + g.discard.length;
     let steps = 0;
     while (!g.over) {
       steps += 1;
       assert.ok(steps < 5000, 'партия зациклилась');
       const turn = durak.pending(g);
       if (turn.kind === 'end') {
-        const onTable = g.table.reduce((sum, pair) => sum + 1 + Boolean(pair.d), 0);
-        if (!g.taking) discarded += onTable;
         durak.endBout(g);
-      } else if (turn.kind === 'open') {
-        assert.ok(durak.play(g, turn.who, durak.botOpen(g, turn.who)));
-      } else if (turn.kind === 'throw') {
-        const card = durak.botThrow(g, turn.who);
-        if (card && durak.canPlay(g, turn.who, card)) assert.ok(durak.play(g, turn.who, card));
-        else durak.pass(g, turn.who);
       } else {
-        const move = durak.botDefend(g);
-        if (move) assert.ok(durak.defend(g, move.card, move.index));
-        else durak.take(g);
+        // Сложный перебирает на малом числе раскладов — тест должен быть быстрым.
+        const move = level === 'hard' ? durak.smartMove(g, turn.who, 3) : durak.botMove(g, turn.who, level);
+        assert.ok(durak.applyMove(g, turn.who, move), `ход ${move.kind} не прошёл`);
       }
       assert.equal(total(), 36);
       assert.ok(g.table.length <= 6);
     }
     assert.ok(g.loser === null || !g.players[g.loser].out);
   }
+});
+
+test('дурак: сложный бот обыгрывает среднего', () => {
+  let hardLost = 0;
+  let mediumLost = 0;
+  for (let round = 0; round < 60; round += 1) {
+    const g = durak.createGame(['Сложный', 'Средний']);
+    while (!g.over) {
+      const turn = durak.pending(g);
+      if (turn.kind === 'end') durak.endBout(g);
+      else durak.applyMove(g, turn.who, turn.who === 0 ? durak.smartMove(g, 0, 16) : durak.botMove(g, 1));
+    }
+    if (g.loser === 0) hardLost += 1;
+    if (g.loser === 1) mediumLost += 1;
+  }
+  assert.ok(mediumLost > hardLost, `сложный дурак ${hardLost} раз, средний — ${mediumLost}`);
 });
 
 test('судоку: у головоломки единственное решение', () => {
@@ -152,6 +161,32 @@ test('пасьянс: раздача и правила стопок', () => {
   assert.equal(solitaire.canFound(c(1, '♣'), []), true);
   assert.equal(solitaire.canFound(c(3, '♣'), [c(1, '♣'), c(2, '♣')]), true);
   assert.equal(solitaire.canFound(c(3, '♥'), [c(1, '♣'), c(2, '♣')]), false);
+});
+
+test('пасьянс: ходов нет — только когда и колода не поможет', () => {
+  const deal = solitaire.newDeal();
+  // Поле из одних королей и пустая колода: ходить некуда.
+  const kings = ['♠', '♥', '♦', '♣'].map((s) => ({ r: 13, s, down: false }));
+  const stuck = {
+    stock: [], waste: [], found: [[], [], [], []], pass: 1,
+    tableau: [[{ r: 5, s: '♠', down: true }, kings[0]], [{ r: 6, s: '♠', down: true }, kings[1]], [kings[2]], [kings[3]], [], [], []].map((p, i) => (i < 4 ? p : [{ r: 2, s: '♥', down: true }, { r: 12, s: ['♠', '♣', '♥'][i - 4], down: false }])),
+  };
+  assert.equal(solitaire.hasMoves(stuck, 1, Infinity), true, 'дама ложится на короля и открывает карту');
+  stuck.tableau = [[kings[0]], [kings[1]], [kings[2]], [kings[3]], [{ r: 7, s: '♠', down: false }], [{ r: 7, s: '♣', down: false }], [{ r: 2, s: '♥', down: false }]];
+  assert.equal(solitaire.hasMoves(stuck, 1, Infinity), false, 'перекладывать королей между пустыми местами — не ход');
+  stuck.waste = [{ r: 1, s: '♦', down: false }];
+  assert.equal(solitaire.hasMoves(stuck, 3, 0), true, 'туз со сброса — в «дом»');
+  stuck.waste = [];
+  stuck.stock = [{ r: 3, s: '♦', down: true }, { r: 1, s: '♠', down: true }, { r: 9, s: '♦', down: true }, { r: 4, s: '♣', down: true }];
+  // По три: из колоды [4♣ 9♦ A♠ 3♦] (сверху 4♣) откроется 3-я карта (A♠) и последняя (3♦).
+  assert.deepEqual(solitaire.reachable(stuck, 3, 0).map((card) => card.r), [1, 3]);
+  assert.equal(solitaire.hasMoves(stuck, 3, 0), true);
+  assert.equal(deal.pass, 1);
+});
+
+test('слоты: автомат в среднем забирает фишки', () => {
+  const rtp = slots.rtp();
+  assert.ok(rtp < 1 && rtp > 0.9, `отдача ${rtp}`);
 });
 
 test('слоты: выплаты', () => {

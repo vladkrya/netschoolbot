@@ -1,7 +1,9 @@
-// Пасьянс «Косынка» по одной карте. Карты можно перетаскивать пальцем, а
-// касание само переносит карту (со всеми картами сверху) туда, куда можно:
-// сначала в «дом», потом на другую стопку. Касание колоды — следующая
-// карта. Есть отмена хода и автосбор в конце.
+// Пасьянс «Косынка». Три уровня: по одной карте из колоды, по три и по три
+// с тремя проходами колоды. Карты можно перетаскивать пальцем, а касание само
+// переносит карту (со всеми картами сверху) туда, куда можно: сначала в
+// «дом», потом на другую стопку; повторное касание везёт её на следующее
+// подходящее место. Касание колоды — следующие карты. Есть отмена хода,
+// автосбор в конце и подсказка, что ходов больше нет. Партия сохраняется.
 //
 // Каждая карта — постоянный элемент со своими координатами: при ходе он
 // плавно переезжает (transition на left/top), закрытая карта
@@ -9,8 +11,15 @@
 'use strict';
 
 import {
-  best, bump, cardHtml, clock, deck, hud, isRed, overlay, saveBest, sfx, shake, tap,
+  askRestart, bindChips, bump, cardHtml, chipsRow, clock, deck, hud, isRed, load, overlay, recordText, save, saveBest, sfx, shake, tap,
 } from './kit.js';
+
+/** Уровни: сколько карт открывает колода и сколько раз её можно пройти. */
+export const LEVELS = {
+  easy: { label: 'Лёгкий', draw: 1, passes: Infinity },
+  medium: { label: 'Средний', draw: 3, passes: Infinity },
+  hard: { label: 'Сложный', draw: 3, passes: 3 },
+};
 
 /** Можно ли положить карту на стопку поля (по убыванию, чередуя цвет). */
 export function canStack(card, onto) {
@@ -30,12 +39,50 @@ export function newDeal() {
   for (let i = 0; i < 7; i += 1) {
     tableau.push(cards.splice(0, i + 1).map((card, j) => ({ ...card, down: j < i })));
   }
-  return { stock: cards.map((card) => ({ ...card, down: true })), waste: [], found: [[], [], [], []], tableau };
+  return { stock: cards.map((card) => ({ ...card, down: true })), waste: [], found: [[], [], [], []], tableau, pass: 1 };
+}
+
+/** Карты колоды, до которых можно добраться, листая её (по draw штук). */
+export function reachable(game, draw, passesLeft) {
+  // Колода листается с конца массива stock; сброс — уже открытое.
+  const order = [...game.waste, ...[...game.stock].reverse()];
+  const seen = new Set();
+  if (game.waste.length) seen.add(game.waste.length - 1);
+  // Текущий проход: из оставшейся колоды наверх сброса попадёт каждая draw-я.
+  for (let i = game.waste.length - 1 + draw; i < order.length; i += draw) seen.add(i);
+  if (game.stock.length) seen.add(order.length - 1);
+  if (passesLeft > 0 && order.length) {
+    for (let i = draw - 1; i < order.length; i += draw) seen.add(i);
+    seen.add(order.length - 1);
+    if (draw === 1) order.forEach((_, i) => seen.add(i));
+  }
+  return [...seen].map((i) => order[i]);
+}
+
+/** Есть ли полезный ход: не перекладывание карт туда-сюда между стопками. */
+export function hasMoves(game, draw, passesLeft) {
+  const tops = game.tableau.map((pile) => pile[pile.length - 1]);
+  const fits = (card, fromCol = -1) => game.found.some((pile) => canFound(card, pile))
+    || tops.some((top, col) => col !== fromCol && top && canStack(card, top));
+  for (let col = 0; col < 7; col += 1) {
+    const pile = game.tableau[col];
+    for (let i = 0; i < pile.length; i += 1) {
+      if (pile[i].down) continue;
+      if (i === pile.length - 1 && game.found.some((f) => canFound(pile[i], f))) return true;
+      // Полезно, только если откроется закрытая карта или освободится место.
+      const frees = i === 0 ? pile[i].r !== 13 : pile[i - 1].down;
+      if (!frees) continue;
+      if (tops.some((top, c) => c !== col && (top ? canStack(pile[i], top) : pile[i].r === 13))) return true;
+    }
+  }
+  return reachable(game, draw, passesLeft).some((card) => fits(card)
+    || (card.r === 13 && game.tableau.some((pile) => !pile.length)));
 }
 
 const keyOf = (card) => `${card.r}${card.s}`;
 
 export function start(root, ctx) {
+  let level = LEVELS[load('solitaire-level')] ? load('solitaire-level') : 'easy';
   let game;
   let history;
   let moves;
@@ -43,8 +90,11 @@ export function start(root, ctx) {
   let started;
   let ticker = 0;
   let busy = false;
+  const rules = () => LEVELS[level];
+  const passesLeft = () => rules().passes - (game.pass || 1);
 
   root.innerHTML = `<div class="game solitaire">
+      ${chipsRow('level', Object.entries(LEVELS).map(([key, { label }]) => [key, label]), level)}
       ${hud([['time', '⏱', '0:00'], ['moves', 'Ходы', 0], ['best', '🏆', '—']])}
       <div class="game-stage sol-stage"><div class="sol-board" data-board></div></div>
       <div class="sol-tools">
@@ -76,9 +126,11 @@ export function start(root, ctx) {
   board.innerHTML = slots.join('');
 
   const showBest = () => {
-    const record = best('solitaire');
-    root.querySelector('[data-best]').textContent = record ? clock(record) : '—';
+    root.querySelector('[data-best]').textContent = recordText(`solitaire-${level}`, clock);
   };
+
+  /** Партия переживает выход из игры: доиграть можно потом. */
+  const store = () => save('solitaire-game', won() ? null : { level, game, moves, seconds, history: history.slice(-30) });
 
   function cardEl(card) {
     const key = keyOf(card);
@@ -147,7 +199,10 @@ export function start(root, ctx) {
     root.querySelector('[data-time]').textContent = clock(seconds);
     root.querySelector('[data-undo]').disabled = !history.length;
     root.querySelector('[data-auto]').hidden = !readyToFinish() || won();
-    board.querySelector('[data-slot="stock"]').classList.toggle('empty', !game.waste.length && !game.stock.length);
+    const stockSlot = board.querySelector('[data-slot="stock"]');
+    const left = passesLeft();
+    stockSlot.classList.toggle('empty', !game.stock.length);
+    stockSlot.querySelector('span').textContent = !game.waste.length || left <= 0 ? '✕' : Number.isFinite(left) ? `↻${left}` : '↻';
   }
 
   const won = () => game.found.every((pile) => pile.length === 13);
@@ -159,6 +214,8 @@ export function start(root, ctx) {
     moves = 0;
     seconds = 0;
     started = false;
+    cycle = null;
+    save('solitaire-game', null);
     stage.querySelector('.game-over')?.remove();
     els.forEach((el) => el.remove());
     els.clear();
@@ -191,12 +248,22 @@ export function start(root, ctx) {
     });
     render();
     bump(root.querySelector('[data-moves]'), moves);
+    store();
     if (won()) celebrate();
     else if (readyToFinish()) root.querySelector('[data-auto]').hidden = false;
+    else if (!hasMoves(game, rules().draw, passesLeft())) stuck();
+  }
+
+  function stuck() {
+    overlay(stage, `<div class="game-over-title">Ходов больше нет</div>
+        <div class="game-over-text">Отмените последние ходы или начните новую раздачу.</div>`,
+    [{ label: 'Новая раздача', run: deal }, { label: 'Отменить ход', outline: true, run: undo }], { icon: '🃏', lose: true });
   }
 
   function celebrate() {
-    const record = saveBest('solitaire', seconds, true);
+    const record = saveBest(`solitaire-${level}`, seconds, true);
+    saveBest('solitaire', seconds, true);
+    save('solitaire-game', null);
     showBest();
     // Карты из «домов» подпрыгивают волной.
     [...els.values()].forEach((el, i) => el.animate?.([{ translate: '0 0' }, { translate: '0 -24px' }, { translate: '0 0' }],
@@ -204,7 +271,7 @@ export function start(root, ctx) {
     setTimeout(() => {
       if (ctx.signal.aborted) return;
       overlay(stage, `<div class="game-over-title">${record ? 'Новый рекорд!' : 'Пасьянс сошёлся!'}</div>
-          <div class="game-over-text">Время <b>${clock(seconds)}</b> · ходов: <b>${moves}</b></div>`,
+          <div class="game-over-text">${rules().label} · время <b>${clock(seconds)}</b> · ходов: <b>${moves}</b></div>`,
       [{ label: 'Новая раздача', run: deal }], { icon: record ? '🏆' : '🎉', win: true });
     }, 900);
   }
@@ -245,12 +312,16 @@ export function start(root, ctx) {
     return false;
   }
 
-  /** Куда перенести карты по касанию: в «дом», иначе на стопку поля. */
+  /** Куда перенести карты по касанию: в «дом», иначе на стопку поля. Повторное
+   *  касание той же карты везёт её дальше по кругу — на следующее место. */
   function autoTarget(cards, at) {
-    if (cards.length === 1) {
+    const again = cycle && cycle.key === keyOf(cards[0]) && cycle.moves === moves;
+    if (cards.length === 1 && !again) {
       for (let f = 0; f < 4; f += 1) if (legal(cards, { type: 'found', f }, at)) return { type: 'found', f };
     }
-    const cols = [0, 1, 2, 3, 4, 5, 6].sort((a, b) => Number(!game.tableau[a].length) - Number(!game.tableau[b].length));
+    const from = at.type === 'col' ? at.col + 1 : 0;
+    const cols = [0, 1, 2, 3, 4, 5, 6].map((i) => (from + i) % 7)
+      .sort((a, b) => Number(!game.tableau[a].length) - Number(!game.tableau[b].length));
     for (const col of cols) {
       // Короля с пустого места на другое пустое не переносим — бессмысленно.
       if (!game.tableau[col].length && at.type === 'col' && at.index === 0) continue;
@@ -259,9 +330,13 @@ export function start(root, ctx) {
     return null;
   }
 
-  function apply(at, target) {
+  // Последняя карта, перенесённая касанием: для перебора мест.
+  let cycle = null;
+
+  function apply(at, target, byTap = false) {
     snapshot();
     const cards = at.pile.splice(at.index);
+    cycle = byTap ? { key: keyOf(cards[0]), moves: moves + 1 } : null;
     if (target.type === 'found') game.found[target.f].push(...cards);
     else game.tableau[target.col].push(...cards);
     sfx(target.type === 'found' ? 'good' : 'card');
@@ -270,14 +345,18 @@ export function start(root, ctx) {
   }
 
   function drawStock() {
-    if (!game.stock.length && !game.waste.length) return;
+    if (!game.stock.length && (!game.waste.length || passesLeft() <= 0)) {
+      shake(board.querySelector('[data-slot="stock"]'));
+      return;
+    }
     snapshot();
     if (game.stock.length) {
-      game.waste.push({ ...game.stock.pop(), down: false });
+      for (let i = 0; i < rules().draw && game.stock.length; i += 1) game.waste.push({ ...game.stock.pop(), down: false });
       sfx('card');
     } else {
       game.stock = game.waste.reverse().map((card) => ({ ...card, down: true }));
       game.waste = [];
+      game.pass = (game.pass || 1) + 1;
       sfx('deal');
     }
     tap('soft');
@@ -336,7 +415,7 @@ export function start(root, ctx) {
     drag = null;
     if (!current.moved) {
       const target = autoTarget(current.cards, current.at);
-      if (target) apply(current.at, target);
+      if (target) apply(current.at, target, true);
       else shake(current.els[0]);
       return;
     }
@@ -360,15 +439,30 @@ export function start(root, ctx) {
   board.addEventListener('pointerup', finish);
   board.addEventListener('pointercancel', finish);
 
-  root.querySelector('[data-undo]').addEventListener('click', () => {
+  function undo() {
     if (!history.length || busy) return;
     tap();
     sfx('tap');
+    stage.querySelector('.game-over')?.remove();
     game = JSON.parse(history.pop());
     moves += 1;
+    cycle = null;
     render();
+    store();
+  }
+  root.querySelector('[data-undo]').addEventListener('click', undo);
+  const inProgress = () => started && !won();
+  root.querySelector('[data-new]').addEventListener('click', async () => {
+    tap();
+    if (inProgress() && !(await askRestart(stage))) return;
+    deal();
   });
-  root.querySelector('[data-new]').addEventListener('click', () => { tap(); deal(); });
+  bindChips(root, 'level', (value) => {
+    level = value;
+    save('solitaire-level', level);
+    showBest();
+    deal();
+  }, { guard: () => !inProgress() || askRestart(stage) });
   root.querySelector('[data-auto]').addEventListener('click', async () => {
     if (busy) return;
     busy = true;
@@ -403,7 +497,19 @@ export function start(root, ctx) {
     seconds += 1;
     root.querySelector('[data-time]').textContent = clock(seconds);
   }, 1000);
-  ctx.signal.addEventListener('abort', () => clearInterval(ticker));
+  ctx.signal.addEventListener('abort', () => {
+    clearInterval(ticker);
+    if (started) store();
+  });
   showBest();
-  deal();
+  const saved = load('solitaire-game');
+  if (saved?.game?.tableau && saved.level === level) {
+    ({ game, moves, seconds } = saved);
+    history = saved.history || [];
+    started = true;
+    render(true);
+    requestAnimationFrame(() => els.forEach((el) => el.classList.remove('instant')));
+  } else {
+    deal();
+  }
 }

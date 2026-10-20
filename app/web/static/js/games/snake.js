@@ -1,15 +1,25 @@
 // Змейка: одна или против двух змей-ботов, которые охотятся за теми же
 // яблоками. Врезался в стену, в себя или в чужое тело — конец. Боты после
 // гибели возвращаются через пару секунд. Змейки ползут плавно, между
-// клетками, а не прыжками.
+// клетками, а не прыжками. Уровень задаёт скорость и то, насколько умны
+// боты; рекорд — свой у каждого режима и уровня.
 'use strict';
 
 import {
-  DIRS, angleToDir, best, bindChips, bump, chipsRow, fitCanvas, frames, hud, intro, joystick, load, overlay, particles, popText,
-  quake, rand, save, saveBest, sfx, shade, tap,
+  DIRS, angleToDir, askRestart, best, bindChips, bump, chipsRow, fitCanvas, frames, hud, intro, joystick, load, overlay, particles,
+  popText, quake, rand, save, saveBest, sfx, shade, tap,
 } from './kit.js';
 
 const N = 17;
+// Против ботов поле больше: втроём на 17×17 было не развернуться.
+const N_BOTS = 21;
+/** Уровни: шаг змейки в секундах (стартовый и предельный) и как часто бот
+ *  ошибается — сворачивает наугад вместо пути к яблоку. */
+export const LEVELS = {
+  easy: { label: 'Лёгкий', speed: 0.18, fastest: 0.1, slip: 0.35 },
+  medium: { label: 'Средний', speed: 0.14, fastest: 0.07, slip: 0.12 },
+  hard: { label: 'Сложный', speed: 0.11, fastest: 0.055, slip: 0 },
+};
 const SNAKES = [
   { color: '#4a7cf3', name: 'Вы' },
   { color: '#f2554a', name: 'Бот' },
@@ -55,16 +65,20 @@ export function botStep(head, dir, blocked, apples, n = N) {
 }
 
 export function start(root, ctx) {
-  let mode = load('snake-mode', 'solo');
+  let mode = load('snake-mode', 'solo') === 'bots' ? 'bots' : 'solo';
+  let level = LEVELS[load('snake-level')] ? load('snake-level') : 'medium';
+  const recordKey = () => `snake-${mode}-${level}`;
   root.innerHTML = `<div class="game">
-      ${hud([['score', '🍎', 0], ['best', '🏆', best('snake')]])}
+      ${hud([['score', '🍎', 0], ['best', '🏆', best(recordKey())]])}
       ${chipsRow('mode', [['solo', 'Одна'], ['bots', 'Против ботов']], mode)}
+      ${chipsRow('level', Object.entries(LEVELS).map(([key, { label }]) => [key, label]), level)}
       <div class="game-stage snake-stage"><canvas class="game-canvas" data-board></canvas></div>
       <div class="joy-hint">Ведите пальцем в любом месте экрана — змейка поползёт туда</div></div>`;
   const stage = root.querySelector('.game-stage');
   const canvas = root.querySelector('[data-board]');
-  const size = Math.min(root.querySelector('.game').clientWidth || 340, 460, innerHeight - 270);
-  const cell = size / N;
+  const size = Math.min(root.querySelector('.game').clientWidth || 340, 460, innerHeight - 310);
+  let n = mode === 'bots' ? N_BOTS : N;
+  let cell = size / n;
   const g = fitCanvas(canvas, size, size);
   const fx = particles();
 
@@ -79,17 +93,17 @@ export function start(root, ctx) {
 
   const occupied = () => {
     const cells = new Set();
-    snakes.forEach((snake) => snake.alive && snake.body.forEach(([x, y]) => cells.add(y * N + x)));
+    snakes.forEach((snake) => snake.alive && snake.body.forEach(([x, y]) => cells.add(y * n + x)));
     return cells;
   };
 
   function freeCell() {
     const busy = occupied();
-    apples.forEach(([x, y]) => busy.add(y * N + x));
+    apples.forEach(([x, y]) => busy.add(y * n + x));
     for (let tries = 0; tries < 400; tries += 1) {
-      const x = rand(N);
-      const y = rand(N);
-      if (!busy.has(y * N + x)) return [x, y, performance.now()];
+      const x = rand(n);
+      const y = rand(n);
+      if (!busy.has(y * n + x)) return [x, y, performance.now()];
     }
     return null;
   }
@@ -106,27 +120,39 @@ export function start(root, ctx) {
   }
 
   function reset() {
+    n = mode === 'bots' ? N_BOTS : N;
+    cell = size / n;
+    paintBoard();
     snakes = [{ bot: false, ...SNAKES[0] }];
-    spawn(snakes[0], 4, N - 4, 'right');
+    spawn(snakes[0], 4, n - 4, 'right');
     if (mode === 'bots') {
       snakes.push({ bot: true, ...SNAKES[1] });
       snakes.push({ bot: true, ...SNAKES[2] });
-      spawn(snakes[1], N - 5, 3, 'left');
-      spawn(snakes[2], N - 5, Math.floor(N / 2), 'left');
+      spawn(snakes[1], n - 5, 3, 'left');
+      spawn(snakes[2], n - 5, Math.floor(n / 2), 'left');
     }
     apples = [];
     const count = mode === 'bots' ? 3 : 1;
     for (let i = 0; i < count; i += 1) apples.push(freeCell());
     score = 0;
-    speed = 0.14;
+    speed = LEVELS[level].speed;
     bump(root.querySelector('[data-score]'), 0);
+    bump(root.querySelector('[data-best]'), best(recordKey()));
   }
 
+  /** Бот возвращается туда, где свободно всё его тело, и не перед носом у вас. */
   function respawnBot(snake) {
     setTimeout(() => {
       if (!running || ctx.signal.aborted) return;
       const spot = freeCell();
-      if (spot && spot[0] > 3 && spot[0] < N - 3) spawn(snake, spot[0], spot[1], spot[0] > N / 2 ? 'left' : 'right');
+      const busy = occupied();
+      const dir = spot && spot[0] > n / 2 ? 'left' : 'right';
+      const [dx] = DIRS[dir];
+      const body = spot ? [0, 1, 2].map((k) => [spot[0] - dx * k, spot[1]]) : [];
+      const [hx, hy] = snakes[0].body[0];
+      const fits = spot && spot[0] > 3 && spot[0] < n - 3
+        && body.every(([x, y]) => !busy.has(y * n + x)) && Math.abs(spot[0] - hx) + Math.abs(spot[1] - hy) >= 5;
+      if (fits) spawn(snake, spot[0], spot[1], dir);
       else respawnBot(snake);
     }, 2500);
   }
@@ -145,9 +171,14 @@ export function start(root, ctx) {
       snakes.forEach((other) => {
         if (other === snake || !other.alive) return;
         const [ox, oy] = other.body[0];
-        Object.values(DIRS).forEach(([dx, dy]) => others.add((oy + dy) * N + ox + dx));
+        Object.values(DIRS).forEach(([dx, dy]) => others.add((oy + dy) * n + ox + dx));
       });
-      snake.dir = botStep(snake.body[0], snake.dir, others, apples);
+      const step = botStep(snake.body[0], snake.dir, others, apples, n);
+      // Ошибка бота: свернуть наугад, но не в стену и не в тело.
+      const [hx, hy] = snake.body[0];
+      const safe = Object.entries(DIRS).filter(([name, [dx, dy]]) => name !== OPPOSITE[snake.dir]
+        && hx + dx >= 0 && hy + dy >= 0 && hx + dx < n && hy + dy < n && !others.has((hy + dy) * n + hx + dx)).map(([name]) => name);
+      snake.dir = Math.random() < LEVELS[level].slip && safe.length ? safe[rand(safe.length)] : step;
     });
     // Все головы двигаются одновременно.
     const heads = snakes.map((snake) => {
@@ -160,15 +191,15 @@ export function start(root, ctx) {
     snakes.forEach((snake) => {
       if (snake.alive && !snake.grow) {
         const [x, y] = snake.body[snake.body.length - 1];
-        tails.add(y * N + x);
+        tails.add(y * n + x);
       }
     });
     const dead = new Set();
     heads.forEach((head, i) => {
       if (!head) return;
       const [x, y] = head;
-      const key = y * N + x;
-      if (x < 0 || y < 0 || x >= N || y >= N || (blocked.has(key) && !tails.has(key))) dead.add(i);
+      const key = y * n + x;
+      if (x < 0 || y < 0 || x >= n || y >= n || (blocked.has(key) && !tails.has(key))) dead.add(i);
       heads.forEach((other, j) => { if (j !== i && other && other[0] === x && other[1] === y) dead.add(i); });
     });
     snakes.forEach((snake, i) => {
@@ -197,7 +228,7 @@ export function start(root, ctx) {
           popText(stage, '+1', { x: px, y: py });
           sfx('eat');
           tap('light');
-          speed = Math.max(0.07, speed * 0.975);
+          speed = Math.max(LEVELS[level].fastest, speed * 0.975);
         }
       }
       if (snake.grow) snake.grow -= 1;
@@ -215,8 +246,9 @@ export function start(root, ctx) {
     running = false;
     flash = 1;
     quake(stage, 10);
-    const record = saveBest('snake', score);
-    bump(root.querySelector('[data-best]'), best('snake'));
+    const record = saveBest(recordKey(), score);
+    saveBest('snake', score);
+    bump(root.querySelector('[data-best]'), best(recordKey()));
     setTimeout(() => {
       if (ctx.signal.aborted) return;
       overlay(stage, `<div class="game-over-title">${record ? 'Новый рекорд!' : 'Конец игры'}</div>
@@ -228,10 +260,12 @@ export function start(root, ctx) {
   // Шахматное поле в двух оттенках зелёного, как в классической змейке.
   const board = document.createElement('canvas');
   const bg = fitCanvas(board, size, size);
-  for (let y = 0; y < N; y += 1) {
-    for (let x = 0; x < N; x += 1) {
-      bg.fillStyle = (x + y) % 2 ? '#a2d149' : '#aad751';
-      bg.fillRect(x * cell, y * cell, cell + 0.5, cell + 0.5);
+  function paintBoard() {
+    for (let y = 0; y < n; y += 1) {
+      for (let x = 0; x < n; x += 1) {
+        bg.fillStyle = (x + y) % 2 ? '#a2d149' : '#aad751';
+        bg.fillRect(x * cell, y * cell, cell + 0.5, cell + 0.5);
+      }
     }
   }
 
@@ -337,12 +371,40 @@ export function start(root, ctx) {
 
   // Палец ведёт змейку: джойстик под пальцем в любом месте экрана игры.
   joystick(root, ctx.signal, (angle) => turn(angleToDir(angle)));
+  const showIntro = () => intro(stage, {
+    icon: '🐍', title: 'Змейка',
+    text: mode === 'bots' ? 'Собирай яблоки быстрее ботов. Не врезайся в стены, в себя и в других змей.'
+      : 'Собирай яблоки и расти. Не врезайся в стены и в себя.',
+    record: best(recordKey()) ? `Рекорд: ${best(recordKey())}` : '', run: begin,
+  });
+  // После переключения — снова экран «Играть»: палец ещё на переключателе,
+  // а змейка уже ползла бы в стену.
+  const switchTo = () => {
+    running = false;
+    reset();
+    showIntro();
+  };
+  // Пока висит вопрос, змейка стоит.
+  const guard = async () => {
+    if (!running || !score) return true;
+    running = false;
+    const yes = await askRestart(stage);
+    if (!yes) {
+      acc = 0;
+      running = true;
+    }
+    return yes;
+  };
   bindChips(root, 'mode', (value) => {
     mode = value;
     save('snake-mode', mode);
-    stage.querySelector('.game-over')?.remove();
-    begin();
-  });
+    switchTo();
+  }, { guard });
+  bindChips(root, 'level', (value) => {
+    level = value;
+    save('snake-level', level);
+    switchTo();
+  }, { guard });
 
   frames(ctx, (dt) => {
     time += dt;
@@ -356,8 +418,5 @@ export function start(root, ctx) {
     draw(running ? Math.min(1, acc / speed) : 1, dt);
   });
   reset();
-  intro(stage, {
-    icon: '🐍', title: 'Змейка', text: 'Собирай яблоки и расти. Не врезайся в стены, в себя и в других змей.',
-    record: best('snake') ? `Рекорд: ${best('snake')}` : '', run: begin,
-  });
+  showIntro();
 }

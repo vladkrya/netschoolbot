@@ -1,7 +1,8 @@
 // Блэкджек против дилера-бота; за столом ещё два бота со своими фишками.
 // Дилер берёт до 17, блэкджек платит 3:2, ничья возвращает ставку. Ставка
 // собирается фишками, карты вылетают из шуза, закрытая карта дилера
-// переворачивается в конце раздачи.
+// переворачивается в конце раздачи. Закрыли игру посреди раздачи — она
+// доигрывается сразу, будто вы сказали «Хватит»: ставка не пропадает.
 'use strict';
 
 import {
@@ -183,6 +184,10 @@ export function start(root, ctx) {
     const me = seats[1];
     if (isBlackjack(me.cards)) {
       message = 'Блэкджек!';
+      // Сосед справа всё равно доигрывает свою руку.
+      phase = 'bots';
+      render();
+      await playBots(2, 3);
       await finishRound();
       return;
     }
@@ -220,20 +225,10 @@ export function start(root, ctx) {
     await finishRound();
   }
 
-  async function finishRound() {
-    phase = 'dealer';
-    reveal = true;
-    sfx('flip');
-    render();
-    reveal = false;
-    const anyAlive = seats.some((seat) => handValue(seat.cards).total <= 21 && !isBlackjack(seat.cards));
-    await wait(ctx, 650);
-    while (anyAlive && handValue(dealer).total < 17) {
-      dealer.push(draw());
-      sfx('deal');
-      render();
-      await wait(ctx, 650);
-    }
+  const anyAlive = () => seats.some((seat) => handValue(seat.cards).total <= 21 && !isBlackjack(seat.cards));
+
+  /** Выплаты по итогам раздачи; возвращает, во сколько раз вернулась ваша ставка. */
+  function payout() {
     let mine = 0;
     for (const seat of seats) {
       const times = settle(seat.cards, dealer);
@@ -248,9 +243,27 @@ export function start(root, ctx) {
         botChips[seat.bot] += won;
       }
     }
+    phase = 'done';
+    return mine;
+  }
+
+  async function finishRound() {
+    phase = 'dealer';
+    reveal = true;
+    sfx('flip');
+    render();
+    reveal = false;
+    const alive = anyAlive();
+    await wait(ctx, 650);
+    while (alive && handValue(dealer).total < 17) {
+      dealer.push(draw());
+      sfx('deal');
+      render();
+      await wait(ctx, 650);
+    }
+    const mine = payout();
     const dealerTotal = handValue(dealer).total;
     message = dealerTotal > 21 ? 'У дилера перебор!' : `У дилера ${dealerTotal}`;
-    phase = 'done';
     bet = Math.min(lastBet, chips());
     render();
     if (mine > 1) {
@@ -265,6 +278,20 @@ export function start(root, ctx) {
         [{ label: 'Взять фишки', run: () => { refillChips(); bet = 0; render(); } }], { icon: '🏦' });
     }
   }
+
+  /** Игру закрыли посреди раздачи: доигрываем без анимаций — вы «стоите». */
+  function settleNow() {
+    if (['bet', 'done'].includes(phase) || !seats.length) return;
+    seats.forEach((seat) => { while (seat.cards.length < 2) seat.cards.push(draw()); });
+    while (dealer.length < 2) dealer.push(draw());
+    seats.forEach((seat) => {
+      if (seat.bot === undefined) return;
+      while (handValue(seat.cards).total < 21 && botHits(seat.cards, dealer[0])) seat.cards.push(draw());
+    });
+    if (anyAlive()) while (handValue(dealer).total < 17) dealer.push(draw());
+    payout();
+  }
+  ctx.signal.addEventListener('abort', settleNow);
 
   controls.addEventListener('click', async (event) => {
     const chip = event.target.closest('[data-chip]');
@@ -284,6 +311,8 @@ export function start(root, ctx) {
     }
     const button = event.target.closest('[data-act]');
     if (!button || button.disabled) return;
+    // Ход игрока — только пока его очередь: второе быстрое касание не в счёт.
+    if (['hit', 'stand', 'double'].includes(button.dataset.act) && phase !== 'play') return;
     const me = seats.find((seat) => seat.me);
     tap();
     try {
@@ -310,8 +339,11 @@ export function start(root, ctx) {
         case 'hit':
           me.cards.push(draw());
           sfx('deal');
-          render();
-          if (handValue(me.cards).total >= 21) await myTurnOver();
+          if (handValue(me.cards).total >= 21) {
+            await myTurnOver();
+          } else {
+            render();
+          }
           break;
         case 'stand':
           sfx('tap');
@@ -322,6 +354,9 @@ export function start(root, ctx) {
           me.bet *= 2;
           sfx('chip');
           me.cards.push(draw());
+          // После удвоения — ровно одна карта: кнопки сразу гаснут.
+          me.active = false;
+          phase = 'bots';
           render();
           await wait(ctx, 400);
           await myTurnOver();
