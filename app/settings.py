@@ -117,6 +117,18 @@ class WebSettings:
     # Бот, к которому этот домен привязан. У бота домен один, поэтому виджет
     # может жить на другом боте (резервном). Пусто — основной бот.
     login_widget_bot_token: str = ""
+    # Вход через Telegram по OpenID Connect (новый «Log In With Telegram»).
+    # Client ID и Secret — из @BotFather (бот → Login Widget); там же в
+    # Allowed URLs адреса сайтов и адреса возврата
+    # https://<домен><путь>/api/account/tg-oidc/callback. Кнопка — только на
+    # доменах из tg_oidc_hosts: остальные Telegram не пустит.
+    tg_oidc_client_id: str = ""
+    tg_oidc_client_secret: str = ""
+    tg_oidc_hosts: tuple[str, ...] = ()
+
+    @property
+    def tg_oidc_enabled(self) -> bool:
+        return bool(self.tg_oidc_client_id and self.tg_oidc_client_secret and self.tg_oidc_hosts)
 
     @property
     def miniapp_url(self) -> str:
@@ -345,6 +357,13 @@ def load_settings(*, require_bot_token: bool = True) -> Settings:
             captcha_rounds=max(1, _env_int("NETSCHOOL_CAPTCHA_ROUNDS", 2)),
             login_widget_domain=_env("NETSCHOOL_TG_LOGIN_DOMAIN").strip().lower(),
             login_widget_bot_token=_env("NETSCHOOL_TG_LOGIN_BOT_TOKEN"),
+            tg_oidc_client_id=_env("NETSCHOOL_TG_OIDC_CLIENT_ID").strip(),
+            tg_oidc_client_secret=_env("NETSCHOOL_TG_OIDC_CLIENT_SECRET").strip(),
+            tg_oidc_hosts=tuple(
+                host.strip().lower()
+                for host in (_env("NETSCHOOL_TG_OIDC_HOSTS") or public_url.split("//")[-1].split("/")[0]).split(",")
+                if host.strip()
+            ),
             miniapp_path=miniapp_path,
             token_ttl=_env_int("NETSCHOOL_MINIAPP_TOKEN_TTL", 900),
             login_code_ttl=_env_int("NETSCHOOL_LOGIN_CODE_TTL", 600),

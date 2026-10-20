@@ -194,6 +194,13 @@ systemctl stop netschoolbot && ./venv/bin/python -m app.tools.backup --restore F
 Администратор переключает виджет командой бота `/tgwidget main|reserve|off`
 (основной бот, резервный, выключить) — без перезапуска.
 
+Новый вход Telegram по OpenID Connect заменяет виджет, когда настроен: в
+@BotFather (бот → Login Widget) в Allowed URLs вписываются адрес сайта и
+`https://<домен>/api/account/tg-oidc/callback`, Client ID и Secret — в
+`NETSCHOOL_TG_OIDC_CLIENT_ID` и `NETSCHOOL_TG_OIDC_CLIENT_SECRET`. Домены с
+кнопкой — `NETSCHOOL_TG_OIDC_HOSTS` через запятую (по умолчанию домен
+`NETSCHOOL_PUBLIC_URL`).
+
 Приложение отдаётся с корня домена. Старые ссылки `/mini/netschool/...`
 переадресуются на те же пути от корня.
 
