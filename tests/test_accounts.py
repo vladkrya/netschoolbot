@@ -3,6 +3,7 @@
 import asyncio
 
 import datetime as dt
+from dataclasses import replace
 
 import pytest
 from aiohttp.test_utils import TestClient, TestServer
@@ -11,10 +12,12 @@ from app.accounts import WEB_ID_BASE, has_telegram
 from app.accounts.service import link_telegram
 from app.web import account as account_web
 from app.web.server import create_app
+from tests.test_telegram_auth import make_widget_data
 from tests.test_bot_handlers import app as app_context  # noqa: F401 — фикстура
 from tests.test_repositories import make_user
 
 BASE = "/mini"
+WIDGET_TOKEN = "777:widget-test-token"
 
 
 @pytest.fixture(autouse=True)
@@ -331,6 +334,38 @@ class TestSiteLoginThroughBot:
     async def test_unknown_code_is_expired(self, bot_client):
         response = await bot_client.get(f"{BASE}/api/account/tg-login", params={"code": "nope"})
         assert (await response.json())["data"] == {"status": "expired"}
+
+
+class TestSiteLoginThroughWidget:
+    @pytest.fixture
+    def widget_on(self, app_context):
+        app_context.settings = replace(
+            app_context.settings,
+            telegram=replace(app_context.settings.telegram, bot_token=WIDGET_TOKEN),
+            web=replace(app_context.settings.web, login_widget_domain="127.0.0.1"),
+        )
+
+    async def test_config_gives_bot_id_only_on_widget_domain(self, client, app_context, widget_on):
+        config = await (await client.get(f"{BASE}/api/account/config")).json()
+        assert config["data"]["widget"] == 777
+        app_context.settings = replace(
+            app_context.settings, web=replace(app_context.settings.web, login_widget_domain="ns.example.ru"))
+        config = await (await client.get(f"{BASE}/api/account/config")).json()
+        assert config["data"]["widget"] == 0
+
+    async def test_signed_data_logs_in_and_creates_user(self, client, app_context, widget_on):
+        status, body, response = await post(client, "/api/account/tg-widget", make_widget_data(WIDGET_TOKEN, id="4243"))
+        assert status == 200
+        token = body["data"]["token"]
+        assert await app_context.miniapp.resolve_token(token) == 4243
+        assert response.cookies["netschool_token"].value == token
+        assert (await app_context.users.get(4243)).display_name == "Иван"
+
+    async def test_forged_data_rejected(self, client, app_context, widget_on):
+        data = {**make_widget_data(WIDGET_TOKEN), "id": "1"}
+        status, body, response = await post(client, "/api/account/tg-widget", data)
+        assert status == 401 and "netschool_token" not in response.cookies
+        assert await app_context.users.get(1) is None
 
 
 class TestSignOut:

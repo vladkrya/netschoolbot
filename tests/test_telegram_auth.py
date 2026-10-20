@@ -8,11 +8,11 @@ import hashlib
 import hmac
 import json
 import time
-from urllib.parse import urlencode
+from urllib.parse import parse_qsl, urlencode
 
 import pytest
 
-from app.web.telegram_auth import InitDataError, verify_init_data
+from app.web.telegram_auth import InitDataError, verify_init_data, verify_login_widget
 
 TOKEN = "123456:AAHtestbottokenvaluehere"
 
@@ -122,3 +122,43 @@ class TestRejection:
         data = make_init_data()
         with pytest.raises(InitDataError, match="Подпись"):
             verify_init_data(data.replace("%D0%98%D0%B2%D0%B0%D0%BD", "%D0%9E%D0%BB%D0%B5%D0%B3"), TOKEN)
+
+
+def make_widget_data(token=TOKEN, *, auth_date=None, **fields):
+    """Ответ Telegram Login Widget: плоские поля и hash по SHA256 от токена."""
+    data = {"id": "42", "first_name": "Иван", "username": "ivan",
+            "auth_date": str(int(auth_date if auth_date is not None else time.time())), **fields}
+    check = "\n".join(f"{k}={data[k]}" for k in sorted(data))
+    data["hash"] = hmac.new(hashlib.sha256(token.encode()).digest(), check.encode(), hashlib.sha256).hexdigest()
+    return data
+
+
+class TestLoginWidget:
+    def test_valid_data_gives_user(self):
+        user = verify_login_widget(make_widget_data(photo_url="https://t.me/i/x.jpg"), TOKEN)
+        assert (user.id, user.first_name, user.username) == (42, "Иван", "ivan")
+
+    def test_number_fields_are_signed_as_text(self):
+        # Из JSON id и auth_date приходят числами — подпись от этого не меняется.
+        data = make_widget_data()
+        data["id"], data["auth_date"] = int(data["id"]), int(data["auth_date"])
+        assert verify_login_widget(data, TOKEN).id == 42
+
+    @pytest.mark.parametrize("change", [{"id": "43"}, {"hash": "0" * 64}, {"hash": ""}])
+    def test_tampered_data_rejected(self, change):
+        with pytest.raises(InitDataError):
+            verify_login_widget({**make_widget_data(), **change}, TOKEN)
+
+    def test_other_bot_rejected(self):
+        with pytest.raises(InitDataError):
+            verify_login_widget(make_widget_data("999:other"), TOKEN)
+
+    def test_mini_app_signature_is_not_accepted(self):
+        # Ключи у двух схем разные: initData не годится вместо виджета.
+        data = dict(parse_qsl(make_init_data()))
+        with pytest.raises(InitDataError):
+            verify_login_widget(data, TOKEN)
+
+    def test_old_data_rejected(self):
+        with pytest.raises(InitDataError):
+            verify_login_widget(make_widget_data(auth_date=time.time() - 3600), TOKEN, max_age=600)

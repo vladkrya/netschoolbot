@@ -185,6 +185,11 @@ systemctl stop netschoolbot && ./venv/bin/python -m app.tools.backup --restore F
 `deploy/nginx/yavds.ikrya.ru.conf`. `NETSCHOOL_MIRROR_URL` в `.env` добавляет
 кнопку «Резервный адрес» в `/app_reset`.
 
+Кнопка «Войти через Telegram» на главном экране — Telegram Login Widget. Домен
+привязывается к боту в @BotFather (`/setdomain`), тот же домен без схемы —
+в `NETSCHOOL_TG_LOGIN_DOMAIN` в `.env`. Telegram пускает виджет только с этого
+домена, поэтому на зеркалах кнопки нет; пустая переменная её выключает.
+
 Приложение отдаётся с корня домена. Старые ссылки `/mini/netschool/...`
 переадресуются на те же пути от корня.
 

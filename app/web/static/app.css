@@ -2475,7 +2475,9 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
 .ld-status-dot { width: 8px; height: 8px; border-radius: 50%; background: #22c55e; box-shadow: 0 0 0 3px color-mix(in srgb, #22c55e 25%, transparent); }
 .landing .account-card .btn.ld-tg-login { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%;
   margin: 6px 0 0; padding: 12px; background: #2aabee; border-color: #2aabee; color: #fff; text-decoration: none; font-weight: 600; }
-.landing .account-card [data-landing-bot][hidden] { display: none; }
+.landing .account-card .btn.ld-tg-login.ld-tg-alt { background: transparent; color: #2aabee; }
+.landing .account-card [data-landing-bot][hidden], .landing .account-card [data-landing-widget][hidden],
+.landing .account-card [data-landing-or][hidden] { display: none; }
 .ld-or { display: flex; align-items: center; gap: 10px; margin: 14px 0 8px; color: var(--text2); font-size: 13px; }
 .ld-or::before, .ld-or::after { content: ""; flex: 1; height: 1px; background: var(--border); }
 .ld-demo-link { display: block; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border);

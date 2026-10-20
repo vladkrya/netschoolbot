@@ -31,6 +31,7 @@ from ..netschool import login as login_flow
 from ..netschool.errors import NetSchoolError, Reason, login_message, wrap
 from . import viewing
 from .api import BOT, context, current_user, json_error
+from .telegram_auth import InitDataError, verify_login_widget
 
 if TYPE_CHECKING:
     from ..context import AppContext
@@ -46,7 +47,7 @@ MAX_SCHOOLS = 30
 # Без входа доступны только эти адреса.
 PUBLIC_PATHS = ("/api/account/register", "/api/account/login", "/api/account/reset/request",
                 "/api/account/reset/confirm", "/api/account/config", "/api/family/invite-info",
-                "/api/account/tg-login")
+                "/api/account/tg-login", "/api/account/tg-widget")
 
 
 def is_public(path: str) -> bool:
@@ -135,7 +136,44 @@ async def account_config(request: web.Request) -> web.Response:
     return web.json_response({"ok": True, "data": {
         "mail": context(request).mailer.configured,
         "bot": f"https://t.me/{username}" if username else "",
+        "widget": login_widget_bot_id(request),
     }})
+
+
+def login_widget_bot_id(request: web.Request) -> int:
+    """id бота для Telegram Login Widget — только на домене из BotFather.
+
+    На любом другом домене (зеркала, локальная разработка) Telegram ответит
+    «Bot domain invalid», поэтому кнопку там не показываем вовсе.
+    """
+    domain = context(request).settings.web.login_widget_domain
+    if not domain or request.host.split(":")[0].lower() != domain:
+        return 0
+    bot_id, _, _ = context(request).settings.telegram.bot_token.partition(":")
+    return int(bot_id) if bot_id.isdigit() else 0
+
+
+# Подписанный ответ виджета остаётся в истории браузера (в адресе после #),
+# поэтому годен он недолго: Telegram ставит время в момент возврата на сайт.
+WIDGET_MAX_AGE_S = 600
+
+
+@routes.post("/api/account/tg-widget")
+async def tg_widget_login(request: web.Request) -> web.Response:
+    """Вход через Telegram Login Widget: Telegram вернул на сайт подписанные данные."""
+    ip = _ip(request)
+    if IP_FAILURES.blocked(ip):
+        return json_error("Слишком много попыток входа — подождите 15 минут", status=429)
+    try:
+        tg_user = verify_login_widget(await _body(request), context(request).settings.telegram.bot_token,
+                                      max_age=WIDGET_MAX_AGE_S)
+    except InitDataError as exc:
+        IP_FAILURES.hit(ip)
+        logger.info("Вход через виджет отклонён: %s", exc)
+        return json_error("Telegram не подтвердил вход — попробуйте ещё раз", status=401, reason="auth")
+    await context(request).users.get_or_create(tg_user.id, display_name=tg_user.full_name)
+    logger.info("Вход на сайт через виджет Telegram: %s", tg_user.id)
+    return await _signed_in(request, tg_user.id)
 
 
 @routes.post("/api/account/tg-login")
