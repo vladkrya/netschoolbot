@@ -1,11 +1,11 @@
 // Судоку: головоломка с единственным решением, три уровня сложности,
 // заметки карандашом, подсказки и отмена хода. Заполненная строка, столбец
-// или квадрат пробегает волной. Начатая партия сохраняется — её можно
-// доиграть позже, даже без сети.
+// или квадрат пробегает волной. Начатая партия сохраняется — своя на каждом
+// уровне, её можно доиграть позже, даже без сети.
 'use strict';
 
 import {
-  best, bindChips, chipsRow, clock, hud, load, notify, overlay, popText, save, saveBest, select, sfx, shake, shuffle, tap,
+  askRestart, best, bindChips, chipsRow, clock, hud, load, notify, overlay, popText, save, saveBest, select, sfx, shake, shuffle, tap,
 } from './kit.js';
 
 const LEVELS = { easy: ['Лёгкий', 40], medium: ['Средний', 32], hard: ['Сложный', 26] };
@@ -95,8 +95,13 @@ export function generate(clues) {
 }
 
 export function start(root, ctx) {
-  let level = load('sudoku-level', 'easy');
-  let game = load('sudoku-game');
+  let level = LEVELS[load('sudoku-level')] ? load('sudoku-level') : 'easy';
+  // У каждого уровня своя начатая партия: переключение её не теряет.
+  const slot = () => `sudoku-game-${level}`;
+  const legacy = load('sudoku-game');
+  if (legacy?.level && !legacy.done && !load(`sudoku-game-${legacy.level}`)) save(`sudoku-game-${legacy.level}`, legacy);
+  save('sudoku-game', null);
+  let game = load(slot());
   let selected = -1;
   let notesMode = false;
   let ticker = 0;
@@ -138,7 +143,7 @@ export function start(root, ctx) {
         level, puzzle, solution, values: [...puzzle], notes: Array(81).fill(0), mistakes: 0, seconds: 0, done: false, hints: HINTS,
       };
       history = [];
-      save('sudoku-game', game);
+      save(slot(), game);
       selected = -1;
       grid.classList.remove('loading');
       render();
@@ -195,13 +200,14 @@ export function start(root, ctx) {
     const i = selected;
     if (notesMode && n && !hint) {
       if (game.values[i]) return;
-      history.push({ i, value: game.values[i], notes: game.notes[i] });
+      history.push({ i, value: game.values[i], notes: game.notes[i], peers: [] });
       game.notes[i] ^= 1 << n;
       select();
       sfx('tap');
     } else {
       if (game.values[i] === n) return;
-      history.push({ i, value: game.values[i], notes: game.notes[i] });
+      // Цифра стирает такие же заметки у соседей — отмена должна их вернуть.
+      history.push({ i, value: game.values[i], notes: game.notes[i], peers: PEERS[i].map((j) => [j, game.notes[j]]) });
       game.values[i] = n;
       game.notes[i] = 0;
       if (n && n !== game.solution[i]) {
@@ -220,14 +226,14 @@ export function start(root, ctx) {
         }
       }
     }
-    save('sudoku-game', game);
+    save(slot(), game);
     render();
     if (game.values.every((v, k) => v === game.solution[k])) win();
   }
 
   function win() {
     game.done = true;
-    save('sudoku-game', null);
+    save(slot(), null);
     const record = saveBest(`sudoku-${level}`, game.seconds, true);
     showBest();
     wave([...Array(81).keys()], 40);
@@ -267,10 +273,11 @@ export function start(root, ctx) {
     if (!last || game.done) return;
     game.values[last.i] = last.value;
     game.notes[last.i] = last.notes;
+    (last.peers || []).forEach(([j, notes]) => { game.notes[j] = notes; });
     selected = last.i;
     sfx('tap');
     tap();
-    save('sudoku-game', game);
+    save(slot(), game);
     render();
   });
   root.querySelector('[data-hint]').addEventListener('click', () => {
@@ -296,12 +303,28 @@ export function start(root, ctx) {
     const host = stage.getBoundingClientRect();
     popText(stage, '💡', { x: rect.left - host.left + rect.width / 2, y: rect.top - host.top });
   });
-  root.querySelector('[data-new]').addEventListener('click', () => { tap(); sfx('tap'); newGame(); });
+  root.querySelector('[data-new]').addEventListener('click', async () => {
+    tap();
+    sfx('tap');
+    const started = game && !game.done && game.values.some((v, i) => v && !game.puzzle[i]);
+    if (started && !(await askRestart(stage))) return;
+    newGame();
+  });
   bindChips(root, 'level', (value) => {
+    if (game && !game.done) save(slot(), game);
     level = value;
     save('sudoku-level', level);
     showBest();
-    newGame();
+    game = load(slot());
+    history = [];
+    selected = -1;
+    stage.querySelector('.game-over')?.remove();
+    if (game && !game.done && game.values?.length === 81) {
+      game.hints ??= HINTS;
+      render();
+    } else {
+      newGame();
+    }
   });
   document.addEventListener('keydown', (event) => {
     if (/^Digit[1-9]$/.test(event.code)) put(Number(event.code.slice(5)));
@@ -312,11 +335,11 @@ export function start(root, ctx) {
     if (!game || game.done || document.hidden) return;
     game.seconds += 1;
     root.querySelector('[data-time]').textContent = clock(game.seconds);
-    if (game.seconds % 5 === 0) save('sudoku-game', game);
+    if (game.seconds % 5 === 0) save(slot(), game);
   }, 1000);
   ctx.signal.addEventListener('abort', () => {
     clearInterval(ticker);
-    if (game && !game.done) save('sudoku-game', game);
+    if (game && !game.done) save(slot(), game);
   });
 
   showBest();

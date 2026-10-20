@@ -1,12 +1,15 @@
 // Подкидной дурак на 36 карт: вы и 1–3 бота. Ходят по кругу; подкидывать
 // можно карты тех достоинств, что уже на столе, но не больше, чем карт у
 // отбивающегося (и не больше шести). Кто первым избавился от карт при пустой
-// колоде — вышел; последний с картами — дурак.
+// колоде — вышел; последний с картами — дурак. Боты играют на одном из трёх
+// уровней; партия сохраняется и доигрывается после выхода.
 'use strict';
 
 import {
-  best, bindChips, cardHtml, chipsRow, deck, flip, load, overlay, popText, save, saveBest, sfx, shake, tap, wait,
+  askRestart, best, bindChips, cardHtml, chipsRow, deck, flip, isRed, load, overlay, popText, rand, save, saveBest, sfx, shake, tap, wait,
 } from './kit.js';
+
+export const LEVELS = { easy: 'Лёгкий', medium: 'Средний', hard: 'Сложный' };
 
 export function beats(attack, defend, trump) {
   if (defend.s === attack.s) return defend.r > attack.r;
@@ -30,6 +33,8 @@ export function createGame(names, cards = deck(6, 14)) {
     defender: 1,
     limit: 6,
     finished: [],
+    // Отбой: сложный бот помнит вышедшие карты и не «раздаёт» их соперникам.
+    discard: [],
     over: false,
     loser: null,
   };
@@ -123,6 +128,7 @@ export function endBout(g) {
   const defender = g.defender;
   const cards = g.table.flatMap((pair) => (pair.d ? [pair.a, pair.d] : [pair.a]));
   if (g.taking) g.players[defender].hand.push(...cards);
+  else (g.discard ||= []).push(...cards);
   const tookIt = g.taking;
   // Добирают: тот, кто ходил, другие подкидывавшие, отбивавшийся последним.
   for (const i of [...throwers(g), defender]) {
@@ -154,28 +160,39 @@ export function endBout(g) {
 
 // ───────────── Боты ─────────────
 
-export function botOpen(g, p) {
-  const hand = [...g.players[p].hand].sort((a, b) => weight(a, g.trump) - weight(b, g.trump));
+// Уровни: лёгкий бот ходит почти наугад и часто берёт зря; средний — самой
+// младшей картой; сложный перебирает ходы, доигрывая партию в уме (ниже).
+
+const byWeight = (g) => (a, b) => weight(a, g.trump) - weight(b, g.trump);
+const same = (a, b) => a.r === b.r && a.s === b.s;
+
+export function botOpen(g, p, level = 'medium') {
+  const hand = [...g.players[p].hand].sort(byWeight(g));
+  if (level === 'easy') return hand[rand(Math.min(3, hand.length))];
   return hand[0];
 }
 
-export function botThrow(g, p) {
+export function botThrow(g, p, level = 'medium') {
+  if (level === 'easy' && Math.random() < 0.5) return null;
   const ranks = new Set(g.table.flatMap((pair) => (pair.d ? [pair.a.r, pair.d.r] : [pair.a.r])));
   const options = g.players[p].hand
     .filter((card) => ranks.has(card.r))
     // Пока колода не кончилась, козыри и старшие карты бот бережёт.
     .filter((card) => !g.deck.length || (card.s !== g.trump && card.r <= (g.taking ? 12 : 10)))
-    .sort((a, b) => weight(a, g.trump) - weight(b, g.trump));
+    .sort(byWeight(g));
   return options[0] || null;
 }
 
 /** Чем отбиться: { card, index } или null — забрать. */
-export function botDefend(g) {
+export function botDefend(g, level = 'medium') {
   const hand = g.players[g.defender].hand;
   const index = g.table.findIndex((pair) => !pair.d);
   const attack = g.table[index].a;
-  const options = hand.filter((card) => beats(attack, card, g.trump))
-    .sort((a, b) => weight(a, g.trump) - weight(b, g.trump));
+  const options = hand.filter((card) => beats(attack, card, g.trump)).sort(byWeight(g));
+  if (level === 'easy') {
+    if (!options.length || Math.random() < 0.25) return null;
+    return { card: options[rand(options.length)], index };
+  }
   const card = options[0];
   if (!card) return null;
   // Старший козырь на мелочь в начале игры не тратит — лучше забрать.
@@ -183,14 +200,115 @@ export function botDefend(g) {
   return { card, index };
 }
 
+/** Ход: { kind: 'play' | 'pass' | 'take' | 'defend', card?, index? }. */
+export function applyMove(g, p, move) {
+  if (move.kind === 'play') return play(g, p, move.card);
+  if (move.kind === 'defend') return defend(g, move.card, move.index);
+  if (move.kind === 'take') take(g);
+  else pass(g, p);
+  return true;
+}
+
+/** Ход бота лёгкого или среднего уровня. */
+export function botMove(g, p, level = 'medium') {
+  const turn = pending(g);
+  if (turn.kind === 'defend') {
+    const move = botDefend(g, level);
+    return move ? { kind: 'defend', ...move } : { kind: 'take' };
+  }
+  const card = turn.kind === 'open' ? botOpen(g, p, level) : botThrow(g, p, level);
+  return card && canPlay(g, p, card) ? { kind: 'play', card } : { kind: 'pass' };
+}
+
+// ───────────── Сложный бот: перебор с доигрыванием ─────────────
+// Для каждого своего варианта хода бот много раз доигрывает партию в уме:
+// чужие руки и колоду раздаёт наугад из карт, которых не видел (известны
+// своя рука, отбой, стол и козырь под колодой), а в доигровке все ходят
+// как средний бот, изредка ошибаясь. Выбирает вариант, после которого
+// реже остаётся дураком.
+// Чужих карт не подсматривает — только помнит отбой.
+
+const copyGame = (g) => ({
+  ...g,
+  players: g.players.map((player) => ({ ...player, hand: [...player.hand] })),
+  deck: [...g.deck],
+  table: g.table.map((pair) => ({ ...pair })),
+  passed: new Set(g.passed),
+  finished: [...g.finished],
+  discard: [...(g.discard || [])],
+});
+
+/** Копия партии, где чужие руки и колода розданы наугад из невиданных карт. */
+function guessWorld(g, p) {
+  const copy = copyGame(g);
+  const seen = [...copy.players[p].hand, ...copy.discard, ...copy.table.flatMap((pair) => (pair.d ? [pair.a, pair.d] : [pair.a]))];
+  if (copy.deck.length) seen.push(copy.trumpCard);
+  const unseen = deck(6, 14).filter((card) => !seen.some((c) => same(c, card)));
+  copy.players.forEach((player, i) => { if (i !== p) player.hand = unseen.splice(0, player.hand.length); });
+  if (copy.deck.length) copy.deck = [copy.trumpCard, ...unseen.splice(0, copy.deck.length - 1)];
+  return copy;
+}
+
+// Доля «лёгких» ходов в доигровке. Без неё бот подстраивался под ровную
+// игру среднего бота и проигрывал непредсказуемым соперникам; с ней — бьёт
+// и тех и других (проверено тысячами партий в симуляции).
+const ROLLOUT_SLIPS = 0.15;
+
+/** Доиграть партию средними ботами, иногда ошибающимися; вернуть номер дурака. */
+function playOut(g) {
+  for (let steps = 0; !g.over && steps < 2000; steps += 1) {
+    const turn = pending(g);
+    if (turn.kind === 'end') endBout(g);
+    else applyMove(g, turn.who, botMove(g, turn.who, Math.random() < ROLLOUT_SLIPS ? 'easy' : 'medium'));
+  }
+  return g.loser;
+}
+
+/** Ход сложного бота: вариант, после которого он реже всего дурак. */
+export function smartMove(g, p, samples = 48) {
+  const turn = pending(g);
+  const hand = g.players[p].hand;
+  const moves = [];
+  if (turn.kind === 'defend') {
+    moves.push({ kind: 'take' });
+    g.table.forEach((pair, index) => {
+      if (!pair.d) hand.forEach((card) => { if (beats(pair.a, card, g.trump)) moves.push({ kind: 'defend', card, index }); });
+    });
+  } else {
+    if (turn.kind === 'throw') moves.push({ kind: 'pass' });
+    hand.forEach((card) => { if (canPlay(g, p, card)) moves.push({ kind: 'play', card }); });
+  }
+  if (moves.length < 2) return moves[0] || botMove(g, p);
+  // Одни и те же расклады для всех вариантов — сравнение честнее.
+  const worlds = Array.from({ length: samples }, () => guessWorld(g, p));
+  let best = moves[0];
+  let bestScore = -1;
+  for (const move of moves) {
+    let score = 0;
+    for (const world of worlds) {
+      const copy = copyGame(world);
+      applyMove(copy, p, move);
+      const loser = playOut(copy);
+      score += loser === p ? 0 : loser === null ? 0.5 : 1;
+    }
+    if (score > bestScore) {
+      bestScore = score;
+      best = move;
+    }
+  }
+  return best;
+}
+
 // ───────────── Экран ─────────────
 
 const SUIT_ORDER = ['♠', '♣', '♥', '♦'];
 const BOTS = [
   { name: 'Вася', face: '🤖', color: '#ff7a59' },
-  { name: 'Маша', face: '👾', color: '#b06bff' },
+  { name: 'Маша', face: '👾', color: '#b06bff', fem: true },
   { name: 'Петя', face: '🦊', color: '#2fb7a3' },
 ];
+/** Глагол в роде бота: «вышел» / «вышла». */
+const said = (bot, male, female) => (bot.fem ? female : male);
 const PHRASES = {
   take: ['Беру!', 'Забираю', 'Ладно, беру'],
   pass: ['Бито', 'Пас', 'Хватит'],
@@ -199,9 +317,16 @@ const PHRASES = {
 };
 const pick = (list) => list[Math.floor(Math.random() * list.length)];
 
+/** Партия в JSON и обратно: Set пасовавших — массивом. */
+const pack = (g) => ({ ...g, passed: [...g.passed] });
+const unpack = (data) => ({ ...data, passed: new Set(data.passed) });
+
 export function start(root, ctx) {
   let bots = Number(load('durak-bots', 1)) || 1;
+  let level = LEVELS[load('durak-level')] ? load('durak-level') : 'medium';
   let g;
+  // Сделан ли в партии хоть один ход: новую можно начать, не спрашивая.
+  let touched = false;
   let target = -1;
   let busy = false;
   // Номер партии: новая партия обрывает ходы ботов в старой.
@@ -213,8 +338,10 @@ export function start(root, ctx) {
 
   root.innerHTML = `<div class="game durak">
       ${chipsRow('bots', [['1', '1 бот'], ['2', '2 бота'], ['3', '3 бота']], String(bots))}
+      ${chipsRow('level', Object.entries(LEVELS), level)}
       <div class="game-stage felt dk-stage" data-stage></div>
-      <div class="dk-foot">🏆 Побед: <b data-best>${best('durak')}</b></div></div>`;
+      <div class="dk-foot dk-foot-row"><span>🏆 Побед: <b data-best>${best('durak')}</b></span>
+        <button class="game-btn ghost small" data-restart>Новая партия</button></div></div>`;
   const stage = root.querySelector('[data-stage]');
 
   const sorted = (hand) => [...hand].sort((a, b) => ((a.s === g.trump) - (b.s === g.trump))
@@ -231,7 +358,8 @@ export function start(root, ctx) {
     const me = g.players[0];
     const now = performance.now();
     const role = (i) => {
-      if (g.players[i].out) return g.finished.indexOf(i) === 0 ? 'вышел первым' : 'вышел';
+      const bot = BOTS[i - 1];
+      if (g.players[i].out) return g.finished.indexOf(i) === 0 ? said(bot, 'вышел первым', 'вышла первой') : said(bot, 'вышел', 'вышла');
       if (i === g.defender) return 'отбивается';
       if (i === g.attacker) return 'ходит';
       return '';
@@ -270,7 +398,7 @@ export function start(root, ctx) {
     return `<div class="dk-opps">${opponents}</div>
       <div class="dk-mid">
         <div class="dk-deck" data-deck>${g.deck.length
-          ? `${cardHtml(g.trumpCard, { cls: 'dk-trump' })}${g.deck.length > 1 ? '<span class="pc back dk-pile"></span><span class="pc back dk-pile two"></span>' : ''}<span class="dk-count">${g.deck.length}</span>`
+          ? `<span class="dk-trump-badge${isRed(g.trumpCard) ? ' red' : ''}">козырь ${g.trump}</span>${cardHtml(g.trumpCard, { cls: 'dk-trump' })}${g.deck.length > 1 ? '<span class="pc back dk-pile"></span><span class="pc back dk-pile two"></span>' : ''}<span class="dk-count">${g.deck.length}</span>`
           : `<span class="dk-suit${['♥', '♦'].includes(g.trump) ? ' red' : ''}">${g.trump}</span><span class="dk-count">козырь</span>`}</div>
         <div class="dk-table">${table || '<span class="dk-empty">Стол пуст</span>'}</div>
         <div class="dk-discard" data-discard>${discarded ? '<span class="pc back dk-pile tilt"></span><span class="pc back dk-pile tilt two"></span>' : ''}<span class="dk-count">${discarded ? 'бито' : ''}</span></div>
@@ -294,6 +422,7 @@ export function start(root, ctx) {
 
   /** Перерисовка с перелётом карт: из руки на стол, с колоды в руку, от бота на стол. */
   function render() {
+    save('durak-game', g.over ? null : { g: pack(g), bots, level, discarded, touched });
     status = statusText();
     const deckRect = rectOf('[data-deck]');
     flip(stage, () => { stage.innerHTML = html(); }, {
@@ -381,28 +510,22 @@ export function start(root, ctx) {
           }
           return;
         }
-        await pause(fast ? 250 : 700 + Math.random() * 400);
-        if (turn.kind === 'open' || turn.kind === 'throw') {
-          const card = turn.kind === 'open' ? botOpen(g, turn.who) : botThrow(g, turn.who);
-          if (card) {
-            origin.set(key(card), turn.who);
-            play(g, turn.who, card);
-            sfx('card');
-          } else {
-            pass(g, turn.who);
-            say(turn.who, pick(PHRASES.pass));
-          }
-        } else if (turn.kind === 'defend') {
-          const move = botDefend(g);
-          if (move) {
-            origin.set(key(move.card), turn.who);
-            defend(g, move.card, move.index);
-            sfx('card');
-          } else {
-            take(g);
-            say(turn.who, pick(PHRASES.take));
-            sfx('tap');
-          }
+        // Бот «думает»: сначала доигрывается перелёт карт, потом считается
+        // ход — перебор сложного бота занимает процессор и не дёргает анимацию.
+        const think = fast ? 250 : 700 + Math.random() * 400;
+        await pause(Math.min(think, 400));
+        const started = performance.now();
+        const move = level === 'hard' ? smartMove(g, turn.who) : botMove(g, turn.who, level);
+        await pause(Math.max(0, think - 400 - (performance.now() - started)));
+        touched = true;
+        if (move.card) origin.set(key(move.card), turn.who);
+        applyMove(g, turn.who, move);
+        if (move.card) sfx('card');
+        else if (move.kind === 'take') {
+          say(turn.who, pick(PHRASES.take));
+          sfx('tap');
+        } else {
+          say(turn.who, pick(PHRASES.pass));
         }
         tap('soft');
       }
@@ -416,10 +539,12 @@ export function start(root, ctx) {
   function finish() {
     const won = g.loser !== null && g.loser !== 0;
     if (won) saveBest('durak', best('durak') + 1);
+    save('durak-game', null);
     if (g.loser && g.loser !== 0) say(g.loser, pick(PHRASES.fool));
     render();
     const title = g.loser === null ? 'Ничья' : won ? 'Победа!' : 'Вы — дурак';
-    const note = g.loser === null ? 'Все вышли одновременно' : won ? `Дураком остался ${BOTS[g.loser - 1].name}` : 'Повезёт в следующий раз';
+    const fool = BOTS[g.loser - 1];
+    const note = g.loser === null ? 'Все вышли одновременно' : won ? `Дураком ${said(fool, 'остался', 'осталась')} ${fool.name}` : 'Повезёт в следующий раз';
     setTimeout(() => {
       if (ctx.signal.aborted) return;
       overlay(stage, `<div class="game-over-title">${title}</div><div class="game-over-text">${note}</div>`,
@@ -433,6 +558,7 @@ export function start(root, ctx) {
     g = createGame(['Вы', ...BOTS.slice(0, bots).map((b) => b.name)]);
     target = -1;
     discarded = 0;
+    touched = false;
     origin.clear();
     stage.innerHTML = '';
     stage.querySelector('.game-over')?.remove();
@@ -453,6 +579,7 @@ export function start(root, ctx) {
     if (act) {
       tap();
       sfx('tap');
+      touched = true;
       if (act.dataset.act === 'take') take(g);
       else pass(g, 0);
       advance();
@@ -483,13 +610,34 @@ export function start(root, ctx) {
     sfx('card');
     tap('light');
     target = -1;
+    touched = true;
     advance();
   });
 
+  const guard = () => !touched || g.over || askRestart(stage);
   bindChips(root, 'bots', (value) => {
     bots = Number(value);
     save('durak-bots', bots);
     newGame();
+  }, { guard });
+  bindChips(root, 'level', (value) => {
+    level = value;
+    save('durak-level', level);
+    newGame();
+  }, { guard });
+  root.querySelector('[data-restart]').addEventListener('click', async () => {
+    tap();
+    if (await guard()) newGame();
   });
-  newGame();
+  // Неоконченная партия — с того же места, боты продолжают свой ход.
+  const saved = load('durak-game');
+  if (saved?.g?.players?.length === bots + 1 && saved.level === level && !saved.g.over) {
+    g = unpack(saved.g);
+    discarded = saved.discarded || 0;
+    touched = saved.touched ?? true;
+    render();
+    setTimeout(advance, 400);
+  } else {
+    newGame();
+  }
 }

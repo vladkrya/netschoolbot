@@ -1,13 +1,22 @@
 // Тетрис: поле 10×20, «мешок» из семи фигур, три следующие фигуры и запас
 // (фигуру можно отложить). Касание поля — поворот, ведение пальцем вбок —
 // сдвиг, резкий свайп вниз — сбросить, вверх — отложить. Кнопки снизу
-// дублируют жесты. Собранные линии вспыхивают и рассыпаются.
+// дублируют жесты. Собранные линии вспыхивают и рассыпаются. Уровень
+// сложности — стартовая скорость; у каждого свой рекорд. Коснувшись дна,
+// фигура ещё полсекунды двигается. Есть пауза, а партия переживает выход.
 'use strict';
 
 import {
-  best, bump, fitCanvas, frames, hud, intro, notify, onKeys, overlay, particles, popText, quake, saveBest, sfx, shade,
-  shuffle, tap,
+  best, bindChips, bump, chipsRow, fitCanvas, frames, hud, intro, load, notify, onKeys, overlay, particles, popText, quake, save,
+  saveBest, sfx, shade, shuffle, tap,
 } from './kit.js';
+
+/** Уровни сложности: с какого уровня скорости начинается партия. */
+export const LEVELS = { easy: ['Лёгкий', 1], medium: ['Средний', 4], hard: ['Сложный', 8] };
+// Сколько фигура лежит на дне, прежде чем застыть, и сколько раз сдвиг или
+// поворот могут продлить это время.
+const LOCK_MS = 450;
+const LOCK_RESETS = 15;
 
 const W = 10;
 const H = 20;
@@ -69,7 +78,8 @@ export function start(root, ctx) {
         <div class="tetris-side">
           <div class="tetris-box"><span>Дальше</span><canvas data-next></canvas></div>
           <div class="tetris-box hold" data-act="hold"><span>Запас</span><canvas data-hold></canvas></div>
-          <div class="tetris-box"><span>Рекорд</span><b data-best>${best('tetris')}</b></div>
+          <div class="tetris-box"><span>Рекорд</span><b data-best>—</b></div>
+          <button class="tetris-box pause" data-pause aria-label="Пауза"><span>Пауза</span><i class="pause-bars"></i></button>
         </div>
       </div>
       <div class="tetris-pad game-pad">
@@ -85,6 +95,9 @@ export function start(root, ctx) {
   // Поле рядом с боковой колонкой (68px), кнопки снизу — два ряда по 66px.
   const available = Math.min((root.querySelector('.tetris-wrap').clientWidth || 340) - 76, 340);
   const cell = Math.floor(Math.min(available / W, (innerHeight - 330) / H, 34));
+  let difficulty = LEVELS[load('tetris-level')] ? load('tetris-level') : 'easy';
+  const recordKey = () => `tetris-${difficulty}`;
+  const showBest = () => { root.querySelector('[data-best]').textContent = best(recordKey()) || '—'; };
   const bw = cell * W;
   const bh = cell * H;
   const g = fitCanvas(canvas, bw, bh);
@@ -107,6 +120,10 @@ export function start(root, ctx) {
   let acc = 0;
   let clearing = null;
   let dropTrail = null;
+  let paused = false;
+  let repeat = 0;
+  // Фигура на дне: когда легла и сколько раз её ещё можно «оживить».
+  let grounded = null;
 
   const take = () => {
     if (!bag.length) bag = shuffle(Object.keys(SHAPES));
@@ -122,10 +139,20 @@ export function start(root, ctx) {
     while (queue.length < 4) queue.push(take());
     kind = kind || queue.shift();
     piece = { kind, cells: SHAPES[kind].cells.map((c) => [...c]), x: 3, y: kind === 'I' ? -1 : 0 };
+    grounded = null;
+    // Удержание «вниз» не переходит на следующую фигуру.
+    clearInterval(repeat);
     if (!fits(piece.cells, piece.x, piece.y)) gameOver();
   }
 
   const interval = () => Math.max(0.06, 0.8 * 0.86 ** (level - 1));
+  const onGround = () => piece && !fits(piece.cells, piece.x, piece.y + 1);
+  /** Сдвиг или поворот на дне продлевает время до фиксации. */
+  function relock() {
+    if (!grounded) return;
+    if (!onGround()) grounded = null;
+    else if (grounded.resets < LOCK_RESETS) grounded = { at: performance.now(), resets: grounded.resets + 1 };
+  }
 
   function lock() {
     piece.cells.forEach(([x, y]) => {
@@ -140,7 +167,7 @@ export function start(root, ctx) {
       const gained = LINE_SCORE[full.length] * level;
       score += gained;
       lines += full.length;
-      const newLevel = Math.floor(lines / 10) + 1;
+      const newLevel = Math.floor(lines / 10) + LEVELS[difficulty][1];
       sfx(full.length >= 4 ? 'tetris' : 'line');
       notify(full.length >= 4 ? 'success' : 'warning');
       popText(stage, LINE_WORDS[full.length] || `+${gained}`, { y: (full[0] / H) * 100 + '%', cls: full.length >= 4 ? 'gold' : '' });
@@ -167,19 +194,23 @@ export function start(root, ctx) {
   }
 
   function move(dx, dy) {
-    if (!running || !piece) return false;
+    if (!running || !piece || paused) return false;
     if (fits(piece.cells, piece.x + dx, piece.y + dy)) {
       piece.x += dx;
       piece.y += dy;
-      if (dx) sfx('move');
+      if (dx) {
+        sfx('move');
+        relock();
+      }
       return true;
     }
-    if (dy) lock();
+    // Упёрлась вниз: застывает не сразу, а через LOCK_MS (см. frames).
+    if (dy && !grounded) grounded = { at: performance.now(), resets: 0 };
     return false;
   }
 
   function turn() {
-    if (!running || !piece) return;
+    if (!running || !piece || paused) return;
     const cells = rotate(piece.cells, piece.kind);
     // Простые «отскоки» от стен и соседей.
     for (const [kx, ky] of [[0, 0], [-1, 0], [1, 0], [-2, 0], [2, 0], [0, -1]]) {
@@ -189,13 +220,14 @@ export function start(root, ctx) {
         piece.y += ky;
         sfx('rotate');
         tap('soft');
+        relock();
         return;
       }
     }
   }
 
   function drop() {
-    if (!running || !piece) return;
+    if (!running || !piece || paused) return;
     const from = piece.y;
     while (fits(piece.cells, piece.x, piece.y + 1)) piece.y += 1;
     score += (piece.y - from) * 2;
@@ -206,7 +238,7 @@ export function start(root, ctx) {
   }
 
   function swapHold() {
-    if (!running || !piece || !canHold) return;
+    if (!running || !piece || !canHold || paused) return;
     const kind = piece.kind;
     canHold = false;
     sfx('rotate');
@@ -216,15 +248,47 @@ export function start(root, ctx) {
     held = kind;
   }
 
+  const levelChips = () => `<div class="game-over-levels">${chipsRow('difficulty', Object.entries(LEVELS).map(([key, [label]]) => [key, label]), difficulty)}</div>`;
+  /** Выбор сложности — на стартовом и финальном экране, чтобы не занимать место у поля. */
+  function bindLevels() {
+    bindChips(root, 'difficulty', (value) => {
+      difficulty = value;
+      save('tetris-level', difficulty);
+      showBest();
+      const record = stage.querySelector('.game-record');
+      if (record) record.textContent = best(recordKey()) ? `🏆 Рекорд: ${best(recordKey())}` : '🏆 Рекорда пока нет';
+    });
+  }
+
   function gameOver() {
     running = false;
     piece = null;
-    const record = saveBest('tetris', score);
-    bump(root.querySelector('[data-best]'), best('tetris'));
+    save('tetris-game', null);
+    const record = saveBest(recordKey(), score);
+    saveBest('tetris', score);
+    showBest();
     quake(stage, 8);
     overlay(stage, `<div class="game-over-title">${record ? 'Новый рекорд!' : 'Конец игры'}</div>
-        <div class="game-over-text">Очки: <b>${score}</b> · линии: <b>${lines}</b> · уровень: <b>${level}</b></div>`,
+        <div class="game-over-text">Очки: <b>${score}</b> · линии: <b>${lines}</b> · уровень: <b>${level}</b></div>${levelChips()}`,
     [{ label: 'Ещё раз', run: begin }], { icon: record ? '🏆' : '🧱', win: record, lose: !record });
+    bindLevels();
+  }
+
+  /** Партия на паузе — и сохранена: выйти и вернуться можно когда угодно. */
+  const snapshot = () => ({ board, piece, bag, queue, held, canHold, score, lines, level, difficulty });
+  function pause() {
+    if (!running || paused || clearing) return;
+    paused = true;
+    save('tetris-game', snapshot());
+    overlay(stage, '<div class="game-over-title">Пауза</div><div class="game-over-text">Партия сохранена — можно выйти и вернуться.</div>', [
+      { label: 'Продолжить', run: resume },
+      { label: 'Начать заново', outline: true, run: () => { paused = false; begin(); } },
+    ], { icon: '⏸️' });
+  }
+  function resume() {
+    paused = false;
+    acc = 0;
+    grounded = null;
   }
 
   function preview(c2d, kind, x, y, s) {
@@ -295,6 +359,8 @@ export function start(root, ctx) {
   }
 
   function begin() {
+    paused = false;
+    save('tetris-game', null);
     board = Array.from({ length: H }, () => Array(W).fill(null));
     bag = [];
     queue = [];
@@ -303,10 +369,11 @@ export function start(root, ctx) {
     clearing = null;
     score = 0;
     lines = 0;
-    level = 1;
+    level = LEVELS[difficulty][1];
     acc = 0;
     ['score', 'lines'].forEach((key) => bump(root.querySelector(`[data-${key}]`), 0));
-    bump(root.querySelector('[data-level]'), 1);
+    bump(root.querySelector('[data-level]'), level);
+    showBest();
     running = true;
     spawn();
   }
@@ -352,7 +419,6 @@ export function start(root, ctx) {
     hold: swapHold,
   };
   // Удержание кнопки сдвига повторяет ход.
-  let repeat = 0;
   const pad = root.querySelector('.tetris-pad');
   pad.addEventListener('pointerdown', (event) => {
     const button = event.target.closest('[data-act]');
@@ -372,22 +438,40 @@ export function start(root, ctx) {
   ctx.signal.addEventListener('abort', stopRepeat);
   onKeys(ctx.signal, {
     ArrowLeft: actions.left, ArrowRight: actions.right, ArrowUp: turn, ArrowDown: actions.down, Space: drop, KeyC: swapHold,
+    KeyP: () => (paused ? null : pause()), Escape: () => (paused ? null : pause()),
   });
+  root.querySelector('[data-pause]').addEventListener('click', () => { tap(); pause(); });
+  // Свернули приложение или ушли с экрана — пауза и сохранение.
+  document.addEventListener('visibilitychange', () => { if (document.hidden) pause(); }, { signal: ctx.signal });
+  ctx.signal.addEventListener('abort', () => { if (running && !paused) save('tetris-game', snapshot()); });
 
   frames(ctx, (dt) => {
-    if (running && piece && !clearing) {
+    if (running && piece && !clearing && !paused) {
       acc += dt;
       if (acc >= interval()) {
         acc = 0;
         move(0, 1);
       }
+      if (grounded && !onGround()) grounded = null;
+      if (grounded && performance.now() - grounded.at >= LOCK_MS) lock();
     }
     draw(dt);
   });
   board = Array.from({ length: H }, () => Array(W).fill(null));
-  intro(stage, {
-    icon: '🧱', title: 'Тетрис',
-    text: 'Касание — поворот, вбок — сдвиг, свайп вниз — сбросить, вверх — отложить фигуру.',
-    record: best('tetris') ? `Рекорд: ${best('tetris')}` : '', run: begin,
-  });
+  showBest();
+  const saved = load('tetris-game');
+  if (saved?.board?.length === H && saved.piece) {
+    ({ board, piece, bag, queue, held, canHold, score, lines, level, difficulty } = saved);
+    running = true;
+    ['score', 'lines', 'level'].forEach((key) => bump(root.querySelector(`[data-${key}]`), { score, lines, level }[key]));
+    showBest();
+    pause();
+  } else {
+    intro(stage, {
+      icon: '🧱', title: 'Тетрис',
+      text: 'Касание — поворот, вбок — сдвиг, свайп вниз — сбросить, вверх — отложить фигуру.',
+      record: best(recordKey()) ? `Рекорд: ${best(recordKey())}` : 'Рекорда пока нет', extra: levelChips(), run: begin,
+    });
+    bindLevels();
+  }
 }

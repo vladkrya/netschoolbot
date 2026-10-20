@@ -15,13 +15,13 @@ import { tap } from './haptics.js';
 import { best, chips, clock, isMuted, setMuted, sfx } from './games/kit.js';
 
 export const GAMES = [
-  { id: 'solitaire', name: 'Пасьянс', emoji: '🃏', note: 'Косынка', best: (v) => `🏆 ${clock(v)}` },
-  { id: 'durak', name: 'Дурак', emoji: '🂮', note: 'Подкидной, 1–3 бота', best: (v) => `🏆 побед: ${v}` },
+  { id: 'solitaire', name: 'Пасьянс', emoji: '🃏', note: 'Косынка, три уровня', best: (v) => `🏆 ${clock(v)}` },
+  { id: 'durak', name: 'Дурак', emoji: '♠️', note: 'Подкидной, 1–3 бота, три уровня', best: (v) => `🏆 побед: ${v}` },
   { id: 'snake', name: 'Змейка', emoji: '🐍', note: 'Одна или против ботов', best: (v) => `🏆 ${v}` },
   { id: 'tetris', name: 'Тетрис', emoji: '🧱', note: 'Собирай линии', best: (v) => `🏆 ${v}` },
   { id: 'paperio', name: 'Paper.io', emoji: '🟧', note: 'Захвати поле у ботов', best: (v) => `🏆 ${v}%` },
   { id: 'sudoku', name: 'Судоку', emoji: '🔢', note: 'Три уровня сложности', best: (v) => `🏆 ${clock(v)}` },
-  { id: 'blackjack', name: 'Блэкджек', emoji: '🂡', note: 'Против дилера-бота', chips: true },
+  { id: 'blackjack', name: 'Блэкджек', emoji: '♥️', note: 'Против дилера-бота', chips: true },
   { id: 'slots', name: 'Слоты', emoji: '🎰', note: 'Крути барабаны', chips: true },
   { id: 'roulette', name: 'Русская рулетка', emoji: '🔫', note: 'Кто останется последним', best: (v) => `🏆 побед: ${v}` },
 ];

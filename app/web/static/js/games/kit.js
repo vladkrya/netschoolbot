@@ -34,6 +34,9 @@ export function best(game) {
   return read(BEST_KEY, {})[game] || 0;
 }
 
+/** Рекорд как строка: «—», пока его нет. */
+export const recordText = (game, format = String) => (best(game) ? format(best(game)) : '—');
+
 /** Рекорд: больше — лучше (очки) или меньше — лучше (время). true — новый. */
 export function saveBest(game, score, lower = false) {
   const all = read(BEST_KEY, {});
@@ -185,6 +188,7 @@ export const SUITS = ['♠', '♥', '♦', '♣'];
 export const isRed = (card) => card.s === '♥' || card.s === '♦';
 const FACES = { 1: 'A', 11: 'J', 12: 'Q', 13: 'K', 14: 'A' };
 export const rankLabel = (r) => FACES[r] || String(r);
+const FIGURES = { 11: '♞', 12: '♛', 13: '♚' };
 export const cardKey = (card) => `${card.r}${card.s}${card.copy || ''}`;
 
 export function deck(from, to, copies = 1) {
@@ -202,8 +206,9 @@ export function cardHtml(card, { attrs = '', cls = '', key = '' } = {}) {
   if (!card) return `<span class="pc empty ${cls}"${k} ${attrs}></span>`;
   if (card.down) return `<span class="pc back ${cls}"${k} ${attrs}></span>`;
   const label = rankLabel(card.r);
-  const face = card.r >= 11 && card.r <= 13;
-  const middle = face ? `<span class="pc-face">${label}<small>${card.s}</small></span>`
+  const face = FIGURES[card.r];
+  // Картинка — шахматная фигура в рамке; \uFE0E не даёт iOS сделать из неё эмодзи.
+  const middle = face ? `<span class="pc-face"><span class="pc-fig">${face}\uFE0E</span><small>${card.s}</small></span>`
     : card.r === 1 || card.r === 14 ? `<span class="pc-mid ace">${card.s}</span>` : `<span class="pc-mid">${card.s}</span>`;
   return `<span class="pc ${isRed(card) ? 'red' : ''} ${cls}"${k} ${attrs}>
       <span class="pc-c tl"><b>${label}</b><i>${card.s}</i></span>${middle}
@@ -299,19 +304,21 @@ export function bump(el, value, { count = false } = {}) {
   }
 }
 
-/** Конфетти поверх всего экрана. */
-export function confetti(amount = 140) {
+/** Конфетти: поверх всего экрана или внутри host — тогда оно летит из-за
+ *  карточки итога и не закрывает её надпись. */
+export function confetti(amount = 140, host = null) {
   if (reduced()) return;
   const canvas = document.createElement('canvas');
-  canvas.className = 'confetti';
-  document.body.append(canvas);
-  const w = innerWidth;
-  const h = innerHeight;
+  canvas.className = host ? 'confetti inside' : 'confetti';
+  const w = host ? host.clientWidth || innerWidth : innerWidth;
+  const h = host ? host.clientHeight || innerHeight : innerHeight;
+  if (host) host.prepend(canvas);
+  else document.body.append(canvas);
   const g = fitCanvas(canvas, w, h);
   const colors = ['#ff595e', '#ffca3a', '#8ac926', '#1982c4', '#6a4c93', '#ff924c', '#ffffff'];
   const bits = Array.from({ length: amount }, (_, i) => ({
     x: w / 2 + (Math.random() - 0.5) * 80,
-    y: h * 0.45,
+    y: h * (host ? 0.3 : 0.45),
     vx: (Math.random() - 0.5) * 14,
     vy: -8 - Math.random() * 12,
     r: Math.random() * Math.PI,
@@ -558,13 +565,25 @@ export function overlay(host, html, actions = [], { icon = '', win = false, lose
   if (win) {
     sfx('win');
     notify('success');
-    confetti();
+    confetti(140, box);
   } else if (lose) {
     sfx('lose');
     notify('error');
   }
   return box;
 }
+
+/** Вопрос поверх поля: «да» — true, «отмена» — false. */
+export function ask(host, title, text, yes = 'Да') {
+  return new Promise((resolve) => {
+    overlay(host, `<div class="game-over-title">${title}</div><div class="game-over-text">${text}</div>`,
+      [{ label: yes, run: () => resolve(true) }, { label: 'Отмена', outline: true, run: () => resolve(false) }], { icon: '🤔' });
+  });
+}
+
+/** Начать заново, не спросив, можно только партию, в которой ещё ничего не
+ *  сделано: иначе переспрашиваем — ход нечаянного касания не стоит. */
+export const askRestart = (host) => ask(host, 'Начать заново?', 'Текущая партия пропадёт.', 'Начать заново');
 
 /** Стартовый экран игры: крупная иконка, название, правила, рекорд. */
 export function intro(host, { icon, title, text, record = '', button = 'Играть', run, extra = '' }) {
@@ -586,11 +605,14 @@ export function chipsRow(name, options, current) {
     `<button class="${value === current ? 'on' : ''}" data-value="${value}">${label}</button>`).join('')}</div>`;
 }
 
-export function bindChips(root, name, onPick) {
+/** Выбор варианта. guard() — можно ли переключиться (true или Promise с
+ *  ответом): подсветка переезжает только после согласия. */
+export function bindChips(root, name, onPick, { guard = null } = {}) {
   const row = root.querySelector(`[data-choice="${name}"]`);
-  row?.addEventListener('click', (event) => {
+  row?.addEventListener('click', async (event) => {
     const chip = event.target.closest('[data-value]');
     if (!chip || chip.classList.contains('on')) return;
+    if (guard && !(await guard())) return;
     select();
     sfx('tap');
     const buttons = [...row.querySelectorAll('[data-value]')];

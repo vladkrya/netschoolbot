@@ -90,9 +90,12 @@ html.in-game .game-screen { padding-bottom: max(12px, env(safe-area-inset-bottom
 
 .game-screen {
   --g-bg: linear-gradient(180deg, #27304a, #121726);
+  display: flex;
+  flex-direction: column;
   background: var(--g-bg);
   color: #fff;
 }
+.game-screen > .screen-head { flex: none; }
 .game-screen[data-game="solitaire"], .game-screen[data-game="durak"], .game-screen[data-game="blackjack"] {
   --g-bg: radial-gradient(ellipse at 50% 20%, #2b8a57, #12502f 70%, #0b3a21);
 }
@@ -130,6 +133,12 @@ html.in-game .game-screen { padding-bottom: max(12px, env(safe-area-inset-bottom
 .game-sound:active { transform: scale(.9); }
 
 .game-body { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; padding-top: 4px; }
+/* Экран игры ровно по окну: общее правило «экран на пиксель выше окна»
+   давало игре прокрутку на высоту шапки, и поле уезжало под неё. Тело
+   растягивается на остаток, а кнопки прижимаются к низу — под большой палец. */
+.game-screen .game-body { flex: 1 0 auto; min-height: 0; display: flex; flex-direction: column; }
+.game-body > .game { flex: 1; width: 100%; }
+.game > .game-stage { flex: 1 0 auto; align-items: center; }
 .game { display: flex; flex-direction: column; gap: 12px; max-width: 520px; margin: 0 auto; }
 .game-stage { position: relative; display: flex; justify-content: center; }
 .game-canvas {
@@ -140,6 +149,8 @@ html.in-game .game-screen { padding-bottom: max(12px, env(safe-area-inset-bottom
 }
 .game button:disabled { opacity: .4; }
 .dk-foot { text-align: center; font-size: 13px; opacity: .8; }
+.dk-foot-row { display: flex; align-items: center; justify-content: center; gap: 14px; opacity: 1; }
+.dk-foot-row > span { opacity: .8; }
 
 /* Показатели — стеклянные «пилюли». */
 .hud { display: flex; gap: 8px; }
@@ -169,6 +180,8 @@ html.in-game .game-screen { padding-bottom: max(12px, env(safe-area-inset-bottom
   align-self: center;
   width: min(100%, 360px);
 }
+/* .seg в app.css и new.css — полоска прогресса (flex: 1, высота 8px). */
+:root .game .seg, :root[data-design="new"] .game .seg { flex: none; height: auto; }
 .seg-pill {
   position: absolute;
   top: 4px;
@@ -288,6 +301,8 @@ html.in-game .game-screen { padding-bottom: max(12px, env(safe-area-inset-bottom
 @keyframes fade-in { from { opacity: 0; } }
 @keyframes fade-out { to { opacity: 0; } }
 .game-over-card {
+  position: relative;
+  z-index: 1;
   width: min(310px, 100%);
   padding: 22px 18px 18px;
   border-radius: 26px;
@@ -314,6 +329,8 @@ html.in-game .game-screen { padding-bottom: max(12px, env(safe-area-inset-bottom
 .game-record { display: inline-block; margin-top: 10px; padding: 4px 12px; border-radius: 12px; background: #fff3cc; color: #8a5a00; font-weight: 700; font-size: 13px; }
 .game-over-actions { display: flex; flex-direction: column; gap: 12px; margin-top: 18px; }
 .game-over.lose .game-over-card { background: linear-gradient(180deg, #fff, #f6eeee); }
+.game-over-card .game-btn.ghost { background: #e4e8f2; color: #1d2430; box-shadow: 0 5px 0 #c3cad9; }
+.game-over-card .game-btn.ghost:active { box-shadow: 0 1px 0 #c3cad9; }
 
 /* Всплывающие надписи: «+1», «TETRIS!», «Бито». */
 .pop-text {
@@ -336,6 +353,7 @@ html.in-game .game-screen { padding-bottom: max(12px, env(safe-area-inset-bottom
   100% { opacity: 0; transform: translateY(-50px); }
 }
 .confetti { position: fixed; inset: 0; z-index: 200; pointer-events: none; }
+.confetti.inside { position: absolute; z-index: 0; border-radius: inherit; }
 .ghost-card { position: fixed; z-index: 150; pointer-events: none; margin: 0; }
 
 /* ─────────────────────────── Карты ─────────────────────────── */
@@ -365,18 +383,17 @@ html.in-game .game-screen { padding-bottom: max(12px, env(safe-area-inset-bottom
 .pc-mid.ace { font-size: 78cqw; }
 .pc-face {
   position: absolute;
-  inset: 26cqw 16cqw;
+  inset: 24cqw 15cqw;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   border-radius: 6cqw;
-  background: linear-gradient(160deg, color-mix(in srgb, currentColor 14%, #fff), color-mix(in srgb, currentColor 28%, #fff));
-  font-family: Georgia, 'Times New Roman', serif;
-  font-size: 46cqw;
-  font-weight: 700;
+  background: radial-gradient(circle at 50% 35%, #fffdf5, #f5e7bf);
+  box-shadow: inset 0 0 0 1.5cqw #d9a640, inset 0 0 0 3cqw #fffdf5, inset 0 0 0 3.8cqw color-mix(in srgb, currentColor 55%, #d9a640);
 }
-.pc-face small { font-size: 26cqw; margin-top: -2cqw; }
+.pc-fig { font-family: 'Segoe UI Symbol', 'Apple Symbols', 'DejaVu Sans', serif; font-size: 52cqw; line-height: 1; text-shadow: 0 1cqw 0 rgba(0, 0, 0, .12); }
+.pc-face small { font-size: 22cqw; margin-top: -1cqw; }
 .pc.back {
   background:
     radial-gradient(circle, rgba(255, 255, 255, .22) 0 18%, transparent 19%) 50% 50% / 40% 28%,
@@ -422,6 +439,7 @@ html.in-game .game-screen { padding-bottom: max(12px, env(safe-area-inset-bottom
 .sc.instant { transition: none; }
 .sc.dragging { transition: none; z-index: 1000 !important; }
 .sc.dragging .pc { box-shadow: 0 14px 28px rgba(0, 0, 0, .4); transform: scale(1.05); }
+.game > .sol-stage { align-items: flex-start; }
 .sol-tools { display: flex; justify-content: center; gap: 18px; }
 
 /* ─────────────────────────── Судоку ─────────────────────────── */
@@ -509,6 +527,15 @@ html.in-game .game-screen { padding-bottom: max(12px, env(safe-area-inset-bottom
   color: rgba(255, 255, 255, .7);
 }
 .tetris-box b { font-size: 15px; color: #fff; }
+.pause-bars { width: 14px; height: 16px; margin: 2px 0; background: linear-gradient(90deg, #fff 0 5px, transparent 5px 9px, #fff 9px); border-radius: 2px; }
+.tetris-box.pause:active { background: rgba(255, 255, 255, .18); }
+/* Выбор сложности на белой карточке стартового экрана. */
+.game-over-levels { margin-top: 12px; display: flex; justify-content: center; }
+.game-over-levels .seg { background: #e4e8f2; }
+.game-over-levels .seg { width: 100%; }
+.game-over-levels .seg button { color: #5b6475; font-size: 11.5px; padding: 7px 0; }
+.game-over-levels .seg button.on { color: #1d2430; }
+.game-over-levels .seg-pill { background: #fff; }
 .tetris-stage .game-canvas { box-shadow: 0 0 0 2px rgba(160, 130, 255, .45), 0 0 30px rgba(120, 90, 255, .35), 0 16px 40px rgba(0, 0, 0, .5); border-radius: 10px; }
 
 /* ─────────────────────────── Змейка ─────────────────────────── */
@@ -517,8 +544,10 @@ html.in-game .game-screen { padding-bottom: max(12px, env(safe-area-inset-bottom
 
 /* ─────────────────────────── Дурак ─────────────────────────── */
 
-.dk-stage { flex-direction: column; gap: 10px; min-height: 520px; }
-.dk-opps { display: flex; justify-content: space-around; gap: 6px; }
+.dk-stage { flex-direction: column; justify-content: space-between; gap: 10px; min-height: 520px; }
+.dk-stage.game-stage { align-items: stretch; }
+.dk-foot .game-btn.small { padding: 8px 16px; font-size: 13px; }
+.dk-opps { display: flex; justify-content: space-around; gap: 6px; margin-top: 30px; }
 .dk-opp { position: relative; display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 76px; transition: opacity .3s; }
 .dk-opp.out { opacity: .45; }
 .dk-avatar {
@@ -535,7 +564,7 @@ html.in-game .game-screen { padding-bottom: max(12px, env(safe-area-inset-bottom
 }
 .dk-opp.thinking .dk-avatar { box-shadow: 0 0 0 3px #ffd84a, 0 0 0 8px rgba(255, 216, 74, .3), 0 6px 14px rgba(0, 0, 0, .35); animation: think 1s ease-in-out infinite; }
 @keyframes think { 50% { transform: scale(1.06); } }
-.dk-opp.defending .dk-avatar::after { content: '🛡'; position: absolute; left: -6px; bottom: -4px; font-size: 18px; }
+.dk-opp.defending .dk-avatar::after { content: '🛡'; position: absolute; left: -10px; bottom: -6px; font-size: 18px; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, .5)); }
 .dk-badge {
   position: absolute;
   right: -6px;
@@ -577,11 +606,14 @@ html.in-game .game-screen { padding-bottom: max(12px, env(safe-area-inset-bottom
 .dk-mid { display: flex; align-items: center; gap: 8px; min-height: 150px; }
 .dk-deck, .dk-discard { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; width: 58px; height: 100px; flex: none; }
 .dk-deck { width: 74px; }
-.dk-trump { position: absolute; top: 26px; left: 22px; rotate: 90deg; width: 46px; }
+.dk-trump { position: absolute; top: 24px; left: 30px; rotate: 90deg; width: 46px; }
+.dk-trump-badge { position: absolute; top: -14px; left: 50%; translate: -50% 0; padding: 1px 7px; border-radius: 8px; background: #fff; color: #1c1f26; font-size: 12px; font-weight: 800; white-space: nowrap; box-shadow: 0 2px 6px rgba(0, 0, 0, .3); }
+.dk-trump-badge.red { color: #d42a35; }
 .dk-pile { position: absolute; top: 14px; left: 0; width: 46px; }
 .dk-pile.two { top: 12px; left: 2px; }
-.dk-discard .dk-pile { left: 6px; }
-.dk-discard .dk-pile.two { left: 10px; }
+.dk-discard .dk-pile { left: 2px; }
+.dk-discard .dk-pile.two { left: 4px; }
+.dk-count:empty { display: none; }
 .dk-pile.tilt { rotate: 14deg; }
 .dk-pile.tilt.two { rotate: -8deg; }
 .dk-count { position: absolute; bottom: -6px; font-size: 12px; font-weight: 800; padding: 1px 8px; border-radius: 8px; background: rgba(0, 0, 0, .35); }
@@ -606,17 +638,19 @@ html.in-game .game-screen { padding-bottom: max(12px, env(safe-area-inset-bottom
 
 /* ─────────────────────────── Paper.io ─────────────────────────── */
 
-.pio-stage { width: fit-content; margin: 0 auto; }
+.game > .pio-stage { flex: none; width: fit-content; margin: auto; }
 .pio-stage .game-canvas { border-radius: 18px; box-shadow: 0 0 0 4px rgba(255, 255, 255, .5), 0 16px 34px rgba(0, 0, 0, .3); }
-.pio-board { position: absolute; left: 8px; top: 8px; display: flex; flex-direction: column; gap: 3px; width: 130px; pointer-events: none; }
+.pio-board { position: absolute; left: 8px; top: 8px; display: flex; flex-direction: column; gap: 2px; width: 118px; pointer-events: none; opacity: .8; }
+.pio-row span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pio-row b { flex: none; margin-left: 4px; }
 .pio-row {
   position: relative;
   display: flex;
   justify-content: space-between;
-  padding: 2px 8px;
-  border-radius: 8px;
+  padding: 1px 6px;
+  border-radius: 7px;
   overflow: hidden;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
   color: #fff;
   background: rgba(0, 0, 0, .35);
@@ -625,7 +659,7 @@ html.in-game .game-screen { padding-bottom: max(12px, env(safe-area-inset-bottom
 .pio-row::before { content: ''; position: absolute; inset: 0 auto 0 0; width: var(--w); background: var(--c); opacity: .85; z-index: -1; transition: width .3s; }
 .pio-row { isolation: isolate; }
 .pio-row.me { outline: 2px solid #fff; }
-.pio-map { position: absolute; right: 8px; top: 8px; border-radius: 8px; box-shadow: 0 0 0 2px rgba(255, 255, 255, .8), 0 4px 10px rgba(0, 0, 0, .3); }
+.pio-map { position: absolute; right: 8px; top: 8px; border-radius: 8px; opacity: .8; box-shadow: 0 0 0 2px rgba(255, 255, 255, .8), 0 4px 10px rgba(0, 0, 0, .3); }
 
 /* ─────────────────────────── Слоты ─────────────────────────── */
 
@@ -700,15 +734,16 @@ html.in-game .game-screen { padding-bottom: max(12px, env(safe-area-inset-bottom
   box-shadow: inset 0 2px 6px rgba(0, 0, 0, .6);
 }
 .slot-display span { font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: rgba(255, 255, 255, .55); }
-.slot-display b { font-size: 22px; font-weight: 900; color: #ff4f4f; font-family: ui-monospace, Menlo, monospace; text-shadow: 0 0 8px rgba(255, 60, 60, .7); }
+.slot-display b { font-size: 22px; font-weight: 900; color: #ffd84a; font-family: ui-monospace, Menlo, monospace; text-shadow: 0 0 8px rgba(255, 200, 0, .6); }
 .slot-display .slot-win b { color: #5dff7a; text-shadow: 0 0 8px rgba(80, 255, 120, .7); }
 .slot-controls { display: flex; gap: 10px; align-items: stretch; }
 .slot-bet { display: flex; align-items: center; gap: 4px; padding: 4px; border-radius: 16px; background: rgba(0, 0, 0, .3); }
 .slot-bet div { display: flex; flex-direction: column; align-items: center; min-width: 46px; }
 .slot-bet span { font-size: 9.5px; font-weight: 700; text-transform: uppercase; opacity: .7; }
 .slot-bet b { font-size: 18px; font-weight: 900; }
-.slot-bet button { width: 36px; height: 44px; border-radius: 12px; background: rgba(255, 255, 255, .18); font-size: 22px; font-weight: 800; }
+.slot-bet button { display: grid; place-items: center; width: 36px; height: 44px; padding: 0; border-radius: 12px; background: rgba(255, 255, 255, .18); color: #fff; font-size: 22px; font-weight: 800; line-height: 1; text-align: center; }
 .slot-bet button:active { transform: scale(.9); }
+.slot-spin.stop { background: linear-gradient(180deg, #ff8a7a, #e0402e); color: #fff; box-shadow: 0 6px 0 #8f1b10, 0 10px 20px rgba(0, 0, 0, .35), inset 0 2px 0 rgba(255, 255, 255, .5); }
 .slot-spin {
   flex: 1;
   border-radius: 18px;
@@ -776,6 +811,7 @@ html.in-game .game-screen { padding-bottom: max(12px, env(safe-area-inset-bottom
 .rr-bar { flex: 1; height: 10px; border-radius: 5px; background: rgba(255, 255, 255, .15); overflow: hidden; }
 .rr-bar i { display: block; height: 100%; border-radius: inherit; transition: width .5s cubic-bezier(.3, 1.4, .5, 1), background .3s; }
 .rr-actions { display: grid; grid-template-columns: 1fr 1.4fr; gap: 10px; width: 100%; }
+.rr-actions.off { visibility: hidden; }
 
 /* ─────────────────────────── Блэкджек ─────────────────────────── */
 
@@ -855,6 +891,29 @@ html.in-game .game-screen { padding-bottom: max(12px, env(safe-area-inset-bottom
 .bj-buttons { display: grid; grid-template-columns: 1fr 1.5fr; gap: 10px; }
 .bj-buttons.three { grid-template-columns: 1fr 1fr 0.7fr; }
 .bj-wait { text-align: center; opacity: .5; font-size: 24px; }
+
+/* Низкие экраны (iPhone SE и т. п.): всё ужимается, чтобы игра влезала без прокрутки. */
+@media (max-height: 700px) {
+  .game { gap: 8px; }
+  .seg button { padding: 5px 4px; font-size: 13px; }
+  .hud-pill { padding: 3px 8px 4px; }
+  .hud-pill b { font-size: 17px; }
+  .dk-stage { min-height: 0; gap: 6px; }
+  .dk-opps { margin-top: 24px; }
+  .dk-mid, .dk-table { min-height: 110px; }
+  .dk-actions { min-height: 44px; }
+  .dk-actions .game-btn { padding: 9px 20px; }
+  .dk-hand { min-height: 96px; padding-top: 14px; }
+  .dk-hand .pc { width: 54px; }
+  .sudoku-grid { width: min(100%, 440px, 100vh - 380px); align-self: center; }
+  .sudoku-pad button { height: 46px; font-size: 22px; }
+  .tool span { width: 38px; height: 38px; font-size: 17px; }
+  .bj-table { min-height: 400px; gap: 4px; }
+  .bj-dealer { min-height: 100px; }
+  .chip-c { width: 44px; height: 44px; font-size: 12px; }
+  .bj-controls { min-height: 100px; gap: 8px; }
+  .bj-controls .game-btn { padding: 11px 14px; }
+}
 
 @media (prefers-reduced-motion: reduce) {
   .game-tile, .game-over-icon, .bubble, .slot-lights, .dk-opp.thinking .dk-avatar { animation: none; }

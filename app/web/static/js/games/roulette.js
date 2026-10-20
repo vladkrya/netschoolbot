@@ -5,12 +5,14 @@
 'use strict';
 
 import {
-  best, bindChips, chipsRow, load, notify, overlay, quake, rand, save, saveBest, sfx, tap, wait,
+  askRestart, best, bindChips, chipsRow, load, notify, overlay, quake, rand, save, saveBest, sfx, tap, wait,
 } from './kit.js';
 
 const BOTS = [
-  { name: 'Вася', face: '🤖' }, { name: 'Маша', face: '👾' }, { name: 'Петя', face: '🦊' }, { name: 'Оля', face: '🐼' },
+  { name: 'Вася', face: '🤖' }, { name: 'Маша', face: '👾', fem: true }, { name: 'Петя', face: '🦊' }, { name: 'Оля', face: '🐼', fem: true },
 ];
+/** Глагол по игроку: вы — «жмёте», бот — «жмёт». */
+const verb = (p, you, he) => (p.bot ? he : you);
 export const CHAMBERS = 6;
 
 /** Шанс, что следующий выстрел — «бах», если барабан не крутили. */
@@ -52,6 +54,8 @@ export function start(root, ctx) {
   let over = true;
   let angle = 0;
   let gen = 0;
+  // Нажимал ли кто-то курок: начатую партию без вопроса не сбрасываем.
+  let touched = false;
 
   root.innerHTML = `<div class="game roulette">
       ${chipsRow('bots', [['1', '1 бот'], ['2', '2 бота'], ['3', '3 бота'], ['4', '4 бота']], String(bots))}
@@ -99,7 +103,8 @@ export function start(root, ctx) {
     const mine = !over && turn === 0 && !busy;
     $('[data-spin]').disabled = !mine || spun;
     $('[data-pull]').disabled = !mine;
-    $('.rr-actions').hidden = over || players[0].out;
+    // Прячем, не убирая из вёрстки, — иначе всё ниже прыгало вверх.
+    $('.rr-actions').classList.toggle('off', over || players[0].out);
   }
 
   const alive = () => players.filter((p) => !p.out);
@@ -137,7 +142,8 @@ export function start(root, ctx) {
 
   async function pull(mine) {
     const p = players[turn];
-    render(`${p.name} жмёт на курок…`);
+    touched = true;
+    render(`${p.name} ${verb(p, 'жмёте', 'жмёт')} на курок…`);
     stage.classList.add('aim');
     await pause(mine, 750);
     const bang = shots === bullet;
@@ -151,7 +157,7 @@ export function start(root, ctx) {
       stage.classList.remove('aim');
       stage.classList.add('flash');
       setTimeout(() => stage.classList.remove('flash'), 450);
-      render(`💥 Бах! ${p.name} выбывает`);
+      render(`💥 Бах! ${p.name} ${verb(p, 'выбываете', 'выбывает')}`);
       await pause(mine, 1500);
       if (alive().length > 1) await reload(mine);
     } else {
@@ -167,8 +173,9 @@ export function start(root, ctx) {
       const won = winner === players[0];
       if (won) saveBest('roulette', best('roulette') + 1);
       $('[data-best]').textContent = String(best('roulette'));
-      render(won ? 'Вы остались последним!' : `Победил ${winner.name}`);
-      overlay(stage, `<div class="game-over-title">${won ? 'Вы выжили!' : `Победил ${winner.name}`}</div>
+      const title = `${winner.fem ? 'Победила' : 'Победил'} ${winner.name}`;
+      render(won ? 'Вы остались последним!' : title);
+      overlay(stage, `<div class="game-over-title">${won ? 'Вы выжили!' : title}</div>
           <div class="game-over-text">${won ? 'Последний в игре — вы.' : 'В этот раз не повезло.'}</div>`,
       [{ label: 'Новая игра', run: newGame }], { icon: won ? '🏆' : winner.face, win: won, lose: !won });
       return;
@@ -208,6 +215,7 @@ export function start(root, ctx) {
     turn = rand(players.length);
     spun = false;
     over = false;
+    touched = false;
     load6();
     render(' ');
     try {
@@ -253,6 +261,6 @@ export function start(root, ctx) {
     save('roulette-bots', bots);
     stage.querySelector('.game-over')?.remove();
     newGame();
-  });
+  }, { guard: () => over || !touched || askRestart(stage) });
   newGame();
 }
