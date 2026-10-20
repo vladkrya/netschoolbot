@@ -43,10 +43,15 @@ MAX_TEXT = 2000
 MAX_FILES = 5
 # Файл ждём недолго: решение без него лучше, чем никакого.
 FILE_TIMEOUT_S = 40
+# Комментарий учителя, если приложение его ещё не подгрузило.
+COMMENT_TIMEOUT_S = 15
 # Villnus иногда обрывает поток на первых токенах; повторное нажатие
 # обычно работает — повторяем сами.
 ATTEMPTS = 3
 _DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
+
+# Решения, которые идут сейчас: ссылка держит задачу, пока она не кончится.
+_running: set[asyncio.Task] = set()
 
 # Тумблер владельца «Решения заданий всему классу» (app_flags).
 CLASS_FLAG = "solver_class"
@@ -143,8 +148,28 @@ def _task(body: object) -> Task | None:
     for item in body.get("attachments") or []:
         if isinstance(item, dict) and str(item.get("id", "")).isdigit():
             files.append((int(item["id"]), str(item.get("name") or "файл")[:200]))
+    comment = body.get("comment")
+    comment = str(comment)[:MAX_TEXT] if isinstance(comment, str) else ""
+    # Школа иногда дублирует в комментарий сам текст задания.
+    if comment.strip() == text.strip():
+        comment = ""
     return Task(subject=subject, due=due, text=text, topic=str(body.get("topic") or "")[:300],
-                attachments=files[:MAX_FILES])
+                comment=comment, attachments=files[:MAX_FILES])
+
+
+async def _fetch_comment(app: AppContext, user: User, body: dict, task: Task) -> None:
+    """Комментарий учителя, когда приложение его не прислало (веб-API отдаёт
+    его только в карточке задания): без него «1 ряд — …» теряется."""
+    if isinstance(body.get("comment"), str) or not str(body.get("id", "")).isdigit():
+        return
+    try:
+        comment = await asyncio.wait_for(app.diary.fetch_assignment_comment(user, int(body["id"])), COMMENT_TIMEOUT_S)
+    except Exception as exc:  # noqa: BLE001 — без комментария решаем по заданию
+        logger.info("Комментарий к заданию для решения не получен: %s", type(exc).__name__)
+        return
+    comment = str(comment or "")[:MAX_TEXT]
+    if comment.strip() != task.text.strip():
+        task.comment = comment
 
 
 def _take_quota(app: AppContext, user: User) -> int | None:
@@ -178,7 +203,11 @@ async def build_request(app: AppContext, user: User, task: Task) -> tuple[str, l
     refs = task.refs()
     books = [(book, book.find(refs, task.topic)) for book in app.textbooks.books_for(task.subject)]
     files = [(name, await _file_text(app, user, attachment_id, name)) for attachment_id, name in task.attachments]
-    return system_prompt(app.textbooks.grade()), user_content(task, books, files)
+    content = user_content(task, books, files)
+    images = [len(b["source"]["data"]) * 3 // 4 for b in content if b["type"] == "image"]
+    logger.info("Решение: %s, текст %s симв., картинок %s на %s КБ", task.subject,
+                sum(len(b.get("text", "")) for b in content), len(images), sum(images) // 1024)
+    return system_prompt(app.textbooks.grade()), content
 
 
 async def _with_pings(chunks, interval: float = PING_S):
@@ -241,6 +270,14 @@ async def _solve_with_retries(app: AppContext, system: str, content: list[dict],
     raise AssistantError("Модель не придумала решение. Попробуйте ещё раз.")
 
 
+def _finished(job: asyncio.Task) -> None:
+    _running.discard(job)
+    # Ошибку решения, которое никто уже не ждёт, забираем, чтобы asyncio о
+    # ней не кричал: квоту вернул сам work().
+    if not job.cancelled() and (exc := job.exception()) and not isinstance(exc, AssistantError):
+        logger.warning("Решение упало: %s", exc, exc_info=exc)
+
+
 @routes.post("/api/solve")
 async def solve(request: web.Request) -> web.StreamResponse:
     app, user = context(request), current_user(request)
@@ -253,6 +290,7 @@ async def solve(request: web.Request) -> web.StreamResponse:
     task = _task(body)
     if task is None:
         return json_error("Некорректное задание")
+    await _fetch_comment(app, user, body, task)
     model = app.settings.solver.model
     key = cache_key(urlparse(user.school.url).hostname or user.school.url, task, app.textbooks.version(), model)
     fresh = bool(body.get("refresh"))
@@ -271,41 +309,56 @@ async def solve(request: web.Request) -> web.StreamResponse:
     })
     from .server import _secure
     _secure(request, response.headers)
+    gone = False
 
     async def send(payload: dict) -> None:
-        await response.write((json.dumps(payload, ensure_ascii=False) + "\n").encode())
+        # Приложение свернули или связь пропала — решаем дальше молча:
+        # решение сохранится, и следующий запрос возьмёт его из базы.
+        nonlocal gone
+        if gone:
+            return
+        try:
+            await response.write((json.dumps(payload, ensure_ascii=False) + "\n").encode())
+        except (ConnectionError, RuntimeError):
+            gone = True
 
-    succeeded = False
+    async def work() -> tuple[str, bool]:
+        succeeded = False
+        try:
+            async with lock:
+                # Одноклассник мог решить это, пока мы ждали.
+                if not fresh and (saved := await app.solutions.get(key)):
+                    return saved["text"], True
+                system, content = await build_request(app, user, task)
+                text = await _solve_with_retries(app, system, content, model, send)
+                await app.solutions.put(key, task.subject, task.due, model, text, time.time())
+                succeeded = True
+                return text, False
+        finally:
+            if not succeeded:
+                _refund_quota(app, user)
+            if not lock.locked():
+                app.solving.pop(key, None)
+
+    # Решение — отдельной задачей: закрытое соединение не обрывает модель.
+    job = asyncio.create_task(work())
+    _running.add(job)
+    job.add_done_callback(_finished)
     try:
         await response.prepare(request)
         await send({"type": "start"})
-        async with lock:
-            # Одноклассник мог решить это, пока мы ждали.
-            if not fresh and (saved := await app.solutions.get(key)):
-                await send({"ok": True, "data": {"text": saved["text"], "cached": True}})
-                _refund_quota(app, user)
-                succeeded = True
-                await response.write_eof()
-                return response
-            system, content = await build_request(app, user, task)
-            text = await _solve_with_retries(app, system, content, model, send)
-            await app.solutions.put(key, task.subject, task.due, model, text, time.time())
-        await send({"ok": True, "data": {"text": text, "cached": False, "left": left}})
-        succeeded = True
-        await response.write_eof()
+        text, cached = await asyncio.shield(job)
+        data = {"text": text, "cached": True} if cached else {"text": text, "cached": False, "left": left}
+        await send({"ok": True, "data": data})
     except AssistantError as exc:
+        await send({"ok": False, "error": str(exc), "reason": exc.reason})
+    except (ConnectionError, RuntimeError):
+        pass
+    if not gone:
         try:
-            await send({"ok": False, "error": str(exc), "reason": exc.reason})
             await response.write_eof()
         except (ConnectionError, RuntimeError):
             pass
-    except (ConnectionError, RuntimeError):
-        pass  # Закрыли экран — поток модели закрывается вместе с генератором.
-    finally:
-        if not succeeded:
-            _refund_quota(app, user)
-        if not lock.locked():
-            app.solving.pop(key, None)
     return response
 
 

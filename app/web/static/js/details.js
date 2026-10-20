@@ -319,13 +319,16 @@ function loadComments(body, items) {
       show(item.comment);
       continue;
     }
+    // Подгруженный комментарий запоминаем и в задании — его прочтёт решение.
     if (comments.has(item.id)) {
-      show(comments.get(item.id));
+      item.comment = comments.get(item.id);
+      show(item.comment);
       continue;
     }
     api(`/api/homework/${encodeURIComponent(item.id)}/comment`)
       .then(({ data }) => {
         comments.set(item.id, data.comment || '');
+        item.comment = data.comment || '';
         show(data.comment);
       })
       .catch(() => { /* без комментария экран всё равно полезен */ });

@@ -6,11 +6,11 @@
 // грузятся ненадёжно.
 'use strict';
 
-import { api, banner, esc, state } from './core.js';
+import { $, api, banner, esc, state } from './core.js';
 import { notify, tap } from './haptics.js';
 import { ICONS } from './icons.js';
 import { loadProfile } from './profile.js';
-import { pushScreen } from './screens.js';
+import { popScreen, pushScreen } from './screens.js';
 import { textStream } from './text-stream.js';
 
 // Модель пишет большое решение минуты две; поток ждём с запасом.
@@ -38,6 +38,99 @@ export function loadSolve(body, items) {
   else loadProfile().then(fill).catch(() => { /* без профиля кнопки просто нет */ });
 }
 
+// ───────────────────── решение в фоне и «пилюля» ─────────────────────
+// Решение идёт, пока приложение открыто, даже если экран закрыли или ушли
+// на другую вкладку: вместо экрана слева над панелью висит кружок, а когда
+// решение готово, он раскрывается в «Решение готово». Нажатие — снова экран.
+// Свернули само приложение и поток оборвался — сервер решает дальше и
+// сохраняет решение; вернулись — переспрашиваем, оно придёт из базы.
+
+const jobs = new Map();
+let pill = null;
+
+function jobKey(item) {
+  return JSON.stringify([item.subject, item.date, item.text || '']);
+}
+
+function startJob(item, refresh = false) {
+  const key = jobKey(item);
+  const previous = jobs.get(key);
+  const job = {
+    key, item, text: previous?.text || '', partial: '', status: 'running', error: '',
+    view: previous?.view || null, seen: false, hidden: document.visibilityState === 'hidden',
+    resumed: Boolean(previous?.resumed), at: Date.now(),
+  };
+  jobs.set(key, job);
+  // Пустой текст — сервер начал попытку заново (reset): снова «решаю».
+  const live = textStream((partial) => { job.partial = partial; paint(job); });
+  paint(job);
+  syncPill();
+  api('/api/solve', {
+    method: 'POST',
+    streamTimeout: STREAM_TIMEOUT_MS,
+    onDelta: (partial) => live.push(partial),
+    body: JSON.stringify({
+      subject: item.subject, date: item.date, text: item.text || '', topic: item.topic || '',
+      // Комментарий учителя («1 ряд — …»): строкой, если экран его уже
+      // подгрузил, иначе сервер спросит сам по id задания.
+      ...(typeof item.comment === 'string' ? { comment: item.comment } : {}),
+      ...(item.id ? { id: item.id } : {}),
+      attachments: (item.attachments || []).map(({ id, name }) => ({ id, name })),
+      refresh,
+    }),
+  }).then(async ({ data }) => {
+    await live.finish();
+    job.text = data.text;
+    job.status = 'done';
+  }, (error) => {
+    live.cancel();
+    job.status = 'error';
+    job.error = error.message;
+    job.reason = error.reason;
+  }).then(() => {
+    if (jobs.get(key) !== job) return;
+    // Обрыв, пока приложение было свёрнуто: сервер решение дописал —
+    // переспрашиваем один раз, как только приложение снова на экране.
+    if (job.status === 'error' && job.hidden && !job.resumed && !['limit', 'disabled', 'busy'].includes(job.reason)) {
+      job.resumed = true;
+      job.status = 'running';
+      if (document.visibilityState === 'visible') startJob(item);
+      else job.resume = true;
+      return;
+    }
+    job.at = Date.now();
+    job.seen = Boolean(job.view);
+    notify(job.status === 'done' ? 'success' : 'error');
+    paint(job);
+    syncPill();
+  });
+  return job;
+}
+
+document.addEventListener('visibilitychange', () => {
+  const visible = document.visibilityState === 'visible';
+  for (const job of [...jobs.values()]) {
+    if (!visible && job.status === 'running') job.hidden = true;
+    if (visible && job.resume) {
+      job.resume = false;
+      startJob(job.item);
+    }
+  }
+});
+
+/** Нарисовать состояние решения на его экране, если экран открыт. */
+function paint(job) {
+  const view = job.view;
+  if (!view) return;
+  const running = job.status === 'running';
+  if (running) view.out.innerHTML = job.partial ? renderMarkdown(job.partial) : WAITING;
+  else if (job.status === 'done') view.out.innerHTML = renderMarkdown(job.text);
+  else view.out.innerHTML = `<div class="empty">${esc(job.error)}</div>`;
+  view.actions.hidden = running || !job.text;
+  view.retry.hidden = job.status !== 'error' || Boolean(job.text);
+  view.minimize.hidden = !running;
+}
+
 export function openSolution(item) {
   tap();
   const body = pushScreen('Решение', item.subject);
@@ -52,51 +145,93 @@ export function openSolution(item) {
         <button class="btn outline" data-copy>Скопировать</button>
         <button class="btn outline" data-again>Решить заново</button>
       </div>
+      <button class="btn outline" data-retry hidden>Попробовать ещё раз</button>
+      <button class="solve-minimize" data-minimize hidden>Свернуть — решение продолжится</button>
       <div class="muted small solve-note">Решение пишет ИИ по учебнику — проверьте его, прежде чем сдавать.</div>
     </div>`;
-  const out = body.querySelector('[data-out]');
-  const actions = body.querySelector('[data-actions]');
-  let text = '';
-  let busy = false;
+  const view = {
+    body,
+    out: body.querySelector('[data-out]'),
+    actions: body.querySelector('[data-actions]'),
+    retry: body.querySelector('[data-retry]'),
+    minimize: body.querySelector('[data-minimize]'),
+  };
+  let job = jobs.get(jobKey(item));
+  // Ошибку, которую уже видели, при новом открытии пробуем заново.
+  if (!job || (job.status === 'error' && job.seen)) job = startJob(item);
+  job.view = view;
+  job.seen = job.status !== 'running';
+  paint(job);
+  syncPill();
 
-  async function run(refresh = false) {
-    if (busy) return;
-    busy = true;
-    actions.hidden = true;
-    out.innerHTML = WAITING;
-    // Пустой текст — сервер начал попытку заново (reset): снова «решаю».
-    const live = textStream((partial) => { out.innerHTML = partial ? renderMarkdown(partial) : WAITING; });
-    try {
-      const { data } = await api('/api/solve', {
-        method: 'POST',
-        streamTimeout: STREAM_TIMEOUT_MS,
-        onDelta: (partial) => live.push(partial),
-        body: JSON.stringify({
-          subject: item.subject, date: item.date, text: item.text || '', topic: item.topic || '',
-          attachments: (item.attachments || []).map(({ id, name }) => ({ id, name })),
-          refresh,
-        }),
-      });
-      await live.finish();
-      text = data.text;
-      out.innerHTML = renderMarkdown(text);
-      actions.hidden = false;
-      notify('success');
-    } catch (error) {
-      live.cancel();
-      out.innerHTML = `<div class="empty">${esc(error.message)}</div>`;
-      actions.hidden = !text;
-      notify('error');
-    } finally {
-      busy = false;
-    }
-  }
-
+  const current = () => jobs.get(jobKey(item));
   body.querySelector('[data-copy]').addEventListener('click', () => {
-    navigator.clipboard?.writeText(text).then(() => banner('Скопировано'), () => banner('Не удалось скопировать', true));
+    navigator.clipboard?.writeText(current().text).then(() => banner('Скопировано'), () => banner('Не удалось скопировать', true));
   });
-  body.querySelector('[data-again]').addEventListener('click', () => run(true));
-  run();
+  body.querySelector('[data-again]').addEventListener('click', () => {
+    if (current().status !== 'running') startJob(item, true);
+  });
+  view.retry.addEventListener('click', () => {
+    if (current().status !== 'running') startJob(item);
+  });
+  view.minimize.addEventListener('click', () => {
+    tap('soft');
+    popScreen();
+  });
+}
+
+// Экран закрыли (назад, свайп, другая вкладка) — решение уходит в кружок.
+function watchScreens() {
+  const host = $('screens');
+  if (!host) return;
+  new MutationObserver(() => {
+    let changed = false;
+    for (const job of jobs.values()) {
+      if (job.view && !job.view.body.isConnected) {
+        job.view = null;
+        changed = true;
+      }
+    }
+    if (changed) syncPill();
+  }).observe(host, { childList: true });
+}
+
+/** Кружок над панелью: решения без открытого экрана — идут или не просмотрены. */
+function syncPill() {
+  if (!pill) {
+    if (!document.body) return;
+    pill = document.createElement('button');
+    pill.className = 'solve-pill';
+    pill.hidden = true;
+    pill.addEventListener('click', () => {
+      const job = pill.job;
+      if (job) openSolution(job.item);
+    });
+    document.body.appendChild(pill);
+    watchScreens();
+  }
+  const waiting = [...jobs.values()].filter((job) => !job.view && (job.status === 'running' || !job.seen));
+  if (!waiting.length) {
+    pill.hidden = true;
+    pill.job = null;
+    return;
+  }
+  // Готовое важнее идущего; среди равных — самое свежее.
+  const ready = waiting.filter((job) => job.status !== 'running');
+  const job = (ready.length ? ready : waiting).sort((a, b) => b.at - a.at)[0];
+  const more = waiting.length - 1;
+  const state = job.status;
+  pill.job = job;
+  pill.dataset.state = state;
+  pill.setAttribute('aria-label', state === 'running' ? `Решаю: ${job.item.subject}` : `Решение: ${job.item.subject}`);
+  const icon = state === 'running' ? `<span class="solve-pill-spin"></span>${ICONS.sparkles}`
+    : state === 'done' ? ICONS.check : '<b>!</b>';
+  const label = state === 'running' ? ''
+    : `<span class="solve-pill-text"><b>${state === 'done' ? 'Решение готово' : 'Не получилось решить'}</b>`
+      + `<small>${esc(job.item.subject)}</small></span>`;
+  pill.innerHTML = `<span class="solve-pill-icon">${icon}</span>${label}`
+    + (more > 0 ? `<span class="solve-pill-more">+${more}</span>` : '');
+  pill.hidden = false;
 }
 
 // ───────────────────────────── Markdown ─────────────────────────────

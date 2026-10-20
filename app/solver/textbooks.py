@@ -38,6 +38,10 @@ MAX_PAGES = 10
 MAX_PARAGRAPH_PAGES = 7
 # Ответ из конца учебника — строка вокруг номера, не вся страница.
 ANSWER_SNIPPET = 400
+# Ширина вырезки упражнения. Провайдер считает картинку по её размеру, и
+# вырезки во всю ширину скана (1600 px) делали решение в десятки раз дороже
+# текстового; 1200 px — шрифт всё ещё крупнее, чем на целой странице.
+CROP_WIDTH = 1200
 
 
 @dataclass(slots=True)
@@ -105,8 +109,10 @@ class Book:
         with Image.open(io.BytesIO(image)) as page:
             width, height = page.size
             part = page.crop((0, int(band[0] * height), width, int(band[1] * height))).convert("L")
+            if part.width > CROP_WIDTH:
+                part = part.resize((CROP_WIDTH, round(part.height * CROP_WIDTH / part.width)), Image.LANCZOS)
             out = io.BytesIO()
-            part.save(out, "JPEG", quality=60, optimize=True)
+            part.save(out, "JPEG", quality=55, optimize=True)
         return out.getvalue()
 
     # ─────────────────────────── поиск ───────────────────────────
@@ -192,23 +198,24 @@ class Book:
                     return index
         return None
 
-    def topic_pages(self, topic: str) -> list[int]:
+    def topic_section(self, topic: str) -> tuple[str, list[int]] | None:
         """Параграф по теме урока — когда учитель нумерует параграфы по-своему:
-        «§6» при «§ 2.4. Табличные информационные модели» в книге."""
+        «§6» при «§ 2.4. Табличные информационные модели» в книге. Заголовок
+        из оглавления и страницы."""
         words = _stems(topic)
         if not words or not self.toc:
-            return []
+            return None
         best, score = None, 0.0
         for position, (title, index) in enumerate(self.toc):
             overlap = len(words & _stems(title)) / len(words)
             if overlap > score:
                 best, score = position, overlap
         if best is None or score < 0.6:
-            return []
-        start = self.toc[best][1]
+            return None
+        title, start = self.toc[best]
         following = [i for _, i in self.toc[best + 1:] if i > start]
         end = following[0] if following else start + 1
-        return list(range(start, min(end + 1, start + MAX_PARAGRAPH_PAGES, len(self.pages))))
+        return title, list(range(start, min(end + 1, start + MAX_PARAGRAPH_PAGES, len(self.pages))))
 
     def find(self, refs: Refs, topic: str = "") -> Found:
         """Страницы для задания, где из них упражнения, и ответы из конца книги."""
@@ -223,8 +230,9 @@ class Book:
         # В книге «§ 2.4», а учитель пишет «§6» — номер ничего не скажет, ищем по теме.
         dotted = any(re.match(r"§\s*\d+\.\d+", title) for title, _ in self.toc)
         paragraphs = [] if dotted else [self.paragraph_pages(number) for number in refs.paragraphs]
-        if not any(paragraphs) and (by_topic := self.topic_pages(topic)):
-            paragraphs = [by_topic]
+        if not any(paragraphs) and (by_topic := self.topic_section(topic)):
+            found.section, pages = by_topic
+            paragraphs = [pages]
         scope = explicit + [index for pages in paragraphs for index in pages]
 
         add(*explicit)
@@ -274,6 +282,9 @@ class Found:
     answers: dict[int, str] = field(default_factory=dict)
     # Нашлось и с переставленными страницей и номером упражнения.
     swapped: bool = False
+    # Параграф подобран по теме урока — его заголовок в книге («§ 2.4. …»):
+    # номер в задании с ним не совпадает, и модели надо это сказать.
+    section: str = ""
 
 
 _STOP = {"и", "в", "во", "на", "с", "со", "к", "по", "о", "об", "от", "для", "их", "его", "её", "как", "что", "из"}
