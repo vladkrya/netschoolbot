@@ -298,8 +298,12 @@ async def solve(request: web.Request) -> web.StreamResponse:
     if not fresh and (saved := await app.solutions.get(key)):
         return web.json_response({"ok": True, "data": {"text": saved["text"], "cached": True}})
 
-    left = _take_quota(app, user)
-    if left is None:
+    # То же задание уже решается (приложение переспрашивает после обрыва, или
+    # одноклассник нажал раньше) — ждём его без квоты: решение придёт из базы.
+    # Последнее решение дня иначе отвечало бы «закончились» на свой же повтор.
+    joining = not fresh and (running := app.solving.get(key)) is not None and running.locked()
+    left = None if joining else _take_quota(app, user)
+    if left is None and not joining:
         return json_error("На сегодня решения закончились. Возвращайтесь завтра!", status=429, reason="limit")
 
     lock = app.solving.setdefault(key, asyncio.Lock())
@@ -323,19 +327,26 @@ async def solve(request: web.Request) -> web.StreamResponse:
             gone = True
 
     async def work() -> tuple[str, bool]:
-        succeeded = False
+        nonlocal left
+        succeeded, charged = False, not joining
         try:
             async with lock:
                 # Одноклассник мог решить это, пока мы ждали.
                 if not fresh and (saved := await app.solutions.get(key)):
                     return saved["text"], True
+                if not charged:
+                    # Решение, к которому присоединились, не удалось — решаем сами.
+                    if (left := _take_quota(app, user)) is None:
+                        raise AssistantError("На сегодня решения закончились. Возвращайтесь завтра!",
+                                             status=429, reason="limit")
+                    charged = True
                 system, content = await build_request(app, user, task)
                 text = await _solve_with_retries(app, system, content, model, send)
                 await app.solutions.put(key, task.subject, task.due, model, text, time.time())
                 succeeded = True
                 return text, False
         finally:
-            if not succeeded:
+            if charged and not succeeded:
                 _refund_quota(app, user)
             if not lock.locked():
                 app.solving.pop(key, None)

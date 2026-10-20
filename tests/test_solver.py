@@ -296,6 +296,30 @@ class TestApi:
         assert (await again.json())["data"] == {"text": "### №289\n**Ответ:** 4", "cached": True}
         assert allowed.solver_usage[1][1] == 1
 
+    async def test_resume_joins_running_solve_without_quota(self, client, token, allowed, monkeypatch):
+        import asyncio
+
+        release = asyncio.Event()
+
+        async def slow(settings, system, content, **kwargs):
+            await release.wait()
+            yield "**Ответ:** 4"
+
+        monkeypatch.setattr(solver, "stream_messages", slow)
+        allowed.solver_usage[1] = ((await allowed.users.get(1)).today(), 1)
+        first = asyncio.ensure_future(client.post(f"{BASE}/api/solve", params={"token": token}, json=TASK))
+        for _ in range(100):
+            if any(lock.locked() for lock in allowed.solving.values()):
+                break
+            await asyncio.sleep(0.01)
+        # Последнее решение дня уже идёт — повтор ждёт его, а не «закончились».
+        second = asyncio.ensure_future(client.post(f"{BASE}/api/solve", params={"token": token}, json=TASK))
+        await asyncio.sleep(0.05)
+        release.set()
+        assert events(await (await second).read())[-1]["data"]["text"] == "**Ответ:** 4"
+        assert events(await (await first).read())[-1]["ok"] is True
+        assert allowed.solver_usage[1][1] == 2
+
     async def test_failure_refunds_quota(self, client, token, allowed, monkeypatch):
         async def broken(settings, system, content, **kwargs):
             raise solver.AssistantError("Решение сейчас недоступно. Попробуйте чуть позже.")
