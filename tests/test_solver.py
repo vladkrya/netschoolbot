@@ -4,6 +4,7 @@ import base64
 import dataclasses
 import io
 import json
+import re
 import zipfile
 
 import pytest
@@ -154,7 +155,7 @@ class TestTextbooks:
         imaged = []
         blocks = user_content(task, [(book, found)], [], {("alg", 289): "Решите уравнение: а) $x=1$; б) $x^3=8$"}, imaged)
         assert not [b for b in blocks if b["type"] == "image"] and imaged == []
-        assert "№289, стр. 5 (условие, прочитано с картинки раньше) ---\nРешите уравнение: а) $x=1$; б) $x^3=8$" in blocks[0]["text"]
+        assert "№289, стр. 5 (условие со скана, переписано текстом) ---\nРешите уравнение: а) $x=1$; б) $x^3=8$" in blocks[0]["text"]
 
     def test_pictures_over_budget_go_as_text(self, library, tmp_path, monkeypatch):
         from PIL import Image
@@ -320,6 +321,42 @@ class TestApi:
         again = await client.post(f"{BASE}/api/solve", params={"token": token}, json={**TASK, "refresh": True})
         assert events(await again.read())[-1]["ok"] is True
         assert [b for b in calls[2] if b["type"] == "image"]
+
+    async def test_gemini_reads_condition_instead_of_picture(self, client, token, allowed, library, tmp_path, monkeypatch):
+        from PIL import Image
+
+        (tmp_path / "alg").mkdir()
+        Image.new("L", (1600, 2000), 255).save(tmp_path / "alg" / "0005.jpg")
+        lines = [[]] * 5 + [[["289. Решите уравнение:", 0.1, 0.1, 0.9, 0.12], ["290", 0.1, 0.5, 0.2, 0.52]]]
+        (tmp_path / "alg.lines.json").write_text(json.dumps(lines), "utf-8")
+        (tmp_path / "library.json").touch()
+        library._loaded_mtime = None
+        allowed.textbooks = library
+        allowed.settings = dataclasses.replace(
+            allowed.settings, solver=dataclasses.replace(allowed.settings.solver, gemini_key="g"))
+        asked, calls = [], []
+
+        async def read(settings, crops):
+            asked.append(sorted(crops))
+            return {289: "289. Решите уравнение: а) $x=1$; б) $x^3=8$"} if len(asked) == 1 else {}
+
+        async def fake(settings, system, content, **kwargs):
+            calls.append(content)
+            yield "### №289\n**Ответ:** 2"
+
+        monkeypatch.setattr(solver, "read_conditions", read)
+        monkeypatch.setattr(solver, "stream_messages", fake)
+        first = await client.post(f"{BASE}/api/solve", params={"token": token}, json=TASK)
+        assert events(await first.read())[-1]["ok"] is True
+        assert asked == [[289]] and not [b for b in calls[0] if b["type"] == "image"]
+        assert "$x^3=8$" in calls[0][0]["text"]
+        assert await allowed.conditions.get_many("alg", [289]) == {289: "289. Решите уравнение: а) $x=1$; б) $x^3=8$"}
+
+        # «Решить заново»: Gemini читает снова; не прочитал — номер уходит картинкой.
+        allowed.solver_usage.clear()
+        again = await client.post(f"{BASE}/api/solve", params={"token": token}, json={**TASK, "refresh": True})
+        assert events(await again.read())[-1]["ok"] is True
+        assert asked == [[289], [289]] and [b for b in calls[1] if b["type"] == "image"]
 
     async def test_comment_fetched_when_app_did_not_send_it(self, client, token, allowed, monkeypatch):
         asked, calls = [], []
@@ -507,3 +544,53 @@ class TestWholeClass:
     async def test_only_owner_switches(self, client, token, classmates):
         assert (await self.switch(client, classmates[2], True)).status == 403
         assert (await self.profile(client, classmates[2]))["solver_class"] is None
+
+
+class TestGemini:
+    @pytest.fixture
+    async def google(self, monkeypatch):
+        from aiohttp import web
+        from aiohttp.test_utils import TestServer
+
+        from app.solver import gemini
+
+        replies, seen = {}, []
+
+        async def generate(request):
+            body = await request.json()
+            seen.append((request.headers.get("x-goog-api-key"), body))
+            number = int(re.search(r"№(\d+)", body["contents"][0]["parts"][0]["text"]).group(1))
+            status, text = replies[number].pop(0)
+            if status != 200:
+                return web.json_response({"error": {"code": status}}, status=status)
+            return web.json_response({"candidates": [{"content": {"parts": [{"text": text}]}}],
+                                      "usageMetadata": {"promptTokenCount": 1200, "candidatesTokenCount": 60}})
+
+        app = web.Application()
+        app.router.add_post("/v1beta/models/{name}", generate)
+        server = TestServer(app)
+        await server.start_server()
+        monkeypatch.setattr(gemini, "URL", str(server.make_url("/v1beta/models/")) + "{model}:generateContent")
+        monkeypatch.setattr(gemini, "RETRY_DELAY", 0)
+        yield replies, seen
+        await server.close()
+
+    async def test_reads_and_filters(self, google):
+        from app.solver.gemini import read_conditions
+
+        replies, seen = google
+        replies.update({290: [(200, "**290.** Решите уравнение: $\\frac{2}{x-2}=1$")],
+                        289: [(503, ""), (200, "НЕТ НОМЕРА")], 291: [(200, "291. Решите: $x^2 = 4[?]$")]})
+        settings = SolverSettings(gemini_key="g", gemini_model="gemini-test")
+        # 290 — с продолжением; 289 — сначала 503, повтор — «нет номера»; 291 — неуверенно.
+        read = await read_conditions(settings, {290: [b"a", b"b"], 289: [b"c"], 291: [b"d"]})
+        assert read == {290: "290. Решите уравнение: $\\frac{2}{x-2}=1$"}
+        first = next(body for _, body in seen if "№290" in body["contents"][0]["parts"][0]["text"])
+        assert {key for key, _ in seen} == {"g"} and len(seen) == 4 and len(first["contents"][0]["parts"]) == 3
+        assert "продолжение" in first["contents"][0]["parts"][0]["text"]
+
+    async def test_without_key_nothing_is_sent(self, google):
+        from app.solver.gemini import read_conditions
+
+        assert await read_conditions(SolverSettings(), {1: [b"a"]}) == {}
+        assert google[1] == []

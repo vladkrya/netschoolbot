@@ -26,6 +26,7 @@ from aiohttp import web
 from ..context import AppContext
 from ..domain.models import User
 from ..solver.extract import extract_text
+from ..solver.gemini import read_conditions
 from ..solver.llm import stream_messages
 from ..solver.prompt import DraftFilter, Task, cache_key, conditions, system_prompt, user_content
 from .api import attachment_payload, context, current_user, json_error
@@ -213,12 +214,41 @@ async def build_request(app: AppContext, user: User, task: Task, *, reread: bool
             if book.images:
                 numbers = sorted({n for nums in found.exercises.values() for n, _ in nums})
                 known.update({(book.id, n): text for n, text in (await app.conditions.get_many(book.id, numbers)).items()})
+    if app.settings.solver.gemini_key:
+        known.update(await _read_with_gemini(app, books, known))
     files = [(name, await _file_text(app, user, attachment_id, name)) for attachment_id, name in task.attachments]
     content = user_content(task, books, files, known, imaged)
     images = [len(b["source"]["data"]) * 3 // 4 for b in content if b["type"] == "image"]
     logger.info("Решение: %s, текст %s симв., картинок %s на %s КБ, условий из базы %s", task.subject,
                 sum(len(b.get("text", "")) for b in content), len(images), sum(images) // 1024, len(known))
     return system_prompt(app.textbooks.grade()), content
+
+
+async def _read_with_gemini(app: AppContext, books, known: dict[tuple[str, int], str]) -> dict[tuple[str, int], str]:
+    """Условия номеров со сканов, которых ещё нет в базе, читает Gemini — и
+    они уходят решающей модели текстом. Номер без вырезки начала не читаем:
+    по одному продолжению условие вышло бы неполным."""
+    read: dict[tuple[str, int], str] = {}
+    for book, found in books:
+        if not book.images:
+            continue
+        crops: dict[int, list[bytes]] = {}
+        started: set[int] = set()
+        for index in found.pages:
+            for number, continued in found.exercises.get(index, []):
+                if (book.id, number) in known or (continued and number not in started):
+                    continue
+                if (crop := await asyncio.to_thread(book.crop, index, number, continued=continued)) is None:
+                    continue
+                crops.setdefault(number, []).append(crop)
+                started.add(number)
+        texts = await read_conditions(app.settings.solver, crops)
+        for number, text in texts.items():
+            await app.conditions.put(book.id, number, text, time.time())
+            read[(book.id, number)] = text
+        if crops:
+            logger.info("Решение: Gemini прочитал условий %s из %s", len(texts), len(crops))
+    return read
 
 
 async def _with_pings(chunks, interval: float = PING_S):

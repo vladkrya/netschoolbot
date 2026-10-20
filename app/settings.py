@@ -215,6 +215,13 @@ class SolverSettings:
     # Кому видна кнопка «Решение», telegram_id через запятую. Пусто — никому.
     users: frozenset[int] = frozenset()
     daily_limit: int = 40
+    # Условия со сканов читает Gemini (solver/gemini.py): Google считает
+    # картинку по пикселям, вырезка — около тысячи токенов, а у Villnus та же
+    # вырезка — 15 тысяч. Без ключа картинка уходит решающей модели, как раньше.
+    # Из России Gemini API недоступен — прокси через vdsde.
+    gemini_key: str = ""
+    gemini_model: str = "gemini-3.5-flash-lite"
+    gemini_proxy: str = ""
 
     def allowed(self, telegram_id: int) -> bool:
         return telegram_id in self.users
@@ -418,5 +425,8 @@ def load_settings(*, require_bot_token: bool = True) -> Settings:
                 if chunk.lstrip("-").isdigit()
             ),
             daily_limit=max(1, _env_int("NETSCHOOL_SOLVER_DAILY_LIMIT", 40)),
+            gemini_key=_env("NETSCHOOL_GEMINI_API_KEY"),
+            gemini_model=_env("NETSCHOOL_GEMINI_MODEL", "gemini-3.5-flash-lite"),
+            gemini_proxy=_env("NETSCHOOL_GEMINI_PROXY"),
         ),
     )

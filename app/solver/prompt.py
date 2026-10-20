@@ -195,7 +195,7 @@ def user_content(task: Task, books: list[tuple[Book, Found]], files: list[tuple[
             numbers = found.exercises.get(index, [])
             remembered = sorted({n for n, _ in numbers if (book.id, n) in known})
             for number in remembered:
-                parts.append(f"--- №{number}, стр. {book.printed(index)} (условие, прочитано с картинки раньше) ---\n"
+                parts.append(f"--- №{number}, стр. {book.printed(index)} (условие со скана, переписано текстом) ---\n"
                              f"{known[(book.id, number)]}")
             numbers = [(n, c) for n, c in numbers if (book.id, n) not in known]
             if remembered and not numbers:
