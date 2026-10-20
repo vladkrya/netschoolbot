@@ -136,17 +136,32 @@ async def account_config(request: web.Request) -> web.Response:
     return web.json_response({"ok": True, "data": {
         "mail": context(request).mailer.configured,
         "bot": f"https://t.me/{username}" if username else "",
-        "widget": login_widget_bot_id(request),
+        "widget": await login_widget_bot_id(request),
     }})
 
 
-def _widget_bot_token(request: web.Request) -> str:
-    """Токен бота, к которому в BotFather привязан домен виджета."""
-    settings = context(request).settings
+# Переключатели админа (/tgwidget в боте), хранятся в app_flags.
+WIDGET_OFF_FLAG = "login_widget_off"
+WIDGET_MAIN_FLAG = "login_widget_main_bot"
+
+
+async def widget_bot_token(app: AppContext) -> str:
+    """Токен бота, к которому в BotFather привязан домен виджета; пусто — выключен.
+
+    Обычно это резервный бот из NETSCHOOL_TG_LOGIN_BOT_TOKEN: у бота домен
+    один. Командой /tgwidget main виджет переводится на основного бота.
+    """
+    from ..db.repositories import AppFlagRepository
+    flags = AppFlagRepository(app.db)
+    if await flags.get(WIDGET_OFF_FLAG):
+        return ""
+    settings = app.settings
+    if await flags.get(WIDGET_MAIN_FLAG):
+        return settings.telegram.bot_token
     return settings.web.login_widget_bot_token or settings.telegram.bot_token
 
 
-def login_widget_bot_id(request: web.Request) -> int:
+async def login_widget_bot_id(request: web.Request) -> int:
     """id бота для Telegram Login Widget — только на домене из BotFather.
 
     На любом другом домене (зеркала, локальная разработка) Telegram ответит
@@ -155,7 +170,7 @@ def login_widget_bot_id(request: web.Request) -> int:
     domain = context(request).settings.web.login_widget_domain
     if not domain or request.host.split(":")[0].lower() != domain:
         return 0
-    bot_id, _, _ = _widget_bot_token(request).partition(":")
+    bot_id, _, _ = (await widget_bot_token(context(request))).partition(":")
     return int(bot_id) if bot_id.isdigit() else 0
 
 
@@ -171,7 +186,7 @@ async def tg_widget_login(request: web.Request) -> web.Response:
     if IP_FAILURES.blocked(ip):
         return json_error("Слишком много попыток входа — подождите 15 минут", status=429)
     try:
-        tg_user = verify_login_widget(await _body(request), _widget_bot_token(request),
+        tg_user = verify_login_widget(await _body(request), await widget_bot_token(context(request)),
                                       max_age=WIDGET_MAX_AGE_S)
     except InitDataError as exc:
         IP_FAILURES.hit(ip)

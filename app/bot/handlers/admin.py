@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 
 from aiogram import Router
-from aiogram.filters import Command
+from aiogram.filters import Command, CommandObject
 from aiogram.types import Message
 
 from ...accounts import WEB_ID_BASE
@@ -128,4 +128,52 @@ async def admin_stats(message: Message, app: AppContext) -> None:
     lines.append("")
     lines.append("<i>До версии 5.21 запоминалось только последнее место открытия, "
                  "поэтому «в Telegram и в браузере» до неё недосчитано.</i>")
+    await reply(message, "\n".join(lines))
+
+
+WIDGET_MODES = {
+    "main": "основной бот",
+    "reserve": "резервный бот (NETSCHOOL_TG_LOGIN_BOT_TOKEN)",
+    "off": "выключен",
+}
+
+
+@router.message(Command("tgwidget"))
+async def tg_widget(message: Message, command: CommandObject, app: AppContext) -> None:
+    """Вход на сайт через Telegram Login Widget: какой бот или выключить.
+
+    Домен привязывается в BotFather (/setdomain) к одному боту — переключать
+    сюда нужно на тот, к которому он сейчас привязан.
+    """
+    if not _is_admin(message, app):
+        return
+    from ...db.repositories import AppFlagRepository
+    from ...web.account import WIDGET_MAIN_FLAG, WIDGET_OFF_FLAG, widget_bot_token
+
+    flags = AppFlagRepository(app.db)
+    mode = (command.args or "").strip().lower()
+    if mode in WIDGET_MODES:
+        await flags.set(WIDGET_OFF_FLAG, mode == "off")
+        await flags.set(WIDGET_MAIN_FLAG, mode == "main")
+
+    domain = app.settings.web.login_widget_domain
+    token = await widget_bot_token(app)
+    if await flags.get(WIDGET_OFF_FLAG):
+        state = WIDGET_MODES["off"]
+    elif token == app.settings.telegram.bot_token:
+        state = WIDGET_MODES["main"]
+    else:
+        state = WIDGET_MODES["reserve"]
+    lines = [
+        "🔑 <b>Вход на сайт через Telegram</b>",
+        "",
+        f"Сейчас: <b>{state}</b>" + (f", бот id {token.partition(':')[0]}" if token else ""),
+        f"Домен: <code>{domain}</code>" if domain else "Домен не задан — NETSCHOOL_TG_LOGIN_DOMAIN в .env, кнопки нет",
+        "",
+        "/tgwidget main — основной бот",
+        "/tgwidget reserve — резервный бот",
+        "/tgwidget off — выключить кнопку",
+        "",
+        "<i>Домен должен быть привязан в @BotFather (/setdomain) именно к выбранному боту.</i>",
+    ]
     await reply(message, "\n".join(lines))

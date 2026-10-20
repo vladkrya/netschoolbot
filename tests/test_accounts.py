@@ -372,6 +372,33 @@ class TestSiteLoginThroughWidget:
         status, body, _ = await post(client, "/api/account/tg-widget", make_widget_data(other, id="4244"))
         assert status == 200 and await app_context.miniapp.resolve_token(body["data"]["token"]) == 4244
 
+    async def test_admin_switches_widget_bot(self, client, app_context, widget_on):
+        from types import SimpleNamespace
+        from aiogram.filters import CommandObject
+        from app.bot.handlers.admin import tg_widget
+        from tests.test_bot_handlers import FakeMessage
+
+        app_context.settings = replace(
+            app_context.settings, web=replace(app_context.settings.web, login_widget_bot_token="888:reserve"))
+
+        async def admin(args, user=1):
+            message = FakeMessage(f"/tgwidget {args}")
+            message.from_user = SimpleNamespace(id=user)
+            await tg_widget(message, CommandObject(command="tgwidget", args=args or None), app_context)
+            return message.answers[0][0] if message.answers else ""
+
+        async def widget():
+            return (await (await client.get(f"{BASE}/api/account/config")).json())["data"]["widget"]
+
+        assert await widget() == 888 and "резервный" in await admin("")
+        assert await admin("main", user=2) == "" and await widget() == 888  # не админ — молчим
+        assert "основной" in await admin("main") and await widget() == 777
+        status, _, _ = await post(client, "/api/account/tg-widget", make_widget_data(WIDGET_TOKEN, id="4245"))
+        assert status == 200
+        assert "выключен" in await admin("off") and await widget() == 0
+        assert (await post(client, "/api/account/tg-widget", make_widget_data(WIDGET_TOKEN)))[0] == 401
+        assert "резервный" in await admin("reserve") and await widget() == 888
+
     async def test_forged_data_rejected(self, client, app_context, widget_on):
         data = {**make_widget_data(WIDGET_TOKEN), "id": "1"}
         status, body, response = await post(client, "/api/account/tg-widget", data)
