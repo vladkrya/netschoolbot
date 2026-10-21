@@ -179,7 +179,8 @@ def _from_diary(diary: Any, start: dt.date, end: dt.date, *, source: str) -> dic
                     "id": a.id,
                     "kind": a.kind,
                     "content": a.content,
-                    "mark": a.mark_text or (str(a.mark) if a.mark is not None else None),
+                    # Точка-долг: оценки нет, но ретро-сайт рисует её красной «•».
+                    "mark": a.mark_text or (str(a.mark) if a.mark is not None else None) or ("." if a.is_duty is True else None),
                     "due": a.deadline.isoformat() if a.deadline else None,
                 }
                 for a in lesson.assignments

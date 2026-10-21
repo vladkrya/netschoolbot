@@ -21,6 +21,7 @@ from app.domain.formatting import (
     split_message,
     statistics,
     weekly_summary,
+    mark_text,
     weighted_average,
 )
 from app.domain.models import MarkKind
@@ -149,6 +150,10 @@ class TestAverages:
         # Физика со скриншота: 35/10 по оценкам и точка-долг — как в журнале, 37/11.
         marks = [("5", 1), ("5", 1), ("4", 1), ("3", 2), ("5", 1), ("3", 2), ("2", 1), ("2", 1), (DUTY_MARK, 1)]
         assert round(weighted_average([record(value=v, weight=w) for v, w in marks]), 2) == 3.36
+
+    def test_duty_dot_is_red_in_notifications(self):
+        assert mark_text(DUTY_MARK).startswith("🔴")
+        assert mark_text("4") == "4"
 
     def test_all_non_numeric_gives_none(self):
         assert weighted_average([record(value="зачтено")]) is None

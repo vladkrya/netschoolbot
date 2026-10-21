@@ -2640,3 +2640,12 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
 /* Подпись автора ретро-сайта под переключателем (retro.js). */
 .retro-credit { margin: -2px 2px 8px; }
 .retro-credit a { color: var(--primary); }
+
+/* Точка-долг всегда красная: в любом дизайне, теме и праздничном оформлении.
+   Цвет свой, не --g2 — оценки «2» темы могут перекрашивать. */
+:root .mark.duty {
+  --c: #e5383e;
+  color: #e5383e !important;
+  border-color: #e5383e !important;
+  background: color-mix(in srgb, #e5383e 18%, var(--card, #fff)) !important;
+}
