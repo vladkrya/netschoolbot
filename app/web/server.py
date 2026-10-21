@@ -17,7 +17,6 @@ import asyncio
 import hashlib
 import logging
 import re
-import time
 from pathlib import Path
 
 import aiohttp_jinja2
@@ -26,7 +25,7 @@ from aiohttp import web
 
 from .. import __version__
 from ..context import AppContext
-from . import account, api, assistant, bugreport, caldav, captcha_proxy, chat, devices, extras, lock, retro, solver, status, sync
+from . import account, api, assistant, bugreport, caldav, captcha_proxy, chat, clock, devices, extras, lock, retro, solver, status, sync
 from .api import BOT, CONTEXT
 
 logger = logging.getLogger("netschoolbot.web")
@@ -549,7 +548,9 @@ async def server_time(request: web.Request) -> web.Response:
     # Часы телефонов расходятся на десятки секунд, и таймер урока на двух
     # телефонах показывал разное. Он сверяется с этими часами. Путь вне
     # /api/: без входа и мимо service worker — копия времени не нужна.
-    return web.json_response({"now": time.time()}, headers={"Cache-Control": "no-store"})
+    # Часы самого сервера тоже спешили, поэтому время — с поправкой по NTP.
+    now, synced = clock.now()
+    return web.json_response({"now": now, "synced": synced}, headers={"Cache-Control": "no-store"})
 
 
 @page_routes.get("/sw.js")

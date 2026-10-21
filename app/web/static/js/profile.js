@@ -27,6 +27,7 @@ import { openBugReport } from './bugreport.js';
 import { openLockSettings } from './lock.js';
 import { canInstall, openInBrowser, openInstallGuide, wantsInstall } from './install.js';
 import { pendingOps, send } from './outbox.js';
+import { BELL_SHIFTS, bellShift } from './timer.js';
 
 export async function loadProfile(force = false) {
   if (state.profile && !force) return state.profile;
@@ -902,6 +903,9 @@ function render() {
         <input type="checkbox" switch class="switch" id="motionShow" ${showMotion() ? 'checked' : ''}></label>
       <label class="switch-row"><span>Конфетти за пятёрку<span class="muted small switch-note">когда приходит новая 5</span></span>
         <input type="checkbox" switch class="switch" id="confettiShow" ${showConfetti() ? 'checked' : ''}></label>
+      <label class="switch-row"><span>Сдвиг звонка<span class="muted small switch-note">таймер урока: если звонок звенит позже или раньше ровной минуты</span></span>
+        <select class="field reminder-hour" id="bellShift">${BELL_SHIFTS.map((value) =>
+          `<option value="${value}" ${value === bellShift() ? 'selected' : ''}>${value ? `${value > 0 ? '+' : '−'}${Math.abs(value)} с` : 'точно'}</option>`).join('')}</select></label>
       <label class="switch-row"><span>Показывать выходные без уроков</span>
         <input type="checkbox" switch class="switch" id="weekendsShow" ${showWeekends() ? 'checked' : ''}></label>
       ${isNewDesign() ? '' : `<label class="switch-row"><span>Звонки вместо расписания недели</span>
@@ -1012,6 +1016,10 @@ function bindDrawer() {
   $('confettiShow').addEventListener('change', (event) => {
     select();
     saveConfetti(event.target.checked);
+  });
+  $('bellShift').addEventListener('change', (event) => {
+    select();
+    setPref('bellShift', event.target.value);
   });
   $('weekendsShow').addEventListener('change', (event) => {
     select();
