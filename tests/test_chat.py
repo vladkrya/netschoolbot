@@ -834,3 +834,13 @@ class TestChatsSwitch:
         assert data["chats"] is True and data["chats_toggle"] == {"on": False}
         status, _ = await join(client, student_token)
         assert status == 403
+
+
+async def test_rejoin_keeps_nick_and_shows_it(client, student_token):
+    """Вышел и вступил снова — ник прежний, и форма вступления его показывает."""
+    await join(client, student_token, "Cosmos_9")
+    response = await client.post(f"{BASE}/api/chat/leave", params={"token": student_token}, json={})
+    assert (await response.json())["data"]["saved_nick"] == "Cosmos_9"
+    status, joined = await join(client, student_token, "Other_77")
+    assert status == 200 and joined["data"]["profile"]["nick"] == "Cosmos_9"
+    assert joined["data"]["saved_nick"] is None

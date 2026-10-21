@@ -421,6 +421,8 @@ async def overview(request: web.Request) -> dict[str, Any]:
         "rules": RULES_TEXT,
         "nick_hint": rules.NICK_HINT,
         "profile": _profile_json(profile) if profile else None,
+        # Вышедшему ник сохраняется: при новом вступлении его не выбрать заново.
+        "saved_nick": None if profile else await chats.saved_nick(uid),
         "unread_total": await unread_total(request),
         "rooms": [{
             "id": room.id, "kind": room.kind, "title": room.title, "subtitle": room.subtitle,
