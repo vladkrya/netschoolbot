@@ -34,6 +34,9 @@ const CLOCK_SAMPLES = 3;
 // телефон (автоматическое время) считает по своим, иначе поправка в доли
 // секунды уводила «00» от часов на экране.
 const CLOCK_TRUST_MS = 1000;
+// Сервер не сверился с NTP — его часы сами могут спешить на секунды, и
+// верим им, только когда телефон расходится с ними заметно.
+const CLOCK_TRUST_UNSYNCED_MS = 10000;
 // Сдвиг звонка в настройках: школьный звонок звенит на несколько секунд
 // позже или раньше ровного времени.
 export const BELL_SHIFTS = [-5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
@@ -60,10 +63,10 @@ const clock = () => new Date(nowMs());
 async function sampleClock() {
   const sent = Date.now();
   const response = await fetch(`${base}/time`, { cache: 'no-store' });
-  const { now } = await response.json();
+  const { now, synced } = await response.json();
   const received = Date.now();
   if (!Number.isFinite(now) || received - sent > MAX_RTT_MS) return null;
-  return { rtt: received - sent, offset: now * 1000 - (sent + received) / 2 };
+  return { rtt: received - sent, offset: now * 1000 - (sent + received) / 2, synced: synced !== false };
 }
 
 /** Сверить часы с сервером. Первый запрос часто медленный (соединение ещё
@@ -78,7 +81,8 @@ async function syncClock() {
       if (sample && (!best || sample.rtt < best.rtt)) best = sample;
     }
     if (!best) return;
-    clockOffset = Math.abs(best.offset) < CLOCK_TRUST_MS ? 0 : Math.round(best.offset);
+    const trust = best.synced ? CLOCK_TRUST_MS : CLOCK_TRUST_UNSYNCED_MS;
+    clockOffset = Math.abs(best.offset) < trust ? 0 : Math.round(best.offset);
   } catch {
     // Без сети считаем по часам телефона и попробуем позже.
     clockSyncedAt = 0;
