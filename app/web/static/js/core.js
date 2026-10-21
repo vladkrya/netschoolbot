@@ -239,7 +239,28 @@ document.documentElement.classList.toggle('offline', offline);
 /** Нет связи с сервером приложения: сети нет или он недоступен. */
 export const isOffline = () => offline;
 
-const offlineTitle = () => (navigator.onLine === false ? 'Нет интернета' : 'Нет связи с сервером');
+// Сервер приложения перезапускается (выкладка обновления): nginx или
+// Cloudflare отвечают за него своей страницей 502/503. Раньше в этот момент
+// экраны писали «Сервер приложения вернул некорректный ответ».
+let updating = false;
+const DOWN_STATUSES = [502, 503, 504, 520, 521, 522, 523, 524];
+const appDown = (response) => response.headers.get('X-Netschool-Down') === '1'
+  || (DOWN_STATUSES.includes(response.status) && !(response.headers.get('Content-Type') || '').includes('application/json'));
+const UPDATING_TEXT = 'Приложение обновляется — через минуту всё заработает.';
+
+const offlineTitle = () => (navigator.onLine === false ? 'Нет интернета'
+  : updating ? 'Приложение обновляется' : 'Нет связи с сервером');
+
+/** Сервер перезапускается: та же плашка, что без сети, со своим заголовком.
+ *  Проверка связи раз в 8 секунд вернёт экраны, когда он поднимется. */
+function serverDown() {
+  const changed = !updating;
+  updating = true;
+  // Повторный вызов только переставляет проверку связи.
+  const was = offline;
+  setOffline(true);
+  if (was && changed) paintOfflinePill();
+}
 
 // Плашка — кружок справа над панелью, как у решения в фоне (и на месте
 // кнопки помощника: без сети она прячется). Раскрывается на три секунды,
@@ -303,7 +324,7 @@ function paintOfflinePill() {
     ? `${outboxCount} ${plural(outboxCount, 'изменение ждёт', 'изменения ждут', 'изменений ждут')} сети`
     : 'Показано сохранённое';
   pill.setAttribute('aria-label', `${offlineTitle()}. ${waiting}`);
-  pill.innerHTML = `<span class="net-pill-icon">${ICONS.offline}</span>`
+  pill.innerHTML = `<span class="net-pill-icon">${updating && navigator.onLine !== false ? ICONS.updating : ICONS.offline}</span>`
     + `<span class="net-pill-text"><b>${offlineTitle()}</b><small>${waiting}</small></span>`
     + (outboxCount ? `<span class="net-pill-count">${outboxCount}</span>` : '');
   if (fresh) openOfflinePill();
@@ -314,6 +335,7 @@ export function setOffline(value) {
   if (demo) return;
   clearTimeout(probeTimer);
   if (value) probeTimer = setTimeout(probe, PROBE_EVERY_MS);
+  if (!value) updating = false;
   if (offline === value) return;
   offline = value;
   document.documentElement.classList.toggle('offline', value);
@@ -337,7 +359,8 @@ export function probe() {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), PROBE_LIMIT_MS);
   probing = fetch(`${base}/sw.js`, { method: 'HEAD', cache: 'no-store', signal: controller.signal })
-    .then(() => {
+    .then((response) => {
+      if (appDown(response)) { serverDown(); return false; }
       const wasOffline = offline;
       setOffline(false);
       // Сеть есть, а показана копия worker (при запуске сеть проснулась позже
@@ -643,6 +666,17 @@ async function request(path, options = {}) {
     clearTimeout(stuck);
   }
 
+  if (appDown(response)) {
+    // Перезапуск длится секунды — чтение повторяем один раз, прежде чем сказать.
+    if (!init.method && !networkRetried) {
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      return request(path, { ...options, networkRetried: true });
+    }
+    serverDown();
+    // source 'app' — изменение встанет в очередь и уйдёт, когда сервер поднимется.
+    throw Object.assign(new Error(UPDATING_TEXT), { reason: 'server', source: 'app', offline: true, updating: true });
+  }
+
   let payload;
   try {
     payload = response.headers.get('Content-Type')?.includes('application/x-ndjson')
@@ -667,6 +701,7 @@ async function request(path, options = {}) {
     // Ответ из копии service worker: сеть не ответила вовремя. Проверяем,
     // есть ли она вообще, — без неё общая плашка.
     servedCached = true;
+    if (response.headers.get('X-Netschool-Offline') === 'down') serverDown();
     if (!offline) probe();
     return { ...payload, offline: true, stale: false };
   }
