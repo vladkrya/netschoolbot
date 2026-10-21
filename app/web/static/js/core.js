@@ -114,6 +114,7 @@ export function escRich(value) {
 }
 
 export function markClass(mark) {
+  if (String(mark || '').trim() === DUTY_MARK) return 'mark m2 duty';
   const digit = String(mark || '').match(/[2-5]/);
   return digit ? `mark m${digit[0]}` : 'mark';
 }
@@ -940,11 +941,20 @@ export function observedTime(value) {
 }
 
 /** Средневзвешенный балл по числовым оценкам. null — считать не из чего. */
+/** Точка — долг: работа не сдана в срок. Журнал «Сетевого города» считает
+ *  её двойкой, поэтому и здесь она входит в средний как «2». */
+export const DUTY_MARK = '•';
+
+/** Числовое значение оценки для средних: точка — 2, остальное как есть. */
+export function markValue(mark) {
+  return String(mark ?? '').trim() === DUTY_MARK ? 2 : Number(mark);
+}
+
 export function weightedAverage(marks) {
   let total = 0;
   let weights = 0;
   for (const mark of marks) {
-    const value = Number(mark.mark);
+    const value = markValue(mark.mark);
     if (!Number.isFinite(value) || value < 1 || value > 5) continue;
     const weight = Number(mark.weight) > 0 ? Number(mark.weight) : 1;
     total += value * weight;

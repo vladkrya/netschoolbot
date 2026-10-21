@@ -10,7 +10,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.domain.records import extract_mark, mark_to_int, parse_mark_float
+from app.domain.records import DUTY_MARK, extract_mark, mark_to_int, parse_mark_float
 from app.netschool.mapping import (
     lessons_from_day,
     diary_days,
@@ -130,6 +130,18 @@ class TestMarks:
 
     def test_assignments_without_mark_are_skipped(self):
         records = marks_from_day(day([lesson([assignment(mark=None), assignment(mark=4)])]))
+        assert [r.mark for r in records] == ["4"]
+
+    def test_overdue_assignment_becomes_duty_dot(self):
+        # Точка-долг приходит без оценки, с флагом is_duty. Журнал считает
+        # её двойкой — без неё средний в приложении расходился со школьным.
+        records = marks_from_day(day([lesson([assignment(mark=None, is_duty=True), assignment(mark=None)])]))
+        assert [r.mark for r in records] == [DUTY_MARK]
+        assert records[0].numeric_mark == 2
+        assert parse_mark_float(DUTY_MARK) == 2.0
+
+    def test_real_mark_wins_over_duty_flag(self):
+        records = marks_from_day(day([lesson([assignment(mark=4, is_duty=True)])]))
         assert [r.mark for r in records] == ["4"]
 
     def test_index_distinguishes_assignments_in_one_lesson(self):

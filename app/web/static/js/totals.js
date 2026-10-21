@@ -3,7 +3,7 @@
 
 import {
   $, ABSENCES, DEFAULT_THRESHOLDS, api, avgClass, errorCard, esc, formatAverage, isAbsence, isoToday, dayMonth,
-  plural, shortDate, showFailure, showLoading, skeleton, state, syncFinished, syncStarted, weightedAverage, motionAtLeast, demo,
+  markValue, plural, shortDate, showFailure, showLoading, skeleton, state, syncFinished, syncStarted, weightedAverage, motionAtLeast, demo,
 } from './core.js';
 import { markBox, openMark } from './details.js';
 import { pushScreen } from './screens.js';
@@ -216,9 +216,12 @@ function periodRows(data) {
     const term = subject.totals?.terms?.[period];
     const marks = quarterMarks(subject, period).filter((mark) => !isAttendance(mark));
     const avg = term?.average ?? weightedAverage(marks);
-    // Как сдвинула среднее последняя оценка.
+    // Как сдвинула среднее последняя оценка. Оба средних — по оценкам из
+    // списка: школьный средний сюда не годится, иначе в разницу попадёт
+    // расхождение журнала с нашим счётом, а не сама оценка.
+    const now = weightedAverage(marks);
     const before = marks.length > 1 ? weightedAverage(marks.slice(0, -1)) : null;
-    const trend = avg != null && before != null ? avg - before : 0;
+    const trend = now != null && before != null ? now - before : 0;
     return { subject, index, official: term?.mark, marks, avg, trend };
   });
 }
@@ -253,7 +256,7 @@ function heroHtml(rows, quarter) {
     }
   } else {
     for (const row of rows) {
-      for (const mark of row.marks) if (Number(mark.mark) in counts) counts[Number(mark.mark)] += 1;
+      for (const mark of row.marks) if (markValue(mark.mark) in counts) counts[markValue(mark.mark)] += 1;
     }
   }
   const total = counts[5] + counts[4] + counts[3] + counts[2];
@@ -573,7 +576,7 @@ function averagePoints(marks) {
   let sum = 0;
   let weights = 0;
   for (const mark of marks) {
-    const value = Number(mark.mark);
+    const value = markValue(mark.mark);
     if (!(value >= 1 && value <= 5)) continue;
     const weight = Number(mark.weight) > 0 ? Number(mark.weight) : 1;
     sum += value * weight;
@@ -651,7 +654,7 @@ function distribution(marks) {
   const weights = { 5: 0, 4: 0, 3: 0, 2: 0 };
   let total = 0;
   for (const mark of marks) {
-    const value = Number(mark.mark);
+    const value = markValue(mark.mark);
     if (!weights.hasOwnProperty(value)) continue;
     const weight = Number(mark.weight) > 0 ? Number(mark.weight) : 1;
     weights[value] += weight;
@@ -676,7 +679,8 @@ function openSubject(subject, key, existingBody = null, data = state.totals) {
   const marks = quarterMarks(subject, key);
   const lessons = subject.lessons?.[key] || { total: 0, done: 0 };
   const left = Math.max(0, lessons.total - lessons.done);
-  const avg = weightedAverage(marks);
+  // Тот же средний, что на карточке в списке: школьный, а без него — свой.
+  const avg = subject.totals?.terms?.[key]?.average ?? weightedAverage(marks);
   const official = subject.totals?.terms?.[key]?.mark;
   const yearMark = subject.totals?.year;
   const finalMark = subject.totals?.final;
@@ -788,7 +792,7 @@ function openSubject(subject, key, existingBody = null, data = state.totals) {
     body.querySelectorAll('[data-mark]').forEach((tile) => {
       const mark = marks[Number(tile.dataset.mark)];
       // Посещаемость остаётся видимой, как в итогах «Сетевого города».
-      tile.hidden = value != null && !isAttendance(mark) && Number(mark.mark) !== value;
+      tile.hidden = value != null && !isAttendance(mark) && markValue(mark.mark) !== value;
     });
     body.querySelector('[data-mark-reset]').hidden = value == null;
     if (tiles && motionAtLeast(50)) {

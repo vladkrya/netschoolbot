@@ -16,6 +16,7 @@ from typing import Any
 from ..domain.models import normalize
 from ..domain.periods import term_key
 from ..domain.records import (
+    DUTY_MARK,
     AbsenceRecord,
     Attachment,
     DiaryDay,
@@ -77,7 +78,7 @@ def marks_from_day(day: Any) -> list[MarkRecord]:
         lesson_end = _time_text(_attr(lesson, "end"))
 
         for index, assignment in enumerate(_attr(lesson, "assignments", []) or []):
-            mark = extract_mark(assignment)
+            mark = extract_mark(assignment) or (DUTY_MARK if _attr(assignment, "is_duty") is True else "")
             if not mark:
                 continue
             records.append(

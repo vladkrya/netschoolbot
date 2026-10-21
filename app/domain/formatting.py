@@ -13,7 +13,7 @@ import re
 from collections import Counter
 
 from .models import DEFAULT_TIMEZONE, ApiMode, MarkKind, User, timezone_label, zone
-from .records import AbsenceRecord, HomeworkRecord, MarkEvent, MarkRecord, parse_mark_float
+from .records import DUTY_MARK, AbsenceRecord, HomeworkRecord, MarkEvent, MarkRecord, parse_mark_float
 
 MSK = zone(DEFAULT_TIMEZONE)
 
@@ -52,6 +52,11 @@ def files_label(count: int) -> str:
     return f"{count} {plural(count, 'файл', 'файла', 'файлов')}"
 
 
+def mark_text(mark: str) -> str:
+    """Оценка для текста уведомления: точку подписываем, иначе её не понять."""
+    return f"{DUTY_MARK} (долг, считается как 2)" if mark == DUTY_MARK else esc(mark)
+
+
 def mark_event(event: MarkEvent) -> str:
     """Одно уведомление об оценке."""
     record = event.record
@@ -69,11 +74,11 @@ def mark_event(event: MarkEvent) -> str:
         f"<b>Предмет:</b> {esc(record.subject)}",
     ]
     if event.kind is MarkKind.CHANGED:
-        lines.append(f"<b>Оценка:</b> {esc(event.old_mark)} → <b>{esc(event.new_mark)}</b>")
+        lines.append(f"<b>Оценка:</b> {mark_text(event.old_mark)} → <b>{mark_text(event.new_mark)}</b>")
     elif event.kind is MarkKind.DELETED:
-        lines.append(f"<b>Была:</b> {esc(record.mark)}")
+        lines.append(f"<b>Была:</b> {mark_text(record.mark)}")
     else:
-        lines.append(f"<b>Оценка:</b> <b>{esc(record.mark)}</b>")
+        lines.append(f"<b>Оценка:</b> <b>{mark_text(record.mark)}</b>")
     if record.weight and record.weight != 1:
         lines.append(f"<b>Вес:</b> {record.weight}")
     lines.append(f"<b>Дата:</b> {record.date:%d.%m.%Y}")
@@ -98,9 +103,9 @@ def mark_events_digest(events: list[MarkEvent]) -> str:
         record = event.record
         icon = {MarkKind.NEW: "•", MarkKind.CHANGED: "✏️", MarkKind.DELETED: "🗑"}[event.kind]
         value = (
-            f"{esc(event.old_mark)} → {esc(event.new_mark)}"
+            f"{mark_text(event.old_mark)} → {mark_text(event.new_mark)}"
             if event.kind is MarkKind.CHANGED
-            else esc(record.mark)
+            else mark_text(record.mark)
         )
         lines.append(f"{icon} {record.date:%d.%m} {esc(record.subject)}: {value}")
     return "\n".join(lines)

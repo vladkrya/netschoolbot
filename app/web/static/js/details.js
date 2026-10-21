@@ -3,7 +3,7 @@
 'use strict';
 
 import {
-  absenceText, api, attachmentsHtml, banner, esc, escRich, forDate, fullDate, isAbsence,
+  DUTY_MARK, absenceText, api, attachmentsHtml, banner, esc, escRich, forDate, fullDate, isAbsence,
   isoToday, lessonNo, markClass, refuseReadOnly, state,
 } from './core.js';
 import { notify, tap } from './haptics.js';
@@ -400,7 +400,7 @@ export function openMark(mark, subject, lessonTopic = '') {
         ${mark.published_at ? `<span class="assignment-times">Опубликовано ${esc(compactTime(mark.published_at))}</span>` : ''}</div>
         <div class="detail-text">${esc(work) || '<span class="muted">—Не указано—</span>'}</div>` : ''}
       <div class="grade-row ${absence ? 'absence' : ''}">
-        <span>${absence ? esc(absenceText(mark.mark) || 'Посещаемость') : 'Оценка'}</span>
+        <span>${absence ? esc(absenceText(mark.mark) || 'Посещаемость') : mark.mark === DUTY_MARK ? 'Долг: работа не сдана в срок, в среднем считается как 2' : 'Оценка'}</span>
         ${mark.marked_at ? `<span class="grade-entered">Внесена ${esc(compactTime(mark.marked_at))}</span>` : ''}
         ${markBox(mark.mark)}
       </div>
