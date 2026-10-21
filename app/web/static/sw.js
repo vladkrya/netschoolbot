@@ -71,12 +71,24 @@ function limitedFetch(request, ms) {
   return fetch(request, { signal: controller.signal }).finally(() => clearTimeout(timer));
 }
 
-// Страница без сети, когда сохранённой копии нет (её стёрли после неверных
-// PIN или дневник ещё не открывали): иначе Safari показывал голую ошибку
-// «FetchEvent.respondWith received an error». Сеть вернулась — перезагрузка.
-const OFFLINE_PAGE = `<!doctype html><html lang="ru"><head><meta charset="utf-8">
+// Ответ не от приложения, а от nginx или Cloudflare: до приложения не
+// достучались (перезапуск при выкладке, обрыв туннеля). Свои 5xx приложение
+// отдаёт JSON-ом — они проходят как есть.
+const DOWN_STATUSES = [502, 503, 504, 520, 521, 522, 523, 524];
+const appDown = (response) => response.headers.get('X-Netschool-Down') === '1'
+  || (DOWN_STATUSES.includes(response.status) && !(response.headers.get('Content-Type') || '').includes('application/json'));
+
+const ICON_OFFLINE = '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M2 8.8a15 15 0 0 1 20 0M5.5 12.3a10 10 0 0 1 13 0M9 15.8a5 5 0 0 1 6 0"/><path d="M12 19.5h.01"/><path d="m3 3 18 18"/></svg>';
+const ICON_UPDATING = '<svg class="spin" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 4v5h-5"/></svg>';
+
+// Страница, когда сохранённой копии нет (её стёрли после неверных PIN или
+// дневник ещё не открывали): без сети — «Нет подключения», при перезапуске
+// сервера — «Обновляем приложение» (как deploy/nginx/netschool-updating.html).
+// Иначе Safari показывал голую ошибку «FetchEvent.respondWith received an
+// error», а при выкладке — «502 Bad Gateway». Сервер ответил — перезагрузка.
+const statusPage = (icon, title, text, button) => `<!doctype html><html lang="ru"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="color-scheme" content="light dark"><title>Нет сети — Дневник</title>
+<meta name="color-scheme" content="light dark"><title>${title} — Дневник</title>
 <style>
 :root{--bg:#f5f6f8;--text:#202733;--muted:#6b7280;--accent:#3b82f6}
 @media (prefers-color-scheme:dark){:root{--bg:#000;--text:#f2f3f5;--muted:#9aa0aa;--accent:#5b9cff}}
@@ -84,16 +96,26 @@ body{margin:0;min-height:100vh;display:grid;place-items:center;background:var(--
 font:16px/1.45 -apple-system,BlinkMacSystemFont,system-ui,sans-serif;text-align:center;padding:24px;box-sizing:border-box}
 main{max-width:340px}.icon{width:56px;height:56px;margin:0 auto 16px;border-radius:18px;display:grid;place-items:center;
 color:var(--accent);background:color-mix(in srgb,var(--accent) 14%,transparent)}
+.spin{animation:spin 1.6s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.spin{animation:none}}
 h1{font-size:23px;font-weight:650;letter-spacing:-.4px;margin:0 0 8px}p{margin:0 0 22px;color:var(--muted)}
 button{border:0;border-radius:14px;padding:13px 26px;font:inherit;font-weight:600;color:#fff;background:var(--accent)}
 </style></head><body><main>
-<div class="icon"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M2 8.8a15 15 0 0 1 20 0M5.5 12.3a10 10 0 0 1 13 0M9 15.8a5 5 0 0 1 6 0"/><path d="M12 19.5h.01"/><path d="m3 3 18 18"/></svg></div>
-<h1>Нет подключения к интернету</h1>
-<p>Сохранённых данных на этом устройстве нет. Чтобы открыть дневник, подключитесь к сети.</p>
-<button type="button" onclick="location.reload()">Повторить</button>
-</main><script>addEventListener('online',()=>location.reload())</script></body></html>`;
-const offlinePage = () => new Response(OFFLINE_PAGE, {
-  status: 503, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'X-Netschool-Offline': '1' },
+<div class="icon">${icon}</div>
+<h1>${title}</h1>
+<p>${text}</p>
+<button type="button" onclick="location.reload()">${button}</button>
+</main><script>
+addEventListener('online',()=>location.reload());
+setInterval(()=>fetch(${JSON.stringify(new URL('./sw.js', self.registration.scope).pathname)},{method:'HEAD',cache:'no-store'})
+  .then((r)=>{if(r.ok)location.reload()},()=>{}),5000);
+</script></body></html>`;
+const OFFLINE_PAGE = statusPage(ICON_OFFLINE, 'Нет подключения к интернету',
+  'Сохранённых данных на этом устройстве нет. Чтобы открыть дневник, подключитесь к сети.', 'Повторить');
+const UPDATING_PAGE = statusPage(ICON_UPDATING, 'Обновляем приложение',
+  'Через минуту всё заработает. Страница откроется сама, как только сервер ответит.', 'Перезапустить');
+const offlinePage = (down) => new Response(down ? UPDATING_PAGE : OFFLINE_PAGE, {
+  status: 503, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'X-Netschool-Offline': down ? 'down' : '1' },
 });
 
 async function networkFirst(request, event) {
@@ -101,6 +123,8 @@ async function networkFirst(request, event) {
   const limit = new URL(request.url).searchParams.has('refresh') ? REFRESH_LIMIT_MS : NETWORK_LIMIT_MS;
   const navigate = request.mode === 'navigate';
   const network = limitedFetch(request, limit).then((response) => {
+    // Приложение перезапускается — как без сети: сохранённое или «Обновляем».
+    if (appDown(response)) throw Object.assign(new Error('Приложение перезапускается'), { response });
     markOnline();
     if (response.ok) {
       cache.put(cacheKey(request), response.clone());
@@ -111,11 +135,15 @@ async function networkFirst(request, event) {
   const fromCache = async (error) => {
     const saved = await cache.match(cacheKey(request))
       || (navigate && isShell(new URL(request.url)) ? await cache.match(SHELL_KEY) : undefined);
-    if (!saved && navigate && error) return offlinePage();
+    const down = Boolean(error?.response);
+    if (!saved && navigate && error) return offlinePage(down);
+    // Копии нет — отдаём ответ nginx как есть: приложение по нему скажет, что обновляется.
+    if (!saved && down) return error.response;
     if (!saved) throw error;
-    // Помечаем, чтобы приложение сказало «нет сети, показаны сохранённые данные».
+    // Помечаем, чтобы приложение сказало «нет сети, показаны сохранённые данные»
+    // или «приложение обновляется».
     const headers = new Headers(saved.headers);
-    headers.set('X-Netschool-Offline', '1');
+    headers.set('X-Netschool-Offline', down ? 'down' : '1');
     return new Response(await saved.blob(), { status: saved.status, headers });
   };
   const wait = new URL(request.url).searchParams.has('refresh') ? 0
@@ -184,7 +212,12 @@ self.addEventListener('fetch', (event) => {
   // на «Проверяем защиту…».
   if (url.pathname.endsWith('/api/lock/status')) {
     event.respondWith(seemsOffline() ? Response.error() : limitedFetch(request, NETWORK_LIMIT_MS).then(
-      (response) => { markOnline(); return response; },
+      (response) => {
+        // Перезапуск сервера — для приложения то же, что нет сети.
+        if (appDown(response)) { markOffline(); return Response.error(); }
+        markOnline();
+        return response;
+      },
       (error) => { markOffline(); throw error; },
     ));
     return;
