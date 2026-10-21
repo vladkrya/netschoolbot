@@ -33,6 +33,7 @@ import { loadDone } from './details.js';
 import { loadNotes } from './notes.js';
 import { loadGames, warmGames } from './games.js';
 import { initRepin } from './repin.js';
+import { initTapWaves } from './motion.js';
 
 const TABS = {
   day: loadDay,
@@ -934,6 +935,7 @@ async function start() {
   initSwipeBack();
   initTrackpad();
   initRepin();
+  initTapWaves();
   setFallbackBack(fallbackBack);
 
   // С PIN сервер не кладёт имя в страницу, а профиль без сети приходит

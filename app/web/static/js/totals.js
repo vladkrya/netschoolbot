@@ -3,7 +3,7 @@
 
 import {
   $, ABSENCES, DEFAULT_THRESHOLDS, api, avgClass, errorCard, esc, formatAverage, isAbsence, isoToday, dayMonth,
-  plural, shortDate, showFailure, showLoading, skeleton, state, syncFinished, syncStarted, weightedAverage, stillMotion, demo,
+  plural, shortDate, showFailure, showLoading, skeleton, state, syncFinished, syncStarted, weightedAverage, motionAtLeast, demo,
 } from './core.js';
 import { markBox, openMark } from './details.js';
 import { pushScreen } from './screens.js';
@@ -747,7 +747,7 @@ function openSubject(subject, key, existingBody = null, data = state.totals) {
       tile.hidden = value != null && !isAttendance(mark) && Number(mark.mark) !== value;
     });
     body.querySelector('[data-mark-reset]').hidden = value == null;
-    if (tiles && !stillMotion()) {
+    if (tiles && motionAtLeast(50)) {
       const height = tiles.getBoundingClientRect().height;
       filterAnimation = tiles.animate([{ height: `${oldHeight}px` }, { height: `${height}px` }], {
         duration: 220, easing: 'cubic-bezier(.2,.8,.3,1)',

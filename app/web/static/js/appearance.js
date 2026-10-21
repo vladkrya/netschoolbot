@@ -1,7 +1,7 @@
 // Оформление: цвет шапки и меню, полноэкранный режим в Telegram.
 'use strict';
 
-import { initData, tg } from './core.js';
+import { initData, motionAtLeast, tg } from './core.js';
 import { getPref, setPref } from './prefs.js';
 import { HALLOWEEN_ICONS, ICONS } from './icons.js';
 
@@ -222,7 +222,7 @@ export function halloweenCountdown(now = new Date()) {
 /** Раз за запуск большая летучая мышь пролетает через весь экран. */
 let swooped = false;
 function swoop() {
-  if (swooped || !showMotion() || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  if (swooped || !motionAtLeast(75)) return;
   swooped = true;
   setTimeout(() => {
     if (!isHalloween()) return;
@@ -255,18 +255,40 @@ export function showHomeworkStatus() {
   return getPref('hwStatus') !== 'hide';
 }
 
-/** Анимации в приложении. По умолчанию включены; выключенные — класс
- *  no-motion на <html> (его же ставит скрипт в <head> до отрисовки). */
-export function showMotion() {
-  return getPref('motion') !== 'off';
+/** Телефон, на котором полные анимации и размытие подтормаживают: мало
+ *  памяти (знает только Chrome на Android; iPhone не сообщает). */
+export function weakDevice() {
+  return (navigator.deviceMemory || 8) <= 2;
+}
+
+/** Сколько анимаций играть, в процентах: 0, 25, 50, 75 или 100. Хранится
+ *  'off' и 'on' для краёв (так их понимали прежние версии и ретро-сайт) и
+ *  числом между ними. Не выбрано — 100%, а на слабом телефоне 50%. Классы
+ *  на <html> ставит и скрипт в <head> до отрисовки — правила те же. */
+export function motionLevel() {
+  const raw = getPref('motion');
+  if (raw === 'off') return 0;
+  if (raw === 'on') return 100;
+  if (/^(25|50|75)$/.test(raw || '')) return Number(raw);
+  return weakDevice() ? 50 : 100;
+}
+
+/** Уровень выбран сам, а не подобран под телефон. */
+export function motionChosen() {
+  return getPref('motion') != null;
 }
 
 export function applyMotion() {
-  document.documentElement.classList.toggle('no-motion', !showMotion());
+  const level = motionLevel();
+  const classes = document.documentElement.classList;
+  classes.toggle('motion-calm', level < 100);
+  classes.toggle('motion-lite', level < 75);
+  classes.toggle('motion-min', level < 50);
+  classes.toggle('no-motion', level === 0);
 }
 
-export function saveMotion(on) {
-  setPref('motion', on ? 'on' : 'off');
+export function saveMotion(level) {
+  setPref('motion', level === 0 ? 'off' : level === 100 ? 'on' : String(level));
   applyMotion();
 }
 
