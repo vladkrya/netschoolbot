@@ -474,16 +474,34 @@ class DiaryService:
 
     async def fetch_mail(self, user: User, limit: int = 20) -> list[dict[str, Any]]:
         """Письма школьной почты."""
+        return (await self.fetch_mail_page(user, page_size=limit))["messages"]
 
-        async def call(client: Any) -> list[dict[str, Any]]:
-            page = await client.mail_list(page=1, page_size=limit)
-            entries = getattr(page, "entries", None)
+    async def fetch_mail_page(
+        self, user: User, folder: str = "Inbox", page: int = 1, page_size: int = 50,
+    ) -> dict[str, Any]:
+        """Страница папки школьной почты: письма и сколько всего страниц."""
+
+        async def call(client: Any) -> dict[str, Any]:
+            data = await client.mail_list(folder, page=page, page_size=page_size)
+            entries = getattr(data, "entries", None)
             if entries is None:
-                entries = page if isinstance(page, list) else []
-            messages = [_mail_to_dict(item) for item in entries]
-            if entries and all(getattr(item, "read", None) is not None for item in entries):
+                entries = data if isinstance(data, list) else []
+            total = _safe_int(getattr(data, "total_items", None)) or len(entries)
+            result = {
+                "messages": [_mail_to_dict(item) for item in entries],
+                "page": page,
+                "pages": max(1, -(-total // page_size)),
+            }
+            if not entries or all(getattr(item, "read", None) is not None for item in entries):
                 # Мобильное API отдаёт флаг прочтения прямо в списке.
-                return messages
+                return result
+            if folder != "Inbox":
+                # Непрочитанные школа отдаёт только по входящим: в других
+                # папках без флага письмо не выделяем.
+                for message, item in zip(result["messages"], entries):
+                    if getattr(item, "read", None) is None:
+                        message["read"] = True
+                return result
             # В веб-списке писем флага прочтения нет — без этого запроса
             # каждое письмо выглядело непрочитанным.
             try:
@@ -491,11 +509,19 @@ class DiaryService:
             except Exception as exc:
                 logger.debug("Не удалось получить непрочитанные письма: %s", exc)
             else:
-                for message in messages:
+                for message in result["messages"]:
                     message["read"] = _safe_int(message["id"]) not in unread
-            return messages
+            return result
 
         return await self._with_session(user, call)
+
+    async def delete_mail(self, user: User, message_id: int) -> None:
+        """Переместить письмо в «Удалённые»."""
+        await self._with_session(user, lambda client: client.mail_delete([message_id]))
+
+    async def restore_mail(self, user: User, message_id: int) -> None:
+        """Вернуть письмо из «Удалённых» туда, где оно было."""
+        await self._with_session(user, lambda client: client.mail_restore([message_id]))
 
     async def fetch_teachers(self, user: User, wanted: dict[str, int]) -> dict[str, str]:
         """Учителя по предметам: {предмет: id любого задания} → {предмет: ФИО}.

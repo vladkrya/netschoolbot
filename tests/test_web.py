@@ -842,6 +842,62 @@ class TestNewFeatures:
         payload, _ = await app_context.cache.get(uid, "mail")
         assert [m["read"] for m in payload["messages"]] == [True, True, False]
 
+    async def test_deleted_mail_leaves_cached_list(self, client, app_context, token):
+        uid = await app_context.miniapp.resolve_token(token)
+        await app_context.cache.put(uid, "mail", {"messages": [{"id": 7}, {"id": 8}], "page": 1, "pages": 1})
+        _, before = await app_context.cache.get(uid, "mail")
+        moved = []
+
+        async def delete_mail(user, message_id):
+            moved.append(message_id)
+
+        app_context.diary.delete_mail = delete_mail
+        response = await client.delete(f"{BASE}/api/mail/7", params={"token": token})
+        assert response.status == 200
+        assert moved == [7]
+        payload, updated = await app_context.cache.get(uid, "mail")
+        assert [m["id"] for m in payload["messages"]] == [8]
+        assert updated == before
+
+    async def test_restored_mail_makes_cached_list_stale(self, client, app_context, token):
+        """Куда вернулось письмо, знает школа — список перечитывается, но
+        сохранённый остаётся на случай сбоя."""
+        uid = await app_context.miniapp.resolve_token(token)
+        await app_context.cache.put(uid, "mail", {"messages": [{"id": 8}]})
+        restored = []
+
+        async def restore_mail(user, message_id):
+            restored.append(message_id)
+
+        app_context.diary.restore_mail = restore_mail
+        response = await client.post(f"{BASE}/api/mail/7/restore", params={"token": token})
+        assert response.status == 200
+        assert restored == [7]
+        payload, updated = await app_context.cache.get(uid, "mail")
+        assert payload["messages"] == [{"id": 8}]
+        assert updated.year == 2000
+
+    async def test_mail_pages_and_deleted_folder_skip_cache(self, client, app_context, token):
+        uid = await app_context.miniapp.resolve_token(token)
+        asked = []
+
+        async def fetch_mail_page(user, folder="Inbox", page=1, page_size=50):
+            asked.append((folder, page))
+            return {"messages": [{"id": page}], "page": page, "pages": 3}
+
+        app_context.diary.fetch_mail_page = fetch_mail_page
+        response = await client.get(f"{BASE}/api/mail", params={"token": token, "folder": "Deleted", "page": 2})
+        assert (await response.json())["data"] == {"messages": [{"id": 2}], "page": 2, "pages": 3}
+        assert asked == [("Deleted", 2)]
+        assert await app_context.cache.get(uid, "mail") is None
+        for params in ({"folder": "Sent"}, {"page": "0"}, {"page": "x"}):
+            response = await client.get(f"{BASE}/api/mail", params={"token": token, **params})
+            assert response.status == 400, params
+
+    async def test_mail_move_rejects_bad_id(self, client, token):
+        response = await client.delete(f"{BASE}/api/mail/не-число", params={"token": token})
+        assert response.status == 400
+
     async def test_read_all_rejects_bad_ids(self, client, token):
         for body in ({"ids": ["abc"]}, {"ids": list(range(101))}, []):
             response = await client.post(f"{BASE}/api/mail/read-all", params={"token": token}, json=body)

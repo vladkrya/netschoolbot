@@ -859,6 +859,10 @@ html.offline .switch-row:has(#pushToggle, #keepFiles, #sgoUpdates) {
 .mail-card.arrive { animation: mail-arrive .55s cubic-bezier(.34, 1.4, .64, 1) both; }
 @keyframes mail-arrive { from { transform: translateY(-110%); opacity: 0; } }
 
+/* Низ бесконечного списка: пока грузится следующая страница. */
+.mail-more { min-height: 1px; }
+.mail-move { margin-top: 16px; width: 100%; }
+
 .ann-card { cursor: pointer; }
 .ann-title { font-weight: 600; font-size: 16px; margin-bottom: 6px; }
 .ann-text { font-size: 14px; color: var(--text2); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
@@ -1540,7 +1544,10 @@ main.leaving { transition: transform .22s var(--ease); box-shadow: -8px 0 24px r
 .hw-filters { margin-top: 8px; }
 .mail-tools { margin-top: 8px; }
 .mail-tools[hidden] { display: none; }
-.mail-filters { margin-top: 8px; }
+/* Фильтры и «Удалённые» — одной строкой, лишнее листается вбок. */
+.mail-filters { margin-top: 8px; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+.mail-filters::-webkit-scrollbar { display: none; }
+.mail-filters .chip { flex: none; white-space: nowrap; }
 .mail-search-row { display: flex; gap: 8px; align-items: stretch; }
 .mail-search-row .search { flex: 1; min-width: 0; }
 .mail-sort { flex: none; white-space: nowrap; }

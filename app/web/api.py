@@ -1241,12 +1241,32 @@ async def homework(request: web.Request) -> web.Response:
     return await _cached(request, "homework:past" if past else "homework", produce)
 
 
+# Папки почты, которые видны в приложении, и писем на странице списка.
+MAIL_FOLDERS = ("Inbox", "Deleted")
+MAIL_PAGE_SIZE = 50
+
+
 @routes.get("/api/mail")
 async def mail(request: web.Request) -> web.Response:
-    async def produce(app: AppContext, user: User):
-        return {"messages": await app.diary.fetch_mail(user, limit=50)}
+    """Страница папки. Первая страница входящих кэшируется: её же видит
+    значок «Почты»; остальные догружаются при прокрутке и не кэшируются."""
+    folder = request.query.get("folder", "Inbox")
+    try:
+        page = int(request.query.get("page", 1))
+    except ValueError:
+        return json_error("Некорректная страница")
+    if folder not in MAIL_FOLDERS or page < 1:
+        return json_error("Нет такой папки" if folder not in MAIL_FOLDERS else "Некорректная страница")
 
-    return await _cached(request, "mail", produce)
+    if folder == "Inbox" and page == 1:
+        async def produce(app: AppContext, user: User):
+            return await app.diary.fetch_mail_page(user, page_size=MAIL_PAGE_SIZE)
+
+        return await _cached(request, "mail", produce)
+
+    app, user = context(request), current_user(request)
+    data = await app.diary.fetch_mail_page(user, folder, page, MAIL_PAGE_SIZE)
+    return web.json_response({"ok": True, "data": data})
 
 
 @routes.get("/api/mail/recipients")
@@ -1337,7 +1357,7 @@ async def mail_send(request: web.Request) -> web.Response:
     return web.json_response({"ok": True})
 
 
-# Сколько писем «Прочитать все» открывает за раз: список писем — 50.
+# Сколько писем «Прочитать все» открывает за раз: страница списка — 50.
 MAIL_READ_ALL_LIMIT = 100
 
 
@@ -1359,6 +1379,38 @@ async def mail_read_all(request: web.Request) -> web.Response:
     for message_id in done:
         await app.cache.mark_mail_read(user.telegram_id, message_id)
     return web.json_response({"ok": True, "data": {"read": done}})
+
+
+def _mail_id(request: web.Request) -> int | None:
+    try:
+        return int(request.match_info["message_id"])
+    except ValueError:
+        return None
+
+
+@routes.delete("/api/mail/{message_id}")
+async def mail_delete(request: web.Request) -> web.Response:
+    """Переместить письмо в «Удалённые»."""
+    message_id = _mail_id(request)
+    if message_id is None:
+        return json_error("Некорректный номер письма")
+    app, user = context(request), current_user(request)
+    await app.diary.delete_mail(user, message_id)
+    await app.cache.drop_mail(user.telegram_id, message_id)
+    return web.json_response({"ok": True})
+
+
+@routes.post("/api/mail/{message_id}/restore")
+async def mail_restore(request: web.Request) -> web.Response:
+    """Вернуть письмо из «Удалённых»."""
+    message_id = _mail_id(request)
+    if message_id is None:
+        return json_error("Некорректный номер письма")
+    app, user = context(request), current_user(request)
+    await app.diary.restore_mail(user, message_id)
+    # Где письмо окажется в списке, знает только школьный сервер.
+    await app.cache.expire(user.telegram_id, "mail")
+    return web.json_response({"ok": True})
 
 
 @routes.get("/api/mail/{message_id}")
