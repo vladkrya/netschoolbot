@@ -59,10 +59,14 @@ def _groups(counts: dict[str, dict[str, int]], names: dict[str, str], *, fresh: 
 
 @router.message(Command("adminstats"))
 async def admin_stats(message: Message, app: AppContext) -> None:
-    """Сводка: пользователи, способ входа, где открывают приложение,
-    активность, опрос."""
     if not _is_admin(message, app):
         return
+    await reply(message, await stats_report(app))
+
+
+async def stats_report(app: AppContext) -> str:
+    """Сводка: пользователи, способ входа, где открывают приложение,
+    активность, опрос. HTML Telegram — его же показывает «Администрирование»."""
     db = app.db
     now = time.time()
     users = await db.fetch_one("SELECT COUNT(*) AS n, SUM(enabled) AS on_ FROM users")
@@ -128,7 +132,7 @@ async def admin_stats(message: Message, app: AppContext) -> None:
     lines.append("")
     lines.append("<i>До версии 5.21 запоминалось только последнее место открытия, "
                  "поэтому «в Telegram и в браузере» до неё недосчитано.</i>")
-    await reply(message, "\n".join(lines))
+    return "\n".join(lines)
 
 
 WIDGET_MODES = {
@@ -136,6 +140,25 @@ WIDGET_MODES = {
     "reserve": "резервный бот (NETSCHOOL_TG_LOGIN_BOT_TOKEN)",
     "off": "выключен",
 }
+
+
+async def widget_mode(app: AppContext) -> str:
+    """main, reserve или off — какой бот сейчас у Login Widget."""
+    from ...db.repositories import AppFlagRepository
+    from ...web.account import WIDGET_OFF_FLAG, widget_bot_token
+
+    if await AppFlagRepository(app.db).get(WIDGET_OFF_FLAG):
+        return "off"
+    return "main" if await widget_bot_token(app) == app.settings.telegram.bot_token else "reserve"
+
+
+async def set_widget_mode(app: AppContext, mode: str) -> None:
+    from ...db.repositories import AppFlagRepository
+    from ...web.account import WIDGET_MAIN_FLAG, WIDGET_OFF_FLAG
+
+    flags = AppFlagRepository(app.db)
+    await flags.set(WIDGET_OFF_FLAG, mode == "off")
+    await flags.set(WIDGET_MAIN_FLAG, mode == "main")
 
 
 @router.message(Command("tgwidget"))
@@ -147,23 +170,15 @@ async def tg_widget(message: Message, command: CommandObject, app: AppContext) -
     """
     if not _is_admin(message, app):
         return
-    from ...db.repositories import AppFlagRepository
-    from ...web.account import WIDGET_MAIN_FLAG, WIDGET_OFF_FLAG, widget_bot_token
+    from ...web.account import widget_bot_token
 
-    flags = AppFlagRepository(app.db)
     mode = (command.args or "").strip().lower()
     if mode in WIDGET_MODES:
-        await flags.set(WIDGET_OFF_FLAG, mode == "off")
-        await flags.set(WIDGET_MAIN_FLAG, mode == "main")
+        await set_widget_mode(app, mode)
 
     domain = app.settings.web.login_widget_domain
     token = await widget_bot_token(app)
-    if await flags.get(WIDGET_OFF_FLAG):
-        state = WIDGET_MODES["off"]
-    elif token == app.settings.telegram.bot_token:
-        state = WIDGET_MODES["main"]
-    else:
-        state = WIDGET_MODES["reserve"]
+    state = WIDGET_MODES[await widget_mode(app)]
     lines = [
         "🔑 <b>Вход на сайт и привязка Telegram</b>",
         "",
