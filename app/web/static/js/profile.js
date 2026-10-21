@@ -896,9 +896,6 @@ function render() {
       <div class="drawer-heading">Оформление</div>
       ${data.halloween ? `<label class="switch-row halloween-row"><span>🎃 Хеллоуин<span class="muted small switch-note">${halloweenCountdown()}</span></span>
         <input type="checkbox" switch class="switch" id="halloweenOn" ${isHalloween() ? 'checked' : ''}></label>` : ''}
-      <label class="switch-row retro-row"><span>📟 Ретро-сайт<span class="muted small switch-note">дневник страничкой из 90-х: звёзды, котики, окна Windows 98</span></span>
-        <input type="checkbox" switch class="switch" id="retroSite"></label>
-      <div class="muted small retro-credit">Разработано: <a href="${RETRO_AUTHOR_URL}" target="_blank" rel="noopener">faustyu1</a> (netschool-retro). Спасибо!</div>
       ${spooky ? '<div class="muted small halloween-note">В Хеллоуин тема всегда ночная. Светлая и свой цвет вернутся, когда выключите праздник.</div>'
         : isNewDesign() ? themeSegment : `${radio('light', 'Светлая тема')}
       ${radio('auto', 'Как в системе')}
@@ -915,6 +912,9 @@ function render() {
       ${more('look', 'Ещё настройки вида', `
       <label class="switch-row design-row"><span>Старый дизайн</span>
         <input type="checkbox" switch class="switch" id="designOld" ${isNewDesign() ? '' : 'checked'}></label>
+      <label class="switch-row retro-row"><span>📟 Ретро-сайт<span class="muted small switch-note">дневник страничкой из 90-х: звёзды, котики, окна Windows 98</span></span>
+        <input type="checkbox" switch class="switch" id="retroSite"></label>
+      <div class="muted small retro-credit">Разработано: <a href="${RETRO_AUTHOR_URL}" target="_blank" rel="noopener">faustyu1</a> (netschool-retro). Спасибо!</div>
       <label class="switch-row"><span>Подсвечивать Д/З на главной<span class="muted small switch-note">красным — не сделано, зелёным — сделано</span></span>
         <input type="checkbox" switch class="switch" id="hwStatusShow" ${showHomeworkStatus() ? 'checked' : ''}></label>
       ${data.api_mode === 'mobile' ? `<label class="switch-row"><span>Отправка ответа на задание<span class="muted small switch-note">блок «Мой ответ» на экране задания</span></span>
