@@ -229,10 +229,11 @@ export const isOffline = () => offline;
 const offlineTitle = () => (navigator.onLine === false ? 'Нет интернета' : 'Нет связи с сервером');
 
 // Плашка — кружок справа над панелью, как у решения в фоне (и на месте
-// кнопки помощника: без сети она прячется). Раскрывается на три секунды:
-// когда сеть пропала и по касанию — с заголовком; когда изменение встало
-// в очередь — одной строкой «1 изменение ждёт сети».
+// кнопки помощника: без сети она прячется). Раскрывается на три секунды,
+// когда сеть пропала и по касанию — с заголовком; на две, когда изменение
+// встало в очередь — одной строкой «1 изменение ждёт сети».
 const PILL_OPEN_MS = 3000;
+const PILL_BRIEF_MS = 2000;
 let pillTimer = 0;
 
 // Ширина плашки — по тексту, а не max-width с запасом: иначе закрытие
@@ -256,7 +257,7 @@ function openOfflinePill(brief = false) {
   pillTimer = setTimeout(() => {
     pill.classList.remove('open');
     pill.style.width = '';
-  }, PILL_OPEN_MS);
+  }, pill.classList.contains('brief') ? PILL_BRIEF_MS : PILL_OPEN_MS);
 }
 
 function paintOfflinePill() {
