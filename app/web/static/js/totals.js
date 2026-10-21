@@ -200,15 +200,28 @@ function pickPeriod(data, quarters) {
 
 const signed = (value) => `${value > 0 ? '+' : '−'}${formatAverage(Math.abs(value))}`;
 
-/** Что нужно до следующей оценки: «до «5» ещё 2 пятёрки». */
+const MARK_WORDS = {
+  5: ['пятёрка', 'пятёрки', 'пятёрок'],
+  4: ['четвёрка', 'четвёрки', 'четвёрок'],
+  3: ['тройка', 'тройки', 'троек'],
+};
+// Больше стольких оценок одного вида в подсказку не пишем — строка разрастётся.
+const GOAL_LIMIT = 20;
+
+/** Что нужно до следующей оценки: «до «4» ещё 1 пятёрка или 2 четвёрки».
+ *  Оценки, которыми цели не достичь, в подсказку не попадают. */
 function goalText(row) {
   if (row.official || row.avg == null) return '';
   const thresholds = thresholdsFor(row.subject.subject);
   const target = row.avg >= thresholds[5] ? null : row.avg >= thresholds[4] ? 5 : row.avg >= thresholds[3] ? 4 : 3;
   if (!target) return 'Выходит «5»';
-  const needed = neededMarks(row.marks, thresholds[target]);
-  if (!needed) return '';
-  return `До «${target}» — ещё ${needed} ${plural(needed, 'пятёрка', 'пятёрки', 'пятёрок')}`;
+  const options = [5, 4, 3]
+    .map((value) => ({ value, needed: neededMarks(row.marks, thresholds[target], value) }))
+    .filter(({ value, needed }) => needed && (value === 5 || needed <= GOAL_LIMIT))
+    .map(({ value, needed }) => `${needed} ${plural(needed, ...MARK_WORDS[value])}`);
+  if (!options.length) return '';
+  const text = options.length > 1 ? `${options.slice(0, -1).join(', ')} или ${options.at(-1)}` : options[0];
+  return `До «${target}» — ещё ${text}`;
 }
 
 function periodRows(data) {
