@@ -3,7 +3,7 @@
 // заработает — в Telegram и push на все устройства (status/alerts.py).
 // Здесь же — статус серверов внутри приложения.
 
-import { $, api, banner, base, demo, esc, markSgoDown } from './core.js';
+import { $, api, banner, base, demo, esc, markSgoDown, openExternal } from './core.js';
 import { notify as haptic, tap } from './haptics.js';
 import { pushScreen } from './screens.js';
 import { watchStatus } from '../status/live.js';
@@ -206,3 +206,11 @@ export function openStatus() {
   frame.src = `${base}/status?embed=1${theme ? `&theme=${encodeURIComponent(theme)}` : ''}`;
   body.append(frame);
 }
+
+// Ссылки из рамки статуса (адрес региона): рамка сама открыть их не может.
+window.addEventListener('message', (event) => {
+  if (event.origin !== location.origin || event.data?.type !== 'status-open-link') return;
+  const frame = [...document.querySelectorAll('.status-frame')].find((f) => f.contentWindow === event.source);
+  if (!frame || !/^https?:\/\//.test(event.data.url || '')) return;
+  openExternal(event.data.url);
+});
