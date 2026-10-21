@@ -425,6 +425,14 @@ async def save_prefs(request: web.Request) -> web.Response:
         if body["countdown"] not in ("show", "hide"):
             return json_error("Некорректная настройка отсчёта")
         changes["countdown"] = body["countdown"]
+    if "swipeBack" in body:
+        if body["swipeBack"] not in ("anywhere", "edge", "off"):
+            return json_error("Некорректная настройка свайпа")
+        changes["swipeBack"] = body["swipeBack"]
+    if "swipeRight" in body:
+        if body["swipeRight"] not in ("on", "off"):
+            return json_error("Некорректная настройка свайпа")
+        changes["swipeRight"] = body["swipeRight"]
     if "lessonEdits" in body:
         edits = _clean_lesson_edits(body["lessonEdits"])
         if edits is None:

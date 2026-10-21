@@ -7,6 +7,9 @@
 // всегда у края вылетает кружок со стрелкой — видно, что это жест «назад».
 // Отпустил достаточно далеко — то же, что кнопка «Назад»: закрыть экран,
 // шторку, меню или вернуться на «День».
+//
+// В настройках жест можно оставить только от края или выключить, а жест от
+// правого края — выключить отдельно.
 'use strict';
 
 import { $, keepTouch, state } from './core.js';
@@ -14,6 +17,7 @@ import { ICONS } from './icons.js';
 import { canGoBack, handleBack, topScreen } from './screens.js';
 import { sheetOpen } from './sheet.js';
 import { tap } from './haptics.js';
+import { getPref, setPref } from './prefs.js';
 
 /** Ширина полосы у левого края, с которой начинается жест. */
 export const EDGE_PX = 28;
@@ -22,6 +26,25 @@ const COMMIT_PX = 90;
 const ARROW_MAX = 64;
 
 let arrow = null;
+
+/** Где начинается жест: 'anywhere' (как было), 'edge' — только от края, 'off'. */
+export function swipeBackMode() {
+  const mode = getPref('swipeBack');
+  return mode === 'edge' || mode === 'off' ? mode : 'anywhere';
+}
+
+/** Жест от правого края влево — для правой руки. */
+export function swipeFromRight() {
+  return getPref('swipeRight') !== 'off';
+}
+
+export function saveSwipeBack(mode) {
+  setPref('swipeBack', mode);
+}
+
+export function saveSwipeFromRight(on) {
+  setPref('swipeRight', on ? 'on' : 'off');
+}
 
 function ensureArrow() {
   if (arrow) return arrow;
@@ -53,16 +76,20 @@ export function hideBackHint() {
   arrow.style.transform = '';
 }
 
-/** Палец на ленте, которая сама листается вбок (кабинет и учитель, фильтры).
- *  Экран урока и вкладка сюда не входят: они листаются вниз, а браузер,
- *  раз прокрутка вниз включена, считает их прокручиваемыми и вбок — из-за
- *  этого свайп с середины экрана не срабатывал. */
+/** Палец на ленте, которая сама листается вбок (кабинет и учитель, фильтры
+ *  почты). Экран урока и вкладка сюда не входят: они листаются вниз.
+ *  Смотрим на размеры, а не только на overflow: у ленты с overflow-x: auto
+ *  браузер и overflow-y делает auto, и по стилю её не отличить от экрана —
+ *  из-за этого листание фильтров почты вправо уводило «назад». */
 function scrollsSideways(target) {
   for (let el = target; el && el !== document.body; el = el.parentElement) {
     if (el.matches('.screen, main, .panel, .sheet, .drawer')) return false;
+    if (el.scrollWidth <= el.clientWidth + 1) continue;
     const style = getComputedStyle(el);
-    // Лента вбок — это overflow-x без вертикальной прокрутки у того же элемента.
-    if (el.scrollWidth > el.clientWidth + 1 && /auto|scroll/.test(style.overflowX) && !/auto|scroll/.test(style.overflowY)) return true;
+    const sideways = /auto|scroll/.test(style.overflowX);
+    // Лента вбок — то, что не листается вниз: содержимое выше не вылезает.
+    const vertical = /auto|scroll/.test(style.overflowY) && el.scrollHeight > el.clientHeight + 1;
+    if (sideways && !vertical) return true;
   }
   return false;
 }
@@ -73,16 +100,19 @@ export function initSwipeBack() {
   document.addEventListener('touchstart', (event) => {
     if (gesture || event.touches.length !== 1) return;
     const touch = event.touches[0];
-    if (!canGoBack()) return;
+    const mode = swipeBackMode();
+    if (mode === 'off' || !canGoBack()) return;
     const overlay = topScreen() || sheetOpen() || $('drawer').classList.contains('open');
+    // На ленте вбок жест только от левого края: справа палец листает её.
+    const strip = scrollsSideways(event.target);
     // От правого края влево — тоже «назад»: удобно правой рукой.
-    const fromRight = touch.clientX >= innerWidth - EDGE_PX;
+    const fromRight = swipeFromRight() && !strip && touch.clientX >= innerWidth - EDGE_PX;
     // Вправо — с любого места поверх экрана и на вкладках: своих жестов вбок
     // там нет. На «Дне» — только от края, иначе спутается с листанием дней.
     // Панель вкладок тянут пальцем, в полях выделяют текст — там жест свой.
     const ownGesture = event.target.closest?.('#bottomNav, input, textarea, select, [contenteditable], [data-own-gesture]');
     const calendarForm = event.target.closest?.('.calendar-screen');
-    const anywhere = !calendarForm && (overlay || state.tab !== 'day') && !ownGesture && !scrollsSideways(event.target);
+    const anywhere = mode === 'anywhere' && !calendarForm && (overlay || state.tab !== 'day') && !ownGesture && !strip;
     if (touch.clientX > EDGE_PX && !anywhere && !(fromRight && !ownGesture)) return;
     gesture = {
       x: touch.clientX, y: touch.clientY, dx: 0,
