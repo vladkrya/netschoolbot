@@ -23,12 +23,12 @@ import aiohttp
 from aiohttp import web
 
 from ..accounts import has_telegram
-from ..accounts.service import connect_accounts
+from ..accounts.service import connect_accounts, link_account
 from ..accounts.mailer import letter
 from ..accounts.site_login import PREFIX as SITE_LOGIN_PREFIX, describe_browser
 from ..accounts.passwords import check_password, hash_password, verify_password
 from ..domain.models import Credentials, LoginType, School
-from ..netschool import login as login_flow
+from ..netschool import login as login_flow, ownership
 from ..netschool.errors import NetSchoolError, Reason, login_message, wrap
 from . import viewing
 from .api import BOT, context, current_user, json_error
@@ -222,14 +222,38 @@ async def tg_oidc_start(request: web.Request) -> web.Response:
     raise response
 
 
+@routes.get("/api/account/tg-oidc/link")
+async def tg_oidc_link(request: web.Request) -> web.Response:
+    """«Привязать Telegram» в настройках входа: тот же вход через Telegram,
+    но в конце Telegram привязывается к открытому аккаунту с сайта."""
+    app, user = context(request), current_user(request)
+    redirect_uri = _oidc_redirect_uri(request)
+    if has_telegram(user.telegram_id):
+        raise _link_back(request, "ok")
+    if redirect_uri is None:
+        raise _link_back(request, "off")
+    if SITE_LOGINS.blocked(_ip(request)):
+        raise _link_back(request, "limit")
+    SITE_LOGINS.hit(_ip(request))
+    state, url = OIDC.start(app.settings.web.tg_oidc_client_id, redirect_uri, link_to=user.telegram_id)
+    response = web.HTTPFound(url)
+    base = app.settings.web.miniapp_path.rstrip("/")
+    response.set_cookie(OIDC_COOKIE, state, max_age=600, httponly=True, samesite="Lax",
+                        secure=redirect_uri.startswith("https:"), path=f"{base}/api/account/tg-oidc/")
+    raise response
+
+
 @routes.get("/api/account/tg-oidc/callback")
 async def tg_oidc_callback(request: web.Request) -> web.Response:
-    """Telegram вернул код: меняем его на id_token, проверяем и входим."""
+    """Telegram вернул код: меняем его на id_token, проверяем и входим
+    (или привязываем Telegram, если так начинали)."""
     state = request.query.get("state", "")
+    item = OIDC.take(state) if state and request.cookies.get(OIDC_COOKIE) == state else None
+    back = _link_back if item is not None and item.link_to is not None else _oidc_back
     if request.query.get("error") or not request.query.get("code"):
         OIDC.take(state)
-        raise _oidc_back(request, "cancel")
-    if not state or request.cookies.get(OIDC_COOKIE) != state or (item := OIDC.take(state)) is None:
+        raise back(request, "cancel")
+    if item is None:
         raise _oidc_back(request, "expired")
     web_settings = context(request).settings.web
     try:
@@ -237,7 +261,12 @@ async def tg_oidc_callback(request: web.Request) -> web.Response:
                                     web_settings.tg_oidc_client_secret)
     except (InitDataError, aiohttp.ClientError, asyncio.TimeoutError, ValueError) as exc:
         logger.warning("Вход через Telegram (OIDC) не удался: %s", exc)
-        raise _oidc_back(request, "failed")
+        raise back(request, "failed")
+    if item.link_to is not None:
+        if problem := await link_account(context(request), item.link_to, tg_user.id):
+            _remember_link_problem(item.link_to, problem)
+            raise _link_back(request, "problem")
+        raise _link_back(request, "ok")
     await context(request).users.get_or_create(tg_user.id, display_name=tg_user.full_name)
     signed = await _signed_in(request, tg_user.id, "telegram")
     response = _oidc_back(request)
@@ -245,6 +274,35 @@ async def tg_oidc_callback(request: web.Request) -> web.Response:
         response.cookies[name] = morsel
     logger.info("Вход на сайт через Telegram (OIDC): %s", tg_user.id)
     raise response
+
+
+def _link_back(request: web.Request, result: str) -> web.HTTPFound:
+    """Назад в настройки после привязки. Токен в cookie переехал вместе с
+    аккаунтом, поэтому заново входить не нужно."""
+    base = context(request).settings.web.miniapp_path.rstrip("/")
+    response = web.HTTPFound(f"{base}/?refresh=1#tglink={result}")
+    response.del_cookie(OIDC_COOKIE, path=f"{base}/api/account/tg-oidc/")
+    return response
+
+
+# Почему привязка не вышла: текст из connect_accounts ждёт, пока страница
+# его спросит, — в адрес кладём только код, чтобы чужая ссылка не могла
+# показать человеку произвольный текст.
+LINK_PROBLEMS: dict[int, str] = {}
+MAX_LINK_PROBLEMS = 1000
+
+
+def _remember_link_problem(telegram_id: int, problem: str) -> None:
+    LINK_PROBLEMS.pop(telegram_id, None)
+    if len(LINK_PROBLEMS) >= MAX_LINK_PROBLEMS:
+        LINK_PROBLEMS.pop(next(iter(LINK_PROBLEMS)))
+    LINK_PROBLEMS[telegram_id] = problem
+
+
+async def _telegram_link_methods(request: web.Request) -> dict | None:
+    """Чем привязать Telegram на этом домене — тем же, чем на нём входят."""
+    oidc, widget = _oidc_redirect_uri(request) is not None, await login_widget_bot_id(request)
+    return {"oidc": oidc, "widget": widget} if oidc or widget else None
 
 
 # Подписанный ответ виджета остаётся в истории браузера (в адресе после #),
@@ -447,7 +505,26 @@ async def account_info(request: web.Request) -> web.Response:
         "school": user.school.name,
         "mail": app.mailer.configured,
         "login": attempt.status_json() if isinstance(attempt, WebLogin) else None,
+        # Только у админа: пускать ли другие аккаунты в его Сетевой город.
+        "share_sgo": await ownership.sharing_allowed(app) if _is_admin(app, user.telegram_id) else None,
+        "tg_link": await _telegram_link_methods(request) if not has_telegram(user.telegram_id) else None,
     }})
+
+
+def _is_admin(app: AppContext, telegram_id: int) -> bool:
+    return bool(app.settings.telegram.admin_id) and telegram_id == app.settings.telegram.admin_id
+
+
+@routes.post("/api/account/share-sgo")
+async def share_sgo(request: web.Request) -> web.Response:
+    """Тумблер админа: другие аккаунты могут подключать его Сетевой город."""
+    app, user = context(request), current_user(request)
+    if not _is_admin(app, user.telegram_id):
+        return json_error("Недоступно", status=403)
+    on = bool((await _body(request)).get("on"))
+    await ownership.set_sharing(app, on)
+    logger.info("Админ %s другим аккаунтам свой Сетевой город", "разрешил" if on else "запретил")
+    return await account_info(request)
 
 
 @routes.post("/api/account/attach")
@@ -535,6 +612,34 @@ async def telegram_link(request: web.Request) -> web.Response:
     username = await bot_username(request)
     return web.json_response({"ok": True, "data": {
         "code": code, "url": f"https://t.me/{username}?start=link_{code}" if username else ""}})
+
+
+@routes.post("/api/account/telegram-link/widget")
+async def telegram_link_widget(request: web.Request) -> web.Response:
+    """Привязка через Telegram Login Widget: страница вернулась с подписанными
+    данными Telegram — привязываем этот Telegram к открытому аккаунту."""
+    app, user = context(request), current_user(request)
+    if has_telegram(user.telegram_id):
+        return json_error("Telegram уже привязан")
+    ip = _ip(request)
+    if IP_FAILURES.blocked(ip):
+        return json_error("Слишком много попыток — подождите 15 минут", status=429)
+    try:
+        tg_user = verify_login_widget(await _body(request), await widget_bot_token(app), max_age=WIDGET_MAX_AGE_S)
+    except InitDataError as exc:
+        IP_FAILURES.hit(ip)
+        logger.info("Привязка через виджет отклонена: %s", exc)
+        return json_error("Telegram не подтвердил вход — попробуйте ещё раз", status=400)
+    if problem := await link_account(app, user.telegram_id, tg_user.id):
+        return json_error(problem)
+    return web.json_response({"ok": True})
+
+
+@routes.post("/api/account/telegram-link/result")
+async def telegram_link_result(request: web.Request) -> web.Response:
+    """Почему не вышла привязка через Telegram (один раз)."""
+    problem = LINK_PROBLEMS.pop(current_user(request).telegram_id, "")
+    return web.json_response({"ok": True, "data": {"problem": problem}})
 
 
 @routes.post("/api/lock/password-reset")
@@ -724,7 +829,8 @@ async def _run_login(app: Any, candidate: Any, attempt: WebLogin) -> None:
     try:
         async with app.login_attempt(candidate.telegram_id):
             if attempt.method == "qr":
-                payload = await login_flow.qr_login(app, candidate.school.url, candidate.school.name, show_qr)
+                payload = await login_flow.qr_login(app, candidate.school.url, candidate.school.name, show_qr,
+                                                   telegram_id=candidate.telegram_id)
             else:
                 payload = await login_flow.password_login(app, candidate, ask_otp)
             attempt.status = "running"
@@ -738,7 +844,7 @@ async def _run_login(app: Any, candidate: Any, attempt: WebLogin) -> None:
         attempt.status, attempt.message, attempt.retry = "error", "QR-код истёк — получите новый", True
     except NetSchoolError as exc:
         attempt.status, attempt.message = "error", login_message(exc)
-        attempt.retry = attempt.method == "qr"
+        attempt.retry = attempt.method == "qr" and not isinstance(exc, ownership.AccountTaken)
     except Exception as exc:  # noqa: BLE001 — попытка должна закончиться понятной ошибкой
         logger.warning("Вход с сайта не удался: %s", type(exc).__name__)
         attempt.status, attempt.message = "error", login_message(wrap(exc, context="вход"))

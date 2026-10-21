@@ -2080,6 +2080,9 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
 .account-qr-left { text-align: center; }
 .account-wait { display: flex; justify-content: center; padding: 18px 0; }
 .account-settings p { margin: 6px 0; }
+.btn.account-tg-link { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%;
+  background: #2aabee; border-color: #2aabee; color: #fff; font-weight: 600; }
+.btn.account-tg-link + .link { display: block; margin: 10px auto 0; background: none; border: 0; font: inherit; font-size: 14px; }
 .account-logout { width: 100%; margin-top: 8px; color: var(--g2, #d33); border-color: var(--g2, #d33); }
 .account-link-code code { user-select: all; }
 .account-link-code .btn { margin: 8px 0; }

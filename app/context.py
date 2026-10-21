@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from .attachments.keeper import AttachmentKeeper
     from .caldav.service import CaldavService
-    from .db.repositories import ConditionRepository, SolutionRepository
+    from .db.repositories import ConditionRepository, NetschoolAccountRepository, SolutionRepository
     from .domain.models import User
     from .solver.textbooks import Library
     from .status.alerts import SgoAlerts
@@ -77,6 +77,8 @@ class AppContext:
     # Второй родитель и свои заметки ученика.
     family: FamilyRepository | None = None
     notes: NotesRepository | None = None
+    # Чей аккаунт «Сетевого города» (netschool/ownership.py).
+    netschool_accounts: NetschoolAccountRepository | None = None
     # Страница статуса «Сетевого города» (status/service.py).
     status: StatusService | None = None
     # Подписки из приложения: «когда заработает», «об обновлениях» (status/alerts.py).
@@ -114,6 +116,10 @@ class AppContext:
             self.notes = NotesRepository(self.db)
         if self.accounts is None:
             self.accounts = AccountRepository(self.db)
+        if self.netschool_accounts is None:
+            from .db.repositories import NetschoolAccountRepository
+
+            self.netschool_accounts = NetschoolAccountRepository(self.db)
         if self.mailer is None:
             self.mailer = Mailer(self.settings.mail, site=self.settings.web.miniapp_url)
         if self.status is None:
@@ -252,6 +258,8 @@ class AppContext:
             await self.state.remember_diary(user.telegram_id, user.school.url, user.selected_student_id)
         await self.state.drop_outbox(user.telegram_id)
         await self.cache.clear(user.telegram_id)
+        # Сетевой город свободен: теперь его можно подключить к другому аккаунту.
+        await self.netschool_accounts.release(user.telegram_id)
         # Ссылку на приложение и подписку на календарь (CalDAV) не отзываем: без
         # ссылки приложение на телефоне показывало «Не удалось вас опознать», а с
         # ней само предлагает войти заново. Уроки из календаря уходят (ниже), а

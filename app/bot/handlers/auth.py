@@ -38,6 +38,7 @@ from ...domain import formatting
 from ...domain.models import ApiMode, Credentials, LoginType, School, User
 from ...netschool.errors import NetSchoolError, Reason, login_message, wrap
 from ...netschool import login as login_flow
+from ...netschool.ownership import AccountTaken
 from ...netschool.patches import http as http_patch
 from .. import keyboards
 from .common import reply, report_error
@@ -561,11 +562,17 @@ async def _qr_attempt(callback: CallbackQuery, state: FSMContext, user: User, ap
         )
 
     try:
-        payload = await login_flow.qr_login(app, url, school, show_qr)
+        payload = await login_flow.qr_login(app, url, school, show_qr, telegram_id=candidate.telegram_id)
     except asyncio.TimeoutError:
         await _delete_quietly(qr_message)
         await notice.delete()
         await _offer_qr_retry(callback, state, attempt, "⌛️ QR-код истёк. Получите новый кнопкой ниже.")
+        return
+    except AccountTaken as error:
+        await _delete_quietly(qr_message)
+        await notice.delete()
+        await state.clear()
+        await reply(callback, f"❌ {formatting.esc(error.user_message)}")
         return
     except NetSchoolError as error:
         await _delete_quietly(qr_message)

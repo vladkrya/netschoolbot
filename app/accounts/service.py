@@ -21,16 +21,25 @@ async def link_telegram(app: AppContext, code: str, telegram_id: int) -> str:
     web_id = await app.accounts.take_link_code(code)
     if web_id is None or has_telegram(web_id):
         return "Код неверный или устарел. Получите новый в приложении: Настройки → Вход по почте."
-    problem = await connect_accounts(app, web_id, telegram_id)
-    if problem:
+    if problem := await link_account(app, web_id, telegram_id):
+        return problem
+    return ("✅ Telegram привязан. Уведомления теперь приходят и сюда, а на сайт можно "
+            "по-прежнему входить по почте. Откройте приложение заново.")
+
+
+async def link_account(app: AppContext, web_id: int, telegram_id: int) -> str | None:
+    """Привязать Telegram к аккаунту с сайта: кодом из бота или входом через
+    Telegram на сайте. None — привязан, иначе текст, почему нет."""
+    if not has_telegram(telegram_id):
+        return "Не получилось: это не аккаунт Telegram."
+    if problem := await connect_accounts(app, web_id, telegram_id):
         return problem
     moved = await app.users.get(telegram_id)
     if moved is not None and moved.ready_to_check:
         await app.watchers.start(telegram_id)
     logger.info("Аккаунт %s привязан к Telegram %s", web_id, telegram_id)
     await _notify_linked(app, telegram_id)
-    return ("✅ Telegram привязан. Уведомления теперь приходят и сюда, а на сайт можно "
-            "по-прежнему входить по почте. Откройте приложение заново.")
+    return None
 
 
 async def _notify_linked(app: AppContext, telegram_id: int) -> None:

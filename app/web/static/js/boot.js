@@ -90,6 +90,11 @@ async function boot() {
   }
   await unlockApp();
   await ownToken();
+  // Вернулись из Telegram после «Привязать через Telegram» (account.js).
+  if (!demo && (/[?&]tglink=/.test(location.search) || location.hash.startsWith('#tglink='))) {
+    const { finishTelegramLink } = await import('./account.js');
+    if (await finishTelegramLink()) return;
+  }
   // Сначала своё: оформление и настройки с сервера бота — раньше аккаунта и
   // дневника, который ждёт «Сетевой город» (app.js берёт этот же запрос).
   if (!demo) state.prefsSync = import('./prefs.js').then((module) => module.syncPrefs()).catch(() => false);
