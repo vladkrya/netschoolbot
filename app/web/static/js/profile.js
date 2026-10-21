@@ -270,22 +270,13 @@ function keepSignedInSection(keep) {
     </section>`;
 }
 
-/** «Решения заданий всему классу» — тумблер владельца (web/solver.py). */
-function solverClassSection(solverClass) {
-  if (!solverClass) return '';
+/** «Администрирование» — только у владельца (TG_ADMIN_ID), экран admin.js. */
+function adminSection(admin) {
+  if (!admin || demo) return '';
   return `<section class="drawer-section">
-      <div class="drawer-heading">Решения</div>
-      <label class="switch-row"><span>Решения заданий всему классу<span class="muted small switch-note">видно только вам: кнопка «Решение» появится у одноклассников, которые пользуются ботом</span></span>
-        <input type="checkbox" switch class="switch" id="solverClass" ${solverClass.on ? 'checked' : ''}></label>
-    </section>`;
-}
-
-function chatsSection(toggle) {
-  if (!toggle) return '';
-  return `<section class="drawer-section">
-      <div class="drawer-heading">Чаты</div>
-      <label class="switch-row"><span>Чаты в «Сообщениях»<span class="muted small switch-note">видно только вам: выключенные чаты скрыты у всех, кроме вас; переписка сохраняется</span></span>
-        <input type="checkbox" switch class="switch" id="chatsOn" ${toggle.on ? 'checked' : ''}></label>
+      <div class="drawer-heading">Администрирование</div>
+      <button class="drawer-link" id="drawerAdmin">${ICONS.shield} Админ-настройки</button>
+      <div class="muted small">видно только вам: решения классу, чаты, вход через Telegram, статистика</div>
     </section>`;
 }
 
@@ -472,8 +463,7 @@ function render() {
     </section>
     ${isNewDesign() ? tabsSection() : ''}
     ${readonly ? '' : keepFilesSection(data.keep_attachments)}
-    ${readonly ? '' : solverClassSection(data.solver_class)}
-    ${readonly ? '' : chatsSection(data.chats_toggle)}
+    ${readonly ? '' : adminSection(data.admin)}
     ${readonly ? '' : keepSignedInSection(data.keep_signed_in)}
     ${readonly ? `<section class="drawer-section">
       <div class="drawer-heading">Уведомления</div>
@@ -721,42 +711,6 @@ function bindDrawer() {
       }
     });
   }
-  $('solverClass')?.addEventListener('change', async (event) => {
-    select();
-    const input = event.target;
-    input.disabled = true;
-    try {
-      const { data } = await api('/api/settings/solver-class', {
-        method: 'POST', body: JSON.stringify({ on: input.checked }),
-      });
-      state.profile.solver_class = data;
-      input.checked = Boolean(data.on);
-    } catch (error) {
-      notify('error');
-      input.checked = !input.checked;
-      banner(error.message, true);
-    } finally {
-      input.disabled = false;
-    }
-  });
-  $('chatsOn')?.addEventListener('change', async (event) => {
-    select();
-    const input = event.target;
-    input.disabled = true;
-    try {
-      const { data } = await api('/api/settings/chats', {
-        method: 'POST', body: JSON.stringify({ on: input.checked }),
-      });
-      state.profile.chats_toggle = data;
-      input.checked = Boolean(data.on);
-    } catch (error) {
-      notify('error');
-      input.checked = !input.checked;
-      banner(error.message, true);
-    } finally {
-      input.disabled = false;
-    }
-  });
   $('sgoUpdates')?.addEventListener('change', async (event) => {
     select();
     const input = event.target;
@@ -864,6 +818,12 @@ function bindDrawer() {
     closeDrawer();
     const { openDevices } = await import('./devices.js');
     openDevices();
+  });
+  $('drawerAdmin')?.addEventListener('click', async () => {
+    tap();
+    closeDrawer();
+    const { openAdmin } = await import('./admin.js');
+    openAdmin();
   });
   $('drawerAccount')?.addEventListener('click', async () => {
     tap();
