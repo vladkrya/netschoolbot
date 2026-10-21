@@ -13,6 +13,7 @@ from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from ..domain.models import ApiMode, LoginType, User
+from . import ownership
 from .errors import NetSchoolError, wrap
 
 if TYPE_CHECKING:
@@ -59,6 +60,7 @@ async def password_login(app: AppContext, user: User, otp_callback: OtpCallback 
                 password=user.credentials.password,
                 school=user.school.name,
             )
+        await ownership.claim(app, user.telegram_id, user.school.url, await ownership.account_id(client))
         return client.export_session()
     except NetSchoolError:
         raise
@@ -68,7 +70,7 @@ async def password_login(app: AppContext, user: User, otp_callback: OtpCallback 
         await _close(client)
 
 
-async def qr_login(app: AppContext, url: str, school: str, show_qr: QrCallback) -> str | None:
+async def qr_login(app: AppContext, url: str, school: str, show_qr: QrCallback, *, telegram_id: int) -> str | None:
     """Вход по QR-коду Госуслуг. asyncio.TimeoutError — код истёк."""
     ttl = app.settings.netschool.qr_login_ttl
     client = _client(app, url)
@@ -79,6 +81,7 @@ async def qr_login(app: AppContext, url: str, school: str, show_qr: QrCallback) 
             # секунде пропадало впустую.
             timeout=ttl + 45,
         )
+        await ownership.claim(app, telegram_id, url, await ownership.account_id(client))
         return client.export_session()
     except asyncio.TimeoutError:
         raise

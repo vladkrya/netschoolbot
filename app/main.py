@@ -165,6 +165,14 @@ async def restore_esia_sessions(context: AppContext) -> None:
     await asyncio.gather(*(restore(user) for user in users if user.credentials.login_type.is_gosuslugi))
 
 
+async def backfill_netschool_accounts(context: AppContext) -> None:
+    """После восстановления сессий: дописать, чей у кого Сетевой город."""
+    from .netschool.ownership import backfill
+
+    await asyncio.sleep(120)
+    await backfill(context)
+
+
 async def run(settings: Settings, args: argparse.Namespace) -> int:
     log_queue = setup_logging(settings)
 
@@ -259,6 +267,12 @@ async def run(settings: Settings, args: argparse.Namespace) -> int:
         # Разовая задача: её сбой пишем в лог, но процесс из-за него не роняем.
         supervisor.watch(
             asyncio.create_task(restore_esia_sessions(context), name="esia-restore"),
+            critical=False,
+            may_finish=True,
+        ),
+        # Чей Сетевой город у тех, кто вошёл до правила «один СГ — один аккаунт».
+        supervisor.watch(
+            asyncio.create_task(backfill_netschool_accounts(context), name="netschool-accounts"),
             critical=False,
             may_finish=True,
         ),

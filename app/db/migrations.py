@@ -814,6 +814,18 @@ MIGRATIONS: list[str] = [
         PRIMARY KEY (book, number)
     );
     """,
+    # Чей аккаунт «Сетевого города»: один аккаунт приложения — один аккаунт
+    # школы (netschool/ownership.py). Ключ — сервер и id пользователя в СГ,
+    # одинаковый при входе и по паролю, и через Госуслуги.
+    """
+    CREATE TABLE netschool_accounts (
+        telegram_id INTEGER PRIMARY KEY REFERENCES users(telegram_id) ON DELETE CASCADE,
+        school_url  TEXT    NOT NULL,
+        ns_user_id  INTEGER NOT NULL,
+        created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX idx_netschool_accounts_key ON netschool_accounts(school_url, ns_user_id);
+    """,
 ]
 
 

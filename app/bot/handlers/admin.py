@@ -140,7 +140,7 @@ WIDGET_MODES = {
 
 @router.message(Command("tgwidget"))
 async def tg_widget(message: Message, command: CommandObject, app: AppContext) -> None:
-    """Вход на сайт через Telegram Login Widget: какой бот или выключить.
+    """Вход на сайт и привязка Telegram через Login Widget: какой бот или выключить.
 
     Домен привязывается в BotFather (/setdomain) к одному боту — переключать
     сюда нужно на тот, к которому он сейчас привязан.
@@ -165,14 +165,14 @@ async def tg_widget(message: Message, command: CommandObject, app: AppContext) -
     else:
         state = WIDGET_MODES["reserve"]
     lines = [
-        "🔑 <b>Вход на сайт через Telegram</b>",
+        "🔑 <b>Вход на сайт и привязка Telegram</b>",
         "",
         f"Сейчас: <b>{state}</b>" + (f", бот id {token.partition(':')[0]}" if token else ""),
         f"Домен: <code>{domain}</code>" if domain else "Домен не задан — NETSCHOOL_TG_LOGIN_DOMAIN в .env, кнопки нет",
         "",
         "/tgwidget main — основной бот",
         "/tgwidget reserve — резервный бот",
-        "/tgwidget off — выключить кнопку",
+        "/tgwidget off — выключить кнопку (и вход, и привязку)",
         "",
         "<i>Домен должен быть привязан в @BotFather (/setdomain) именно к выбранному боту.</i>",
     ]

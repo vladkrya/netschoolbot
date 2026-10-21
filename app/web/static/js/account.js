@@ -369,6 +369,66 @@ async function finishWidgetLogin() {
   }
 }
 
+/* ─────────────────────── Привязка Telegram ─────────────────────── */
+
+/** Привязка тем же входом через Telegram, что и на главной: OpenID Connect
+ * ведёт сервер, виджет возвращает на /?tglink=1 с #tgAuthResult. */
+function startTelegramLink(methods) {
+  if (methods.oidc) {
+    location.assign(`${base}/api/account/tg-oidc/link`);
+    return;
+  }
+  location.assign('https://oauth.telegram.org/auth?' + new URLSearchParams({
+    bot_id: String(methods.widget), origin: location.origin, return_to: `${location.origin}${base}/?tglink=1`,
+  }));
+}
+
+const LINK_ERRORS = {
+  ...OIDC_ERRORS,
+  cancel: 'Привязка отменена в Telegram.',
+  expired: 'Время на привязку вышло — нажмите «Привязать через Telegram» ещё раз.',
+  off: 'Привязка через Telegram сейчас выключена — привяжите кодом в боте.',
+};
+
+/** Вернулись из Telegram после привязки: показать итог и открыть настройки.
+ * true — страница перезагружается. */
+export async function finishTelegramLink() {
+  const params = new URLSearchParams(location.search);
+  const viaWidget = params.has('tglink');
+  const code = new URLSearchParams(location.hash.slice(1)).get('tglink') || '';
+  const data = viaWidget ? widgetResult() : null;
+  params.delete('tglink');
+  const query = params.toString();
+  history.replaceState(null, '', `${location.pathname}${query ? `?${query}` : ''}#settings`);
+  let message = '';
+  if (viaWidget) {
+    if (!data) message = LINK_ERRORS.cancel;
+    else {
+      try {
+        await post('/api/account/telegram-link/widget', data);
+        // Аккаунт переехал на id Telegram — дневник и настройки заново.
+        location.replace(`${base}/?refresh=1#tglink=ok`);
+        return true;
+      } catch (error) {
+        message = error.message;
+      }
+    }
+  } else if (code === 'problem') {
+    try {
+      message = (await post('/api/account/telegram-link/result', {})).data.problem || LINK_ERRORS.failed;
+    } catch {
+      message = LINK_ERRORS.failed;
+    }
+  } else if (code !== 'ok') {
+    message = LINK_ERRORS[code] || LINK_ERRORS.failed;
+  }
+  setTimeout(() => {
+    notify(message ? 'error' : 'success');
+    banner(message || 'Telegram привязан: уведомления теперь приходят и туда', Boolean(message), message ? 0 : 6000);
+  }, 800);
+  return false;
+}
+
 /* ─────────────────────── Вход через Telegram-бота ─────────────────────── */
 
 const BOT_POLL_MS = 2000;
@@ -918,7 +978,16 @@ export async function openAccountSettings() {
           <div class="card-title">Telegram</div>
           <p class="muted">Привяжите Telegram — уведомления будут приходить и туда, а в дневник можно будет заходить из бота. Если там уже есть этот дневник, аккаунты объединятся: настройки Telegram останутся, записи и входы сохранятся.</p>
           <div class="account-link-code"></div>
-          <button class="btn outline" data-act="link">Привязать Telegram</button>
+          ${info.tg_link ? `
+            <button class="btn account-tg-link" data-act="link-telegram">${TG_ICON} Привязать через Telegram</button>
+            <button class="link" data-act="link">Не открывается? Привязать кодом в боте</button>`
+            : '<button class="btn outline" data-act="link">Привязать Telegram</button>'}
+        </div>`}
+      ${info.share_sgo === null || info.share_sgo === undefined ? '' : `
+        <div class="card">
+          <label class="switch-row"><span>Разрешить другим аккаунтам использовать мой Сетевой город</span>
+            <input type="checkbox" switch class="switch" data-act="share-sgo" ${info.share_sgo ? 'checked' : ''}></label>
+          <p class="muted">Обычно один аккаунт «Сетевого города» можно подключить только к одному аккаунту приложения. Включите, чтобы ваш Сетевой город могли подключать и другие аккаунты. Кто уже подключился, останется подключён и после выключения.</p>
         </div>`}
       ${info.email ? `<div class="card"><div class="card-title">Удалить аккаунт</div>
         <p class="muted">Удалятся профиль, почта, записи, сессии, история и серверный календарь. Данные в школе, сообщения Telegram и резервные копии останутся.</p>
@@ -982,6 +1051,17 @@ export async function openAccountSettings() {
         banner('Письмо с кодом отправлено');
         setTimeout(() => banner(''), 2500);
       } catch (failure) {
+        banner(failure.message, true);
+      }
+    });
+    body.querySelector('[data-act="link-telegram"]')?.addEventListener('click', () => startTelegramLink(info.tg_link));
+    body.querySelector('[data-act="share-sgo"]')?.addEventListener('change', async (event) => {
+      const input = event.currentTarget;
+      try {
+        await post('/api/account/share-sgo', { on: input.checked });
+        notify('success');
+      } catch (failure) {
+        input.checked = !input.checked;
         banner(failure.message, true);
       }
     });

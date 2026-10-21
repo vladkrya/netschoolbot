@@ -210,3 +210,81 @@ async def test_finish_exchanges_code_and_checks_nonce(rsa_key, monkeypatch):
             await logins.finish(item, "the-code", CLIENT_ID, "secret")
     finally:
         await server.close()
+
+
+class TestLink:
+    """«Привязать через Telegram» в настройках входа: тот же вход, но в конце —
+    привязка к открытому аккаунту с сайта вместо команды /link."""
+
+    @pytest.fixture(autouse=True)
+    def fresh_registrations(self, monkeypatch):
+        monkeypatch.setattr(account_web, "REGISTRATIONS", account_web.Limiter(50, 3600))
+
+    async def register(self, client, app_context, email="kid@example.com"):
+        response = await client.post(f"{BASE}/api/account/register",
+                                     json={"email": email, "password": "длинный-пароль"})
+        token = (await response.json())["data"]["token"]
+        return token, await app_context.miniapp.resolve_token(token)
+
+    async def start(self, client, token):
+        response = await client.get(f"{BASE}/api/account/tg-oidc/link", params={"token": token},
+                                    allow_redirects=False)
+        assert response.status == 302
+        return parse_qs(urlsplit(response.headers["Location"]).query)["state"][0]
+
+    async def test_link_moves_account_to_telegram(self, client, app_context, monkeypatch):
+        token, web_id = await self.register(client, app_context)
+        info = (await (await client.get(f"{BASE}/api/account", params={"token": token})).json())["data"]
+        assert info["tg_link"] == {"oidc": True, "widget": 0}
+        state = await self.start(client, token)
+
+        async def finish(item, code, client_id, secret):
+            assert item.link_to == web_id
+            return TelegramUser(id=4250, first_name="Вася")
+
+        monkeypatch.setattr(account_web.OIDC, "finish", finish)
+        response = await client.get(f"{BASE}/api/account/tg-oidc/callback",
+                                    params={"code": "c", "state": state}, allow_redirects=False)
+        assert response.headers["Location"] == f"{BASE}/?refresh=1#tglink=ok"
+        # Вход не новый: прежний токен переехал на Telegram вместе с аккаунтом.
+        assert "netschool_token" not in response.cookies
+        assert await app_context.miniapp.resolve_token(token) == 4250
+        assert (await app_context.accounts.by_email("kid@example.com"))["telegram_id"] == 4250
+
+    async def test_problem_is_told_once_by_server(self, client, app_context, monkeypatch):
+        await self.register(client, app_context, email="first@example.com")
+        first = (await app_context.accounts.by_email("first@example.com"))["telegram_id"]
+        token, _ = await self.register(client, app_context)
+        # У этого Telegram уже есть своя почта.
+        from app.accounts.service import connect_accounts
+        assert await connect_accounts(app_context, first, 4251) is None
+        state = await self.start(client, token)
+
+        async def finish(*args):
+            return TelegramUser(id=4251)
+
+        monkeypatch.setattr(account_web.OIDC, "finish", finish)
+        response = await client.get(f"{BASE}/api/account/tg-oidc/callback",
+                                    params={"code": "c", "state": state}, allow_redirects=False)
+        assert response.headers["Location"].endswith("#tglink=problem")
+        result = await client.post(f"{BASE}/api/account/telegram-link/result", json={}, params={"token": token})
+        assert "уже привязана другая почта" in (await result.json())["data"]["problem"]
+        result = await client.post(f"{BASE}/api/account/telegram-link/result", json={}, params={"token": token})
+        assert (await result.json())["data"]["problem"] == ""
+
+    async def test_cancel_returns_to_settings(self, client, app_context):
+        token, _ = await self.register(client, app_context)
+        state = await self.start(client, token)
+        response = await client.get(f"{BASE}/api/account/tg-oidc/callback",
+                                    params={"error": "access_denied", "state": state}, allow_redirects=False)
+        assert response.headers["Location"].endswith("#tglink=cancel")
+
+    async def test_off_on_other_domains(self, client, app_context):
+        token, _ = await self.register(client, app_context)
+        app_context.settings = replace(app_context.settings, web=replace(
+            app_context.settings.web, tg_oidc_hosts=("ns.example.ru",)))
+        info = (await (await client.get(f"{BASE}/api/account", params={"token": token})).json())["data"]
+        assert info["tg_link"] is None
+        response = await client.get(f"{BASE}/api/account/tg-oidc/link", params={"token": token},
+                                    allow_redirects=False)
+        assert response.headers["Location"].endswith("#tglink=off")
