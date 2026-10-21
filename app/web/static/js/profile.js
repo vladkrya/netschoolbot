@@ -9,7 +9,7 @@ import {
 } from './core.js';
 import {
   ACCENTS, currentAccent, forgetAccent, isNewDesign, rememberAccent, saveAccent, savedAccents, saveAnswers, saveBells, saveDesign, saveHomeworkStatus, saveWeekends, showAnswers, showBells,
-  applyMotion, HALLOWEEN_ACCENTS, halloweenAccent, halloweenCountdown, isHalloween, saveHalloween, saveHalloweenAccent, showConfetti, saveConfetti, showMotion, saveMotion, showHomeworkStatus, showWeekends, syncChromeColor,
+  applyMotion, HALLOWEEN_ACCENTS, halloweenAccent, halloweenCountdown, isHalloween, saveHalloween, saveHalloweenAccent, showConfetti, saveConfetti, motionChosen, motionLevel, saveMotion, weakDevice, showHomeworkStatus, showWeekends, syncChromeColor,
 } from './appearance.js';
 import { ICONS } from './icons.js';
 import { smoothRepaint } from './motion.js';
@@ -919,8 +919,7 @@ function render() {
         <input type="checkbox" switch class="switch" id="hwStatusShow" ${showHomeworkStatus() ? 'checked' : ''}></label>
       ${data.api_mode === 'mobile' ? `<label class="switch-row"><span>Отправка ответа на задание<span class="muted small switch-note">блок «Мой ответ» на экране задания</span></span>
         <input type="checkbox" switch class="switch" id="answersShow" ${showAnswers() ? 'checked' : ''}></label>` : ''}
-      <label class="switch-row"><span>Анимации<span class="muted small switch-note">выключите, если телефон подтормаживает</span></span>
-        <input type="checkbox" switch class="switch" id="motionShow" ${showMotion() ? 'checked' : ''}></label>
+      ${motionRow()}
       <label class="switch-row"><span>Конфетти за пятёрку<span class="muted small switch-note">когда приходит новая 5</span></span>
         <input type="checkbox" switch class="switch" id="confettiShow" ${showConfetti() ? 'checked' : ''}></label>
       <label class="switch-row"><span>Показывать выходные без уроков</span>
@@ -967,6 +966,38 @@ function render() {
   bindDrawer();
   loadStudentClass(currentStudent);
   checkReferences();
+}
+
+// Что остаётся на каждом уровне «Анимаций» — подпись под ползунком.
+const MOTION_NOTES = {
+  0: 'всё без движения',
+  25: 'только переходы между экранами и шторки',
+  50: 'для старых телефонов: без размытия, счётчиков и конфетти',
+  75: 'без украшений: волн от касаний и фоновых анимаций',
+  100: 'все анимации',
+};
+
+/** «Анимации» — ползунок в процентах, шагами по 25. */
+function motionRow() {
+  const level = motionLevel();
+  return `<div class="motion-row">
+        <label class="motion-head" for="motionLevel"><span>Анимации</span><b id="motionValue">${level}%</b></label>
+        <input type="range" class="motion-range" id="motionLevel" min="0" max="100" step="25" value="${level}" style="--p:${level}%">
+        <div class="motion-ticks" aria-hidden="true"><span>0</span><span>25</span><span>50</span><span>75</span><span>100</span></div>
+        <div class="muted small" id="motionNote">${motionNote(level)}</div>
+      </div>`;
+}
+
+function motionNote(level) {
+  const auto = !motionChosen() && weakDevice() ? ' · подобрано под этот телефон' : '';
+  return MOTION_NOTES[level] + auto;
+}
+
+/** Ползунок двигают — число и подпись меняются сразу, сохраняется по отпусканию. */
+function showMotionLevel(level) {
+  $('motionValue').textContent = `${level}%`;
+  $('motionNote').textContent = MOTION_NOTES[level];
+  $('motionLevel').style.setProperty('--p', `${level}%`);
 }
 
 /** Плитка инструмента: значок над подписью — восемь пунктов помещаются в
@@ -1026,10 +1057,12 @@ function bindDrawer() {
     select();
     saveAnswers(event.target.checked);
   });
-  $('motionShow').addEventListener('change', (event) => {
+  const motion = $('motionLevel');
+  motion.addEventListener('input', () => {
     select();
-    saveMotion(event.target.checked);
+    showMotionLevel(Number(motion.value));
   });
+  motion.addEventListener('change', () => saveMotion(Number(motion.value)));
   $('confettiShow').addEventListener('change', (event) => {
     select();
     saveConfetti(event.target.checked);

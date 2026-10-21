@@ -1,9 +1,10 @@
 // Общие анимации: вспышка новой оценки с конфетти, одометр среднего балла и
 // перелёт элемента с одного экрана на другой. Всё молчит, если в системе
-// включено «Уменьшить движение».
+// включено «Уменьшить движение»; счётчики и перелёты — от 50% «Анимаций»,
+// конфетти и волна от касания — от 75%.
 'use strict';
 
-import { isoToday, stillMotion } from './core.js';
+import { isoToday, motionAtLeast, stillMotion } from './core.js';
 import { showConfetti } from './appearance.js';
 
 export const reducedMotion = stillMotion;
@@ -13,7 +14,7 @@ export const reducedMotion = stillMotion;
  *  светлая шапка висела над тёмной страницей. */
 let repaint = null;
 export function smoothRepaint(change) {
-  if (!document.startViewTransition || reducedMotion()) {
+  if (!document.startViewTransition || !motionAtLeast(50)) {
     change();
     return;
   }
@@ -98,7 +99,7 @@ export function playFresh(root) {
     const party = !summary || box.closest('.ds-mark');
     box.classList.add(/^[12]/.test(value) ? 'mark-soft' : 'mark-flash');
     box.style.animationDelay = `${120 + index * 90}ms`;
-    if (value === '5' && party && showConfetti() && !reducedMotion()) setTimeout(() => confetti(box), 300 + index * 90);
+    if (value === '5' && party && showConfetti() && motionAtLeast(75)) setTimeout(() => confetti(box), 300 + index * 90);
   });
 }
 
@@ -210,7 +211,7 @@ export function playAverages(root, { entrance = false } = {}) {
       changed = true;
     }
     const to = Number(text.replace(',', '.'));
-    if (reducedMotion() || !Number.isFinite(to)) return;
+    if (!motionAtLeast(50) || !Number.isFinite(to)) return;
     const from = before == null ? NaN : Number(before.replace(',', '.'));
     const moved = Number.isFinite(from) && before !== text;
     if (el.dataset.count != null) countUp(el, text);
@@ -229,7 +230,7 @@ export function playAverages(root, { entrance = false } = {}) {
 /** Число плавно переходит от from к to («4,08» → «4,14»), с лёгким толчком
  *  в сторону изменения: вверх — зелёным, вниз — красным (app.css). */
 export function tweenNumber(el, from, to, { digits = 2, duration = 650 } = {}) {
-  if (!el || reducedMotion() || from == null || to == null || Math.abs(to - from) < 0.005) return;
+  if (!el || !motionAtLeast(50) || from == null || to == null || Math.abs(to - from) < 0.005) return;
   const text = (value) => value.toFixed(digits).replace('.', ',');
   const start = performance.now();
   el.classList.remove('tween-up', 'tween-down');
@@ -324,7 +325,7 @@ function settledRect(target) {
  *  летит, сам target спрятан. Летит одна анимация transform — её ведёт
  *  видеокарта, без пересчёта страницы. */
 export function flyTo(rect, target, duration = 460) {
-  if (!target || reducedMotion() || !rect?.width) return;
+  if (!target || !motionAtLeast(50) || !rect?.width) return;
   const end = settledRect(target);
   if (!end.width) return;
   const flyer = target.cloneNode(true);
@@ -342,4 +343,54 @@ export function flyTo(rect, target, duration = 460) {
   };
   animation.onfinish = done;
   animation.oncancel = done;
+}
+
+/* ─────────────────────────── Волна от касания ─────────────────────────── */
+
+// Что нажимается и получает волну. У отметки «Сделано» своя заливка
+// (details.js, homework.js) — её не трогаем.
+const WAVE_TARGETS = '.btn, .chip, .tile, .tool-tile, .lesson-card, .hw-card, .mail-card, .ann-card, .subject-card, .drawer-link, .recipient, .tt-cell, .cal-day, .swatch';
+const WAVE_SKIP = '.hw-check, .hw-done-toggle, [disabled]';
+
+/** От точки касания по кнопке или карточке расходится мягкая волна —
+ *  только при 100% «Анимаций». Волна — слой внутри элемента и проседает
+ *  вместе с ним (слоем поверх страницы она торчала за края нажатой,
+ *  чуть уменьшившейся карточки). Элементу без position на время волны
+ *  ставится relative: вложенных слоёв, привязанных к чему-то снаружи, у
+ *  этих кнопок и карточек нет. Палец пошёл листать — волна гаснет. */
+export function initTapWaves() {
+  let current = null;
+  const fade = () => {
+    current?.classList.add('out');
+    current = null;
+  };
+  document.addEventListener('pointerdown', (event) => {
+    if (!event.isPrimary || event.button !== 0 || !motionAtLeast(100)) return;
+    const host = event.target.closest?.(WAVE_TARGETS);
+    if (!host || host.closest(WAVE_SKIP) || event.target.closest(WAVE_SKIP)) return;
+    const rect = host.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+    fade();
+    const layer = document.createElement('span');
+    layer.className = 'tap-wave';
+    layer.ariaHidden = 'true';
+    const size = Math.hypot(rect.width, rect.height) * 2;
+    const dot = document.createElement('span');
+    Object.assign(dot.style, {
+      left: `${event.clientX - rect.left - size / 2}px`, top: `${event.clientY - rect.top - size / 2}px`,
+      width: `${size}px`, height: `${size}px`,
+    });
+    layer.append(dot);
+    const anchored = getComputedStyle(host).position === 'static';
+    if (anchored) host.style.position = 'relative';
+    host.append(layer);
+    layer.addEventListener('animationend', (end) => {
+      if (end.target !== layer) return;
+      layer.remove();
+      if (anchored && !host.querySelector(':scope > .tap-wave')) host.style.position = '';
+    });
+    current = layer;
+  }, { passive: true });
+  document.addEventListener('pointerup', fade, { passive: true });
+  document.addEventListener('pointercancel', fade, { passive: true });
 }

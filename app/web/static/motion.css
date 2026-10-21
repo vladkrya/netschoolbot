@@ -1,0 +1,158 @@
+/* Уровни «Анимаций» в настройках (appearance.js). Ползунок шагами по 25%,
+   классы на <html> накапливаются: ниже 100% — motion-calm, ниже 75% — ещё
+   motion-lite, ниже 50% — ещё motion-min, на 0% — ещё no-motion (app.css).
+
+   100% — всё, включая украшения ниже: волну от касания, перебор оценок
+          в карточках предметов, «тянущийся» переключатель.
+    75% — без украшений и бесконечных фоновых анимаций.
+    50% — для старых телефонов: ещё без размытия под стеклом (самое
+          тяжёлое для слабой видеокарты), лесенки карточек, праздничных
+          фоновых анимаций; счётчики, перелёты и конфетти молчат (motion.js).
+    25% — только переходы между экранами, шторки, вкладки и крутилки. */
+
+/* ─────────────────────── 100%: украшения ─────────────────────── */
+
+/* Волна от точки касания (initTapWaves в motion.js). */
+.tap-wave {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  overflow: hidden;
+  pointer-events: none;
+}
+/* Двойной класс и !important: список после тихого обновления гасит
+   анимации всего внутри (.list.quiet *, app.css), а волну зовёт палец. */
+.tap-wave.tap-wave { animation: wave-out .4s ease 1s forwards !important; }  /* палец не отпустили — гаснет сама */
+.tap-wave.tap-wave.out { animation: wave-fade .4s ease .12s forwards !important; }
+.tap-wave > span {
+  position: absolute;
+  border-radius: 50%;
+  background: var(--text);
+  opacity: .1;
+  transform: scale(0);
+}
+.tap-wave.tap-wave > span { animation: wave-grow .55s cubic-bezier(.2, .8, .3, 1) forwards !important; }
+@keyframes wave-grow { to { transform: scale(1); } }
+@keyframes wave-out { to { opacity: 0; } }
+@keyframes wave-fade { to { opacity: 0; } }
+
+/* Свежие оценки в карточке предмета выкатываются по одной. */
+:root:not(.motion-calm) .sc-marks .mark-box:not(.mark-flash, .mark-soft) { animation: pop .35s var(--ease) both; animation-delay: .12s; }
+:root:not(.motion-calm) .sc-marks .mark-box:not(.mark-flash, .mark-soft):nth-child(2) { animation-delay: .16s; }
+:root:not(.motion-calm) .sc-marks .mark-box:not(.mark-flash, .mark-soft):nth-child(3) { animation-delay: .2s; }
+:root:not(.motion-calm) .sc-marks .mark-box:not(.mark-flash, .mark-soft):nth-child(4) { animation-delay: .24s; }
+:root:not(.motion-calm) .sc-marks .mark-box:not(.mark-flash, .mark-soft):nth-child(5) { animation-delay: .28s; }
+:root:not(.motion-calm) .sc-marks .mark-box:not(.mark-flash, .mark-soft):nth-child(n+6) { animation-delay: .32s; }
+
+/* Кружок переключателя под пальцем вытягивается, как в iOS. */
+:root:not(.motion-calm) .switch::after { transition: transform .25s var(--ease), width .2s var(--ease); }
+:root:not(.motion-calm) .switch:active::after { width: 28px; }
+:root:not(.motion-calm) .switch:checked:active::after { transform: translateX(12px); }
+
+/* Значок плитки инструмента чуть поворачивается при нажатии. */
+:root:not(.motion-calm) .tool-ico { transition: transform .25s cubic-bezier(.34, 1.56, .64, 1); }
+:root:not(.motion-calm) .tool-tile:active .tool-ico { transform: scale(.86) rotate(-8deg); }
+
+/* ─────────────── 75%: без бесконечных украшений ─────────────── */
+
+.motion-calm :is(.ai-hello svg, .install-arrow, .ld-bg i, .ld-grad, .ld-demo, .ld-phone, .ld-dot, .ld-toast, .game-over-icon) {
+  animation-iteration-count: 1 !important;
+}
+.motion-calm .tap-wave { display: none; }
+
+/* ─────────────── 50%: облегчённый, для старых телефонов ─────────────── */
+
+/* Размытие под стеклом — самое тяжёлое: каждый кадр прокрутки телефон
+   заново размывает всё под шапкой и панелью. Без него стекло было бы
+   нечитаемым — делаем поверхности плотными. */
+.motion-lite *, .motion-lite *::before, .motion-lite *::after {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+.motion-lite :is(.bottom-nav, .sheet, .sgo-down, .glass, .year-pill, .screen.glassy .screen-body > .card) {
+  background: var(--card) !important;
+}
+:root[data-design="new"].motion-lite :is(.app-header, .screen-head) { background: var(--bg); }
+.motion-lite .fab { background: var(--head) !important; }
+
+/* Карточки появляются вместе с вкладкой, а не лесенкой по одной. */
+.motion-lite :is(.list, .screen-body, .totals-table, .totals-cards, [data-list].rise) > *,
+.motion-lite :is(.ai-stagger, .ac-dot, .sc-marks .mark-box:not(.mark-flash, .mark-soft)) { animation: none !important; }
+
+/* Праздничные фоновые анимации стоят, как при выключенных анимациях
+   (halloween.css, .no-motion). */
+.motion-lite .hw-bat { animation: none !important; translate: var(--x, 30vw) 0; }
+.motion-lite .hw-bat:nth-child(3) { --x: 30vw; }
+.motion-lite .hw-bat:nth-child(4) { --x: 64vw; }
+.motion-lite .hw-bat:nth-child(5) { --x: 46vw; }
+.motion-lite .hw-bat:nth-child(n+6) { display: none; }
+.motion-lite :is(.hw-fog, .hw-moon, .hw-stars span, .hw-swoop, .lt-bats),
+.motion-lite :is(.hw-spider, .hw-moon)::before,
+.motion-lite .hw-spider::after { animation: none !important; }
+.motion-lite :is(.hw-swoop, .lt-bats) { display: none !important; }
+
+/* ─────────────── 25%: только переходы ─────────────── */
+
+.motion-min *, .motion-min *::before, .motion-min *::after {
+  animation-duration: .01ms !important; animation-delay: 0s !important; transition-duration: .01ms !important;
+}
+/* Экраны, шторки и вкладки по-прежнему въезжают — так видно, откуда
+   что взялось. Крутилки крутятся: без них не понять, что идёт загрузка. */
+:root.motion-min:not(.no-motion) :is(.screen, .overlay, .sheet, .panel.active, .overlay.closing .sheet) { animation-duration: .2s !important; }
+:root.motion-min:not(.no-motion) .nav-glider,
+:root.motion-min:not(.no-motion) .switch::after { transition-duration: .25s !important; }
+:root.motion-min:not(.no-motion) :is(.pull-spin.busy, .solve-pill-spin, .boot-spinner) { animation-duration: .8s !important; }
+:root.motion-min:not(.no-motion) :is(.btn.loading, .attach.loading)::after { animation-duration: .8s !important; }
+:root.motion-min:not(.no-motion) .ai-msg.typing span { animation-duration: 1s !important; }
+:root.motion-min:not(.no-motion) .ai-msg.typing span:nth-child(2) { animation-delay: .15s !important; }
+:root.motion-min:not(.no-motion) .ai-msg.typing span:nth-child(3) { animation-delay: .3s !important; }
+
+/* ─────────────── Ползунок «Анимации» в настройках ─────────────── */
+
+.motion-row { padding: 8px 0; }
+.motion-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.motion-head b { font-variant-numeric: tabular-nums; color: var(--primary); }
+.motion-range {
+  display: block;
+  width: 100%;
+  height: 28px;
+  margin: 6px 0 0;
+  background: transparent;
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+}
+.motion-range::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 3px;
+  background: linear-gradient(90deg, var(--head) var(--p, 100%), var(--border) var(--p, 100%));
+}
+.motion-range::-moz-range-track { height: 6px; border-radius: 3px; background: var(--border); }
+.motion-range::-moz-range-progress { height: 6px; border-radius: 3px; background: var(--head); }
+.motion-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 24px; height: 24px;
+  margin-top: -9px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, .3);
+  transition: transform .2s var(--ease);
+}
+.motion-range::-moz-range-thumb {
+  width: 24px; height: 24px;
+  border: 0;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, .3);
+}
+.motion-range:active::-webkit-slider-thumb { transform: scale(1.15); }
+/* Подписи под делениями: крайние — у краёв, средние — по центру деления
+   (кружок 24px, поэтому деления отстоят от краёв на 12px). */
+.motion-ticks { position: relative; height: 16px; margin: 0 12px 4px; font-size: 11px; color: var(--text2); font-variant-numeric: tabular-nums; }
+.motion-ticks span { position: absolute; translate: -50% 0; }
+.motion-ticks span:nth-child(1) { left: 0; }
+.motion-ticks span:nth-child(2) { left: 25%; }
+.motion-ticks span:nth-child(3) { left: 50%; }
+.motion-ticks span:nth-child(4) { left: 75%; }
+.motion-ticks span:nth-child(5) { left: 100%; }

@@ -22,8 +22,16 @@
     // Новый дизайн — по умолчанию; старый — только если его выбрали.
     var fresh = localStorage.getItem('ns-design-v2') !== 'classic';
     if (fresh) document.documentElement.setAttribute('data-design', 'new');
-    // «Анимации» выключены в настройках — до первой отрисовки, без мигания.
-    if (localStorage.getItem('ns-motion') === 'off') document.documentElement.classList.add('no-motion');
+    // Сколько анимаций играть (настройка «Анимации», appearance.js) — до
+    // первой отрисовки, без мигания. Не выбрано: на слабом телефоне 50%.
+    var motion = localStorage.getItem('ns-motion');
+    var level = motion === 'off' ? 0 : motion === 'on' ? 100 : /^(25|50|75)$/.test(motion || '') ? +motion
+      : (navigator.deviceMemory || 8) <= 2 ? 50 : 100;
+    var classes = document.documentElement.classList;
+    if (level < 100) classes.add('motion-calm');
+    if (level < 75) classes.add('motion-lite');
+    if (level < 50) classes.add('motion-min');
+    if (!level) classes.add('no-motion');
     var bg = fresh ? (dark ? '#0f1217' : '#f3f4f8') : (dark ? '#141a22' : '#eef1f6');
     // Хеллоуинское оформление (в сезон у всех) — ночное, со своим цветом акцента.
     if ({{ 'true' if token or demo else 'false' }} && localStorage.getItem('ns-halloween') === 'on'
@@ -86,6 +94,8 @@
 <!-- Хеллоуин: правила под html[data-holiday="halloween"], включает appearance.js. -->
 <link rel="stylesheet" href="{{ base }}/static/v{{ version }}/halloween.css">
 <link rel="stylesheet" href="{{ base }}/static/v{{ version }}/games.css">
+<!-- Уровни «Анимаций»: облегчённые режимы и украшения полного (motion-calm/-lite/-min на <html>). -->
+<link rel="stylesheet" href="{{ base }}/static/v{{ version }}/motion.css">
 <!-- До app.js: приложению нужен Telegram.WebApp уже при старте, чтобы
      забрать initData до первого запроса. Копия у нас, а не с telegram.org:
      без VPN telegram.org заблокирован, и синхронный скрипт в head не давал
