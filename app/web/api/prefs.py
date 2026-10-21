@@ -111,6 +111,22 @@ def _clean_periods(value: Any) -> dict[str, Any] | None:
     return {"scheme": scheme, "starts": [f"{m:02d}-{d:02d}" for m, d in dates]}
 
 
+_VERSION = re.compile(r"^\d{1,3}\.\d{1,3}\.\d{1,3}$")
+# Цели на четверть по предметам: {предмет: "5" | "4" | "3"}.
+MAX_GOALS = 60
+
+
+def _clean_goals(value: Any) -> dict[str, str] | None:
+    if not isinstance(value, dict) or len(value) > MAX_GOALS:
+        return None
+    goals = {}
+    for subject, grade in value.items():
+        if not isinstance(subject, str) or not 0 < len(subject) <= 120 or grade not in ("5", "4", "3"):
+            return None
+        goals[subject] = grade
+    return goals
+
+
 MAX_LESSON_EDITS = 100
 _EDIT_ID = re.compile(r"^[0-9a-z]{1,24}$")
 _CLOCK = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
@@ -380,6 +396,25 @@ async def save_prefs(request: web.Request) -> web.Response:
         if thresholds is None:
             return json_error("Некорректные пороги оценок")
         changes["thresholds"] = thresholds
+    if "keepSignedIn" in body:
+        # «Не выходить из аккаунта» (Госуслуги): по умолчанию включено.
+        if not isinstance(body["keepSignedIn"], bool):
+            return json_error("Некорректная настройка")
+        changes["keepSignedIn"] = body["keepSignedIn"]
+    if "goals" in body:
+        goals = _clean_goals(body["goals"])
+        if goals is None:
+            return json_error("Некорректные цели")
+        changes["goals"] = goals
+    if "whatsNew" in body:
+        # Какую версию «Что нового» уже открывали — точка у строки в настройках.
+        if not isinstance(body["whatsNew"], str) or not _VERSION.match(body["whatsNew"]):
+            return json_error("Некорректная настройка")
+        changes["whatsNew"] = body["whatsNew"]
+    if "countdown" in body:
+        if body["countdown"] not in ("show", "hide"):
+            return json_error("Некорректная настройка отсчёта")
+        changes["countdown"] = body["countdown"]
     if "lessonEdits" in body:
         edits = _clean_lesson_edits(body["lessonEdits"])
         if edits is None:

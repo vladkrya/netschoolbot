@@ -10,7 +10,7 @@ from aiohttp import web
 
 from ...context import AppContext
 from ...domain import formatting
-from ...domain.models import TIMEZONES, User
+from ...domain.models import TIMEZONES, ApiMode, User
 from ...netschool.errors import NetSchoolError
 from .base import _utc_iso, context, current_user, halloween_season, json_error, routes
 
@@ -20,6 +20,19 @@ async def _keep_attachments_info(app: AppContext, user: User) -> dict:
     if app.attachments is None or not app.attachments.enabled:
         return {"available": False}
     return {"available": True, "on": await app.keep_attachments_wanted(user)}
+
+
+async def _keep_signed_in_info(app: AppContext, user: User) -> dict:
+    from ...context import KEEP_SIGNED_IN_PREF
+
+    if not (user.credentials.login_type.is_gosuslugi and app.diary.mobile_available):
+        return {"available": False}
+    return {
+        "available": True,
+        "on": (await app.miniapp.prefs(user.telegram_id)).get(KEEP_SIGNED_IN_PREF) is not False,
+        # Уже на мобильном токене — держится сам, переключатель лишь не даёт уйти обратно.
+        "mobile": user.effective_api_mode is ApiMode.MOBILE,
+    }
 
 
 @routes.post("/api/settings/keep-attachments")
@@ -74,6 +87,9 @@ async def profile(request: web.Request) -> web.Response:
                 "sgo_updates": await _sgo_updates(app, (viewer or user).telegram_id, user.school.url),
                 # «Сохранять файлы заданий» (бета, attachments/keeper.py).
                 "keep_attachments": await _keep_attachments_info(app, viewer or user),
+                # «Не выходить из аккаунта» — вход через Госуслуги (AppContext.keep_signed_in).
+                "keep_signed_in": await _keep_signed_in_info(app, user)
+                if viewer is None or viewer.telegram_id == user.telegram_id else {"available": False},
                 # Тумблер пропусков показывается только там, где есть отметки посещаемости.
                 "api_mode": user.effective_api_mode.value,
                 "interval_minutes": user.check_interval // 60,
@@ -192,22 +208,26 @@ async def timezone_settings(request: web.Request) -> web.Response:
 CLASS_FRESH = dt.timedelta(days=1)
 
 
-@routes.get("/api/student-class")
-async def student_class(request: web.Request) -> web.Response:
-    """Класс ученика для настроек. Меняется раз в год — храним сутки, а без
+async def class_name(app: AppContext, user: User) -> str:
+    """Класс выбранного ученика. Меняется раз в год — храним сутки, а без
     связи со школой отдаём прошлый ответ или пустую строку."""
-    app, user = context(request), current_user(request)
     section = f"class:{user.selected_student_id}"
     cached = await app.cache.get(user.telegram_id, section)
     now_utc = dt.datetime.now(dt.timezone.utc).replace(tzinfo=None)
     if cached is not None and now_utc - cached[1] < CLASS_FRESH:
-        name = cached[0]
-    else:
-        try:
-            name = await app.diary.fetch_class_name(user)
-            await app.cache.put(user.telegram_id, section, name)
-        except NetSchoolError:
-            name = cached[0] if cached is not None else ""
+        return cached[0]
+    try:
+        name = await app.diary.fetch_class_name(user)
+    except NetSchoolError:
+        return cached[0] if cached is not None else ""
+    await app.cache.put(user.telegram_id, section, name)
+    return name
+
+
+@routes.get("/api/student-class")
+async def student_class(request: web.Request) -> web.Response:
+    """Класс ученика для настроек."""
+    name = await class_name(context(request), current_user(request))
     return web.json_response({"ok": True, "data": {"name": name, "label": formatting.class_label(name)}})
 
 

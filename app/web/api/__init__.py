@@ -27,7 +27,7 @@ from .base import (
     routes,
     verify_attachment_ticket,
 )
-from . import profile, diary, marks, homework, mail, attachments, prefs  # noqa: F401  регистрация маршрутов
+from . import profile, diary, marks, homework, mail, attachments, prefs, planning  # noqa: F401  регистрация маршрутов
 from .attachments import _content_disposition, attachment_payload
 from .mail import _safe_filename
 from .marks import _lesson_over

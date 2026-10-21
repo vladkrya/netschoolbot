@@ -159,7 +159,10 @@ class FakeDiary:
     async def fetch_mail(self, user, limit=20):
         if self.error:
             raise self.error
-        return []
+        return list(getattr(self, "mail", []))
+
+    async def fetch_class_name(self, user):
+        return getattr(self, "class_name", "")
 
     async def fetch_chat_identity(self, user):
         if self.error:
