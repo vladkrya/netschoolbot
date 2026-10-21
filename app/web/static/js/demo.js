@@ -281,6 +281,7 @@ export async function demoApi(path, options = {}) {
       interval_minutes: 5,
       quiet_hours: 'Отключены',
       enabled: true,
+      chats: true,
       timezone: 'Europe/Moscow',
       timezones: [{ id: 'Europe/Moscow', name: 'Москва' }],
       status: { running: true, last_ok_at: new Date().toISOString(), queued: 0 },

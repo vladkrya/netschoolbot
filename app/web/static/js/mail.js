@@ -360,16 +360,44 @@ async function renderAnnouncements(body, force = false) {
   }
 }
 
-export function selectChats() {
-  mode = 'chat';
+function setMode(next) {
+  mode = next;
+  $('mailSeg').querySelectorAll('[data-mail-mode]').forEach((item) =>
+    item.classList.toggle('on', item.dataset.mailMode === mode));
+  placeLens();
+}
+
+/** Линза — под выбранным разделом среди видимых: «Чаты» могут быть скрыты. */
+function placeLens() {
   const seg = $('mailSeg');
-  seg.querySelectorAll('[data-mail-mode]').forEach((item) =>
-    item.classList.toggle('on', item.dataset.mailMode === 'chat'));
-  seg.style.setProperty('--i', 1);
+  const modes = [...seg.querySelectorAll('[data-mail-mode]')].filter((item) => !item.hidden)
+    .map((item) => item.dataset.mailMode);
+  seg.style.setProperty('--n', modes.length);
+  seg.style.setProperty('--i', Math.max(0, modes.indexOf(mode)));
+}
+
+/** Владелец выключил или включил чаты — раздел прячется вместе со счётчиком. */
+function setChatsAvailable(on) {
+  const button = $('mailSeg').querySelector('[data-mail-mode="chat"]');
+  if (button.hidden === !on) return;
+  button.hidden = !on;
+  if (!on) setMailBadge('chat', 0);
+  if (!on && mode === 'chat') {
+    setMode('mail');
+    if (state.tab === 'mail') loadMail();
+  } else {
+    placeLens();
+  }
+}
+
+export function selectChats() {
+  setMode('chat');
 }
 
 export function initMail() {
   const seg = $('mailSeg');
+  if (state.profile) setChatsAvailable(Boolean(state.profile.chats));
+  window.addEventListener('netschool:profile', ({ detail }) => setChatsAvailable(Boolean(detail?.chats)));
   import('./chat-live.js').then(({ initChatLive }) => initChatLive());
   const refreshMailBadge = async () => {
     if (document.hidden) return;
@@ -384,9 +412,7 @@ export function initMail() {
     const button = event.target.closest('[data-mail-mode]');
     if (!button || button.dataset.mailMode === mode) return;
     select();
-    mode = button.dataset.mailMode;
-    seg.querySelectorAll('[data-mail-mode]').forEach((item) => item.classList.toggle('on', item === button));
-    seg.style.setProperty('--i', ['mail', 'chat', 'ann'].indexOf(mode));
+    setMode(button.dataset.mailMode);
     loadMail();
   });
 
