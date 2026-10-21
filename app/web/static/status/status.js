@@ -153,6 +153,18 @@ function tapTip(event, key, html, highlight) {
   tipUndo = highlight?.() || null;
 }
 document.addEventListener('click', () => { if (touchInput) hideTip(); });
+
+// В приложении страница живёт в рамке, а из рамки внутри Telegram ссылки
+// с target=_blank не открываются. Адрес отдаём приложению — оно откроет его
+// через openLink, как остальные внешние ссылки.
+if (document.body.classList.contains('embed') && window.parent !== window) {
+  document.addEventListener('click', (event) => {
+    const link = event.target.closest?.('a[target="_blank"]');
+    if (!link) return;
+    event.preventDefault();
+    window.parent.postMessage({ type: 'status-open-link', url: link.href }, location.origin);
+  });
+}
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 // ───────────────────────────── графики ─────────────────────────────
@@ -295,7 +307,7 @@ function mobileText(host) {
 function hostRow(host) {
   const state = availability(host);
   const blocked = host.state === 'blocked';
-  const strip = el('div', { class: `strip${blocked ? ' blocked' : ''}`, role: 'img',
+  const strip = el('div', { class: `strip${blocked ? ' blocked' : host.bars.length > 60 ? ' dense' : ''}`, role: 'img',
     'aria-label': blocked ? `${name(host)}: пока нет истории проверок` : `Доступность ${name(host)}: ${pct(host.uptime)}` });
   if (blocked) {
     strip.append(el('span', {}, 'пока нет истории проверок'));

@@ -284,10 +284,13 @@ function bellGroups(monday) {
   }));
 }
 
-/** Звонки школы карточками: дни с одинаковым временем — вместе. Смену
- *  угадываем по урокам недели (у кого больше совпадений начала урока);
- *  если уроков нет или совпадений нет — показываем все смены. */
-function schoolGroups(monday) {
+/* Смена, которую человек открыл переключателем, — только на эту неделю и до
+ *  перезапуска; потом снова открывается своя. */
+let viewedShift = null;
+
+/** Смены школы и своя: её угадываем по урокам недели (у кого больше
+ *  совпадений начала урока); не угадали — own = null, открываем первую. */
+function shiftsOf(monday) {
   const starts = new Set();
   for (let index = 0; index < 7; index += 1) {
     for (const lesson of dayData(addDays(monday, index))?.lessons || []) {
@@ -296,31 +299,44 @@ function schoolGroups(monday) {
       if (start != null) starts.add(`${index + 1}@${start}`);
     }
   }
-  const shifts = [...new Set(schoolBells.map((bell) => bell.shift))].sort();
+  const shifts = [...new Set(schoolBells.map((bell) => bell.shift))].sort((a, b) => a - b);
   const score = (shift) => schoolBells
     .filter((bell) => bell.shift === shift && starts.has(`${bell.weekday}@${minutesOf(bell.start)}`)).length;
   const best = shifts.map((shift) => [shift, score(shift)]).sort((a, b) => b[1] - a[1])[0];
-  const chosen = best && best[1] > 0 ? [best[0]] : shifts;
+  const own = best && best[1] > 0 ? best[0] : null;
+  const picked = viewedShift?.monday === monday && shifts.includes(viewedShift.shift) ? viewedShift.shift : null;
+  return { shifts, own, shown: picked ?? own ?? shifts[0] };
+}
 
+/** Звонки школы карточками одной смены: дни с одинаковым временем — вместе. */
+function schoolGroups(monday, shift) {
   const groups = new Map();
-  for (const shift of chosen) {
-    for (let weekday = 1; weekday <= 7; weekday += 1) {
-      const rows = schoolBells
-        .filter((bell) => bell.shift === shift && bell.weekday === weekday)
-        .map((bell) => ({
-          number: bell.number, start: minutesOf(bell.start), end: minutesOf(bell.end),
-          text: `${bell.start}–${bell.end}`,
-        }))
-        .sort((a, b) => a.start - b.start);
-      if (!rows.length) continue;
-      const key = `${shift}|${rows.map((row) => `${row.number}@${row.text}`).join('|')}`;
-      const group = groups.get(key) || { shift, days: [], rows, extras: [] };
-      group.days.push({ iso: addDays(monday, weekday - 1), index: weekday - 1 });
-      groups.set(key, group);
-    }
+  for (let weekday = 1; weekday <= 7; weekday += 1) {
+    const rows = schoolBells
+      .filter((bell) => bell.shift === shift && bell.weekday === weekday)
+      .map((bell) => ({
+        number: bell.number, start: minutesOf(bell.start), end: minutesOf(bell.end),
+        text: `${bell.start}–${bell.end}`,
+      }))
+      .sort((a, b) => a.start - b.start);
+    if (!rows.length) continue;
+    const key = rows.map((row) => `${row.number}@${row.text}`).join('|');
+    const group = groups.get(key) || { days: [], rows, extras: [] };
+    group.days.push({ iso: addDays(monday, weekday - 1), index: weekday - 1 });
+    groups.set(key, group);
   }
-  const showShift = chosen.length > 1;
-  return [...groups.values()].map((group) => ({ ...group, shiftLabel: showShift ? `${group.shift} смена` : '' }));
+  return [...groups.values()];
+}
+
+/** «1 смена | 2 смена» над звонками, своя — с пометкой «ваша». */
+function shiftSwitchHtml(monday, { shifts, own, shown }) {
+  if (shifts.length < 2) return '';
+  const index = shifts.indexOf(shown);
+  return `<div class="seg-glass bells-shift" role="tablist" data-monday="${esc(monday)}" style="--n:${shifts.length};--i:${index}">
+      <span class="seg-lens" aria-hidden="true"></span>
+      ${shifts.map((shift) => `<button class="${shift === shown ? 'on' : ''}" data-shift="${esc(shift)}" role="tab"
+        aria-selected="${shift === shown}">${esc(shift)} смена${shift === own ? ' <small>ваша</small>' : ''}</button>`).join('')}
+    </div>`;
 }
 
 /** «Пн–Пт», «Пн, Ср, Чт», «Сб». */
@@ -349,11 +365,12 @@ export function bellsHtml(monday) {
   const today = isoToday();
   const now = new Date();
   const minute = now.getHours() * 60 + now.getMinutes();
-  const groups = hasSchoolBells() ? schoolGroups(monday) : bellGroups(monday);
+  const shifts = hasSchoolBells() ? shiftsOf(monday) : null;
+  const groups = shifts ? schoolGroups(monday, shifts.shown) : bellGroups(monday);
   if (!groups.length) {
     return `<div class="card bells-card"><div class="muted">На этой неделе уроков нет — звонки появятся вместе с расписанием.</div></div>`;
   }
-  return groups.map((group) => {
+  return shiftSwitchHtml(monday, shifts || { shifts: [] }) + groups.map((group) => {
     const isToday = group.days.some((day) => day.iso === today);
     const items = [];
     group.rows.forEach((row, index) => {
@@ -372,7 +389,7 @@ export function bellsHtml(monday) {
     });
     return `<div class="card bells-card${isToday ? ' current' : ''}">
         <div class="sched-top">
-          <div class="sched-day">${esc(daysTitle(group.days))}${group.shiftLabel ? ` <span class="muted small">· ${esc(group.shiftLabel)}</span>` : ''}</div>
+          <div class="sched-day">${esc(daysTitle(group.days))}</div>
           <div class="sched-range">${esc(`${group.rows[0].text.split('–')[0]}–${group.rows[group.rows.length - 1].text.split('–')[1]}`)}</div>
         </div>
         <div class="bells-list">${items.join('')}</div>
@@ -389,6 +406,17 @@ export function bellsHtml(monday) {
 }
 
 export function initSchedule() {
+  // Переключатель смен — и на вкладке, и в шторке из «Дня»: перерисовываем
+  // звонки в том же контейнере.
+  document.addEventListener('click', (event) => {
+    const button = event.target.closest('.bells-shift [data-shift]');
+    if (!button || button.classList.contains('on')) return;
+    select();
+    const control = button.closest('.bells-shift');
+    const { monday } = control.dataset;
+    viewedShift = { monday, shift: Number(button.dataset.shift) };
+    control.parentElement.innerHTML = bellsHtml(monday);
+  });
   if (showBells()) loadSchoolBells();
   // Свои правки расписания меняют неделю карточками.
   window.addEventListener('netschool:daysedited', () => { if (state.tab === 'schedule') loadSchedule(); });

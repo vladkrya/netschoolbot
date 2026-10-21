@@ -185,7 +185,7 @@
     align-items: start;
   }
   #scheduleContent > .card { margin: 0; }
-  #scheduleContent > .empty { grid-column: 1 / -1; }
+  #scheduleContent > .empty, #scheduleContent > .bells-shift { grid-column: 1 / -1; }
 
   /* Задания: две колонки, заголовок дня — через всю строку. */
   #homeworkContent {
