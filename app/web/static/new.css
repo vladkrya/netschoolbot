@@ -607,6 +607,10 @@
 :root[data-design="new"] .seg-glass.whatif-mode { padding: 3px; }
 :root[data-design="new"] .whatif-mode .seg-lens { display: block; top: 3px; bottom: 3px; left: 3px; width: calc((100% - 6px) / 2); }
 :root[data-design="new"] .whatif-mode button.on { background: none; box-shadow: none; }
+:root[data-design="new"] .seg-glass.bells-shift { flex: none; padding: 3px; }
+:root[data-design="new"] .bells-shift .seg-lens { display: block; top: 3px; bottom: 3px; left: 3px; width: calc((100% - 6px) / var(--n, 2)); }
+:root[data-design="new"] .bells-shift button { padding: 6px 0; font-size: 13px; }
+:root[data-design="new"] .bells-shift button.on { background: none; box-shadow: none; }
 :root[data-design="new"] .th-mode .seg-lens { top: 3px; bottom: 3px; left: 3px; width: calc((100% - 6px) / 2); }
 :root[data-design="new"] .th-mode button { padding: 6px 0; font-size: 13px; }
 :root[data-design="new"] .th-bar { display: flex; gap: 3px; height: 10px; margin-bottom: 10px; }
