@@ -20,15 +20,18 @@ export function openSearch(initial = '') {
   const results = body.querySelector('#yearResults');
   let timer = null;
   let version = 0;
+  let retry = null;
 
-  const run = async () => {
+  // again — повтор, пока сервер собирает год: поле и прежние находки не трогаем.
+  const run = async (again = false) => {
     const query = input.value.trim();
-    const mine = ++version;
+    const mine = again ? version : ++version;
+    clearTimeout(retry);
     if (query.length < 2) {
       results.innerHTML = '';
       return;
     }
-    results.innerHTML = skeleton(3);
+    if (!again) results.innerHTML = skeleton(3);
     let data;
     try {
       ({ data } = await api(`/api/search?q=${encodeURIComponent(query)}`));
@@ -40,6 +43,9 @@ export function openSearch(initial = '') {
     const homework = data.homework || [];
     const mail = data.mail || [];
     const failed = new Set(data.failed || []);
+    const pending = new Set(data.pending || []);
+    // Год ещё собирается (первый поиск) — спросим снова, пока экран открыт.
+    if (pending.size) retry = setTimeout(() => { if (body.isConnected && mine === version) run(true); }, 3000);
     results.innerHTML = `
       ${homework.length ? `<div class="drawer-sub">Задания · ${homework.length}${homework.length >= 50 ? '+' : ''}</div>
         ${homework.map((item, i) => `<button class="card search-hit" data-hw="${i}">
@@ -50,7 +56,9 @@ export function openSearch(initial = '') {
           <div class="sh-top"><b>${esc(message.subject)}</b>
             <span class="muted small">${esc(observedTime(message.sent) || shortDate(String(message.sent).slice(0, 10)))}</span></div>
           <div class="sh-text muted small">${esc(message.author)}</div></button>`).join('')}` : ''}
-      ${!homework.length && !mail.length ? '<div class="empty big">Ничего не нашлось</div>' : ''}
+      ${pending.size ? `<div class="card search-pending"><span class="spinner" aria-hidden="true"></span>
+        Собираю ${pending.has('homework') ? 'задания' : 'письма'} за год — это один раз, до минуты. Результаты появятся сами.</div>` : ''}
+      ${!homework.length && !mail.length && !pending.size ? '<div class="empty big">Ничего не нашлось</div>' : ''}
       ${failed.size ? `<div class="muted small search-note">${failed.has('mail') ? 'Почта' : 'Задания'} сейчас не загрузились — «Сетевой город» не ответил.</div>` : ''}`;
     results.querySelectorAll('[data-hw]').forEach((card) => card.addEventListener('click', () => {
       tap();
