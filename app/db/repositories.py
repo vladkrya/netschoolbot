@@ -120,8 +120,8 @@ class UserRepository:
                     quiet_start, quiet_end, api_mode, timezone, evening_summary, notify_schedule,
                     updated_at, remember_credentials, notify_telegram,
                     homework_reminder, reminder_hour, test_reminder, grade_risk,
-                    monthly_summary, all_children, marks_filter
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    monthly_summary, all_children, marks_filter, weekly_review, vacation_quiet
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(telegram_id) DO UPDATE SET
                     enabled = excluded.enabled,
                     display_name = excluded.display_name,
@@ -155,6 +155,8 @@ class UserRepository:
                     monthly_summary = excluded.monthly_summary,
                     all_children = excluded.all_children,
                     marks_filter = excluded.marks_filter,
+                    weekly_review = excluded.weekly_review,
+                    vacation_quiet = excluded.vacation_quiet,
                     updated_at = excluded.updated_at
                 """,
                 (
@@ -192,6 +194,8 @@ class UserRepository:
                     int(user.notifications.monthly_summary),
                     int(user.notifications.all_children),
                     ",".join(str(v) for v in sorted(set(user.notifications.marks_filter))),
+                    int(user.notifications.weekly_review),
+                    int(user.notifications.vacation_quiet),
                 ),
             )
             await self._replace_students(db, user)
@@ -296,6 +300,8 @@ class UserRepository:
                 monthly_summary=bool(row["monthly_summary"]),
                 all_children=bool(row["all_children"]),
                 marks_filter=parse_marks_filter(row["marks_filter"]),
+                weekly_review=bool(row["weekly_review"]),
+                vacation_quiet=bool(row["vacation_quiet"]),
             ),
             filters=Filters(
                 exclude_titles=frozenset(
@@ -1775,6 +1781,29 @@ class CacheRepository:
                 "UPDATE cache_entries SET payload = ? WHERE telegram_id = ? AND section = 'mail'",
                 (json.dumps(payload, ensure_ascii=False), telegram_id),
             )
+
+    async def drop_mail(self, telegram_id: int, message_id: int) -> None:
+        """Убрать удалённое письмо из сохранённого списка, не продлевая ему свежесть."""
+        cached = await self.get(telegram_id, "mail")
+        if cached is None:
+            return
+        payload, _ = cached
+        messages = payload.get("messages") or []
+        kept = [message for message in messages if str(message.get("id")) != str(message_id)]
+        if len(kept) != len(messages):
+            payload["messages"] = kept
+            await self._db.execute(
+                "UPDATE cache_entries SET payload = ? WHERE telegram_id = ? AND section = 'mail'",
+                (json.dumps(payload, ensure_ascii=False), telegram_id),
+            )
+
+    async def expire(self, telegram_id: int, section: str) -> None:
+        """Считать сохранённое устаревшим: следующий запрос сходит на сервер,
+        а при его сбое данные всё ещё будут."""
+        await self._db.execute(
+            "UPDATE cache_entries SET updated_at = '2000-01-01 00:00:00' WHERE telegram_id = ? AND section = ?",
+            (telegram_id, section),
+        )
 
     async def clear(self, telegram_id: int) -> None:
         await self._db.execute("DELETE FROM cache_entries WHERE telegram_id = ?", (telegram_id,))

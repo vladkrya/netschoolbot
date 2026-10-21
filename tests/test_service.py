@@ -460,3 +460,41 @@ async def test_default_groups_without_filterpanel():
         raise Exception("HTTP 404")
     client = SimpleNamespace(_student_id=1, _school_id=2, _authed_get=broken)
     assert await _web_recipient_groups(client) == list(WEB_RECIPIENT_GROUPS)
+
+
+class TestMailPages:
+    async def setup(self, service, user, entries, total):
+        async with service._pool.acquire(user) as client:
+            asked = []
+
+            async def mail_list(folder, page=1, page_size=20):
+                asked.append((folder, page, page_size))
+                return SimpleNamespace(entries=entries, page=page, total_items=total)
+
+            async def mail_unread():
+                return [2]
+
+            client.mail_list = mail_list
+            client.mail_unread = mail_unread
+        return asked
+
+    def entry(self, message_id):
+        return SimpleNamespace(id=message_id, subject="Тема", author="Учитель", sent=None, read=None)
+
+    async def test_page_counts_and_web_read_flags(self, service, users):
+        user = make_user()
+        await users.save(user)
+        asked = await self.setup(service, user, [self.entry(1), self.entry(2)], 101)
+        data = await service.fetch_mail_page(user, page=3, page_size=50)
+        assert asked == [("Inbox", 3, 50)]
+        assert (data["page"], data["pages"]) == (3, 3)
+        assert [m["read"] for m in data["messages"]] == [True, False]
+
+    async def test_deleted_folder_skips_unread_lookup(self, service, users):
+        """Непрочитанные школа отдаёт только для входящих."""
+        user = make_user()
+        await users.save(user)
+        await self.setup(service, user, [self.entry(2)], 1)
+        data = await service.fetch_mail_page(user, "Deleted")
+        assert data["pages"] == 1
+        assert data["messages"][0]["read"] is True

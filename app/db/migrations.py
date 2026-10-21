@@ -826,6 +826,11 @@ MIGRATIONS: list[str] = [
     );
     CREATE INDEX idx_netschool_accounts_key ON netschool_accounts(school_url, ns_user_id);
     """,
+    # Разбор недели от ИИ-помощника и тихий режим на каникулы (оба выключены).
+    """
+    ALTER TABLE users ADD COLUMN weekly_review INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE users ADD COLUMN vacation_quiet INTEGER NOT NULL DEFAULT 0;
+    """,
 ]
 
 

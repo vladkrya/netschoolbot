@@ -144,7 +144,7 @@ class TestAuth:
         assert not halloween_season(dt.date(2026, 6, 1))
 
     async def test_halloween_notice_once(self, client, app_context, token, monkeypatch):
-        from app.web import api as web_api
+        from app.web.api import prefs as web_api
 
         monkeypatch.setattr(web_api, "halloween_season", lambda today: True)
         response = await client.post(f"{BASE}/api/notices/halloween", params={"token": token})
@@ -842,6 +842,62 @@ class TestNewFeatures:
         payload, _ = await app_context.cache.get(uid, "mail")
         assert [m["read"] for m in payload["messages"]] == [True, True, False]
 
+    async def test_deleted_mail_leaves_cached_list(self, client, app_context, token):
+        uid = await app_context.miniapp.resolve_token(token)
+        await app_context.cache.put(uid, "mail", {"messages": [{"id": 7}, {"id": 8}], "page": 1, "pages": 1})
+        _, before = await app_context.cache.get(uid, "mail")
+        moved = []
+
+        async def delete_mail(user, message_id):
+            moved.append(message_id)
+
+        app_context.diary.delete_mail = delete_mail
+        response = await client.delete(f"{BASE}/api/mail/7", params={"token": token})
+        assert response.status == 200
+        assert moved == [7]
+        payload, updated = await app_context.cache.get(uid, "mail")
+        assert [m["id"] for m in payload["messages"]] == [8]
+        assert updated == before
+
+    async def test_restored_mail_makes_cached_list_stale(self, client, app_context, token):
+        """Куда вернулось письмо, знает школа — список перечитывается, но
+        сохранённый остаётся на случай сбоя."""
+        uid = await app_context.miniapp.resolve_token(token)
+        await app_context.cache.put(uid, "mail", {"messages": [{"id": 8}]})
+        restored = []
+
+        async def restore_mail(user, message_id):
+            restored.append(message_id)
+
+        app_context.diary.restore_mail = restore_mail
+        response = await client.post(f"{BASE}/api/mail/7/restore", params={"token": token})
+        assert response.status == 200
+        assert restored == [7]
+        payload, updated = await app_context.cache.get(uid, "mail")
+        assert payload["messages"] == [{"id": 8}]
+        assert updated.year == 2000
+
+    async def test_mail_pages_and_deleted_folder_skip_cache(self, client, app_context, token):
+        uid = await app_context.miniapp.resolve_token(token)
+        asked = []
+
+        async def fetch_mail_page(user, folder="Inbox", page=1, page_size=50):
+            asked.append((folder, page))
+            return {"messages": [{"id": page}], "page": page, "pages": 3}
+
+        app_context.diary.fetch_mail_page = fetch_mail_page
+        response = await client.get(f"{BASE}/api/mail", params={"token": token, "folder": "Deleted", "page": 2})
+        assert (await response.json())["data"] == {"messages": [{"id": 2}], "page": 2, "pages": 3}
+        assert asked == [("Deleted", 2)]
+        assert await app_context.cache.get(uid, "mail") is None
+        for params in ({"folder": "Sent"}, {"page": "0"}, {"page": "x"}):
+            response = await client.get(f"{BASE}/api/mail", params={"token": token, **params})
+            assert response.status == 400, params
+
+    async def test_mail_move_rejects_bad_id(self, client, token):
+        response = await client.delete(f"{BASE}/api/mail/не-число", params={"token": token})
+        assert response.status == 400
+
     async def test_read_all_rejects_bad_ids(self, client, token):
         for body in ({"ids": ["abc"]}, {"ids": list(range(101))}, []):
             response = await client.post(f"{BASE}/api/mail/read-all", params={"token": token}, json=body)
@@ -960,7 +1016,7 @@ class TestCache:
     async def test_slow_refresh_serves_saved_data_and_runs_only_once(
         self, client, app_context, token, monkeypatch
     ):
-        from app.web import api
+        from app.web.api import base as api
 
         monkeypatch.setattr(api, "CACHE_RESPONSE_WAIT", 0.01)
         monkeypatch.setattr(api, "REFRESH_RESPONSE_WAIT", 0.01)
@@ -998,7 +1054,7 @@ class TestCache:
     async def test_pull_to_refresh_waits_for_fresh_data(
         self, client, app_context, token, monkeypatch
     ):
-        from app.web import api
+        from app.web.api import base as api
 
         # Обычное открытие отдаёт кэш сразу, а жест обновления ждёт школу:
         # раньше он тоже получал старое через 0,2 с, и экран не менялся.
@@ -1019,7 +1075,7 @@ class TestCache:
         self, client, app_context, token, monkeypatch
     ):
         from dataclasses import replace
-        from app.web import api
+        from app.web.api import base as api
 
         monkeypatch.setattr(api, "CACHE_RESPONSE_WAIT", 0.01)
         monkeypatch.setattr(api, "REFRESH_RESPONSE_WAIT", 0.01)
@@ -1305,7 +1361,7 @@ class TestAttachmentWaitPage:
         assert "fileUrl(`attachment/${id}`" in core and "${base}/${path}?" in core
 
     async def test_slow_school_server_gives_504(self, client, users, app_context, monkeypatch):
-        import app.web.api as api_module
+        import app.web.api.attachments as api_module
         await users.save(make_user())
         monkeypatch.setattr(api_module, "ATTACHMENT_TIMEOUT_S", 0.05)
 
@@ -1368,7 +1424,7 @@ class TestAttachmentWaitPage:
     async def test_stale_cache_is_downloaded_again_and_cleaned(self, client, users, app_context, monkeypatch):
         import os
         import time
-        import app.web.api as api_module
+        import app.web.api.attachments as api_module
         await users.save(make_user())
         cache = app_context.settings.attachments_dir
         cache.mkdir(parents=True, exist_ok=True)

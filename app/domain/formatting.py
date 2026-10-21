@@ -456,6 +456,8 @@ def profile(user: User) -> str:
             f"• Контрольные заранее: {enabled(notifications.test_reminder)}",
             f"• Итоговая под угрозой: {enabled(notifications.grade_risk)}",
             f"• Итоги месяца и четверти: {enabled(notifications.monthly_summary)}",
+            f"• Разбор недели от помощника: {enabled(notifications.weekly_review)}",
+            f"• Тихий режим на каникулы: {enabled(notifications.vacation_quiet)}",
             *(
                 [f"• Все дети: {enabled(notifications.all_children)}"]
                 if len(user.available_students) > 1

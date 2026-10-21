@@ -54,6 +54,8 @@ TOGGLES = {
     "risk": "grade_risk",
     "monthly": "monthly_summary",
     "allkids": "all_children",
+    "review": "weekly_review",
+    "vacation": "vacation_quiet",
 }
 
 

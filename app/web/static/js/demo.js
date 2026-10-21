@@ -379,12 +379,13 @@ export async function demoApi(path, options = {}) {
   }
 
   if (route === '/api/mail') {
-    const messages = MAIL.map((m) => {
+    const inDeleted = url.searchParams.get('folder') === 'Deleted';
+    const messages = MAIL.filter((m) => Boolean(m.deleted) === inDeleted).map((m) => {
       const sent = new Date();
       sent.setDate(sent.getDate() - m.days);
       return { id: m.id, subject: m.subject, author: m.author, sent: iso(sent), read: m.read };
     });
-    return ok({ messages });
+    return ok({ messages, page: 1, pages: 1 });
   }
 
   if (route === '/api/mail/recipients') {
@@ -406,6 +407,13 @@ export async function demoApi(path, options = {}) {
     const ids = (body?.ids || []).map(String);
     MAIL.forEach((m) => { if (ids.includes(String(m.id))) m.read = true; });
     return ok({ read: body?.ids || [] });
+  }
+
+  const moveMatch = route.match(/^\/api\/mail\/(\d+)(\/restore)?$/);
+  if (moveMatch && (options.method === 'DELETE' || moveMatch[2])) {
+    const message = MAIL.find((m) => String(m.id) === moveMatch[1]);
+    if (message) message.deleted = !moveMatch[2];
+    return { ok: true };
   }
 
   const mailMatch = route.match(/^\/api\/mail\/(\d+)$/);
@@ -518,6 +526,64 @@ export async function demoApi(path, options = {}) {
 
   if (route === '/api/pwa-link') {
     return ok({ url: location.href });
+  }
+
+  // Отсчёт: ближайшие каникулы по общим датам и ЕГЭ — как у 11 класса.
+  if (route === '/api/countdown') {
+    const now = todayIso();
+    const y = yearStart();
+    const holidays = [
+      ['Осенние каникулы', `${y}-10-25`, `${y}-11-03`], ['Зимние каникулы', `${y}-12-31`, `${y + 1}-01-11`],
+      ['Весенние каникулы', `${y + 1}-03-28`, `${y + 1}-04-05`], ['Летние каникулы', `${y + 1}-06-01`, `${y + 1}-08-31`],
+    ];
+    const current = holidays.find(([, start, end]) => start <= now && now <= end);
+    const next = holidays.find(([, start]) => start > now);
+    const pick = current || next;
+    return ok({
+      vacation: pick ? { label: pick[0], start: pick[1], end: pick[2], now: Boolean(current) } : null,
+      vacation_exact: false,
+      exam: { name: 'ЕГЭ', start: `${y + 1}-06-01`, confirmed: false },
+    });
+  }
+
+  if (route === '/api/search') {
+    const words = (url.searchParams.get('q') || '').toLowerCase().replace(/ё/g, 'е').split(/\s+/).filter(Boolean);
+    const fits = (text) => words.every((word) => text.toLowerCase().replace(/ё/g, 'е').includes(word));
+    const y = yearStart();
+    const homework = daysBetween(`${y}-09-01`, todayIso(), cfg).flatMap((d) => d.homework)
+      .filter((h) => fits(`${h.subject} ${h.text} ${h.topic || ''}`)).reverse().slice(0, 50)
+      .map((h) => ({ ...h, label: '', key: h.key || demoKey(`${h.date}|${h.subject}|${h.text}`) }));
+    const mail = MAIL.filter((m) => fits(`${m.subject} ${m.author}`)).map((m) => {
+      const sent = new Date();
+      sent.setDate(sent.getDate() - m.days);
+      return { id: m.id, subject: m.subject, author: m.author, sent: iso(sent), read: m.read };
+    });
+    return ok({ homework, mail, failed: [], since: `${y}-09-01` });
+  }
+
+  // Сводка по детям: у каждого ребёнка свой выдуманный дневник.
+  if (route === '/api/children') {
+    const names = cfg.children.length ? cfg.children : [cfg.student];
+    if (names.length < 2) return ok({ children: [] });
+    const now = todayIso();
+    const current = quarters().find((q) => q.start <= now && now <= q.end) || quarters()[0];
+    const children = names.map((name, id) => {
+      const days = daysBetween(current.start, now, { ...cfg, child: id, student: name });
+      const marks = days.flatMap((d) => d.lessons.flatMap((l) => l.marks.map((m) => ({ ...m, subject: l.subject, date: d.date }))));
+      const bySubject = new Map();
+      for (const mark of marks) bySubject.set(mark.subject, [...(bySubject.get(mark.subject) || []), mark]);
+      const tomorrow = daysBetween(now, iso(new Date(Date.now() + 86400000)), { ...cfg, child: id }).flatMap((d) => d.homework);
+      return {
+        id, name, current: id === cfg.child, period: current.label,
+        average: weightedAverage(marks), count: marks.length,
+        recent: marks.slice(-6).reverse().map((m) => ({ subject: m.subject, mark: m.mark, date: m.date, weight: m.weight || 1 })),
+        debts: [],
+        low: [...bySubject].map(([subject, items]) => ({ subject, average: weightedAverage(items) }))
+          .filter((s) => s.average != null && s.average < 3.5),
+        homework: { total: tomorrow.length, left: tomorrow.length },
+      };
+    });
+    return ok({ children });
   }
 
   if (route.startsWith('/api/chat')) return demoChat(route, url, options, body);

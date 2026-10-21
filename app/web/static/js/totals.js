@@ -208,20 +208,50 @@ const MARK_WORDS = {
 // Больше стольких оценок одного вида в подсказку не пишем — строка разрастётся.
 const GOAL_LIMIT = 20;
 
-/** Что нужно до следующей оценки: «до «4» ещё 1 пятёрка или 2 четвёрки».
- *  Оценки, которыми цели не достичь, в подсказку не попадают. */
-function goalText(row) {
-  if (row.official || row.avg == null) return '';
-  const thresholds = thresholdsFor(row.subject.subject);
-  const target = row.avg >= thresholds[5] ? null : row.avg >= thresholds[4] ? 5 : row.avg >= thresholds[3] ? 4 : 3;
-  if (!target) return 'Выходит «5»';
+/** Какими оценками добрать средний до порога: «1 пятёрка или 2 четвёрки».
+ *  Оценки, которыми порога не достичь, в подсказку не попадают. */
+function neededText(marks, threshold) {
   const options = [5, 4, 3]
-    .map((value) => ({ value, needed: neededMarks(row.marks, thresholds[target], value) }))
+    .map((value) => ({ value, needed: neededMarks(marks, threshold, value) }))
     .filter(({ value, needed }) => needed && (value === 5 || needed <= GOAL_LIMIT))
     .map(({ value, needed }) => `${needed} ${plural(needed, ...MARK_WORDS[value])}`);
   if (!options.length) return '';
-  const text = options.length > 1 ? `${options.slice(0, -1).join(', ')} или ${options.at(-1)}` : options[0];
-  return `До «${target}» — ещё ${text}`;
+  return options.length > 1 ? `${options.slice(0, -1).join(', ')} или ${options.at(-1)}` : options[0];
+}
+
+/** Цели на четверть по предметам (prefs.goals): «5», «4» или «3». */
+export function subjectGoal(subject) {
+  const goal = Number((getPref('goals') || {})[subject]);
+  return [3, 4, 5].includes(goal) ? goal : null;
+}
+
+function saveGoal(subject, goal) {
+  const goals = { ...(getPref('goals') || {}) };
+  if (goal) goals[subject] = String(goal);
+  else delete goals[subject];
+  setPref('goals', goals);
+}
+
+/** Своя цель: сколько осталось до неё. Без цели — до следующей оценки. */
+function goalProgress(subject, marks, avg) {
+  const goal = subjectGoal(subject);
+  if (!goal || avg == null) return '';
+  const threshold = thresholdsFor(subject)[goal];
+  if (avg >= threshold) return `Цель «${goal}» — выходит ✓`;
+  const needed = neededText(marks, threshold);
+  return needed ? `Цель «${goal}»: ещё ${needed}` : `Цель «${goal}»: в этой четверти уже не успеть`;
+}
+
+/** Что нужно до следующей оценки: «до «4» ещё 1 пятёрка или 2 четвёрки». */
+function goalText(row) {
+  if (row.official || row.avg == null) return '';
+  const own = goalProgress(row.subject.subject, row.marks, row.avg);
+  if (own) return own;
+  const thresholds = thresholdsFor(row.subject.subject);
+  const target = row.avg >= thresholds[5] ? null : row.avg >= thresholds[4] ? 5 : row.avg >= thresholds[3] ? 4 : 3;
+  if (!target) return 'Выходит «5»';
+  const text = neededText(row.marks, thresholds[target]);
+  return text ? `До «${target}» — ещё ${text}` : '';
 }
 
 function periodRows(data) {
@@ -333,11 +363,19 @@ function cardsHtml(rows, averages) {
           ${trend}
           <div class="sc-avg ${grade}"${row.official || row.avg == null ? '' : ` data-odo="${esc(`${row.subject.subject}|${period}`)}"`}>${row.official ? esc(row.official) : formatAverage(row.avg)}</div>
         </div>
-        <div class="sc-bar ${grade}"><span style="width:${fill}%"></span></div>
+        <div class="sc-bar ${grade}"><span style="width:${fill}%"></span>${goalMark(row)}</div>
         <div class="sc-marks">${recent || '<span class="muted small">Оценок пока нет</span>'}</div>
         ${footHtml(row, averages?.[row.subject.subject])}
       </button>`;
   }).join('');
+}
+
+/** Риска на полосе среднего: где порог своей цели. */
+function goalMark(row) {
+  const goal = subjectGoal(row.subject.subject);
+  if (!goal || row.official) return '';
+  const at = Math.max(0, Math.min(100, (thresholdsFor(row.subject.subject)[goal] - 1) / 4 * 100));
+  return `<i class="sc-goal" style="left:${at}%" aria-hidden="true"></i>`;
 }
 
 /** Низ карточки: что нужно до следующей оценки, справа — средний ученика
@@ -735,6 +773,14 @@ function openSubject(subject, key, existingBody = null, data = state.totals) {
       ${distribution(marks)}
       <div class="muted small">*доли оценок, образующих средний балл</div>
     </div>
+    ${data.archived ? '' : `<div class="card goal-card">
+      <div class="card-title">Цель на ${esc((quarter?.label || 'период').replace(/^\d+\s*/, ''))}</div>
+      <div class="chips goal-chips" role="radiogroup" aria-label="Цель">${[5, 4, 3].map((goal) =>
+        `<button class="chip" data-goal="${goal}" role="radio">«${goal}»</button>`).join('')}
+        <button class="chip" data-goal="0" role="radio">Без цели</button></div>
+      <div class="goal-progress"><div class="goal-bar"><span></span></div>
+        <div class="muted small goal-text"></div></div>
+    </div>`}
     ${averageChart(marks.filter((mark) => !isAttendance(mark)), thresholdsFor(subject.subject))}
     <div class="card">
       <div class="mark-results-head"><div class="card-title">Результаты учебного периода</div>
@@ -832,6 +878,33 @@ function openSubject(subject, key, existingBody = null, data = state.totals) {
   }));
   body.querySelector('[data-mark-reset]').addEventListener('click', () => applyMarkFilter(null));
   if (data.archived) return;
+  const numericMarks = marks.filter((mark) => !isAttendance(mark));
+  const paintGoal = () => {
+    const goal = subjectGoal(subject.subject);
+    body.querySelectorAll('[data-goal]').forEach((chip) => {
+      const on = Number(chip.dataset.goal) === (goal || 0);
+      chip.classList.toggle('active', on);
+      chip.setAttribute('aria-checked', String(on));
+    });
+    const progress = body.querySelector('.goal-progress');
+    progress.hidden = !goal;
+    if (!goal) return;
+    const threshold = thresholdsFor(subject.subject)[goal];
+    const share = avg == null ? 0 : Math.max(0, Math.min(100, ((avg - 1) / (threshold - 1)) * 100));
+    progress.querySelector('.goal-bar span').style.width = `${share}%`;
+    progress.querySelector('.goal-bar').classList.toggle('reached', avg != null && avg >= threshold);
+    progress.querySelector('.goal-text').textContent = avg == null
+      ? `Нужен средний от ${formatThreshold(threshold)} — оценок пока нет`
+      : `Средний ${formatAverage(avg)} из нужных ${formatThreshold(threshold)}. ${goalProgress(subject.subject, numericMarks, avg)}`;
+  };
+  body.querySelectorAll('[data-goal]').forEach((chip) => chip.addEventListener('click', () => {
+    select();
+    saveGoal(subject.subject, Number(chip.dataset.goal));
+    paintGoal();
+    // Карточки под экраном показывают ту же цель.
+    if ($('totalsContent').querySelector('.subject-card')) render();
+  }));
+  paintGoal();
   const whatIfCard = body.querySelector('.whatif');
   const refreshWhatIf = bindWhatIf(whatIfCard, marks, `${subject.subject}|${key}`, subject.subject);
   bindThresholds(whatIfCard, subject.subject, () => {

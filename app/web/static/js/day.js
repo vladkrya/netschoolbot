@@ -22,6 +22,8 @@ import { updateTimer } from './timer.js';
 import { isTestWork, loadNotes, noteWhen, openNoteEditor, setNoteDone } from './notes.js';
 import { applyEdits, bindHidden, hiddenHtml, openAddLesson } from './edits.js';
 import { flyTo, markKey, playFresh, takeFresh } from './motion.js';
+import { bindCountdown, countdownHtml, loadCountdown } from './countdown.js';
+import { bindShareWeek, shareWeekButton } from './schedimage.js';
 
 /** Загруженные дни по ISO-дате и недели, которые уже спрашивали. */
 const days = new Map();
@@ -259,12 +261,14 @@ function renderDay(quiet = false) {
   const container = $('dayContent');
 
   updateTimer(lessons, state.date === isoToday());
+  loadCountdown(() => renderDay(true));
   if (!lessons.length) {
     renderedKey = '';
-    container.innerHTML = installCardHtml()
+    container.innerHTML = installCardHtml() + countdownHtml()
       + `<div class="empty big">${weekdayIndex(state.date) >= 5 ? 'Выходной' : 'Уроков нет'}</div>`
       + hiddenHtml(day) + addLessonButton();
     bindInstallCard(container);
+    bindCountdown(container, () => renderDay(true));
     bindDayEdits(container, day);
     return;
   }
@@ -273,16 +277,17 @@ function renderDay(quiet = false) {
   // перерисовка по таймеру должна их подхватить.
   const statuses = lessons.map((lesson) => lessonStatus(lesson, state.date)).join();
   const notes = (state.notes || []).filter((note) => note.date === state.date);
-  const key = `${state.date}|${statuses}|${state.hwDone?.size ?? '-'}|${notes.map((n) => `${n.id}${n.done}${n.time}${n.remind}${n.text}${n.subject}`).join()}|${editsKey(day)}`;
+  const key = `${state.date}|${countdownHtml().length}|${statuses}|${state.hwDone?.size ?? '-'}|${notes.map((n) => `${n.id}${n.done}${n.time}${n.remind}${n.text}${n.subject}`).join()}|${editsKey(day)}`;
   if (quiet && key === renderedKey && container.children.length) return;
   renderedKey = key;
   freshMarks = takeFresh(lessons.flatMap((lesson) => realMarks(lesson.marks)
     .map((m) => ({ key: markKey(m, lesson.subject, state.date), date: m.date || state.date }))));
   container.classList.toggle('quiet', quiet);
-  container.innerHTML = installCardHtml() + daySummary(lessons)
+  container.innerHTML = installCardHtml() + daySummary(lessons) + countdownHtml()
     + lessons.map((lesson, index) => lessonCard(lesson, index)).join('')
     + notesBlock(notes) + hiddenHtml(day) + addLessonButton();
   bindInstallCard(container);
+  bindCountdown(container, () => renderDay(true));
   bindDayEdits(container, day);
   playFresh(container);
   container.querySelectorAll('[data-note]').forEach((row) => row.addEventListener('click', async (event) => {
@@ -418,7 +423,8 @@ function openWeekSheet() {
       </div>
       ${bells ? `${bellsNoteHtml()}
         <div class="week-sheet">${bellsHtml(monday)}</div>`
-        : `<div class="week-sheet">${weekCardsHtml(monday)}</div>`}`;
+        : `<div class="week-sheet">${weekCardsHtml(monday)}</div>${shareWeekButton(monday)}`}`;
+    bindShareWeek(body);
     body.querySelectorAll('[data-mode]').forEach((button) => button.addEventListener('click', () => {
       if ((button.dataset.mode === 'bells') === showBells()) return;
       select();
