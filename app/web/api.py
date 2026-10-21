@@ -991,6 +991,28 @@ async def subject_stats(request: web.Request) -> web.Response:
     )
 
 
+@routes.get("/api/class-averages")
+async def class_averages(request: web.Request) -> web.Response:
+    """Средний балл класса по всем предметам за четверть — для карточек «Итогов».
+
+    Как и `/api/subject`, только мобильный режим; иначе `{"available": false}`.
+    """
+    quarter = (request.query.get("quarter") or "").strip()
+    if quarter not in PERIOD_KEYS:
+        return json_error("Не указана четверть")
+    if current_user(request).effective_api_mode is not ApiMode.MOBILE:
+        return web.json_response({"ok": True, "data": {"available": False}, "stale": False})
+
+    async def produce(app: AppContext, user: User):
+        averages = await app.diary.fetch_class_averages(user, quarter)
+        return {"available": True, "averages": averages} if averages else {"available": False}
+
+    return await _cached(
+        request, f"class-averages:{quarter}", produce,
+        cacheable=lambda payload: payload.get("available", False),
+    )
+
+
 @routes.get("/api/announcements")
 async def announcements(request: web.Request) -> web.Response:
     async def produce(app: AppContext, user: User):

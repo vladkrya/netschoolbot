@@ -239,6 +239,45 @@ class DiaryService:
         payload = await self._mobile_only(user, call, "Аналитика по предмету")
         return subject_stats_from(payload) if payload is not None else None
 
+    async def fetch_class_averages(self, user: User, quarter: str) -> dict[str, float] | None:
+        """Средний балл класса по всем предметам за четверть: «предмет → балл».
+
+        Для карточек «Итогов»: список предметов и периоды запрашиваются один
+        раз, аналитика — по предмету, несколько сразу. Предмет без данных или
+        со сбоем просто пропущен. `None` — веб-режим или нет такой четверти.
+        """
+        if user.effective_api_mode is not ApiMode.MOBILE:
+            return None
+
+        async def call(client: Any) -> Any:
+            if not hasattr(client, "subject_performance"):
+                return None
+            term = next(
+                (t for t in await client.terms() if quarter_key_of_term(t.get("name")) == quarter),
+                None,
+            )
+            if term is None:
+                return None
+            subjects = [s for s in await client.subjects_raw() if isinstance(s, dict) and s.get("name")]
+            gate = asyncio.Semaphore(4)
+
+            async def one(subject: dict[str, Any]) -> tuple[str, float | None]:
+                async with gate:
+                    try:
+                        payload = await client.subject_performance(subject["id"], term["id"])
+                    except NetSchoolError as exc:
+                        if exc.reason.needs_relogin:
+                            raise
+                        return subject["name"], None
+                return subject["name"], subject_stats_from(payload).get("class_average")
+
+            return dict(await asyncio.gather(*(one(s) for s in subjects)))
+
+        result = await self._mobile_only(user, call, "Средние баллы класса")
+        if result is None:
+            return None
+        return {name: value for name, value in result.items() if value is not None}
+
     async def fetch_bells(self, user: User) -> list[dict[str, Any]] | None:
         """Расписание звонков школы (веб-API ``schedule/times``).
 
