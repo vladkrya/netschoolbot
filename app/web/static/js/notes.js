@@ -6,7 +6,7 @@
 // загруженных оценок и заданий, отдельных запросов не делают.
 'use strict';
 
-import { addDays, api, banner, esc, isoToday, mondayOf, plural, refuseReadOnly, state, weekdayIndex } from './core.js';
+import { addDays, api, banner, esc, isoToday, markValue, mondayOf, plural, refuseReadOnly, state, weekdayIndex } from './core.js';
 import { closeSheet, openSheet } from './sheet.js';
 import { notify, select, tap } from './haptics.js';
 import { dequeue, pendingOp, pendingOps, realId, send } from './outbox.js';
@@ -238,15 +238,15 @@ function schoolDaysSince(iso, today = isoToday()) {
 export function streaks(grades, homework, done, notes = []) {
   const result = [];
   const marks = (grades?.subjects || []).flatMap((s) => s.marks || [])
-    .filter((m) => Number(m.mark) >= 1 && Number(m.mark) <= 5)
+    .filter((m) => markValue(m.mark) >= 1 && markValue(m.mark) <= 5)
     .sort((a, b) => a.date.localeCompare(b.date) || String(a.marked_at || '').localeCompare(String(b.marked_at || '')));
   if (marks.length) {
-    const bad = marks.filter((m) => Number(m.mark) <= 2);
+    const bad = marks.filter((m) => markValue(m.mark) <= 2);
     const since = bad.length ? schoolDaysSince(bad[bad.length - 1].date) : null;
     if (since == null && marks.length >= 5) result.push({ icon: '🛡️', text: 'Ни одной двойки за год' });
     else if (since >= 3) result.push({ icon: '🛡️', text: `${since} ${plural(since, 'учебный день', 'учебных дня', 'учебных дней')} без двоек` });
     let fives = 0;
-    for (let i = marks.length - 1; i >= 0 && Number(marks[i].mark) === 5; i -= 1) fives += 1;
+    for (let i = marks.length - 1; i >= 0 && markValue(marks[i].mark) === 5; i -= 1) fives += 1;
     if (fives >= 2) result.push({ icon: '🔥', text: `${fives} ${plural(fives, 'пятёрка', 'пятёрки', 'пятёрок')} подряд` });
   }
   if (homework) {

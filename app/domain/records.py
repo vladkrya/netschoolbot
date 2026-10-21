@@ -25,6 +25,11 @@ _SEP = "\x1f"  # ASCII unit separator: в данных «Сетевого гор
 # Защита от циклических ссылок в объектах netschoolpy.
 _MAX_MARK_DEPTH = 5
 
+# Точка — долг: работа не сдана в срок. Оценки у задания нет, но журнал
+# «Сетевого города» считает точку двойкой в среднем балле.
+DUTY_MARK = "•"
+DUTY_VALUE = 2
+
 
 def _part(value: Any) -> str:
     """Одно поле составного ключа с экранированием разделителя."""
@@ -348,6 +353,8 @@ def mark_to_int(mark: Any) -> int | None:
     value = extract_mark(mark)
     if not value:
         return None
+    if value == DUTY_MARK:
+        return DUTY_VALUE
     match = re.search(r"\d+", value)
     if not match:
         return None
@@ -360,6 +367,8 @@ def parse_mark_float(mark: Any) -> float | None:
     value = extract_mark(mark).replace(",", ".")
     if not value:
         return None
+    if value == DUTY_MARK:
+        return float(DUTY_VALUE)
     try:
         number = float(value)
     except ValueError:

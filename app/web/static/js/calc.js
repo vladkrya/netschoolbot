@@ -5,7 +5,7 @@
 // смотреть, что получится. Предмет «Нет» — счёт с нуля, без оценок журнала.
 'use strict';
 
-import { $, api, avgClass, errorCard, esc, plural, skeleton, state } from './core.js';
+import { $, api, avgClass, errorCard, esc, markValue, plural, skeleton, state } from './core.js';
 import { neededMarks, thresholdsFor, thresholdsText } from './grading.js';
 
 const MARKS = [5, 4, 3, 2];
@@ -44,7 +44,7 @@ function ensureCounts(force = false) {
   const counts = { 5: 0, 4: 0, 3: 0, 2: 0 };
   for (const mark of subject?.marks || []) {
     if (mark.quarter !== state.calc.quarter) continue;
-    const value = Number(mark.mark);
+    const value = markValue(mark.mark);
     if (!MARKS.includes(value)) continue;
     // Вес учитывается как количество: контрольная с весом 3 тянет
     // средний балл как три обычные оценки.
