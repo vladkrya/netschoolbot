@@ -28,6 +28,12 @@ import { openHistory } from './history.js';
 import { bindPushToggle, pushHowto, pushRow, syncNowhere, unsubscribePush } from './push.js';
 import { openExport } from './reports.js';
 import { switchStudent } from './students.js';
+import { countdownShown, saveCountdown } from './countdown.js';
+import { openWhatsNew, whatsNewRow } from './whatsnew.js';
+import { openDue } from './due.js';
+import { openSearch } from './search.js';
+import { openChildren } from './children.js';
+import { openScheduleImage } from './schedimage.js';
 
 export async function loadProfile(force = false) {
   if (state.profile && !force) return state.profile;
@@ -224,6 +230,8 @@ const NOTIFY_LABELS = {
   test_reminder: 'Контрольные — за день-два',
   grade_risk: 'Итоговая оценка под угрозой',
   monthly_summary: 'Итоги месяца и четверти',
+  weekly_review: 'Разбор недели от помощника',
+  vacation_quiet: 'Тихий режим на каникулы',
   all_children: 'Следить за всеми детьми',
 };
 
@@ -232,6 +240,8 @@ const NOTIFY_NOTES = {
   homework_reminder: 'накануне учебного дня — что ещё не отмечено',
   grade_risk: 'если из-за новой оценки итоговая стала ниже',
   all_children: 'уведомления подписываются именем',
+  weekly_review: 'в сводке по понедельникам: где просел и что подтянуть',
+  vacation_quiet: 'в каникулы и летом уведомления молчат',
 };
 
 // Отметки посещаемости есть только в мобильном API.
@@ -244,6 +254,18 @@ function keepFilesSection(keep) {
       <div class="drawer-heading">Файлы заданий</div>
       <label class="switch-row"><span>Сохранять файлы заданий<span class="muted small switch-note">файлы к Д/З за 2 недели назад и вперёд скачиваются заранее и открываются, даже когда «Сетевой город» не работает</span></span>
         <input type="checkbox" switch class="switch" id="keepFiles" ${keep.on ? 'checked' : ''}></label>
+    </section>`;
+}
+
+/** «Не выходить из аккаунта» — вход через Госуслуги держится на мобильном токене. */
+function keepSignedInSection(keep) {
+  if (!keep?.available) return '';
+  const note = keep.mobile ? 'вход уже мобильный и продлевается сам'
+    : 'бот переведёт вход на мобильный — он продлевается сам, без нового входа через Госуслуги';
+  return `<section class="drawer-section">
+      <div class="drawer-heading">Госуслуги</div>
+      <label class="switch-row"><span>Не выходить из аккаунта<span class="muted small switch-note">${note}</span></span>
+        <input type="checkbox" switch class="switch" id="keepSignedIn" ${keep.on ? 'checked' : ''}></label>
     </section>`;
 }
 
@@ -385,6 +407,10 @@ function render() {
       <div class="tool-grid">
       ${data.assistant && !demo && !readonly && !navTabs().includes('assistant') ? toolTile('drawerAssistant', 'sparkles', 'ИИ-помощник') : ''}
       ${navTabs().includes('games') ? '' : toolTile('drawerGames', 'game', 'Игры')}
+      ${toolTile('drawerDue', 'pin', 'Должен сдать')}
+      ${toolTile('drawerSearch', 'search', 'Поиск за год')}
+      ${!readonly && data.students.length > 1 ? toolTile('drawerChildren', 'users', 'Все дети') : ''}
+      ${toolTile('drawerShareWeek', 'share', 'Расписание картинкой')}
       ${toolTile('drawerCalc', 'calc', 'Калькулятор баллов')}
       ${toolTile('drawerHistory', 'clock', 'История оценок')}
       ${toolTile('drawerStatus', 'pulse', 'Статус серверов')}
@@ -428,6 +454,8 @@ function render() {
       <label class="switch-row"><span>Сдвиг звонка<span class="muted small switch-note">таймер урока: если звонок звенит позже или раньше ровной минуты</span></span>
         <select class="field reminder-hour" id="bellShift">${BELL_SHIFTS.map((value) =>
           `<option value="${value}" ${value === bellShift() ? 'selected' : ''}>${value ? `${value > 0 ? '+' : '−'}${Math.abs(value)} с` : 'точно'}</option>`).join('')}</select></label>
+      <label class="switch-row"><span>Отсчёт до каникул и экзаменов<span class="muted small switch-note">карточка на «Дне»</span></span>
+        <input type="checkbox" switch class="switch" id="countdownShow" ${countdownShown() ? 'checked' : ''}></label>
       <label class="switch-row"><span>Показывать выходные без уроков</span>
         <input type="checkbox" switch class="switch" id="weekendsShow" ${showWeekends() ? 'checked' : ''}></label>
       ${isNewDesign() ? '' : `<label class="switch-row"><span>Звонки вместо расписания недели</span>
@@ -436,6 +464,7 @@ function render() {
     ${isNewDesign() ? tabsSection() : ''}
     ${readonly ? '' : keepFilesSection(data.keep_attachments)}
     ${readonly ? '' : solverClassSection(data.solver_class)}
+    ${readonly ? '' : keepSignedInSection(data.keep_signed_in)}
     ${readonly ? `<section class="drawer-section">
       <div class="drawer-heading">Уведомления</div>
       <div class="muted small">Уведомления об этом ученике приходят, если он разрешил их в приглашении. Отказаться — «Родные».</div>
@@ -448,6 +477,7 @@ function render() {
       ${Object.entries(NOTIFY_LABELS)
         .filter(([key]) => !MOBILE_ONLY.has(key) || data.api_mode === 'mobile')
         .filter(([key]) => key !== 'all_children' || data.students.length > 1)
+        .filter(([key]) => key !== 'weekly_review' || data.assistant)
         .map(([key, label]) => toggle(key, label, data.notifications[key]))
         .join('')}
       <label class="switch-row"><span>Обновления «Сетевого города»<span class="muted small switch-note">новая версия на сервере вашего региона — в Telegram и push</span></span>
@@ -466,6 +496,7 @@ function render() {
       ${statusLine(data.status)}
     </section>`}
     ${demoSection()}
+    ${whatsNewRow()}
     <div class="drawer-foot muted small">Дневник «Сетевого города»${window.NETSCHOOL.appVersion ? ` · v. ${esc(window.NETSCHOOL.appVersion)}` : ''}
       ${demo || !data.bug_report ? '' : `<button class="link small" id="drawerBug">Сообщить об ошибке или идее</button>`}</div>`;
 
@@ -577,6 +608,20 @@ function bindDrawer() {
     select();
     setPref('bellShift', event.target.value);
   });
+  $('countdownShow').addEventListener('change', (event) => {
+    select();
+    smoothRepaint(() => saveCountdown(event.target.checked));
+  });
+  $('keepSignedIn')?.addEventListener('change', (event) => {
+    select();
+    setPref('keepSignedIn', event.target.checked);
+    state.profile.keep_signed_in = { ...state.profile.keep_signed_in, on: event.target.checked };
+  });
+  $('drawerWhatsNew').addEventListener('click', () => { closeDrawer(); openWhatsNew(); });
+  $('drawerDue').addEventListener('click', () => { closeDrawer(); openDue(); });
+  $('drawerSearch').addEventListener('click', () => { closeDrawer(); openSearch(); });
+  $('drawerChildren')?.addEventListener('click', () => { closeDrawer(); openChildren(); });
+  $('drawerShareWeek').addEventListener('click', () => { closeDrawer(); openScheduleImage(); });
   $('weekendsShow').addEventListener('change', (event) => {
     select();
     smoothRepaint(() => saveWeekends(event.target.checked));

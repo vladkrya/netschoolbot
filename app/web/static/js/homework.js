@@ -10,6 +10,8 @@ import {
 import { ICONS } from './icons.js';
 import { homeworkTimes, isAutoDone, isDoneItem, loadDone, openHomework, saveDone } from './details.js';
 import { select, tap } from './haptics.js';
+import { openDue } from './due.js';
+import { openSearch } from './search.js';
 import {
   bindStreaks, isTestWork, loadNotes, noteWhen, notesAsItems, openNoteEditor, setNoteDone, streaks, streaksHtml,
 } from './notes.js';
@@ -98,10 +100,13 @@ function render() {
   const container = $('homeworkContent');
   const top = filter === 'past' || query.trim() ? ''
     : streaksHtml(streaks(state.grades, state.homework?.items, done, state.notes || []))
-      + '<button class="hw-add" data-add-note>＋ Своя задача</button>';
+      + '<div class="hw-actions"><button class="hw-add" data-add-note>＋ Своя задача</button><button class="hw-add" data-due>📌 Должен сдать</button></div>';
+  // Поле ищет по загруженным неделям, всё остальное — «Поиск за год».
+  const yearSearch = query.trim().length >= 2
+    ? `<button class="btn outline hw-year-search" data-year-search>${ICONS.search} Искать «${esc(query.trim())}» за весь год</button>` : '';
   if (!items.length) {
     const empty = query.trim() ? 'Ничего не найдено' : filter === 'todo' ? 'Всё сделано 🎉' : 'Заданий нет 🎉';
-    container.innerHTML = `${top}<div class="empty big">${empty}</div>`;
+    container.innerHTML = `${top}<div class="empty big">${empty}</div>${yearSearch}`;
     bindTop(container);
     return;
   }
@@ -132,7 +137,7 @@ function render() {
           </div>
         </div>`;
     })
-    .join('');
+    .join('') + yearSearch;
   container.querySelectorAll('[data-hw]').forEach((card) =>
     card.addEventListener('click', async (event) => {
       const item = items[Number(card.dataset.hw)];
@@ -163,6 +168,8 @@ function render() {
 function bindTop(container) {
   bindStreaks(container);
   container.querySelector('[data-add-note]')?.addEventListener('click', () => openNoteEditor(subjectNames(), () => render()));
+  container.querySelector('[data-due]')?.addEventListener('click', () => openDue());
+  container.querySelector('[data-year-search]')?.addEventListener('click', () => openSearch(query.trim()));
 }
 
 function dayHeading(iso) {

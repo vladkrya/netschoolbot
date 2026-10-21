@@ -171,7 +171,7 @@ function card(message) {
     </div>`;
 }
 
-async function openMessage(id) {
+export async function openMessage(id) {
   const body = pushScreen('Письмо');
   body.innerHTML = skeleton(4);
   try {

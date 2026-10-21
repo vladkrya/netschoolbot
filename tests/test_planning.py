@@ -149,3 +149,14 @@ class TestKeepSignedIn:
         assert await app_context.keep_signed_in(esia) is False
         # Вход по паролю перелогинивается сам.
         assert await app_context.keep_signed_in(make_user()) is False
+
+
+def test_whats_new_lists_current_version():
+    """«Что нового» начинается с текущей версии — иначе точка у строки не загорится."""
+    import re
+    from pathlib import Path
+
+    from app import __version__
+
+    source = (Path(__file__).parent.parent / "app/web/static/js/whatsnew.js").read_text()
+    assert re.search(r"version: '([\d.]+)'", source).group(1) == __version__

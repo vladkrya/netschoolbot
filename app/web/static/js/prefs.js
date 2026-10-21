@@ -15,9 +15,17 @@ const KEYS = {
   retro: 'ns-retro',
   // Сдвиг звонка для таймера урока, секунды строкой (timer.js).
   bellShift: 'ns-bell-shift',
+  // Отсчёт до каникул на «Дне» ('show'/'hide'), countdown.js.
+  countdown: 'ns-countdown',
+  // Цели на четверть: {предмет: '5' | '4' | '3'} (totals.js).
+  goals: 'ns-goals',
+  // Какую версию «Что нового» уже открывали (whatsnew.js).
+  whatsNew: 'ns-whats-new',
+  // «Не выходить из аккаунта» для входа через Госуслуги (true/false).
+  keepSignedIn: 'ns-keep-signed-in',
 };
 // Тема, дизайн и цвет лежат строкой (их читает скрипт в <head>), остальное — JSON.
-const JSON_PREFS = new Set(['weights', 'thresholds', 'tabs', 'pins', 'accents', 'lessonEdits']);
+const JSON_PREFS = new Set(['weights', 'thresholds', 'tabs', 'pins', 'accents', 'lessonEdits', 'goals', 'keepSignedIn']);
 
 function readLocal(name) {
   try {
