@@ -819,7 +819,7 @@ export function refuseReadOnly() {
   return true;
 }
 
-// Билет на вложения (см. attachment_ticket в api.py): ссылка открывается во
+// Билет на вложения (см. attachment_ticket в api/attachments.py): ссылка открывается во
 // внешнем браузере, куда не передать ни initData, ни заголовок разблокировки.
 let attachmentTicket = '';
 export async function loadAttachmentTicket() {

@@ -1,0 +1,15 @@
+[Unit]
+Description=Зашифрованная копия базы бота админу в Telegram
+OnFailure=netschoolbot-alert@%n.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/netschoolbot
+EnvironmentFile=-/opt/netschoolbot/.env
+ExecStart=/opt/netschoolbot/venv/bin/python -m app.tools.offsite
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+# База в WAL: даже чтение пишет в её -shm.
+ReadWritePaths=/opt/netschoolbot/data

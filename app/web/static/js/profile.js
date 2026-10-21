@@ -3,21 +3,15 @@
 // вкладка «Настройки» с ещё одним разделом: какие вкладки в нижней панели.
 'use strict';
 
+import { $, api, banner, demo, esc, initData, state } from './core.js';
 import {
-  $, api, banner, demo, ensureAttachmentTicket, errorCard, esc, exportUrl, initData, isReadOnly, openExternal,
-  pushEnabled, skeleton, state, tg,
-} from './core.js';
-import {
-  ACCENTS, currentAccent, forgetAccent, isNewDesign, rememberAccent, saveAccent, savedAccents, saveAnswers, saveBells, saveDesign, saveHomeworkStatus, saveWeekends, showAnswers, showBells,
-  applyMotion, HALLOWEEN_ACCENTS, halloweenAccent, halloweenCountdown, isHalloween, saveHalloween, saveHalloweenAccent, showConfetti, saveConfetti, motionChosen, motionLevel, saveMotion, weakDevice, showHomeworkStatus, showWeekends, syncChromeColor,
+  ACCENTS, applyMotion, currentAccent, forgetAccent, HALLOWEEN_ACCENTS, halloweenAccent, halloweenCountdown, isHalloween, isNewDesign, motionChosen, motionLevel, rememberAccent, saveAccent, saveAnswers, saveBells, saveConfetti, savedAccents, saveDesign, saveHalloween, saveHalloweenAccent, saveHomeworkStatus, saveMotion, saveWeekends, showAnswers, showBells, showConfetti, showHomeworkStatus, showWeekends, syncChromeColor, weakDevice,
 } from './appearance.js';
 import { ICONS } from './icons.js';
 import { smoothRepaint } from './motion.js';
-import { markBox, openLesson } from './details.js';
 import { loadCalc } from './calc.js';
 import { openAssistant } from './assistant.js';
-import { MAX_TABS, TAB_NAMES, availableTabs, navTabs, resetTabs, saveTabs } from './tabs.js';
-import { loadTotals } from './totals.js';
+import { availableTabs, MAX_TABS, navTabs, resetTabs, saveTabs, TAB_NAMES } from './tabs.js';
 import { pushScreen, syncBackButton } from './screens.js';
 import { notify, select, tap } from './haptics.js';
 import { flushPrefs, getPref, setPref } from './prefs.js';
@@ -25,9 +19,21 @@ import { openRetro, RETRO_AUTHOR_URL } from './retro.js';
 import { closeSheet, openSheet } from './sheet.js';
 import { openBugReport } from './bugreport.js';
 import { openLockSettings } from './lock.js';
-import { canInstall, openInBrowser, openInstallGuide, wantsInstall } from './install.js';
+import { openInBrowser, openInstallGuide } from './install.js';
 import { pendingOps, send } from './outbox.js';
 import { BELL_SHIFTS, bellShift } from './timer.js';
+import { openCalendar } from './caldav.js';
+import { openFamily } from './family.js';
+import { openHistory } from './history.js';
+import { bindPushToggle, pushHowto, pushRow, syncNowhere, unsubscribePush } from './push.js';
+import { openExport } from './reports.js';
+import { switchStudent } from './students.js';
+import { countdownShown, saveCountdown } from './countdown.js';
+import { openWhatsNew, whatsNewRow } from './whatsnew.js';
+import { openDue } from './due.js';
+import { openSearch } from './search.js';
+import { openChildren } from './children.js';
+import { openScheduleImage } from './schedimage.js';
 
 export async function loadProfile(force = false) {
   if (state.profile && !force) return state.profile;
@@ -224,6 +230,8 @@ const NOTIFY_LABELS = {
   test_reminder: 'Контрольные — за день-два',
   grade_risk: 'Итоговая оценка под угрозой',
   monthly_summary: 'Итоги месяца и четверти',
+  weekly_review: 'Разбор недели от помощника',
+  vacation_quiet: 'Тихий режим на каникулы',
   all_children: 'Следить за всеми детьми',
 };
 
@@ -232,6 +240,8 @@ const NOTIFY_NOTES = {
   homework_reminder: 'накануне учебного дня — что ещё не отмечено',
   grade_risk: 'если из-за новой оценки итоговая стала ниже',
   all_children: 'уведомления подписываются именем',
+  weekly_review: 'в сводке по понедельникам: где просел и что подтянуть',
+  vacation_quiet: 'в каникулы и летом уведомления молчат',
 };
 
 // Отметки посещаемости есть только в мобильном API.
@@ -244,6 +254,18 @@ function keepFilesSection(keep) {
       <div class="drawer-heading">Файлы заданий</div>
       <label class="switch-row"><span>Сохранять файлы заданий<span class="muted small switch-note">файлы к Д/З за 2 недели назад и вперёд скачиваются заранее и открываются, даже когда «Сетевой город» не работает</span></span>
         <input type="checkbox" switch class="switch" id="keepFiles" ${keep.on ? 'checked' : ''}></label>
+    </section>`;
+}
+
+/** «Не выходить из аккаунта» — вход через Госуслуги держится на мобильном токене. */
+function keepSignedInSection(keep) {
+  if (!keep?.available) return '';
+  const note = keep.mobile ? 'вход уже мобильный и продлевается сам'
+    : 'бот переведёт вход на мобильный — он продлевается сам, без нового входа через Госуслуги';
+  return `<section class="drawer-section">
+      <div class="drawer-heading">Госуслуги</div>
+      <label class="switch-row"><span>Не выходить из аккаунта<span class="muted small switch-note">${note}</span></span>
+        <input type="checkbox" switch class="switch" id="keepSignedIn" ${keep.on ? 'checked' : ''}></label>
     </section>`;
 }
 
@@ -282,504 +304,6 @@ function statusLine(status) {
   if (status.running && status.next_check_at) rows.push(`Следующая: ${when(status.next_check_at)}`);
   if (status.queued) rows.push(`Ждут отправки: ${status.queued}`);
   return `<div class="muted small sync-status ${failing ? 'failing' : ''}">${rows.join('<br>')}</div>`;
-}
-
-// Отчёты Excel: ключ, название, что внутри. Пропуски отмечаются только
-// в мобильном API — в веб-режиме этот отчёт был бы пустым.
-const REPORTS = [
-  ['grades', 'Оценки', 'Средние и выходящие по предметам, все работы с датами и весом'],
-  ['subjects', 'Сводка по предметам', 'Учитель, уроки, пропуски, задания, средний и что выходит — строкой'],
-  ['dynamics', 'Динамика по месяцам', 'Средний по каждому предмету помесячно: где растёт, где проседает'],
-  ['tests', 'Контрольные и проверочные', 'Все крупные работы с оценками и средний по ним'],
-  ['absences', 'Пропуски', 'Сколько пропущено по каждому предмету и список по датам', 'mobile'],
-  ['homework', 'Домашние задания', 'Все задания периода с текстом и файлами'],
-  ['lessons', 'Журнал уроков', 'Каждый урок: тема, учитель, оценки и пропуск'],
-  ['schedule', 'Расписание недели', 'Обычная неделя таблицей: уроки, время и кабинеты — для печати'],
-];
-
-/** Отчёты в Excel: открываются как вложение из ДЗ — страницей ожидания во
- * внешнем браузере, где файл можно посмотреть или сохранить. В Telegram
- * можно ещё прислать его файлом в чат с ботом. */
-function openExport() {
-  tap();
-  const mobile = state.profile?.api_mode === 'mobile';
-  const reports = REPORTS.filter(([, , , only]) => !only || mobile);
-  const body = openSheet('Отчёты', `
-    <div class="report-list" role="radiogroup" aria-label="Отчёт">${reports.map(([key, title, note], i) => `
-      <label class="report-item"><input type="radio" name="report" value="${key}" ${i ? '' : 'checked'}>
-        <span><b>${title}</b><span class="muted small">${note}</span></span></label>`).join('')}
-    </div>
-    <div class="chips report-scope" role="radiogroup" aria-label="Срок">
-      <button class="chip active" data-scope="period" aria-pressed="true">Текущий период</button>
-      <button class="chip" data-scope="year" aria-pressed="false">Весь учебный год</button>
-    </div>
-    <label class="switch-row" id="exportChatRow" ${initData ? '' : 'hidden'}><span>Прислать файлом в чат с ботом</span>
-      <input type="checkbox" switch class="switch" id="exportToChat"></label>
-    <button class="btn" id="exportGo">Открыть в Excel</button>
-    <div class="muted small export-status"></div>`);
-  const status = body.querySelector('.export-status');
-  const go = body.querySelector('#exportGo');
-  // В приложении на телефоне и на сайте initData нет, но бот пришлёт файл
-  // и туда, если к аккаунту привязан Telegram — раньше переключателя не было.
-  if (!initData && !demo) {
-    api('/api/account').then(({ data }) => {
-      if (data?.telegram) body.querySelector('#exportChatRow').hidden = false;
-    }, () => {});
-  }
-  let scope = 'period';
-  body.querySelectorAll('[data-scope]').forEach((chip) => chip.addEventListener('click', () => {
-    select();
-    scope = chip.dataset.scope;
-    body.querySelectorAll('[data-scope]').forEach((c) => {
-      c.classList.toggle('active', c === chip);
-      c.setAttribute('aria-pressed', String(c === chip));
-    });
-  }));
-  body.querySelector('#exportToChat')?.addEventListener('change', (event) => {
-    go.textContent = event.target.checked ? 'Прислать в чат' : 'Открыть в Excel';
-  });
-  go.addEventListener('click', async () => {
-    select();
-    const report = body.querySelector('[name="report"]:checked')?.value || 'grades';
-    if (!body.querySelector('#exportToChat')?.checked) {
-      if (!(await ensureAttachmentTicket()) && initData) {
-        notify('error');
-        status.textContent = 'Не удалось открыть файл — попробуйте ещё раз.';
-        return;
-      }
-      openExternal(exportUrl(scope, report));
-      status.textContent = 'Файл открывается в браузере — там его можно посмотреть или сохранить.';
-      return;
-    }
-    go.disabled = true;
-    status.textContent = 'Собираю отчёт — за год это может занять до минуты…';
-    try {
-      await api('/api/export/send', { method: 'POST', body: JSON.stringify({ scope, report }) });
-      status.textContent = 'Готово: файл в чате с ботом.';
-      notify('success');
-    } catch (error) {
-      notify('error');
-      status.textContent = error.message;
-    } finally {
-      go.disabled = false;
-    }
-  });
-}
-
-function rightsLabel(item) {
-  if (item.notify && item.view) return 'Уведомления и дневник';
-  return item.notify ? 'Только уведомления' : 'Только просмотр дневника';
-}
-
-/** Родные: приглашение с выбором, что доступно (уведомления, просмотр
- * дневника или оба), их права и отзыв; и к кому есть доступ у вас самих. */
-async function openFamily() {
-  tap();
-  const screen = pushScreen('Родные');
-  screen.innerHTML = skeleton(3);
-  const send = async (path, body) => {
-    try {
-      const { data: fresh } = await api(path, { method: 'POST', body: JSON.stringify(body) });
-      notify('success');
-      draw(fresh);
-    } catch (error) {
-      notify('error');
-      banner(error.message, true);
-    }
-  };
-  const draw = (data) => {
-    screen.innerHTML = `${data.can_invite ? `<div class="card">
-        <p>Пригласите маму, папу, бабушку — любого, кому важно знать об успехах ученика.
-        Ссылка ведёт на сайт: там можно войти через Telegram или зарегистрироваться по почте.</p>
-        <div class="family-rights" role="radiogroup" aria-label="Что будет доступно">
-          <label><input type="radio" name="familyRights" value="both" checked> Уведомления и просмотр дневника</label>
-          <label><input type="radio" name="familyRights" value="notify"> Только уведомления</label>
-          <label><input type="radio" name="familyRights" value="view"> Только просмотр дневника</label>
-        </div>
-        <p class="muted small">Просмотр — оценки, расписание и задания в приложении. Менять ничего нельзя,
-        почта и чаты не видны, пароль от «Сетевого города» не нужен. Доступ можно изменить или отозвать в любой момент.</p>
-        <button class="btn" id="familyInvite">Пригласить по ссылке</button>
-        <div class="family-link" id="familyLink" hidden></div>
-      </div>
-      <div class="card"><div class="card-title">Приглашённые</div>${data.followers.length ? data.followers.map((f) =>
-        `<div class="family-row"><span class="family-name">${esc(f.name || `ID ${f.id}`)}<br><span class="muted small">${rightsLabel(f)}</span></span>
-          <button class="btn outline small" data-drop="${f.id}">Убрать</button>
-          <div class="family-row-rights">
-            <button class="chip ${f.notify ? 'active' : ''}" data-right="notify" data-id="${f.id}" aria-pressed="${f.notify}">Уведомления</button>
-            <button class="chip ${f.view ? 'active' : ''}" data-right="view" data-id="${f.id}" aria-pressed="${f.view}">Дневник</button>
-          </div></div>`).join('')
-        : '<p class="muted small">Пока никого. Здесь появится тот, кто перейдёт по ссылке и примет приглашение.</p>'}</div>` : ''}
-      ${data.following.length ? `<div class="card"><div class="card-title">Вас пригласили</div>${data.following.map((f) =>
-        `<div class="family-row"><span class="family-name">${esc(f.name)}<br><span class="muted small">${rightsLabel(f)}</span></span>
-          <button class="btn outline small" data-leave="${f.id}">Отказаться</button></div>`).join('')}</div>` : ''}
-      ${!data.can_invite && !data.following.length ? '<div class="card"><p class="muted">Пригласить родных можно после входа в «Сетевой город».</p></div>' : ''}`;
-    $('familyInvite')?.addEventListener('click', async (event) => {
-      select();
-      const button = event.currentTarget;
-      const choice = screen.querySelector('[name="familyRights"]:checked')?.value || 'both';
-      button.disabled = true;
-      try {
-        const { data: invite } = await api('/api/family/invite', {
-          method: 'POST', body: JSON.stringify({ notify: choice !== 'view', view: choice !== 'notify' }),
-        });
-        const box = $('familyLink');
-        box.hidden = false;
-        // Одна кнопка: системное меню «Поделиться» (там и мессенджеры, и
-        // «Скопировать»), а где его нет — копирование. В Telegram ссылку не
-        // уводим: объект Telegram.WebApp есть и в установленном приложении,
-        // и раньше «Поделиться» открывал Telegram даже там.
-        const text = 'Приглашение в школьный дневник';
-        const canShare = Boolean(navigator.share) || Boolean(initData && tg?.openTelegramLink);
-        box.innerHTML = `<p class="muted small">Ссылка одноразовая и действует сутки. Нажмите на неё, чтобы скопировать.</p>
-          <input class="field family-url" readonly value="${esc(invite.url)}">
-          <button class="btn" id="familySend">${canShare ? 'Отправить ссылку' : 'Скопировать ссылку'}</button>`;
-        const copy = async () => {
-          try { await navigator.clipboard.writeText(invite.url); notify('success'); banner('Ссылка скопирована', false, 2500); }
-          catch { box.querySelector('.family-url').select(); }
-        };
-        box.querySelector('.family-url').addEventListener('click', copy);
-        $('familySend').addEventListener('click', () => {
-          tap();
-          if (navigator.share) navigator.share({ url: invite.url, text }).catch(() => {});
-          else if (initData && tg?.openTelegramLink) tg.openTelegramLink(`https://t.me/share/url?url=${encodeURIComponent(invite.url)}&text=${encodeURIComponent(text)}`);
-          else copy();
-        });
-        button.textContent = 'Новая ссылка';
-        button.classList.add('outline');
-      } catch (error) {
-        notify('error');
-        banner(error.message, true);
-      } finally {
-        button.disabled = false;
-      }
-    });
-    screen.querySelectorAll('[data-right]').forEach((chip) => chip.addEventListener('click', () => {
-      tap();
-      const follower = data.followers.find((f) => f.id === Number(chip.dataset.id));
-      if (!follower) return;
-      const next = { notify: follower.notify, view: follower.view, [chip.dataset.right]: !follower[chip.dataset.right] };
-      if (!next.notify && !next.view && !confirm(`Убрать ${follower.name || 'приглашённого'}? Без уведомлений и дневника доступа не останется.`)) return;
-      send('/api/family/rights', { id: follower.id, ...next });
-    }));
-    screen.querySelectorAll('[data-drop], [data-leave]').forEach((button) => button.addEventListener('click', () => {
-      tap();
-      const leave = 'leave' in button.dataset;
-      if (leave && !confirm('Отказаться от доступа? Снова получить его можно только по новому приглашению.')) return;
-      send('/api/family/remove', { id: Number(button.dataset.drop || button.dataset.leave), leave })
-        // Отказались от дневника, который сейчас открыт, — назад к своему.
-        .then(() => { if (leave && isReadOnly()) location.reload(); });
-    }));
-  };
-  try {
-    draw((await api('/api/family')).data);
-  } catch (error) {
-    screen.innerHTML = errorCard(error);
-  }
-}
-
-async function openCalendar() {
-  closeDrawer();
-  const screen = pushScreen('Расписание в календаре');
-  screen.closest('.screen').classList.add('calendar-screen');
-  screen.innerHTML = '<div class="muted small">Загрузка…</div>';
-  let password = '';
-  const copy = async (value) => {
-    try {
-      await navigator.clipboard.writeText(value);
-      notify('success');
-      banner('Скопировано', false, 2500);
-    } catch { prompt('Скопируйте значение', value); }
-  };
-  const render = (data) => {
-    const scroll = screen.closest('.screen').scrollTop;
-    const field = (label, value, id) => `<label class="field-label">${label}
-      <input class="field" readonly value="${esc(value)}" autocomplete="off" spellcheck="false"></label>
-      <button class="btn outline" id="${id}">Скопировать ${label.toLowerCase()}</button>`;
-    screen.innerHTML = `<div class="card">
-      ${data.available === false ? '<p>CalDAV сейчас отключён на сервере. Можно использовать подписку по ссылке ниже.</p>' : `<p>Подключите календарный аккаунт один раз. Уроки, кабинеты и задания будут
-      появляться в штатном календаре; замены и отмены будут обновляться автоматически.</p>
-      <p class="muted small">Сервер проверяет расписание в «Сетевом городе» примерно каждые ${data.interval_minutes} минут.
-      iPhone получает изменения при следующей синхронизации календаря, поэтому они могут появиться с задержкой.
-      Держать бот или это приложение открытыми не нужно. Календарь доступен только для чтения.</p>
-      <details><summary>Как часто обновляется календарь на iPhone?</summary>
-        <p>Частоту загрузки задаёт iOS: Настройки → Приложения → Календарь →
-        Учётные записи календаря → Загрузка данных. Можно выбрать, например, каждые 15 или 30 минут.
-        В старых версиях iOS раздел «Календарь» находится прямо в настройках.</p>
-        <p>Кнопка «Проверить расписание сейчас» запускает проверку школы на сервере сразу.
-        После неё iPhone получит изменения при следующей синхронизации календаря.</p>
-      </details>`}
-      ${data.connected ? `<p>${data.last_sync_at ? 'Расписание опубликовано.' : 'Готовим расписание — оно появится после первой успешной проверки школы.'}</p>
-        ${data.last_error ? `<p class="muted small">${esc(data.last_error)}</p>` : ''}
-        ${field('Сервер', data.server, 'calServer')}
-        ${field('Account URL', data.account_url, 'calAccountUrl')}
-        ${field('Логин', data.login, 'calLogin')}
-        ${password ? `${field('Пароль', password, 'calPassword')}<p class="muted small">Сохраните пароль: повторно он не показывается.</p>` : '<p class="muted small">Если пароль потерян, выпустите новый и обновите его в настройках календарного аккаунта.</p>'}
-        <p><b>На iPhone:</b> Настройки → Приложения → Календарь → Учётные записи календаря →
-        Добавить учётную запись → Другое → Учётная запись CalDAV.</p>
-        <p>Введите сервер, логин и пароль выше. Используйте SSL. Путь аккаунта определяется автоматически. Если Calendar просит Account URL, скопируйте его выше. Описание можно выбрать любое.</p>
-        <button class="btn outline" id="calStatus">Обновить статус</button>
-        <button class="btn outline" id="calRefresh">Проверить расписание сейчас</button>` : ''}
-      ${data.available === false ? '' : `<button class="btn" id="calCreate">${data.connected ? 'Выпустить новый пароль' : 'Создать доступ CalDAV'}</button>`}
-      ${data.connected ? '<button class="btn outline" id="calRevoke">Отключить доступ</button>' : ''}
-      <p class="muted small">Выход через /logout отзывает доступ. Отключение доступа останавливает
-      синхронизацию; уже сохранённые события удаляются вместе с аккаунтом на телефоне.</p>
-      </div>
-      <details class="card"><summary>Подписка по ссылке .ics</summary>
-        <p>Альтернативный способ: добавьте ссылку как подписной календарь. Простое открытие файла не создаёт подписку.</p>
-        <button class="btn outline" id="calCopyIcs">Скопировать ссылку .ics</button>
-      </details>`;
-    screen.closest('.screen').scrollTop = scroll;
-    if (data.connected) {
-      $('calServer').onclick = () => copy(data.server);
-      $('calAccountUrl').onclick = () => copy(data.account_url);
-      $('calLogin').onclick = () => copy(data.login);
-      if (password) $('calPassword').onclick = () => copy(password);
-      $('calStatus').onclick = load;
-      $('calRefresh').onclick = async () => {
-        try {
-          await api('/api/caldav-sync', { method: 'POST' });
-          banner('Проверяем расписание. Через некоторое время обновите статус.');
-        } catch (error) { banner(error.message, true); }
-      };
-      $('calRevoke').onclick = async () => {
-        if (!confirm('Отключить доступ календарного аккаунта к расписанию?')) return;
-        try {
-          await api('/api/caldav-account', { method: 'DELETE' });
-          password = '';
-          await load();
-        } catch (error) { banner(error.message, true); }
-      };
-    }
-    if ($('calCreate')) $('calCreate').onclick = async () => {
-      if (data.connected && !confirm('Старый пароль перестанет работать. Выпустить новый?')) return;
-      const button = $('calCreate');
-      button.disabled = true;
-      try {
-        const result = await api('/api/caldav-account', { method: 'POST' });
-        password = result.data.password;
-        render(result.data);
-      } catch (error) { banner(error.message, true); button.disabled = false; }
-    };
-    $('calCopyIcs').onclick = async () => {
-      try { const result = await api('/api/calendar-link'); await copy(result.data.url); }
-      catch (error) { banner(error.message, true); }
-    };
-  };
-  const load = async () => {
-    try { const { data } = await api('/api/caldav-account'); render(data); }
-    catch (error) { screen.innerHTML = `<div class="muted small">${esc(error.message)}</div>`; }
-  };
-  await load();
-}
-
-const HISTORY_KINDS = { new: 'Поставлена', changed: 'Исправлена', deleted: 'Удалена' };
-const HISTORY_FILTERS = [['all', 'Все'], ['new', 'Поставленные'], ['changed', 'Исправленные'], ['deleted', 'Удалённые']];
-const dayFormat = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long' });
-const clockFormat = new Intl.DateTimeFormat('ru-RU', { hour: '2-digit', minute: '2-digit' });
-
-/** «Сегодня», «Вчера» или «10 октября» — заголовок группы по дню, когда
- *  изменение заметили. */
-function historyDay(date) {
-  const day = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const diff = Math.round((today - day) / 86400000);
-  return diff === 0 ? 'Сегодня' : diff === 1 ? 'Вчера' : dayFormat.format(date);
-}
-
-function historyItem(item, index, unseen) {
-  const seen = new Date(item.seen);
-  const date = item.date.split('-').reverse().slice(0, 2).join('.');
-  const marks = item.kind === 'changed'
-    ? `${markBox(item.old, 'old')}<span class="hi-arrow">${ICONS.right}</span>${markBox(item.new, 'fresh')}`
-    : markBox(item.mark, item.kind === 'deleted' ? 'old' : 'fresh');
-  // «Новая» — только пока запись не видели; потом остаётся «Поставлена» и время.
-  const kind = unseen && item.kind === 'new' ? 'Новая' : HISTORY_KINDS[item.kind] || '';
-  return `<div class="history-item hi-${esc(item.kind)}${unseen ? ' hi-unseen' : ''}" data-history="${esc(item.id)}" role="button" tabindex="0" style="--d:${Math.min(index, 12) * 35}ms">
-      <div class="hi-main">
-        <div class="hi-subject">${esc(item.subject)}</div>
-        <div class="hi-title">${esc(item.title || 'Оценка')} · за ${esc(date)}</div>
-        <div class="hi-meta"><span class="hi-kind">${kind}</span>${esc(clockFormat.format(seen))}</div>
-      </div>
-      <div class="hi-marks">${marks}</div>
-    </div>`;
-}
-
-// Первая страница истории — и на устройстве: без сети её видно, даже если
-// service worker нет (Telegram) или он её ещё не сохранил.
-const HISTORY_KEY = 'ns-history';
-
-// Последняя запись, которую уже показывали: всё, что старше, — не новое.
-const HISTORY_SEEN_KEY = 'ns-history-seen';
-
-function historySeenId() {
-  try {
-    const value = Number(localStorage.getItem(HISTORY_SEEN_KEY));
-    return Number.isFinite(value) && value > 0 ? value : null;
-  } catch { return null; }
-}
-
-function savedHistory() {
-  try { return JSON.parse(localStorage.getItem(HISTORY_KEY) || 'null'); } catch { return null; }
-}
-
-/** История — заранее, после загрузки вкладок: без сети она откроется. */
-export async function prefetchHistory() {
-  if (demo) return;
-  try {
-    const { data } = await api('/api/history');
-    localStorage.setItem(HISTORY_KEY, JSON.stringify(data));
-  } catch { /* откроется с сетью */ }
-}
-
-/** Урок, на котором поставили оценку, — тем же экраном, что из «Дня».
- *  «Назад» возвращает в историю: экран урока ложится поверх неё. */
-async function openHistoryLesson(item, card) {
-  if (card.classList.contains('loading')) return;
-  tap();
-  card.classList.add('loading');
-  try {
-    const { dayData, ensureWeek } = await import('./day.js');
-    await ensureWeek(item.date);
-    // Пока грузилась неделя, историю могли закрыть.
-    if (!card.isConnected) return;
-    const lessons = (dayData(item.date)?.lessons || []).filter((lesson) => lesson.subject === item.subject);
-    // Урок по номеру; номера нет (школа не указала) — первый урок предмета в тот день.
-    const lesson = lessons.find((l) => item.lesson != null && l.number === item.lesson) || lessons[0];
-    if (!lesson) {
-      notify('error');
-      banner('Этого урока в дневнике за тот день нет — возможно, его убрали из расписания', true, 3500);
-      return;
-    }
-    openLesson(lesson, item.date);
-  } catch (error) {
-    notify('error');
-    banner(error.message, true, 3500);
-  } finally {
-    card.classList.remove('loading');
-  }
-}
-
-async function openHistory() {
-  closeDrawer();
-  const screen = pushScreen('История оценок');
-  screen.innerHTML = `<div class="history-skeleton">${'<div class="card"><div class="skeleton" style="width:50%"></div><div class="skeleton" style="width:75%"></div></div>'.repeat(5)}</div>`;
-  const items = [];
-  let filter = 'all';
-  let more = true;
-  let loading = false;
-  // Отметку снимаем при следующем открытии, а не сразу: новые видно, пока
-  // экран открыт. Отметки ещё не было — новыми считаем записи за сутки.
-  const seenId = historySeenId();
-  const dayAgo = Date.now() - 86400000;
-  const unseen = (item) => (seenId == null ? new Date(item.seen) > dayAgo : item.id > seenId);
-
-  const draw = () => {
-    const shown = items.filter((item) => filter === 'all' || item.kind === filter);
-    const count = (kind) => items.filter((item) => kind === 'all' || item.kind === kind).length;
-    let lastDay = '';
-    let index = 0;
-    const list = shown.map((item) => {
-      const day = historyDay(new Date(item.seen));
-      const head = day !== lastDay ? `<div class="hi-day">${esc(day)}</div>` : '';
-      lastDay = day;
-      return head + historyItem(item, index++, unseen(item));
-    }).join('');
-    screen.innerHTML = `
-      <div class="chips history-filters">${HISTORY_FILTERS.map(([key, label]) =>
-        `<button class="chip ${key === filter ? 'active' : ''}" data-filter="${key}">${label}<span class="hi-count">${count(key)}</span></button>`).join('')}</div>
-      <div class="history-list">${list || '<div class="empty muted">Таких изменений пока нет.</div>'}</div>
-      ${more ? '<button class="btn outline hi-more" id="historyMore">Показать раньше</button>' : ''}`;
-    screen.querySelectorAll('[data-filter]').forEach((chip) => chip.addEventListener('click', () => {
-      if (chip.dataset.filter === filter) return;
-      select();
-      filter = chip.dataset.filter;
-      draw();
-    }));
-    screen.querySelector('#historyMore')?.addEventListener('click', load);
-    screen.querySelectorAll('[data-history]').forEach((card) => card.addEventListener('click', () => {
-      const item = items.find((entry) => String(entry.id) === card.dataset.history);
-      if (item) openHistoryLesson(item, card);
-    }));
-  };
-
-  async function load() {
-    if (loading) return;
-    loading = true;
-    const button = screen.querySelector('#historyMore');
-    if (button) { button.disabled = true; button.textContent = 'Загружаем…'; }
-    try {
-      const before = items.length ? `?before=${items[items.length - 1].id}` : '';
-      let data;
-      try {
-        ({ data } = await api(`/api/history${before}`));
-        if (!before) {
-          try { localStorage.setItem(HISTORY_KEY, JSON.stringify(data)); } catch { /* хранилище недоступно */ }
-        }
-      } catch (error) {
-        const saved = !before && error.source === 'app' && savedHistory();
-        if (!saved) throw error;
-        data = saved;
-      }
-      items.push(...data.items);
-      if (!demo && !before && data.items.length) {
-        const top = Math.max(...data.items.map((item) => item.id));
-        try { if (top > (seenId || 0)) localStorage.setItem(HISTORY_SEEN_KEY, String(top)); } catch { /* хранилище недоступно */ }
-      }
-      // Сервер отдаёт по 50: меньше — значит, старше ничего нет.
-      more = data.items.length >= 50;
-      if (!items.length) {
-        screen.innerHTML = `<div class="empty history-empty">${ICONS.clock}<div>Пока пусто: изменения появятся после следующих проверок.</div></div>`;
-        return;
-      }
-      draw();
-    } catch (error) {
-      if (!items.length) screen.innerHTML = errorCard(error);
-      else banner(error.message, true);
-    } finally {
-      loading = false;
-    }
-  }
-  await load();
-}
-
-/** Где возможен web push: сайт в браузере, на iPhone — только с экрана «Домой». */
-function pushAvailability() {
-  if (initData) return 'telegram';
-  if (!pushEnabled || !('serviceWorker' in navigator) || !('PushManager' in window)) return 'none';
-  const iphone = /iPhone|iPad|iPod/.test(navigator.userAgent);
-  const installed = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
-  return iphone && !installed ? 'install' : 'ready';
-}
-
-function pushRow() {
-  const where = pushAvailability();
-  if (where === 'install') {
-    return `<div class="muted small">Пуш на iPhone работает в приложении с экрана «Домой».</div>
-        <button class="btn outline" id="installGuide">Как установить</button>`;
-  }
-  const install = canInstall()
-    ? '<button class="btn outline" id="installGuide">Установить на экран «Домой»</button>' : '';
-  if (where === 'ready') {
-    return `<label class="switch-row"><span>Пуш на этом устройстве</span>
-        <input type="checkbox" switch class="switch" id="pushToggle" disabled></label>${install}`;
-  }
-  return install;
-}
-
-function pushHowto() {
-  // Внутри Telegram web push недоступен: уведомления браузера работают только
-  // у сайта, открытого в самом браузере или установленного на экран «Домой».
-  if (pushAvailability() !== 'telegram' || !wantsInstall()) return '';
-  return `<section class="drawer-section" data-install-hint>
-      <div class="drawer-heading">Приложение на экране «Домой»</div>
-      <ol class="howto">
-        <li>Нажмите «Открыть в браузере» — откроется ваша личная ссылка.</li>
-        <li><b>iPhone:</b> в Safari «Поделиться» → «На экран Домой». <b>Android:</b> в Chrome ⋮ → «Установить приложение».</li>
-        <li>Запустите дневник с иконки — он сам спросит про уведомления.</li>
-      </ol>
-      <button class="btn outline" id="pwaOpen">Открыть в браузере</button>
-    </section>`;
 }
 
 function demoSection() {
@@ -883,6 +407,10 @@ function render() {
       <div class="tool-grid">
       ${data.assistant && !demo && !readonly && !navTabs().includes('assistant') ? toolTile('drawerAssistant', 'sparkles', 'ИИ-помощник') : ''}
       ${navTabs().includes('games') ? '' : toolTile('drawerGames', 'game', 'Игры')}
+      ${toolTile('drawerDue', 'pin', 'Должен сдать')}
+      ${toolTile('drawerSearch', 'search', 'Поиск за год')}
+      ${!readonly && data.students.length > 1 ? toolTile('drawerChildren', 'users', 'Все дети') : ''}
+      ${toolTile('drawerShareWeek', 'share', 'Расписание картинкой')}
       ${toolTile('drawerCalc', 'calc', 'Калькулятор баллов')}
       ${toolTile('drawerHistory', 'clock', 'История оценок')}
       ${toolTile('drawerStatus', 'pulse', 'Статус серверов')}
@@ -926,6 +454,8 @@ function render() {
       <label class="switch-row"><span>Сдвиг звонка<span class="muted small switch-note">таймер урока: если звонок звенит позже или раньше ровной минуты</span></span>
         <select class="field reminder-hour" id="bellShift">${BELL_SHIFTS.map((value) =>
           `<option value="${value}" ${value === bellShift() ? 'selected' : ''}>${value ? `${value > 0 ? '+' : '−'}${Math.abs(value)} с` : 'точно'}</option>`).join('')}</select></label>
+      <label class="switch-row"><span>Отсчёт до каникул и экзаменов<span class="muted small switch-note">карточка на «Дне»</span></span>
+        <input type="checkbox" switch class="switch" id="countdownShow" ${countdownShown() ? 'checked' : ''}></label>
       <label class="switch-row"><span>Показывать выходные без уроков</span>
         <input type="checkbox" switch class="switch" id="weekendsShow" ${showWeekends() ? 'checked' : ''}></label>
       ${isNewDesign() ? '' : `<label class="switch-row"><span>Звонки вместо расписания недели</span>
@@ -934,6 +464,7 @@ function render() {
     ${isNewDesign() ? tabsSection() : ''}
     ${readonly ? '' : keepFilesSection(data.keep_attachments)}
     ${readonly ? '' : solverClassSection(data.solver_class)}
+    ${readonly ? '' : keepSignedInSection(data.keep_signed_in)}
     ${readonly ? `<section class="drawer-section">
       <div class="drawer-heading">Уведомления</div>
       <div class="muted small">Уведомления об этом ученике приходят, если он разрешил их в приглашении. Отказаться — «Родные».</div>
@@ -946,6 +477,7 @@ function render() {
       ${Object.entries(NOTIFY_LABELS)
         .filter(([key]) => !MOBILE_ONLY.has(key) || data.api_mode === 'mobile')
         .filter(([key]) => key !== 'all_children' || data.students.length > 1)
+        .filter(([key]) => key !== 'weekly_review' || data.assistant)
         .map(([key, label]) => toggle(key, label, data.notifications[key]))
         .join('')}
       <label class="switch-row"><span>Обновления «Сетевого города»<span class="muted small switch-note">новая версия на сервере вашего региона — в Telegram и push</span></span>
@@ -964,6 +496,7 @@ function render() {
       ${statusLine(data.status)}
     </section>`}
     ${demoSection()}
+    ${whatsNewRow()}
     <div class="drawer-foot muted small">Дневник «Сетевого города»${window.NETSCHOOL.appVersion ? ` · v. ${esc(window.NETSCHOOL.appVersion)}` : ''}
       ${demo || !data.bug_report ? '' : `<button class="link small" id="drawerBug">Сообщить об ошибке или идее</button>`}</div>`;
 
@@ -1075,6 +608,20 @@ function bindDrawer() {
     select();
     setPref('bellShift', event.target.value);
   });
+  $('countdownShow').addEventListener('change', (event) => {
+    select();
+    smoothRepaint(() => saveCountdown(event.target.checked));
+  });
+  $('keepSignedIn')?.addEventListener('change', (event) => {
+    select();
+    setPref('keepSignedIn', event.target.checked);
+    state.profile.keep_signed_in = { ...state.profile.keep_signed_in, on: event.target.checked };
+  });
+  $('drawerWhatsNew').addEventListener('click', () => { closeDrawer(); openWhatsNew(); });
+  $('drawerDue').addEventListener('click', () => { closeDrawer(); openDue(); });
+  $('drawerSearch').addEventListener('click', () => { closeDrawer(); openSearch(); });
+  $('drawerChildren')?.addEventListener('click', () => { closeDrawer(); openChildren(); });
+  $('drawerShareWeek').addEventListener('click', () => { closeDrawer(); openScheduleImage(); });
   $('weekendsShow').addEventListener('change', (event) => {
     select();
     smoothRepaint(() => saveWeekends(event.target.checked));
@@ -1344,206 +891,6 @@ async function bindDemo() {
   });
 }
 
-/** Стрелка у имени в шапке — если есть между кем переключаться: дети
- *  аккаунта и дневники учеников, пригласивших на просмотр. Шторка со
- *  списком, нажатие переключает (как чипы в меню ☰). */
-export function initStudentSwitch(profile) {
-  const readonly = Boolean(profile?.readonly);
-  const views = profile?.views || [];
-  const options = [
-    ...(readonly ? [] : (profile?.students || []).map((s) => ({ ...s, kind: 'student' }))),
-    // Свой дневник при просмотре — пункт «Мой дневник»; без просмотра он уже в списке детей.
-    ...views.filter((v) => readonly || v.id !== null).map((v) => ({ ...v, kind: 'view' })),
-  ];
-  if (options.length < 2) return;
-  const title = $('topTitle');
-  // Не disabled для одного ребёнка: выключенную кнопку iOS рисует бледной,
-  // и имя в шапке выглядело размытым. Вместо этого — класс.
-  title.classList.add('switchable');
-  $('titleSwitch').hidden = false;
-  title.addEventListener('click', () => {
-    tap();
-    const body = openSheet('Чей дневник', `<div class="student-list">${options.map((s, index) =>
-      `<button class="student-option ${s.current ? 'on' : ''}" data-option="${index}">
-        <span class="avatar small" style="background:${studentColor(s.name)}">${esc(initial(s.name))}</span>
-        <span class="student-name">${esc(s.name)}${s.kind === 'view' && s.id !== null ? '<br><span class="muted small">просмотр</span>' : ''}</span>
-        ${s.current ? '<span class="check">✓</span>' : ''}
-      </button>`).join('')}</div>`);
-    body.querySelectorAll('[data-option]').forEach((button) => button.addEventListener('click', async () => {
-      const option = options[Number(button.dataset.option)];
-      if (button.classList.contains('on')) {
-        closeSheet();
-        return;
-      }
-      select();
-      if (option.kind === 'student') {
-        button.dataset.student = option.id;
-        switchStudent(button);
-        return;
-      }
-      button.disabled = true;
-      try {
-        await api('/api/view', { method: 'POST', body: JSON.stringify({ id: option.id }) });
-        location.reload();
-      } catch (error) {
-        notify('error');
-        banner(error.message, true);
-        button.disabled = false;
-      }
-    }));
-  });
-}
-
-const STUDENT_COLORS = ['#4a6fae', '#2e8b6e', '#6b4fa8', '#a8434f', '#c9702f', '#2a8fa3'];
-
-function studentColor(name) {
-  let hash = 0;
-  for (const char of String(name)) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
-  return STUDENT_COLORS[hash % STUDENT_COLORS.length];
-}
-
-function initial(name) {
-  // «Иванов Пётр» — по имени, а не по фамилии.
-  const parts = String(name).trim().split(/\s+/);
-  return (parts[1] || parts[0] || '?')[0].toUpperCase();
-}
-
-async function switchStudent(button) {
-  button.disabled = true;
-  try {
-    await api('/api/student', {
-      method: 'POST',
-      body: JSON.stringify({ id: Number(button.dataset.student) }),
-    });
-    notify('success');
-    // Дневник другого ребёнка — совсем другие данные, сбрасываем всё.
-    location.reload();
-  } catch (error) {
-    notify('error');
-    banner(error.message, true);
-    button.disabled = false;
-  }
-}
-
-/**
- * Тот же адрес worker, что в registerWorker (app.js): другой адрес ставил бы
- * worker заново при каждом вызове. Подписаться на push можно только у
- * активного worker — ждём его, иначе на первом запуске subscribe() падал
- * и переключатель «Пуш на этом устройстве» не включался.
- */
-async function workerRegistration() {
-  const { base } = window.NETSCHOOL;
-  await navigator.serviceWorker.register(`${base}/sw.js`, { scope: `${base}/` });
-  return navigator.serviceWorker.ready;
-}
-
-async function currentSubscription() {
-  try {
-    return await (await workerRegistration()).pushManager.getSubscription();
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Первый запуск с экрана «Домой»: сразу спросить разрешение на уведомления
- * и подписать устройство на пуш. iOS показывает запрос только в ответ на
- * нажатие — если без него не вышло, спросим при первом касании экрана.
- */
-export function offerPushOnFirstLaunch() {
-  const installed = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
-  if (demo || !installed || pushAvailability() !== 'ready') return;
-  // Пуш включён по умолчанию: разрешение уже есть, а подписки нет (например,
-  // приложение переустановили) — подписываемся, если сами не выключали.
-  if (Notification.permission === 'granted') {
-    if (!pushTurnedOff()) currentSubscription().then((found) => found || subscribePush()).catch(() => {});
-    return;
-  }
-  if (Notification.permission !== 'default') return;
-  try {
-    if (localStorage.getItem('pushAsked')) return;
-  } catch { /* без хранилища просто спросим */ }
-  const ask = async () => {
-    try {
-      if ((await Notification.requestPermission()) === 'default') return false;
-      try { localStorage.setItem('pushAsked', '1'); } catch { /* ничего */ }
-      if (Notification.permission === 'granted') await subscribePush();
-    } catch { /* откажет — включат в настройках */ }
-    return true;
-  };
-  ask().then((answered) => {
-    if (answered) return;
-    const onTap = () => {
-      document.removeEventListener('click', onTap, true);
-      ask();
-    };
-    document.addEventListener('click', onTap, true);
-  });
-}
-
-const PUSH_OFF_KEY = 'pushOff';
-
-function pushTurnedOff() {
-  try { return localStorage.getItem(PUSH_OFF_KEY) === '1'; } catch { return false; }
-}
-
-/** Подсказать, если выключены оба канала. */
-function syncNowhere(pushOn) {
-  const hint = $('notifyNowhere');
-  if (!hint) return;
-  const telegramOn = state.profile?.notifications?.telegram !== false;
-  hint.hidden = telegramOn || pushOn;
-}
-
-async function bindPushToggle() {
-  const input = $('pushToggle');
-  if (!input) {
-    syncNowhere(false);
-    return;
-  }
-  const subscription = await currentSubscription();
-  input.checked = Boolean(subscription) && Notification.permission === 'granted';
-  input.disabled = false;
-  syncNowhere(input.checked);
-  input.addEventListener('change', async () => {
-    select();
-    input.disabled = true;
-    try {
-      if (input.checked) await subscribePush();
-      else await unsubscribePush();
-      try {
-        if (input.checked) localStorage.removeItem(PUSH_OFF_KEY);
-        else localStorage.setItem(PUSH_OFF_KEY, '1');
-      } catch { /* ничего */ }
-      notify('success');
-    } catch (error) {
-      notify('error');
-      input.checked = !input.checked;
-      banner(error.message, true);
-    } finally {
-      input.disabled = false;
-      syncNowhere(input.checked);
-    }
-  });
-}
-
-async function subscribePush() {
-  if ((await Notification.requestPermission()) !== 'granted') {
-    throw new Error('Уведомления запрещены в настройках браузера');
-  }
-  const registration = await workerRegistration();
-  const { data } = await api('/api/push/key');
-  const subscription = await registration.pushManager.getSubscription()
-    || await registration.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(data.key),
-    });
-  await api('/api/push/subscribe', {
-    method: 'POST',
-    body: JSON.stringify(subscription.toJSON()),
-  });
-}
-
 /** «Выйти из аккаунта»: из «Сетевого города» (школа, пароль) или из самого
  * приложения на этом устройстве. В Telegram вход в приложение — сам
  * Telegram, там остаётся только «Сетевой город»; при просмотре чужого
@@ -1598,21 +945,4 @@ export async function signOut({ confirmed = false } = {}) {
     ['ns-viewing', 'ns-seen-marks', 'ns-shown-averages', 'ns-totals-counts'].forEach((key) => localStorage.removeItem(key));
   } catch { /* приватный режим */ }
   location.replace(`${window.NETSCHOOL.base}/`);
-}
-
-async function unsubscribePush() {
-  const subscription = await currentSubscription();
-  if (!subscription) return;
-  await api('/api/push/unsubscribe', {
-    method: 'POST',
-    body: JSON.stringify({ endpoint: subscription.endpoint }),
-  });
-  await subscription.unsubscribe();
-}
-
-function urlBase64ToUint8Array(value) {
-  const padding = '='.repeat((4 - (value.length % 4)) % 4);
-  const base64 = (value + padding).replace(/-/g, '+').replace(/_/g, '/');
-  const raw = atob(base64);
-  return Uint8Array.from([...raw].map((char) => char.charCodeAt(0)));
 }

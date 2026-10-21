@@ -150,6 +150,17 @@ deploy/deploy.sh
 systemctl stop netschoolbot && ./venv/bin/python -m app.tools.backup --restore FILE
 ```
 
+Все эти копии лежат на том же диске, что и база. Чтобы пережить смерть
+сервера, задайте в `.env` пароль `NETSCHOOL_BACKUP_KEY=<длинная случайная строка>`
+и сохраните его где-нибудь ещё: выкладка тогда ставит `netschoolbot-offsite.timer`,
+и раз в сутки сжатая копия, зашифрованная AES-256-GCM, уходит админу
+(`TG_ADMIN_ID`) документом в Telegram, частями по 45 МБ, если не влезает в одну.
+
+```bash
+./venv/bin/python -m app.tools.offsite                                     # отправить сейчас
+NETSCHOOL_BACKUP_KEY=... python -m app.tools.offsite --decrypt F.part1 F.part2 -o restored.sqlite3
+```
+
 Вернуть одному пользователю его отметки ДЗ, историю оценок, заметки и
 настройки приложения — без остановки бота и без отката остальных:
 

@@ -23,9 +23,10 @@ from dataclasses import replace
 from typing import Any, Protocol
 
 from ..db.repositories import MarkStateRepository, UserRepository
-from ..domain import formatting, insights
+from ..domain import formatting, insights, review
 from ..domain.models import ApiMode, MarkKind, NotificationPrefs, Student, User
-from ..domain.periods import Quarter, current_period, resolve_periods
+from ..domain.periods import Quarter, current_period, periods_from_terms, resolve_periods
+from ..domain.vacations import on_vacation, vacations
 from ..domain.records import AbsenceRecord, HomeworkRecord, MarkEvent, RecentEvents
 from .outage import OutageMonitor
 from ..netschool.errors import NetSchoolError, Reason
@@ -147,8 +148,17 @@ class UserWatcher:
         live: Callable[[int, dict], Awaitable[None]] | None = None,
         notes: Any = None,
         homework_seen: Callable[[User, list[HomeworkRecord]], None] | None = None,
+        keep_signed_in: Callable[[User], Awaitable[bool]] | None = None,
+        weekly_review: Callable[[str], Awaitable[str | None]] | None = None,
     ) -> None:
         self._user_id = user_id
+        # «Не выходить из аккаунта» для Госуслуг (AppContext.keep_signed_in).
+        self._keep_signed_in = keep_signed_in
+        self._last_keep_attempt: float | None = None
+        # Разбор недели от ИИ-помощника: факты → текст (AppContext.weekly_review).
+        self._weekly_review = weekly_review
+        # Тихий режим на каникулы: (день, каникулы ли) — считаем раз в сутки.
+        self._vacation_day: tuple[dt.date, bool] | None = None
         # Задания с вложениями — хранилищу файлов (attachments/keeper.py).
         self._homework_seen = homework_seen
         # Свои задачи ученика — для вечернего напоминания (NotesRepository).
@@ -223,6 +233,7 @@ class UserWatcher:
         # так после тихих часов или сбоя Telegram отложенное уходит само.
         await self._flush_outbox(user)
         await self._check_token(user)
+        await self._keep_session(user)
         await self._send_digests(user)
 
         self._backoff = 0.0
@@ -281,6 +292,10 @@ class UserWatcher:
             risks = await self._grade_risks(user, result.events, today)
             if risks:
                 outbox.append((OutboxKind.RISK.value, encode(OutboxKind.RISK, risks)))
+        if outbox and await self._on_vacation(user, today):
+            # Тихий режим на каникулы: история и снимки обновляются, а в
+            # очередь ничего не встаёт — после каникул не придёт всё разом.
+            outbox = []
         history = [
             (
                 event.kind.value,
@@ -406,6 +421,8 @@ class UserWatcher:
         if self._is_quiet(user):
             return
         now = _local_now(user)
+        if await self._on_vacation(user, now.date()):
+            return
         prefs = user.notifications
         jobs: list[tuple[DigestKind, str, Any]] = []
         if prefs.evening_summary and (period := evening_period(now)):
@@ -506,7 +523,33 @@ class UserWatcher:
                 raise
             except Exception as exc:  # noqa: BLE001 — без этой части сводка всё равно полезна
                 logger.info("Средние за период для %s не посчитаны: %s", user.telegram_id, exc)
+        if user.notifications.weekly_review and self._weekly_review is not None:
+            try:
+                analysis = await self._review_text(user, day, week)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # noqa: BLE001 — сводка уходит и без разбора
+                logger.info("Разбор недели для %s не получен: %s", user.telegram_id, exc)
+                analysis = None
+            if analysis:
+                text = f"{text}\n\n🤖 <b>Разбор недели</b>\n{formatting.esc(analysis)}"
         return text
+
+    async def _review_text(self, user: User, day: dt.date, week: list) -> str | None:
+        """Факты недели и периода — модели, её ответ — в сводку."""
+        year, prefs = await self._periods(user, day)
+        period = current_period(year, day)
+        period_days = await self._diary.fetch_period(user, period.start, day, today=day)
+        marks = [r for d in period_days for r in d.marks
+                 if period.covers(r.date) and user.filters.allows_subject(r.subject)]
+        ahead = review.week_ahead(day)
+        upcoming = await self._diary.fetch_period(user, ahead[0], ahead[-1], today=day)
+        tests = insights.upcoming_tests([h for d in upcoming for h in d.homework], ahead)
+        facts = review.review_facts(week, marks, prefs, tests, period_label=period.label)
+        if facts is None:
+            return None
+        answer = await self._weekly_review(facts)
+        return review.clean_review(answer) if answer else None
 
     async def _reminder_text(self, user: User, day: dt.date, today: dt.date, *, with_notes: bool) -> str | None:
         """Что на завтра не отмечено сделанным, свои задачи и ближайшие проверочные."""
@@ -569,6 +612,29 @@ class UserWatcher:
             except Exception as exc:  # noqa: BLE001 — без периодов школы есть общепринятые
                 logger.debug("Периоды школы для %s не получены: %s", user.telegram_id, exc)
         return resolve_periods(setting, terms, today), prefs
+
+    async def _on_vacation(self, user: User, today: dt.date) -> bool:
+        """Каникулы ли сегодня — только при включённом тихом режиме.
+
+        Каникулы — промежутки между периодами школы, а без них общепринятые
+        даты (domain/vacations.py). Не узнали — не молчим."""
+        if not user.notifications.vacation_quiet:
+            return False
+        if self._vacation_day is not None and self._vacation_day[0] == today:
+            return self._vacation_day[1]
+        try:
+            prefs = await self._state.user_prefs(user.telegram_id)
+            school: list[Quarter] = []
+            if ((prefs.get("periods") or {}).get("scheme") or "auto") == "auto":
+                school = periods_from_terms(await self._diary.fetch_terms(user) or [], today)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001 — без периодов школы есть общепринятые даты
+            logger.debug("Периоды для тихого режима %s не получены: %s", user.telegram_id, exc)
+            school = []
+        quiet = on_vacation(today, vacations(today, school, "school" if school else "default")) is not None
+        self._vacation_day = (today, quiet)
+        return quiet
 
     async def _grade_risks(self, user: User, events: list[MarkEvent], today: dt.date) -> list:
         """Предметы, где итоговая за текущий период из-за новых оценок стала ниже.
@@ -714,6 +780,34 @@ class UserWatcher:
         await self._notifier.send_token_expiring(user, check.expires_at)
         await self._state.set_token_warned(user.telegram_id, dt.datetime.now())
 
+    async def _keep_session(self, user: User) -> None:
+        """Госуслуги в веб-режиме: пока сессия жива (проверка только что
+        прошла), обменять её на мобильный токен — он продлевается сам, а
+        веб-сессию Госуслуг без человека не вернуть. Не чаще раза в 6 часов."""
+        if self._keep_signed_in is None or not user.credentials.login_type.is_gosuslugi:
+            return
+        if user.api_mode is not ApiMode.WEB:
+            return
+        now = self._clock()
+        if self._last_keep_attempt is not None and now - self._last_keep_attempt < TOKEN_CHECK_INTERVAL:
+            return
+        self._last_keep_attempt = now
+        try:
+            switched = await self._keep_signed_in(user)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001 — не повод ронять проверку оценок
+            logger.info("Вход Госуслуг %s не переведён на токен: %s", user.telegram_id, exc)
+            return
+        if switched:
+            await self._notifier.send_text(
+                user,
+                "🔐 Вход через Госуслуги теперь держится сам: дневник переведён на мобильное API, "
+                "его токен бот продлевает без вас. Выключить: настройки приложения → "
+                "«Не выходить из аккаунта».",
+                family=False,
+            )
+
     async def _diff_absences(
         self, user: User, days: list, *, first_run: bool
     ) -> tuple[set[str] | None, list[AbsenceRecord]]:
@@ -856,6 +950,10 @@ class WatcherRegistry:
         self.live: Callable[[int, dict], Awaitable[None]] | None = None
         # Увиденные задания — хранилищу вложений (задаёт main.py).
         self.homework_seen: Callable[[User, list[HomeworkRecord]], None] | None = None
+        # «Не выходить из аккаунта» для Госуслуг и разбор недели от помощника
+        # (задаёт AppContext.create).
+        self.keep_signed_in: Callable[[User], Awaitable[bool]] | None = None
+        self.weekly_review: Callable[[str], Awaitable[str | None]] | None = None
         self._tasks: dict[int, asyncio.Task] = {}
         self._lock = asyncio.Lock()
 
@@ -892,6 +990,8 @@ class WatcherRegistry:
                 live=self._signal,
                 notes=self._notes,
                 homework_seen=self.homework_seen,
+                keep_signed_in=self.keep_signed_in,
+                weekly_review=self.weekly_review,
             )
             task = asyncio.create_task(watcher.run(), name=f"watch-{user_id}")
             self._tasks[user_id] = task

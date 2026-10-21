@@ -29,7 +29,7 @@ VIEWER = "netschool_viewer"
 OWNER_READS = frozenset((
     "/api/diary", "/api/homework", "/api/homework/done", "/api/marks", "/api/marks/period",
     "/api/marks/subject", "/api/subject", "/api/history", "/api/notes", "/api/student-class",
-    "/api/announcements", "/api/profile", "/api/export.xlsx", "/api/bells",
+    "/api/announcements", "/api/profile", "/api/export.xlsx", "/api/bells", "/api/countdown",
     # Ретро-сайт (retro.py): неделя, карточки заданий, отчёты. Почта и
     # гостевая книга — от лица ученика, их при просмотре нет.
     "/api/retro/me", "/api/retro/week", "/api/retro/reports/totals", "/api/retro/reports/subject",

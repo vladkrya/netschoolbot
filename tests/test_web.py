@@ -144,7 +144,7 @@ class TestAuth:
         assert not halloween_season(dt.date(2026, 6, 1))
 
     async def test_halloween_notice_once(self, client, app_context, token, monkeypatch):
-        from app.web import api as web_api
+        from app.web.api import prefs as web_api
 
         monkeypatch.setattr(web_api, "halloween_season", lambda today: True)
         response = await client.post(f"{BASE}/api/notices/halloween", params={"token": token})
@@ -960,7 +960,7 @@ class TestCache:
     async def test_slow_refresh_serves_saved_data_and_runs_only_once(
         self, client, app_context, token, monkeypatch
     ):
-        from app.web import api
+        from app.web.api import base as api
 
         monkeypatch.setattr(api, "CACHE_RESPONSE_WAIT", 0.01)
         monkeypatch.setattr(api, "REFRESH_RESPONSE_WAIT", 0.01)
@@ -998,7 +998,7 @@ class TestCache:
     async def test_pull_to_refresh_waits_for_fresh_data(
         self, client, app_context, token, monkeypatch
     ):
-        from app.web import api
+        from app.web.api import base as api
 
         # Обычное открытие отдаёт кэш сразу, а жест обновления ждёт школу:
         # раньше он тоже получал старое через 0,2 с, и экран не менялся.
@@ -1019,7 +1019,7 @@ class TestCache:
         self, client, app_context, token, monkeypatch
     ):
         from dataclasses import replace
-        from app.web import api
+        from app.web.api import base as api
 
         monkeypatch.setattr(api, "CACHE_RESPONSE_WAIT", 0.01)
         monkeypatch.setattr(api, "REFRESH_RESPONSE_WAIT", 0.01)
@@ -1305,7 +1305,7 @@ class TestAttachmentWaitPage:
         assert "fileUrl(`attachment/${id}`" in core and "${base}/${path}?" in core
 
     async def test_slow_school_server_gives_504(self, client, users, app_context, monkeypatch):
-        import app.web.api as api_module
+        import app.web.api.attachments as api_module
         await users.save(make_user())
         monkeypatch.setattr(api_module, "ATTACHMENT_TIMEOUT_S", 0.05)
 
@@ -1368,7 +1368,7 @@ class TestAttachmentWaitPage:
     async def test_stale_cache_is_downloaded_again_and_cleaned(self, client, users, app_context, monkeypatch):
         import os
         import time
-        import app.web.api as api_module
+        import app.web.api.attachments as api_module
         await users.save(make_user())
         cache = app_context.settings.attachments_dir
         cache.mkdir(parents=True, exist_ok=True)

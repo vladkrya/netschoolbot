@@ -12,6 +12,7 @@ import {
 import { dayData, ensureWeek, goToDay, isHiddenWeekend, openCalendar } from './day.js';
 import { isNewDesign, showBells } from './appearance.js';
 import { select, tap } from './haptics.js';
+import { bindShareWeek, shareWeekButton } from './schedimage.js';
 
 const expanded = new Set();
 const expansionAnimations = new WeakMap();
@@ -140,7 +141,8 @@ function render(monday) {
   }
 
   const container = $('scheduleContent');
-  container.innerHTML = cards.join('');
+  container.innerHTML = cards.join('') + shareWeekButton(monday);
+  bindShareWeek(container);
   container.querySelectorAll('[data-toggle]').forEach((button) =>
     button.addEventListener('click', () => {
       select();

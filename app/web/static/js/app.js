@@ -17,9 +17,11 @@ import {
 import { ICONS } from './icons.js';
 import { dropInstallHints, initInstallPrompt, openInstall } from './install.js';
 import {
-  applyStoredTheme, closeDrawer, initStudentSwitch, isDrawerOpen, loadProfile, loadSettings, offerPushOnFirstLaunch, openDrawer,
-  prefetchHistory, syncTimezone,
+  applyStoredTheme, closeDrawer, isDrawerOpen, loadProfile, loadSettings, openDrawer, syncTimezone,
 } from './profile.js';
+import { prefetchHistory } from './history.js';
+import { offerPushOnFirstLaunch } from './push.js';
+import { initStudentSwitch } from './students.js';
 import { loadAssistantTab, openAssistant } from './assistant.js';
 import { navTabs, renderNav } from './tabs.js';
 import { closeSheet, initSheet, openSheet, sheetOpen } from './sheet.js';

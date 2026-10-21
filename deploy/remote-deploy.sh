@@ -104,6 +104,10 @@ install_units() {
   if [ -f deploy/systemd/netschoolbot-gemini-tunnel.service ] && [ -f /root/.ssh/gemini_tunnel_ed25519 ]; then
     install -m 644 deploy/systemd/netschoolbot-gemini-tunnel.service /etc/systemd/system/
   fi
+  # Копия вне сервера — только там, где в .env задан ключ шифрования.
+  if [ -f deploy/systemd/netschoolbot-offsite.timer ] && grep -qE '^NETSCHOOL_BACKUP_KEY=.+' "$APP/.env" 2>/dev/null; then
+    install -m 644 deploy/systemd/netschoolbot-offsite.service deploy/systemd/netschoolbot-offsite.timer /etc/systemd/system/
+  fi
   if [ -f deploy/systemd/netschoolbot-autodeploy.timer ]; then
     install -m 644 deploy/systemd/netschoolbot-autodeploy.service deploy/systemd/netschoolbot-autodeploy.timer /etc/systemd/system/
   fi
@@ -212,6 +216,9 @@ systemctl enable --now netschoolbot-backup.timer >/dev/null 2>&1 || true
 # Внешняя проверка «бот отвечает» — сообщение админу, если упал.
 systemctl enable --now netschoolbot-health.timer >/dev/null 2>&1 || true
 systemctl enable --now netschoolbot-autodeploy.timer >/dev/null 2>&1 || true
+if [ -f /etc/systemd/system/netschoolbot-offsite.timer ]; then
+  systemctl enable --now netschoolbot-offsite.timer >/dev/null 2>&1 || true
+fi
 if [ -f /etc/systemd/system/netschoolbot-smtp-tunnel.service ]; then
   systemctl enable --now netschoolbot-smtp-tunnel >/dev/null 2>&1 || true
 fi
