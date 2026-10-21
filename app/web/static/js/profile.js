@@ -30,7 +30,6 @@ import { openExport } from './reports.js';
 import { switchStudent } from './students.js';
 import { countdownShown, saveCountdown } from './countdown.js';
 import { openWhatsNew, whatsNewRow } from './whatsnew.js';
-import { openDue } from './due.js';
 import { openSearch } from './search.js';
 import { openChildren } from './children.js';
 import { openScheduleImage } from './schedimage.js';
@@ -407,7 +406,6 @@ function render() {
       <div class="tool-grid">
       ${data.assistant && !demo && !readonly && !navTabs().includes('assistant') ? toolTile('drawerAssistant', 'sparkles', 'ИИ-помощник') : ''}
       ${navTabs().includes('games') ? '' : toolTile('drawerGames', 'game', 'Игры')}
-      ${toolTile('drawerDue', 'pin', 'Должен сдать')}
       ${toolTile('drawerSearch', 'search', 'Поиск за год')}
       ${!readonly && data.students.length > 1 ? toolTile('drawerChildren', 'users', 'Все дети') : ''}
       ${toolTile('drawerShareWeek', 'share', 'Расписание картинкой')}
@@ -618,7 +616,6 @@ function bindDrawer() {
     state.profile.keep_signed_in = { ...state.profile.keep_signed_in, on: event.target.checked };
   });
   $('drawerWhatsNew').addEventListener('click', () => { closeDrawer(); openWhatsNew(); });
-  $('drawerDue').addEventListener('click', () => { closeDrawer(); openDue(); });
   $('drawerSearch').addEventListener('click', () => { closeDrawer(); openSearch(); });
   $('drawerChildren')?.addEventListener('click', () => { closeDrawer(); openChildren(); });
   $('drawerShareWeek').addEventListener('click', () => { closeDrawer(); openScheduleImage(); });

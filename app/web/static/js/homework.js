@@ -10,7 +10,7 @@ import {
 import { ICONS } from './icons.js';
 import { homeworkTimes, isAutoDone, isDoneItem, loadDone, openHomework, saveDone } from './details.js';
 import { select, tap } from './haptics.js';
-import { openDue } from './due.js';
+import { dueButtonHtml, loadDue, openDue } from './due.js';
 import { openSearch } from './search.js';
 import {
   bindStreaks, isTestWork, loadNotes, noteWhen, notesAsItems, openNoteEditor, setNoteDone, streaks, streaksHtml,
@@ -21,6 +21,7 @@ let query = '';
 let filter = 'all';
 
 export async function loadHomework(force = false) {
+  dueChecked = false;
   const container = $('homeworkContent');
   const past = filter === 'past';
   const slot = past ? 'homeworkPast' : 'homework';
@@ -100,20 +101,22 @@ function render() {
   const container = $('homeworkContent');
   const top = filter === 'past' || query.trim() ? ''
     : streaksHtml(streaks(state.grades, state.homework?.items, done, state.notes || []))
-      + '<div class="hw-actions"><button class="hw-add" data-add-note>＋ Своя задача</button><button class="hw-add" data-due>📌 Должен сдать</button></div>';
+      + '<button class="hw-add" data-add-note>＋ Своя задача</button>';
+  // «Должен сдать» — сверху и только когда что-то висит (due.js).
+  const due = filter === 'past' || query.trim() ? '' : `<div id="hwDue">${dueButtonHtml()}</div>`;
   // Поле ищет по загруженным неделям, всё остальное — «Поиск за год».
   const yearSearch = query.trim().length >= 2
     ? `<button class="btn outline hw-year-search" data-year-search>${ICONS.search} Искать «${esc(query.trim())}» за весь год</button>` : '';
   if (!items.length) {
     const empty = query.trim() ? 'Ничего не найдено' : filter === 'todo' ? 'Всё сделано 🎉' : 'Заданий нет 🎉';
-    container.innerHTML = `${top}<div class="empty big">${empty}</div>${yearSearch}`;
+    container.innerHTML = `${due}${top}<div class="empty big">${empty}</div>${yearSearch}`;
     bindTop(container);
     return;
   }
 
   const perDay = new Map();
   for (const item of items) perDay.set(item.date, (perDay.get(item.date) || 0) + 1);
-  container.innerHTML = top + items
+  container.innerHTML = due + top + items
     .map((item, index) => {
       const isDone = itemDone(item, done);
       // Заголовок дня перед первым его заданием (виден только в новом дизайне).
@@ -169,7 +172,25 @@ function bindTop(container) {
   bindStreaks(container);
   container.querySelector('[data-add-note]')?.addEventListener('click', () => openNoteEditor(subjectNames(), () => render()));
   container.querySelector('[data-due]')?.addEventListener('click', () => openDue());
+  if (container.querySelector('#hwDue')) refreshDue();
   container.querySelector('[data-year-search]')?.addEventListener('click', () => openSearch(query.trim()));
+}
+
+// Пересчёт раз в открытие вкладки и после отметок «сделано».
+let dueChecked = false;
+let dueLoading = null;
+function refreshDue() {
+  if (dueChecked || dueLoading) return;
+  dueLoading = loadDue()
+    .then(() => {
+      dueChecked = true;
+      const slot = $('hwDue');
+      if (!slot) return;
+      slot.innerHTML = dueButtonHtml();
+      slot.querySelector('[data-due]')?.addEventListener('click', () => openDue());
+    })
+    .catch(() => {})
+    .finally(() => { dueLoading = null; });
 }
 
 function dayHeading(iso) {
@@ -204,7 +225,9 @@ export function initHomework() {
   // Отметили на экране урока или задания — галочки в списке должны совпасть.
   window.addEventListener('netschool:hwdone', (event) => {
     const source = filter === 'past' ? state.homeworkPast : state.homework;
+    dueChecked = false;
     if (event.detail?.source !== 'list' && source) render();
+    else if ($('hwDue')) refreshDue();
   });
   $('hwSearch').addEventListener('input', (event) => {
     query = event.target.value;

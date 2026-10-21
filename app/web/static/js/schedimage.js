@@ -36,8 +36,21 @@ function fit(ctx, text, width) {
   return `${cut}…`;
 }
 
+// Чей это дневник: сайт и бот внизу картинки — её пересылают дальше.
+let botName = null;
+async function loadBotName() {
+  if (botName !== null || demo) return botName || '';
+  try {
+    const { data } = await api('/api/account/config');
+    botName = (data.bot || '').split('/').pop();
+  } catch {
+    return '';
+  }
+  return botName;
+}
+
 /** Неделя в две колонки: дни сверху вниз, у каждого — уроки со временем и кабинетом. */
-export function drawWeek(monday) {
+export function drawWeek(monday, { site = location.host, bot = '' } = {}) {
   const days = [];
   for (let index = 0; index < 7; index += 1) {
     const iso = addDays(monday, index);
@@ -56,7 +69,8 @@ export function drawWeek(monday) {
     return { ...day, column, top };
   });
   const header = 186;
-  const height = header + Math.max(...heights, 200) + PAD - COLUMN_GAP + 40;
+  const footer = 110;
+  const height = header + Math.max(...heights, 200) + PAD - COLUMN_GAP + footer;
   const canvas = document.createElement('canvas');
   canvas.width = WIDTH;
   canvas.height = height;
@@ -109,9 +123,18 @@ export function drawWeek(monday) {
       ctx.fillText(fit(ctx, `${lesson.subject}${room}`, columnWidth - 172), x + 144, line);
     });
   }
-  ctx.fillStyle = '#9aa0ab';
-  ctx.font = font(500, 22);
-  ctx.fillText('Дневник «Сетевого города»', PAD, height - 32);
+  const line = height - footer + 20;
+  ctx.fillStyle = '#dfe2e8';
+  ctx.fillRect(PAD, line, WIDTH - PAD * 2, 2);
+  ctx.fillStyle = accent;
+  ctx.font = font(700, 30);
+  ctx.fillText(site, PAD, line + 56);
+  if (bot) {
+    ctx.fillStyle = '#6c7280';
+    ctx.font = font(600, 28);
+    const label = `Telegram: @${bot}`;
+    ctx.fillText(label, WIDTH - PAD - ctx.measureText(label).width, line + 56);
+  }
   return canvas;
 }
 
@@ -126,7 +149,7 @@ export async function openScheduleImage(monday = mondayOf(isoToday())) {
     body.innerHTML = `<div class="muted small">${esc(error.message)}</div>`;
     return;
   }
-  const canvas = drawWeek(monday);
+  const canvas = drawWeek(monday, { bot: await loadBotName() });
   const blob = await toBlob(canvas);
   const file = new File([blob], `raspisanie-${monday}.png`, { type: 'image/png' });
   const url = URL.createObjectURL(blob);

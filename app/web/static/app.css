@@ -2747,8 +2747,6 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
   text-align: center;
 }
 
-.hw-actions { display: flex; gap: 8px; }
-.hw-actions .hw-add { flex: 1; }
 .hw-year-search { display: flex; align-items: center; justify-content: center; gap: 6px; margin: 4px 0 12px; }
 
 .search.search-year { margin-bottom: 6px; border-color: var(--border); background: var(--card); color: var(--text2); }
@@ -2770,3 +2768,23 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
 .share-preview { display: block; width: 100%; border-radius: 14px; box-shadow: 0 2px 12px rgb(0 0 0 / .12); }
 .share-actions .btn { text-align: center; text-decoration: none; }
 .share-status { margin-top: 8px; text-align: center; }
+.search-pending { display: flex; gap: 10px; align-items: center; font-size: 14px; color: var(--text2); }
+.search-pending .spinner { flex: none; width: 16px; height: 16px; border: 2px solid var(--primary); border-right-color: transparent; border-radius: 50%; animation: spin .7s linear infinite; }
+
+.due-button {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 10px;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--g2) 45%, transparent);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--g2) 10%, var(--card));
+  color: var(--text);
+  text-align: left;
+}
+.due-button .db-ico { flex: none; font-size: 20px; }
+.due-button .db-main { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.due-button .db-main b { color: var(--g2); }
+.due-button .db-arrow { flex: none; color: var(--text2); font-size: 20px; }

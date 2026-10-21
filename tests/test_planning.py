@@ -52,6 +52,38 @@ class TestSearch:
         _, body = await get(client, "/api/search", token, q="собрание иванова")
         assert [m["id"] for m in body["data"]["mail"]] == [1]
 
+    async def test_slow_index_is_built_once_and_reported_pending(self, client, token, app_context, monkeypatch):
+        """Медленный дневник: запрос не висит, а повторные не запускают второй сбор."""
+        import asyncio
+
+        from app.web.api import planning
+
+        monkeypatch.setattr(planning, "SEARCH_WAIT_SECONDS", 0.05)
+        release = asyncio.Event()
+        calls = []
+        diary = app_context.diary
+        original = diary.fetch_period
+
+        async def slow(user, start, end, **kwargs):
+            calls.append(start)
+            await release.wait()
+            return await original(user, start, end, **kwargs)
+
+        monkeypatch.setattr(diary, "fetch_period", slow)
+        diary.homework = [HomeworkRecord("Алгебра", dt.date.today(), "ДЗ", "Уравнения")]
+        _, body = await get(client, "/api/search", token, q="уравн")
+        assert body["data"]["pending"] == ["homework"]
+        _, body = await get(client, "/api/search", token, q="уравнения")
+        assert body["data"]["pending"] == ["homework"]
+        assert len(calls) == 1
+        release.set()
+        for _ in range(50):
+            _, body = await get(client, "/api/search", token, q="уравнения")
+            if not body["data"]["pending"]:
+                break
+        assert [item["subject"] for item in body["data"]["homework"]] == ["Алгебра"]
+        assert len(calls) == 1
+
     async def test_short_query_rejected(self, client, token):
         status, _ = await get(client, "/api/search", token, q="а")
         assert status == 400
