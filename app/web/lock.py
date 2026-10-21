@@ -126,6 +126,42 @@ async def lock_settings(request):
     return await session(request)
 
 
+async def _check(conn, row, value, uid):
+    """Сверить PIN (или старый пароль защиты) со счётчиком ошибок и паузами.
+
+    Возвращает ответ с ошибкой или None, если код верный. Вызывать внутри
+    транзакции: параллельные попытки не обходят паузу.
+    """
+    wrong = 'Неверный PIN' if row['is_pin'] else 'Неверный пароль'
+    if not isinstance(value, str) or len(value) > 128:
+        return json_error(wrong, status=403)
+    if row['is_pin'] and not re.fullmatch(r'[0-9]{4}', value):
+        return json_error('Введите 4 цифры PIN', status=403)
+    if row['failures'] >= MAX_ATTEMPTS:
+        return json_error(BLOCKED, status=429, reason='pin_blocked')
+    wait = math.ceil(row['retry_at'] - time.time())
+    if wait > 0:
+        return json_error(f'Слишком много попыток. Попробуйте через {_duration(wait)}.', status=429)
+    hashed = await asyncio.to_thread(hashlib.scrypt, value.encode(), salt=row['salt'], n=16384, r=8, p=1)
+    if hmac.compare_digest(hashed, row['password_hash']):
+        return None
+    failures = row['failures'] + 1
+    pause = _backoff(failures)
+    await conn.execute('UPDATE app_locks SET failures=?, retry_at=? WHERE telegram_id=?',
+                       (failures, time.time() + pause, uid))
+    if failures >= MAX_ATTEMPTS:
+        return json_error(f'{wrong}. {BLOCKED}', status=403, reason='pin_blocked')
+    if pause:
+        return json_error(f'{wrong}. Следующая попытка через {_duration(pause)}.', status=403)
+    left = FREE_ATTEMPTS - failures
+    return json_error(f'{wrong}. Осталось попыток без паузы: {left}.' if left <= 2 else wrong, status=403)
+
+
+async def _current(conn, uid):
+    cursor = await conn.execute('SELECT * FROM app_locks WHERE telegram_id = ?', (uid,))
+    return await cursor.fetchone()
+
+
 @routes.post('/api/lock/pin')
 @routes.post('/api/lock/password')
 async def password(request):
@@ -137,6 +173,12 @@ async def password(request):
     hashed = await asyncio.to_thread(hashlib.scrypt, value.encode(), salt=salt, n=16384, r=8, p=1)
     db, uid = context(request).db, current_user(request).telegram_id
     async with db.transaction() as conn:
+        # Сменить PIN можно, только зная прежний: открытый на минуту телефон
+        # не даёт чужому задать свой PIN. Забытый PIN сбрасывают /resetpin
+        # или паролем аккаунта — после сброса защиты старый не нужен.
+        row = await _current(conn, uid)
+        if row and (problem := await _check(conn, row, data.get('current', ''), uid)):
+            return problem
         await conn.execute('INSERT INTO app_locks (telegram_id, salt, password_hash, is_pin) VALUES (?, ?, ?, 1) '
                            'ON CONFLICT(telegram_id) DO UPDATE SET salt=excluded.salt, password_hash=excluded.password_hash, failures=0, retry_at=0, is_pin=1',
                            (uid, salt, hashed))
@@ -147,46 +189,29 @@ async def password(request):
 @routes.post('/api/lock/unlock')
 async def unlock(request):
     db, uid = context(request).db, current_user(request).telegram_id
-    row = await enabled(db, uid)
-    if not row:
+    if not await enabled(db, uid):
         return json_error('Блокировка не включена')
     data = await request.json()
     value = data.get('pin', data.get('password', ''))
-    if not isinstance(value, str) or len(value) > 128:
-        return json_error('Неверный PIN' if row and row['is_pin'] else 'Неверный пароль', status=403)
     # Serialize attempts, including hashing: concurrent requests cannot bypass backoff.
     async with db.transaction() as conn:
-        cursor = await conn.execute('SELECT * FROM app_locks WHERE telegram_id = ?', (uid,))
-        row = await cursor.fetchone()
+        row = await _current(conn, uid)
         if not row:
             return json_error('Блокировка не включена')
-        if row['is_pin'] and not re.fullmatch(r'[0-9]{4}', value):
-            return json_error('Введите 4 цифры PIN', status=403)
-        if row['failures'] >= MAX_ATTEMPTS:
-            return json_error(BLOCKED, status=429, reason='pin_blocked')
-        wait = math.ceil(row['retry_at'] - time.time())
-        if wait > 0:
-            return json_error(f'Слишком много попыток. Попробуйте через {_duration(wait)}.', status=429)
-        hashed = await asyncio.to_thread(hashlib.scrypt, value.encode(), salt=row['salt'], n=16384, r=8, p=1)
-        if not hmac.compare_digest(hashed, row['password_hash']):
-            failures = row['failures'] + 1
-            pause = _backoff(failures)
-            await conn.execute('UPDATE app_locks SET failures=?, retry_at=? WHERE telegram_id=?',
-                               (failures, time.time() + pause, uid))
-            wrong = 'Неверный PIN' if row['is_pin'] else 'Неверный пароль'
-            if failures >= MAX_ATTEMPTS:
-                return json_error(f'{wrong}. {BLOCKED}', status=403, reason='pin_blocked')
-            if pause:
-                return json_error(f'{wrong}. Следующая попытка через {_duration(pause)}.', status=403)
-            left = FREE_ATTEMPTS - failures
-            return json_error(f'{wrong}. Осталось попыток без паузы: {left}.' if left <= 2 else wrong, status=403)
+        if problem := await _check(conn, row, value, uid):
+            return problem
     return await session(request)
 
 
 @routes.post('/api/lock/disable')
 async def disable(request):
     db, uid = context(request).db, current_user(request).telegram_id
+    data = await request.json() if request.can_read_body else {}
     async with db.transaction() as conn:
+        # Выключить защиту — тоже только с текущим PIN.
+        row = await _current(conn, uid)
+        if row and (problem := await _check(conn, row, data.get('pin', ''), uid)):
+            return problem
         for table in ('app_locks', 'app_unlocks', 'app_passkeys', 'app_biometrics', 'app_lock_challenges'):
             await conn.execute(f'DELETE FROM {table} WHERE telegram_id = ?', (uid,))
     return web.json_response({'ok': True, 'data': {}})

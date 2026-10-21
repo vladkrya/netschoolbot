@@ -22,7 +22,7 @@ async def test_lock_enforces_password_and_revokes_session(client, token):
     assert (await client.get(f'{BASE}/api/profile', headers=headers)).status == 423
     response = await client.post(f'{BASE}/api/lock/unlock', headers=headers, json={'password': '1234'})
     headers['X-Netschool-Unlock'] = (await response.json())['data']['unlock']
-    assert (await client.post(f'{BASE}/api/lock/disable', headers=headers)).status == 200
+    assert (await client.post(f'{BASE}/api/lock/disable', headers=headers, json={'pin': '1234'})).status == 200
     headers.pop('X-Netschool-Unlock')
     assert (await client.get(f'{BASE}/api/profile', headers=headers)).status == 200
 
@@ -52,7 +52,7 @@ async def test_session_bound_to_user_and_password_change(client, token, app_cont
     headers = {'X-Netschool-Token': token2, 'X-Netschool-Unlock': session}
     assert (await client.get(f'{BASE}/api/profile', headers=headers)).status == 423
     headers['X-Netschool-Token'] = token
-    response = await client.post(f'{BASE}/api/lock/password', headers=headers, json={'password': '5678'})
+    response = await client.post(f'{BASE}/api/lock/password', headers=headers, json={'password': '5678', 'current': '1234'})
     assert response.status == 200
     assert (await client.get(f'{BASE}/api/profile', headers=headers)).status == 423
 
@@ -152,7 +152,7 @@ async def test_native_biometric_secret_requires_unlock_and_is_revoked(client, to
     assert response.status == 200
     headers['X-Netschool-Unlock'] = (await response.json())['data']['unlock']
     assert (await client.get(f'{BASE}/api/profile', headers=headers)).status == 200
-    await client.post(f'{BASE}/api/lock/disable', headers=headers)
+    await client.post(f'{BASE}/api/lock/disable', headers=headers, json={'pin': '1234'})
     response = await client.post(f'{BASE}/api/lock/biometric/unlock', headers=headers, json={'device': 'iphone', 'token': secret})
     assert response.status == 403
 
@@ -204,7 +204,7 @@ async def test_legacy_password_can_be_replaced_without_losing_access(client, tok
     response = await client.post(f'{BASE}/api/lock/unlock', headers=headers, json={'password': 'old-password'})
     assert response.status == 200
     headers['X-Netschool-Unlock'] = (await response.json())['data']['unlock']
-    response = await client.post(f'{BASE}/api/lock/pin', headers=headers, json={'pin': '0042'})
+    response = await client.post(f'{BASE}/api/lock/pin', headers=headers, json={'pin': '0042', 'current': 'old-password'})
     assert response.status == 200
     headers.pop('X-Netschool-Unlock')
     assert (await client.post(f'{BASE}/api/lock/unlock', headers=headers, json={'pin': '0042'})).status == 200
@@ -296,3 +296,29 @@ async def test_sign_out_works_from_locked_screen(client, token, app_context):
     assert response.status == 200 and (await response.json())['data']['revoked']
     assert await app_context.miniapp.resolve_token(device) is None
     assert await app_context.miniapp.resolve_token(token) == 1
+
+
+async def test_changing_or_disabling_pin_needs_current_pin(client, token, app_context):
+    session = await enable(client, token)
+    headers = {'X-Netschool-Token': token, 'X-Netschool-Unlock': session}
+    # Открытый чужой телефон: вход разблокирован, но PIN не известен.
+    response = await client.post(f'{BASE}/api/lock/pin', headers=headers, json={'pin': '5678'})
+    assert response.status == 403
+    response = await client.post(f'{BASE}/api/lock/pin', headers=headers, json={'pin': '5678', 'current': '0000'})
+    assert response.status == 403
+    assert (await client.post(f'{BASE}/api/lock/disable', headers=headers, json={})).status == 403
+    assert (await client.post(f'{BASE}/api/lock/disable', headers=headers, json={'pin': '9999'})).status == 403
+    row = await app_context.db.fetch_one('SELECT failures FROM app_locks WHERE telegram_id=1')
+    assert row['failures'] == 2
+    # Подбор упирается в тот же счётчик, что и вход.
+    for _ in range(3):
+        await client.post(f'{BASE}/api/lock/disable', headers=headers, json={'pin': '9999'})
+    response = await client.post(f'{BASE}/api/lock/disable', headers=headers, json={'pin': '1234'})
+    assert response.status == 429
+    await app_context.db.execute('UPDATE app_locks SET retry_at=0 WHERE telegram_id=1')
+    response = await client.post(f'{BASE}/api/lock/pin', headers=headers, json={'pin': '5678', 'current': '1234'})
+    assert response.status == 200
+    headers['X-Netschool-Unlock'] = (await response.json())['data']['unlock']
+    assert (await client.post(f'{BASE}/api/lock/disable', headers=headers, json={'pin': '1234'})).status == 403
+    assert (await client.post(f'{BASE}/api/lock/disable', headers=headers, json={'pin': '5678'})).status == 200
+    assert await app_context.db.fetch_one('SELECT 1 FROM app_locks WHERE telegram_id=1') is None

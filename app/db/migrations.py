@@ -831,6 +831,29 @@ MIGRATIONS: list[str] = [
     ALTER TABLE users ADD COLUMN weekly_review INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE users ADD COLUMN vacation_quiet INTEGER NOT NULL DEFAULT 0;
     """,
+    # Номер аккаунта в приложении: виден в настройках и даёт логин CalDAV
+    # «cal-<номер>» без Telegram ID. Старые по порядку регистрации, новые —
+    # следующий номер из счётчика (номера удалённых не переиспользуются).
+    # Логины CalDAV теперь хранятся: уже выданные «ns<id>» продолжают работать.
+    """
+    ALTER TABLE users ADD COLUMN account_no INTEGER;
+    UPDATE users SET account_no = 10000 + (
+        SELECT COUNT(*) FROM users AS earlier
+        WHERE earlier.created_at < users.created_at
+           OR (earlier.created_at = users.created_at AND earlier.telegram_id <= users.telegram_id));
+    CREATE UNIQUE INDEX idx_users_account_no ON users(account_no);
+    INSERT OR REPLACE INTO app_metadata (key, value)
+        VALUES ('account_no_last', (SELECT COALESCE(MAX(account_no), 10000) FROM users));
+    CREATE TRIGGER users_account_no AFTER INSERT ON users WHEN NEW.account_no IS NULL
+    BEGIN
+        UPDATE app_metadata SET value = CAST(value AS INTEGER) + 1 WHERE key = 'account_no_last';
+        UPDATE users SET account_no = (SELECT CAST(value AS INTEGER) FROM app_metadata WHERE key = 'account_no_last')
+            WHERE telegram_id = NEW.telegram_id;
+    END;
+    ALTER TABLE caldav_accounts ADD COLUMN login TEXT;
+    UPDATE caldav_accounts SET login = 'ns' || telegram_id;
+    CREATE UNIQUE INDEX idx_caldav_accounts_login ON caldav_accounts(login);
+    """,
 ]
 
 

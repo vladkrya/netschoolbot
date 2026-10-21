@@ -75,7 +75,7 @@ class CaldavService:
                 raise
 
     async def prepare(self, telegram_id):
-        parent = f'/ns{telegram_id}/'
+        parent = f'/{await self.accounts.login(telegram_id)}/'
         response = await self.call('MKCOL', parent, PUBLISHER)
         if response['status'] not in (201, 405):
             raise RuntimeError(f'CalDAV MKCOL: {response["status"]}')
@@ -96,7 +96,7 @@ class CaldavService:
     async def _publish(self, telegram_id, state):
         text = collection_ics(state)
         text = text.replace('CALSCALE:GREGORIAN\r\n', 'CALSCALE:GREGORIAN\r\nX-WR-CALNAME:Школьное расписание\r\n', 1)
-        response = await self.call('PUT', f'/ns{telegram_id}/schedule/', PUBLISHER,
+        response = await self.call('PUT', f'/{await self.accounts.login(telegram_id)}/schedule/', PUBLISHER,
                                    text.encode(), {'Content-Type': 'text/calendar; charset=utf-8'})
         if response['status'] not in (201, 204):
             raise RuntimeError(f'CalDAV PUT: {response["status"]}')
@@ -111,13 +111,30 @@ class CaldavService:
             await self._publish(telegram_id, {'events': {}})
             await self.app.cache.put(telegram_id, 'caldav', {})
 
+    async def create(self, telegram_id):
+        """Выдать новый пароль. Логин при этом становится нового формата
+        (cal-<номер>), и календарь прежнего логина удаляется."""
+        async with self.sync_lock:
+            old = (await self.accounts.get(telegram_id) or {}).get('login')
+            password = await self.accounts.create(telegram_id)
+            await self.prepare(telegram_id)
+            if old and old != await self.accounts.login(telegram_id):
+                await self._remove(old)
+                # Снимок был от прежней папки: новую синхронизация заполнит целиком.
+                await self.app.cache.put(telegram_id, 'caldav', {})
+        return password
+
+    async def _remove(self, login):
+        result = await self.call('DELETE', f'/{login}/', PUBLISHER)
+        if result['status'] not in (200, 204, 404):
+            raise RuntimeError('Не удалось удалить календарь CalDAV')
+
     async def delete_user(self, telegram_id):
         # Ждём публикацию, уже выполняющуюся в потоке Radicale.
         async with self.sync_lock:
+            login = await self.accounts.login(telegram_id)
             await self.accounts.revoke(telegram_id)
-            result = await self.call('DELETE', f'/ns{telegram_id}/', PUBLISHER)
-            if result['status'] not in (200, 204, 404):
-                raise RuntimeError('Не удалось удалить календарь CalDAV')
+            await self._remove(login)
 
     async def sync(self, telegram_id):
         async with self.sync_lock:

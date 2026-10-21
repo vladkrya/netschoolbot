@@ -88,6 +88,9 @@ async function refreshProtection() {
   $('retroDisablePin').disabled = demo || !protection.enabled;
   $('retroLockNow').disabled = demo || !protection.enabled;
   for (const field of $('retroPinSettings').elements) field.disabled = demo;
+  // Сменить или выключить PIN можно, только введя текущий.
+  $('retroCurrentPin').hidden = !protection.enabled;
+  $('retroPinSettings').elements.current.required = Boolean(protection.enabled);
 }
 async function settings() {
   $('retroSettingsError').textContent = '';
@@ -121,7 +124,7 @@ $('retroPinSettings').onsubmit = async event => {
   const button = form.querySelector('button');
   button.disabled = true;
   try {
-    const result = await request('lock/pin', { pin: form.elements.pin.value });
+    const result = await request('lock/pin', { pin: form.elements.pin.value, current: form.elements.current.value });
     bridge.setUnlock(result.unlock);
     form.reset();
     await refreshProtection();
@@ -136,7 +139,9 @@ $('retroRequireTelegram').onchange = async event => {
   } catch (error) { event.target.checked = !event.target.checked; $('retroSettingsError').textContent = error.message; }
 };
 $('retroDisablePin').onclick = async () => {
-  try { await request('lock/disable', {}); bridge.setUnlock(''); await refreshProtection(); }
+  const current = $('retroPinSettings').elements.current;
+  if (!/^[0-9]{4}$/.test(current.value)) { $('retroSettingsError').textContent = 'Введите текущий PIN, чтобы выключить защиту.'; current.focus(); return; }
+  try { await request('lock/disable', { pin: current.value }); bridge.setUnlock(''); $('retroPinSettings').reset(); await refreshProtection(); }
   catch (error) { $('retroSettingsError').textContent = error.message; }
 };
 async function relock() {

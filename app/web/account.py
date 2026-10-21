@@ -48,7 +48,7 @@ MAX_SCHOOLS = 30
 
 # Без входа доступны только эти адреса.
 PUBLIC_PATHS = ("/api/account/register", "/api/account/login", "/api/account/reset/request",
-                "/api/account/reset/confirm", "/api/account/config", "/api/family/invite-info",
+                "/api/account/reset/confirm", "/api/account/reset/check", "/api/account/config", "/api/family/invite-info",
                 "/api/account/tg-login", "/api/account/tg-widget",
                 "/api/account/tg-oidc/start", "/api/account/tg-oidc/callback")
 
@@ -405,44 +405,57 @@ async def login(request: web.Request) -> web.Response:
 
 @routes.post("/api/account/reset/request")
 async def reset_request(request: web.Request) -> web.Response:
-    """Код для сброса пароля — письмом, а если почта не настроена, в Telegram.
+    """Ссылка для сброса пароля — письмом, а если почта не настроена, в Telegram.
     Ответ одинаковый, есть ли такая почта: по нему не узнать, кто зарегистрирован."""
     email = str((await _body(request)).get("email") or "").strip().lower()
     app = context(request)
     account = await app.accounts.by_email(email) if EMAIL.match(email) else None
     if account and not CODE_REQUESTS.blocked(email):
         CODE_REQUESTS.hit(email)
-        code = await app.accounts.issue_code(email, "reset")
-        text = f"Код для сброса пароля: {code}\nОн действует 15 минут. Если вы не запрашивали сброс — ничего не делайте."
+        token = await app.accounts.issue_reset_link(email)
+        # Секрет — во фрагменте после #: он не уходит на сервер в адресе
+        # запроса и не оседает в журналах прокси.
+        # Просили с зеркала — ссылка туда же: основной домен мог не открыться.
+        site = app.settings.web
+        mirror = site.mirror_url and request.headers.get("Origin") == site.mirror_url.rstrip("/")
+        link = f"{(site.mirror_miniapp_url if mirror else site.miniapp_url).rstrip('/')}/#reset={token}"
+        note = "Ссылка действует 30 минут и сработает один раз. Если вы не запрашивали сброс — ничего не делайте."
         if app.mailer.configured:
             await _mail(request, email, "Сброс пароля — Дневник", *letter(
-                "Сброс пароля", "Код для сброса пароля:", code=code,
-                note="Он действует 15 минут. Если вы не запрашивали сброс — ничего не делайте.", site=app.mailer.site))
+                "Сброс пароля", "Чтобы задать новый пароль, откройте ссылку:", link=link,
+                button="Задать новый пароль", note=note, site=app.mailer.site))
         elif has_telegram(account["telegram_id"]) and (bot := request.config_dict.get(BOT)):
             try:
-                await bot.send_message(account["telegram_id"], "🔑 " + text)
+                await bot.send_message(account["telegram_id"], f"🔑 Сброс пароля: {link}\n{note}")
             except Exception as exc:  # noqa: BLE001
-                logger.warning("Код сброса в Telegram не ушёл: %s", exc)
+                logger.warning("Ссылка сброса в Telegram не ушла: %s", exc)
     channel = "mail" if app.mailer.configured else "telegram"
     return web.json_response({"ok": True, "data": {"channel": channel}})
+
+
+@routes.get("/api/account/reset/check")
+async def reset_check(request: web.Request) -> web.Response:
+    """Жива ли ссылка: страница сразу скажет, что она устарела, а не после ввода пароля."""
+    email = await context(request).accounts.reset_link_email(request.query.get("token", ""))
+    if not email:
+        return json_error("Ссылка устарела или уже использована — запросите новую", reason="reset_link")
+    return web.json_response({"ok": True, "data": {"email": email}})
 
 
 @routes.post("/api/account/reset/confirm")
 async def reset_confirm(request: web.Request) -> web.Response:
     body = await _body(request)
-    email = str(body.get("email") or "").strip().lower()
-    code = str(body.get("code") or "")
+    token = str(body.get("token") or "")
     password = str(body.get("password") or "")
     if problem := check_password(password):
         return json_error(problem)
     app = context(request)
-    if not await app.accounts.check_code(email, "reset", code):
-        return json_error("Неверный или устаревший код")
-    account = await app.accounts.by_email(email)
+    email = await app.accounts.reset_link_email(token, take=True)
+    account = await app.accounts.by_email(email) if email else None
     if not account:
-        return json_error("Неверный или устаревший код")
+        return json_error("Ссылка устарела или уже использована — запросите новую", reason="reset_link")
     await app.accounts.set_password(account["telegram_id"], hash_password(password))
-    # Код пришёл на почту — значит, почта настоящая.
+    # Ссылка пришла на почту — значит, почта настоящая.
     await app.accounts.mark_verified(account["telegram_id"])
     # Пароль сбрасывают, когда к аккаунту могли получить доступ: старые
     # ссылки и входы на других устройствах перестают работать.
@@ -495,6 +508,7 @@ async def account_info(request: web.Request) -> web.Response:
         # Открыт дневник ученика, пригласившего на просмотр: только чтение.
         "viewing": {"id": owner.telegram_id, "name": owner.label} if owner else None,
         "email": account["email"] if account else None,
+        "number": await app.accounts.number(user.telegram_id),
         "verified": bool(account and account["email_verified_at"]),
         "needs_verify": await _needs_verify(app, user.telegram_id, account),
         "telegram": has_telegram(user.telegram_id),
