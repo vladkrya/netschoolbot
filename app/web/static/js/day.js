@@ -13,7 +13,7 @@ import { ICONS } from './icons.js';
 import { isNewDesign, saveBells, showBells, showHomeworkStatus, showWeekends } from './appearance.js';
 import { bellsHtml, bellsNoteHtml, loadSchoolBells, weekCardsHtml } from './schedule.js';
 import { canGoBack, topScreen } from './screens.js';
-import { EDGE_PX } from './swipeback.js';
+import { EDGE_PX, swipeBackMode } from './swipeback.js';
 import { isDoneItem, lessonStatus, loadDone, markBox, openHomework, openLesson, realMarks } from './details.js';
 import { closeSheet, openSheet } from './sheet.js';
 import { select, tap } from './haptics.js';
@@ -597,7 +597,7 @@ function bindSwipe() {
     if (event.touches.length !== 1) return;
     const touch = event.touches[0];
     // От самого края — жест «назад», если есть куда, а не листание дней.
-    if (touch.clientX <= EDGE_PX && canGoBack()) return;
+    if (touch.clientX <= EDGE_PX && canGoBack() && swipeBackMode() !== 'off') return;
     gesture = { x: touch.clientX, y: touch.clientY, dx: 0, dy: 0, horizontal: null, armed: false, lastX: touch.clientX, lastT: performance.now(), speed: 0 };
     // Список могут перерисовать посреди жеста (минутный таймер).
     keepTouch(event.target, { move: onMove, end: finish });
@@ -720,7 +720,7 @@ function bindWeekSwipe() {
     if (event.touches.length !== 1) return;
     const touch = event.touches[0];
     // От самого края — жест «назад», если есть куда.
-    if (touch.clientX <= EDGE_PX && canGoBack()) return;
+    if (touch.clientX <= EDGE_PX && canGoBack() && swipeBackMode() !== 'off') return;
     strip.getAnimations().forEach((animation) => animation.cancel());
     const now = performance.now();
     stripTouched = now;

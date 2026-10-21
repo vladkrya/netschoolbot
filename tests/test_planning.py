@@ -145,11 +145,12 @@ class TestPrefs:
             return response.status, await response.json()
 
         status, body = await save({"goals": {"Алгебра": "5"}, "keepSignedIn": False, "whatsNew": "6.15.0",
-                                   "countdown": "hide"})
+                                   "countdown": "hide", "swipeBack": "edge", "swipeRight": "off"})
         assert status == 200
         assert body["data"]["goals"] == {"Алгебра": "5"} and body["data"]["keepSignedIn"] is False
         for bad in ({"goals": {"Алгебра": "6"}}, {"goals": []}, {"keepSignedIn": "yes"},
-                    {"whatsNew": "новое"}, {"countdown": "maybe"}):
+                    {"whatsNew": "новое"}, {"countdown": "maybe"},
+                    {"swipeBack": "never"}, {"swipeRight": True}):
             assert (await save(bad))[0] == 400
 
 

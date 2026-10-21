@@ -29,6 +29,7 @@ import { bindPushToggle, pushHowto, pushRow, syncNowhere, unsubscribePush } from
 import { openExport } from './reports.js';
 import { switchStudent } from './students.js';
 import { countdownShown, saveCountdown } from './countdown.js';
+import { saveSwipeBack, saveSwipeFromRight, swipeBackMode, swipeFromRight } from './swipeback.js';
 import { openWhatsNew, whatsNewRow } from './whatsnew.js';
 import { openSearch } from './search.js';
 import { openChildren } from './children.js';
@@ -465,6 +466,11 @@ function render() {
           `<option value="${value}" ${value === bellShift() ? 'selected' : ''}>${value ? `${value > 0 ? '+' : '−'}${Math.abs(value)} с` : 'точно'}</option>`).join('')}</select></label>
       <label class="switch-row"><span>Отсчёт до каникул и экзаменов<span class="muted small switch-note">карточка на «Дне»</span></span>
         <input type="checkbox" switch class="switch" id="countdownShow" ${countdownShown() ? 'checked' : ''}></label>
+      <label class="switch-row"><span>Свайп назад<span class="muted small switch-note">${SWIPE_NOTES[swipeBackMode()]}</span></span>
+        <select class="field reminder-hour" id="swipeBack">${Object.entries(SWIPE_MODES).map(([value, label]) =>
+          `<option value="${value}" ${value === swipeBackMode() ? 'selected' : ''}>${label}</option>`).join('')}</select></label>
+      <label class="switch-row" id="swipeRightRow" ${swipeBackMode() === 'off' ? 'hidden' : ''}><span>Свайп назад от правого края<span class="muted small switch-note">влево, удобно правой рукой</span></span>
+        <input type="checkbox" switch class="switch" id="swipeRight" ${swipeFromRight() ? 'checked' : ''}></label>
       <label class="switch-row"><span>Показывать выходные без уроков</span>
         <input type="checkbox" switch class="switch" id="weekendsShow" ${showWeekends() ? 'checked' : ''}></label>
       ${isNewDesign() ? '' : `<label class="switch-row"><span>Звонки вместо расписания недели</span>
@@ -514,6 +520,14 @@ function render() {
   loadStudentClass(currentStudent);
   checkReferences();
 }
+
+// Свайп «назад» (swipeback.js): где начинается и подпись под ним.
+const SWIPE_MODES = { anywhere: 'везде', edge: 'от края', off: 'выключен' };
+const SWIPE_NOTES = {
+  anywhere: 'вправо с любого места экрана, на «Дне» — от края',
+  edge: 'только от края экрана',
+  off: 'назад — только кнопкой',
+};
 
 // Что остаётся на каждом уровне «Анимаций» — подпись под ползунком.
 const MOTION_NOTES = {
@@ -617,6 +631,17 @@ function bindDrawer() {
   $('bellShift').addEventListener('change', (event) => {
     select();
     setPref('bellShift', event.target.value);
+  });
+  $('swipeBack').addEventListener('change', (event) => {
+    select();
+    const mode = event.target.value;
+    saveSwipeBack(mode);
+    event.target.closest('.switch-row').querySelector('.switch-note').textContent = SWIPE_NOTES[mode];
+    $('swipeRightRow').hidden = mode === 'off';
+  });
+  $('swipeRight').addEventListener('change', (event) => {
+    select();
+    saveSwipeFromRight(event.target.checked);
   });
   $('countdownShow').addEventListener('change', (event) => {
     select();
