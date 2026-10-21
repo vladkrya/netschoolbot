@@ -518,6 +518,58 @@ class TestSubjectStats:
             assert response.status == 400
 
 
+class TestClassAverages:
+    """Средний балл класса по всем предметам — для карточек «Итогов»."""
+
+    async def test_service_collects_every_subject(self, service, holder, users):
+        user = await users.save(mobile_user())
+        await service.fetch_class_averages(user, "q2")
+        holder["mobile"].subjects, holder["mobile"].terms_list = SUBJECTS, TERMS
+        holder["mobile"].performance = PERFORMANCE
+
+        averages = await service.fetch_class_averages(user, "q2")
+
+        assert averages == {"Алгебра": 3.87, "История": 3.87, "Физкультура": 3.87}
+        assert holder["mobile"].calls.count("terms") <= 2
+        assert "performance:12:72" in holder["mobile"].calls
+
+    async def test_unknown_quarter_or_failure_gives_none(self, service, holder, users):
+        user = await users.save(mobile_user())
+        await service.fetch_class_averages(user, "q2")
+        holder["mobile"].subjects, holder["mobile"].terms_list = SUBJECTS, TERMS
+        holder["mobile"].performance = PERFORMANCE
+        assert await service.fetch_class_averages(user, "q4") is None
+
+        holder["mobile"].performance_error = NetSchoolError(Reason.UNKNOWN, "сбой")
+        assert await service.fetch_class_averages(user, "q2") == {}
+
+    async def test_endpoint(self, client, app_context, users):
+        from tests.test_web import BASE
+
+        user = await users.save(mobile_user())
+        token = await app_context.miniapp.issue_token(user.telegram_id)
+        params = {"token": token, "quarter": "q2"}
+        assert (await (await client.get(f"{BASE}/api/class-averages", params=params)).json())["data"] == {
+            "available": False
+        }
+
+        app_context.diary.class_averages = {"Алгебра": 3.87}
+        data = (await (await client.get(f"{BASE}/api/class-averages", params=params)).json())["data"]
+        assert data == {"available": True, "averages": {"Алгебра": 3.87}}
+
+        bad = await client.get(f"{BASE}/api/class-averages", params={"token": token, "quarter": "q9"})
+        assert bad.status == 400
+
+    async def test_web_mode_never_asks_the_school(self, client, app_context, users):
+        from tests.test_web import BASE
+
+        user = await users.save(make_user())
+        token = await app_context.miniapp.issue_token(user.telegram_id)
+        response = await client.get(f"{BASE}/api/class-averages", params={"token": token, "quarter": "q1"})
+        assert (await response.json())["data"] == {"available": False}
+        assert app_context.diary.stats_calls == []
+
+
 class TestAbsences:
     """Отметки посещаемости: сводка, уведомление один раз, только мобильный режим."""
 

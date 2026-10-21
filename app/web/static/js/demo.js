@@ -337,6 +337,17 @@ export async function demoApi(path, options = {}) {
     return ok({ available: true, class_average: Math.max(2, Math.round((mine - shift) * 100) / 100) });
   }
 
+  if (route === '/api/class-averages') {
+    const { data } = await demoApi('/api/marks');
+    const averages = {};
+    for (const { subject, average } of data.subjects) {
+      if (average == null) continue;
+      const shift = (demoKey(subject).charCodeAt(0) % 5) / 10 + 0.15;
+      averages[subject] = Math.max(2, Math.round((average - shift) * 100) / 100);
+    }
+    return ok({ available: true, averages });
+  }
+
   // ИИ-помощник в демо отвечает заготовками по демо-оценкам и расписанию.
   if (route === '/api/assistant') return demoAssistant(body.messages || []);
 

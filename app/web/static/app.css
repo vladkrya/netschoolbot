@@ -1429,8 +1429,14 @@ html.repin body::after, html.repin .bottom-nav, html.repin .fab { position: abso
 .whatif-item { position: relative; display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 11px; color: var(--text2); }
 .whatif-item .mark-box { border-style: dashed; }
 .whatif-item .x { position: absolute; top: -6px; right: -6px; width: 18px; height: 18px; border-radius: 50%; background: var(--text2); color: var(--card); font-size: 12px; line-height: 18px; text-align: center; }
+/* «Добавить / Убрать» — переключатель, как у периодов в итогах. */
+.whatif-mode { display: flex; margin: 8px 0 12px; padding: 3px; border-radius: 999px; background: color-mix(in srgb, var(--text2) 12%, transparent); }
+.whatif-mode[hidden] { display: none; }
+.whatif-mode .seg-lens { display: none; }
+.whatif-mode button { flex: 1; padding: 6px 0; border-radius: 999px; font-size: 13px; font-weight: 600; color: var(--text2); transition: color .25s, background .25s; }
+.whatif-mode button.on { background: var(--card); color: var(--primary); box-shadow: 0 1px 4px rgba(16, 24, 40, .12); }
+.whatif-hint { margin-bottom: 8px; }
 /* Настоящие оценки, которые можно убрать из расчёта. */
-.whatif-pick { display: block; margin: 0 0 10px; font-size: 13px; color: var(--primary); }
 .whatif-real { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
 .whatif-item.real .mark-box { border-style: solid; }
 .whatif-item.off { opacity: .45; }

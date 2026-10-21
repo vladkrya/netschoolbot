@@ -602,6 +602,9 @@
 /* Переключатель «Итоговые / Все» — маленькая капсула с линзой. */
 :root[data-design="new"] .th-head > div:first-child { flex: 1; min-width: 0; }
 :root[data-design="new"] .seg-glass.th-mode { flex: none; width: 164px; padding: 3px; background: color-mix(in srgb, var(--text2) 12%, transparent); }
+:root[data-design="new"] .seg-glass.whatif-mode { padding: 3px; }
+:root[data-design="new"] .whatif-mode .seg-lens { display: block; top: 3px; bottom: 3px; left: 3px; width: calc((100% - 6px) / 2); }
+:root[data-design="new"] .whatif-mode button.on { background: none; box-shadow: none; }
 :root[data-design="new"] .th-mode .seg-lens { top: 3px; bottom: 3px; left: 3px; width: calc((100% - 6px) / 2); }
 :root[data-design="new"] .th-mode button { padding: 6px 0; font-size: 13px; }
 :root[data-design="new"] .th-bar { display: flex; gap: 3px; height: 10px; margin-bottom: 10px; }
