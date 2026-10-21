@@ -1612,6 +1612,8 @@ MAX_PINS = 40
 # Свои цвета акцента, сохранённые рядом с готовыми.
 MAX_SAVED_ACCENTS = 8
 DESIGNS = ("classic", "new")
+# Сдвиг звонка для таймера урока, с (BELL_SHIFTS в timer.js).
+BELL_SHIFTS = tuple(str(value) for value in range(-5, 11))
 ACCENT_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 
 
@@ -1892,6 +1894,11 @@ async def save_prefs(request: web.Request) -> web.Response:
         if body["retro"] not in ("on", "off"):
             return json_error("Некорректная настройка ретро-сайта")
         changes["retro"] = body["retro"]
+    if "bellShift" in body:
+        # Сдвиг звонка для таймера урока, секунды строкой: -5…+10.
+        if body["bellShift"] not in BELL_SHIFTS:
+            return json_error("Некорректный сдвиг звонка")
+        changes["bellShift"] = body["bellShift"]
     if "confetti" in body:
         if body["confetti"] not in ("show", "hide"):
             return json_error("Некорректная настройка конфетти")

@@ -296,13 +296,32 @@ class TestPages:
         # Область видимости — префикс приложения, а не корень домена.
         assert response.headers["Service-Worker-Allowed"] == f"{BASE}/"
 
-    async def test_server_time_without_login(self, client):
+    async def test_server_time_without_login(self, client, monkeypatch):
+        from app.web import clock
+        monkeypatch.setattr(clock, "_refresh", lambda: None)
+        monkeypatch.setattr(clock, "_offset", None)
+        monkeypatch.setattr(clock, "_checked_at", 0.0)
         before = time.time()
         response = await client.get(f"{BASE}/time")
         assert response.status == 200
         assert response.headers["Cache-Control"] == "no-store"
         # Таймер урока сверяет по ним часы телефона.
-        assert before <= (await response.json())["now"] <= time.time()
+        payload = await response.json()
+        assert before <= payload["now"] <= time.time()
+        assert payload["synced"] is False
+
+    async def test_server_time_corrected_by_ntp(self, client, monkeypatch):
+        # Часы сервера спешили на 3 с — отдаём точное время.
+        from app.web import clock
+        monkeypatch.setattr(clock, "_refresh", lambda: -3.0)
+        monkeypatch.setattr(clock, "_offset", None)
+        monkeypatch.setattr(clock, "_checked_at", 0.0)
+        await client.get(f"{BASE}/time")
+        await clock._task
+        before = time.time()
+        payload = await (await client.get(f"{BASE}/time")).json()
+        assert payload["synced"] is True
+        assert before - 3.0 <= payload["now"] <= time.time() - 3.0
 
     async def test_health(self, client):
         response = await client.get("/health")
@@ -741,6 +760,14 @@ class TestNewFeatures:
         assert (await response.json())["ok"] is False
         response = await client.post(url, params={"token": token}, json={"motion": "40"})
         assert (await response.json())["ok"] is False
+
+    async def test_bell_shift_pref_is_validated(self, client, token):
+        url = f"{BASE}/api/prefs"
+        response = await client.post(url, params={"token": token}, json={"bellShift": "3"})
+        assert (await response.json())["data"]["bellShift"] == "3"
+        for bad in (3, "11", "-6", "1.5"):
+            response = await client.post(url, params={"token": token}, json={"bellShift": bad})
+            assert (await response.json())["ok"] is False
 
     async def test_confetti_pref_is_validated(self, client, token):
         url = f"{BASE}/api/prefs"
