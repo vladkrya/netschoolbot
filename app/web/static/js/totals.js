@@ -929,8 +929,8 @@ function bindWhatIf(card, marks, id, subjectName) {
           const off = plan.removed.includes(key);
           return `<button class="whatif-item real ${off ? 'off' : ''}" data-toggle="${esc(key)}" aria-pressed="${off}"
               aria-label="${off ? 'Вернуть' : 'Убрать'} ${esc(mark.mark)} за ${esc(shortDate(mark.date))}">
-            <span class="mark-box mark m${esc(mark.mark)}">${esc(mark.mark)}</span>
-            <span>${esc(shortDate(mark.date))}${Number(mark.weight) > 1 ? ` · ${formatWeight(Number(mark.weight))}` : ''}</span>
+            ${markBox(mark.mark, '', mark.weight || 1)}
+            <span>${esc(shortDate(mark.date))}${Number(mark.weight) > 1 ? `<span class="whatif-w"> · ${formatWeight(Number(mark.weight))}</span>` : ''}</span>
             ${off ? '<span class="x">↺</span>' : ''}
           </button>`;
         })
