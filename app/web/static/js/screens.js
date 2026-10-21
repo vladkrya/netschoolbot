@@ -88,9 +88,46 @@ export function canGoBack() {
 }
 
 export function syncBackButton() {
+  syncHistory();
   if (!tg?.BackButton) return;
   if (canGoBack()) tg.BackButton.show();
   else tg.BackButton.hide();
+}
+
+/* Системное «назад» Android вне Telegram (установленное приложение, браузер)
+ * листает историю браузера, а экраны в ней не записаны — и приложение
+ * закрывалось. Пока есть куда возвращаться, держим в истории одну служебную
+ * запись: «назад» снимает её, и мы делаем то же, что кнопка «Назад». В
+ * Telegram «назад» ведёт его кнопка, на iPhone — свой свайп, там не трогаем. */
+const historyBack = !tg?.initData && /Android/i.test(navigator.userAgent);
+// Служебная запись сейчас верхняя в истории.
+let guarded = false;
+// Сами сняли запись (history.back) и ждём её popstate — это не жест.
+let unguarding = false;
+
+function syncHistory() {
+  if (!historyBack || unguarding) return;
+  const want = canGoBack();
+  if (want && !guarded) {
+    history.pushState(history.state, '');
+    guarded = true;
+  } else if (!want && guarded) {
+    guarded = false;
+    unguarding = true;
+    history.back();
+  }
+}
+
+if (historyBack) {
+  window.addEventListener('popstate', () => {
+    if (unguarding) {
+      unguarding = false;
+      syncHistory();
+      return;
+    }
+    guarded = false;
+    if (canGoBack()) handleBack();
+  });
 }
 
 export function handleBack() {
