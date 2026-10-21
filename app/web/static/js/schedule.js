@@ -134,7 +134,7 @@ function render(monday) {
           ? `<button class="sched-toggle" data-toggle="${iso}" aria-expanded="${open}" aria-controls="sched-${iso}">${lessons.length} ${lessonsWord(lessons.length)} <span class="sched-chevron" aria-hidden="true">▾</span></button>`
           : '<div class="muted small sched-toggle">Уроков нет</div>'}
         ${lessons.length ? `<div id="sched-${iso}" class="sched-collapse${open ? ' open' : ''}"${open ? '' : ' inert'}><div class="sched-collapse-inner"><div class="sched-list">
-            ${lessons.map((l) => `<div class="sched-lesson"><span class="lc-num">${esc(lessonNo(l))}</span><span>${esc(l.subject)}${l.is_elective ? '<span class="elective-badge">Факультатив</span>' : ''}</span></div>`).join('')}
+            ${lessons.map((l) => `<div class="sched-lesson"><span class="lc-num">${esc(lessonNo(l))}</span><span>${esc(l.subject)}${l.is_elective ? '<span class="elective-badge">Внеурочка</span>' : ''}</span></div>`).join('')}
             <button class="btn outline" data-goto="${iso}">Перейти ко дню</button>
           </div></div></div>` : ''}
       </div>`);
@@ -202,7 +202,7 @@ function weekCard(iso, index, lessons, range, isToday) {
       </div>
       ${lessons.length ? `<div class="sched-list">${lessons.map((l) => `<div class="sched-lesson">
           <span class="lc-num">${esc(lessonNo(l))}</span>
-          <span class="sl-subject">${esc(l.subject)}${l.is_elective ? '<span class="elective-badge">Факультатив</span>' : ''}</span>
+          <span class="sl-subject">${esc(l.subject)}${l.is_elective ? '<span class="elective-badge">Внеурочка</span>' : ''}</span>
           <span class="sl-time">${esc(l.start || '')}</span>
         </div>`).join('')}</div>` : '<div class="muted small sched-empty">Уроков нет</div>'}
     </button>`;
@@ -252,7 +252,7 @@ function bellGroups(monday) {
     [number, [...counts].sort((a, b) => b[1] - a[1])[0][0]]));
 
   const groups = new Map();
-  // Один урок не в своё время (факультатив после уроков) не уводит день
+  // Один урок не в своё время (внеурочка после уроков) не уводит день
   // в отдельную карточку: он идёт строкой под общими звонками с пометкой дня.
   const extras = new Map();
   for (const day of days) {

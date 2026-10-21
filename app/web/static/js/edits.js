@@ -38,6 +38,12 @@ function minutes(text) {
   return Number.isFinite(hours) && Number.isFinite(mins) ? hours * 60 + mins : null;
 }
 
+/** Совпадает ли время правки с этим: «8:30» и «08:30» — одно и то же. */
+function sameTime(times, start, end) {
+  const from = minutes(start);
+  return from != null && from === minutes(times.start) && minutes(end) === minutes(times.end);
+}
+
 function newId() {
   return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 }
@@ -78,10 +84,19 @@ export function applyEdits(day, edits = lessonEdits()) {
       hidden.push({ subject: lesson.subject, number: lesson.number, edit });
     } else if (edit.kind === 'time') {
       lesson.schoolTime ??= lesson.time || [lesson.start, lesson.end].filter(Boolean).join('–');
+      lesson.schoolStart ??= lesson.start;
+      lesson.schoolEnd ??= lesson.end;
       lesson.start = edit.start;
       lesson.end = edit.end;
-      lesson.time = `${edit.start}–${edit.end}`;
-      lesson.editedBy = edit;
+      if (sameTime(edit, lesson.schoolStart, lesson.schoolEnd)) {
+        // Время как в дневнике — не своё: сохранили, ничего не поменяв.
+        lesson.time = lesson.schoolTime;
+        delete lesson.schoolTime;
+        delete lesson.editedBy;
+      } else {
+        lesson.time = `${edit.start}–${edit.end}`;
+        lesson.editedBy = edit;
+      }
     }
   }
   // По времени начала; урок без времени остаётся на своём месте в конце.
@@ -184,7 +199,9 @@ export function openLessonEditor(lesson, iso, onDone) {
     let edits = without(lessonEdits(), edit);
     // Сменили повтор — прежняя правка другого повтора больше не нужна.
     if (current) edits = edits.filter((item) => item.id !== current.id);
-    saveEdits([...edits, edit]);
+    // Оставили время как в дневнике — своё время не нужно вовсе.
+    const school = current ? [lesson.schoolStart, lesson.schoolEnd] : [lesson.start, lesson.end];
+    saveEdits(sameTime(times, ...school) ? edits : [...edits, edit]);
     done();
   });
   body.querySelector('.edit-reset')?.addEventListener('click', () => {

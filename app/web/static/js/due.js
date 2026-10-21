@@ -14,7 +14,7 @@ import { tap } from './haptics.js';
 // Задания старше этого уже никто не сдаёт — в списке только свежие.
 const HOMEWORK_DAYS = 14;
 
-function sections(marksData, past) {
+function sections(marksData, past, done) {
   const today = isoToday();
   const current = marksData.current_quarter;
   const debts = [];
@@ -26,8 +26,10 @@ function sections(marksData, past) {
     }
   }
   const since = addDays(today, -HOMEWORK_DAYS);
-  const homework = (past?.items || []).filter((item) => item.date >= since && item.date < today
-    && !item.classwork && !isAutoDone(item) && item.key && !isDoneItem(item));
+  // Галочки «сделано» ставят не все: без единой отметки неотмеченное — не долг,
+  // иначе кнопка висела бы у всех всегда.
+  const homework = done?.size ? (past?.items || []).filter((item) => item.date >= since && item.date < today
+    && !item.classwork && !isAutoDone(item) && item.key && !isDoneItem(item)) : [];
   const byDate = (a, b) => (b.mark?.date || b.date).localeCompare(a.mark?.date || a.date);
   return { debts: debts.sort(byDate), twos: twos.sort(byDate), homework: homework.sort(byDate) };
 }
@@ -50,26 +52,45 @@ function homeworkRow(item, index) {
     </button>`;
 }
 
+/** Всё, что висит; запросы те же, что у вкладок, и отвечают из кэша. */
+export async function loadDue() {
+  const [marks, homework] = await Promise.all([
+    state.totals && !state.totals.archived ? { data: state.totals } : api('/api/marks'),
+    state.homeworkPast ? { data: state.homeworkPast } : api('/api/homework?past=1'),
+    loadDone(),
+  ]);
+  const found = sections(marks.data, homework.data, state.hwDone);
+  state.due = found;
+  return found;
+}
+
+const dueTotal = (found) => found.debts.length + found.twos.length + found.homework.length;
+
+/** Отдельная кнопка над заданиями — только когда что-то висит. */
+export function dueButtonHtml(found = state.due) {
+  if (!found || !dueTotal(found)) return '';
+  const parts = [
+    found.debts.length && `${found.debts.length} ${plural(found.debts.length, 'точка', 'точки', 'точек')}`,
+    found.twos.length && `${found.twos.length} ${plural(found.twos.length, 'двойка', 'двойки', 'двоек')}`,
+    found.homework.length && `${found.homework.length} ${plural(found.homework.length, 'задание', 'задания', 'заданий')}`,
+  ].filter(Boolean);
+  return `<button class="due-button" data-due><span class="db-ico">📌</span>
+      <span class="db-main"><b>Должен сдать</b><span class="muted small">${esc(parts.join(', '))}</span></span>
+      <span class="db-arrow" aria-hidden="true">›</span></button>`;
+}
+
 export async function openDue() {
   tap();
   const body = pushScreen('Должен сдать');
   body.innerHTML = skeleton(4);
-  let marksData;
-  let past;
+  let found;
   try {
-    const [marks, homework] = await Promise.all([
-      state.totals && !state.totals.archived ? { data: state.totals } : api('/api/marks'),
-      state.homeworkPast ? { data: state.homeworkPast } : api('/api/homework?past=1'),
-      loadDone(),
-    ]);
-    marksData = marks.data;
-    past = homework.data;
+    found = await loadDue();
   } catch (error) {
     body.innerHTML = errorCard(error);
     return;
   }
-  const found = sections(marksData, past);
-  const total = found.debts.length + found.twos.length + found.homework.length;
+  const total = dueTotal(found);
   if (!total) {
     body.innerHTML = '<div class="empty big">Долгов нет 🎉</div>';
     return;

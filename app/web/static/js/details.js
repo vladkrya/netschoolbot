@@ -220,7 +220,7 @@ export function openLesson(lesson, iso) {
     <div class="card lesson-head">
       <div class="lesson-title"><span class="lc-num">${esc(lessonNo(lesson))}</span>
         <button class="link subject-link" data-subject-results>${esc(lesson.subject)}</button></div>
-      ${lesson.is_elective ? '<div class="lc-badges"><span class="elective-badge">Факультатив</span></div>' : ''}
+      ${lesson.is_elective ? '<div class="lc-badges"><span class="elective-badge">Внеурочка</span></div>' : ''}
       <div class="lc-bottom"><span>${esc(timeRange(lesson))}</span><span data-lesson-status>${esc(status)}</span></div>
       ${lesson.schoolTime ? `<div class="muted small">В дневнике: ${esc(lesson.schoolTime)}</div>` : ''}
       ${distanceButton(lesson)}
