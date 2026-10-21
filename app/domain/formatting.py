@@ -53,8 +53,11 @@ def files_label(count: int) -> str:
 
 
 def mark_text(mark: str) -> str:
-    """Оценка для текста уведомления: точку подписываем, иначе её не понять."""
-    return f"{DUTY_MARK} (долг, считается как 2)" if mark == DUTY_MARK else esc(mark)
+    """Оценка для текста уведомления: точку подписываем, иначе её не понять.
+
+    Цвета у текста в Telegram нет, поэтому красный — кружком 🔴.
+    """
+    return "🔴 точка (долг, считается как 2)" if mark == DUTY_MARK else esc(mark)
 
 
 def mark_event(event: MarkEvent) -> str:
