@@ -1782,6 +1782,29 @@ class CacheRepository:
                 (json.dumps(payload, ensure_ascii=False), telegram_id),
             )
 
+    async def drop_mail(self, telegram_id: int, message_id: int) -> None:
+        """Убрать удалённое письмо из сохранённого списка, не продлевая ему свежесть."""
+        cached = await self.get(telegram_id, "mail")
+        if cached is None:
+            return
+        payload, _ = cached
+        messages = payload.get("messages") or []
+        kept = [message for message in messages if str(message.get("id")) != str(message_id)]
+        if len(kept) != len(messages):
+            payload["messages"] = kept
+            await self._db.execute(
+                "UPDATE cache_entries SET payload = ? WHERE telegram_id = ? AND section = 'mail'",
+                (json.dumps(payload, ensure_ascii=False), telegram_id),
+            )
+
+    async def expire(self, telegram_id: int, section: str) -> None:
+        """Считать сохранённое устаревшим: следующий запрос сходит на сервер,
+        а при его сбое данные всё ещё будут."""
+        await self._db.execute(
+            "UPDATE cache_entries SET updated_at = '2000-01-01 00:00:00' WHERE telegram_id = ? AND section = ?",
+            (telegram_id, section),
+        )
+
     async def clear(self, telegram_id: int) -> None:
         await self._db.execute("DELETE FROM cache_entries WHERE telegram_id = ?", (telegram_id,))
 

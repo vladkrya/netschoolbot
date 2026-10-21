@@ -379,12 +379,13 @@ export async function demoApi(path, options = {}) {
   }
 
   if (route === '/api/mail') {
-    const messages = MAIL.map((m) => {
+    const inDeleted = url.searchParams.get('folder') === 'Deleted';
+    const messages = MAIL.filter((m) => Boolean(m.deleted) === inDeleted).map((m) => {
       const sent = new Date();
       sent.setDate(sent.getDate() - m.days);
       return { id: m.id, subject: m.subject, author: m.author, sent: iso(sent), read: m.read };
     });
-    return ok({ messages });
+    return ok({ messages, page: 1, pages: 1 });
   }
 
   if (route === '/api/mail/recipients') {
@@ -406,6 +407,13 @@ export async function demoApi(path, options = {}) {
     const ids = (body?.ids || []).map(String);
     MAIL.forEach((m) => { if (ids.includes(String(m.id))) m.read = true; });
     return ok({ read: body?.ids || [] });
+  }
+
+  const moveMatch = route.match(/^\/api\/mail\/(\d+)(\/restore)?$/);
+  if (moveMatch && (options.method === 'DELETE' || moveMatch[2])) {
+    const message = MAIL.find((m) => String(m.id) === moveMatch[1]);
+    if (message) message.deleted = !moveMatch[2];
+    return { ok: true };
   }
 
   const mailMatch = route.match(/^\/api\/mail\/(\d+)$/);

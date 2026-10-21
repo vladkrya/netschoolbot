@@ -20,10 +20,33 @@ function avatarColor(name) {
 
 // Новый дизайн: во вкладке два раздела — письма и объявления школы.
 let mode = 'mail';
+// Папка писем: входящие или «Удалённые». Входящие лежат в state.mail,
+// удалённые — здесь же, рядом.
+let folder = 'Inbox';
+let deleted = null;
 // Поиск и фильтры писем: всё на месте, по уже загруженному списку.
 let query = '';
 let filter = 'all'; // all | unread | read
 let newestFirst = true;
+
+/** Загруженный список открытой папки: { messages, page, pages }. */
+function current() {
+  return folder === 'Deleted' ? deleted : state.mail;
+}
+
+function setCurrent(data) {
+  if (folder === 'Deleted') deleted = data;
+  else state.mail = data;
+}
+
+function folderUrl(page, force = false) {
+  const params = new URLSearchParams();
+  if (folder !== 'Inbox') params.set('folder', folder);
+  if (page > 1) params.set('page', String(page));
+  if (force) params.set('refresh', '1');
+  const query = params.toString();
+  return `/api/mail${query ? `?${query}` : ''}`;
+}
 
 export async function loadMail(force = false) {
   const container = $('mailContent');
@@ -40,14 +63,18 @@ export async function loadMail(force = false) {
     await renderChats(container, force);
     return;
   }
-  if (!state.mail || force) {
+  if (!current() || force) {
+    const wanted = folder;
     showLoading(container, skeleton());
     try {
-      const { data } = await api(`/api/mail${force ? '?refresh=1' : ''}`, {
-        onFresh: (fresh) => { state.mail = fresh.data; },
+      const { data } = await api(folderUrl(1, force), {
+        onFresh: (fresh) => { if (wanted === 'Inbox') state.mail = { ...fresh.data, page: 1 }; },
       });
-      state.mail = data;
+      if (wanted !== folder) return;
+      // Обновление начинает список заново: старые страницы догрузятся снова.
+      setCurrent({ ...data, page: 1 });
     } catch (error) {
+      if (wanted !== folder) return;
       showFailure(container, error, errorCard(error, 'mailRetry'));
       $('mailRetry')?.addEventListener('click', () => loadMail(true));
       return;
@@ -56,38 +83,95 @@ export async function loadMail(force = false) {
   render();
 }
 
+/* Бесконечный список: когда низ списка показался, догружаем следующую
+ * страницу старых писем. */
+let moreObserver = null;
+let loadingMore = false;
+
+async function loadMore() {
+  const list = current();
+  if (loadingMore || !list || (list.page || 1) >= (list.pages || 1)) return;
+  const wanted = folder;
+  loadingMore = true;
+  try {
+    const { data } = await api(folderUrl((list.page || 1) + 1));
+    if (wanted !== folder || current() !== list) return;
+    const known = new Set(list.messages.map((message) => String(message.id)));
+    const added = (data.messages || []).filter((message) => !known.has(String(message.id)));
+    list.messages.push(...added);
+    list.page = data.page;
+    list.pages = data.pages;
+    // Догруженные снизу письма не «въезжают» сверху, как новые.
+    added.forEach((message) => shownIds?.add(String(message.id)));
+    render();
+  } catch (error) {
+    banner(error.message, true);
+    const more = $('mailMore');
+    if (more) more.innerHTML = '<button class="btn secondary" id="mailMoreRetry">Загрузить ещё</button>';
+    $('mailMoreRetry')?.addEventListener('click', () => {
+      more.innerHTML = skeleton(2);
+      loadMore();
+    });
+    return;
+  } finally {
+    loadingMore = false;
+  }
+}
+
+function watchMore() {
+  moreObserver?.disconnect();
+  const more = $('mailMore');
+  if (!more || !('IntersectionObserver' in window)) return;
+  // Начинаем грузить чуть раньше, чем низ доедет до экрана.
+  moreObserver = new IntersectionObserver((entries) => {
+    if (entries.some((entry) => entry.isIntersecting)) loadMore();
+  }, { rootMargin: '0px 0px 400px 0px' });
+  moreObserver.observe(more);
+}
+
 // Письма, которые уже были в списке: новое въезжает сверху, остальные
 // плавно сдвигаются вниз. При первом показе ничего не въезжает.
 let shownIds = null;
 
 function render() {
-  const messages = state.mail.messages || [];
+  const list = current();
+  const messages = list.messages || [];
+  const inbox = folder === 'Inbox';
   // Непрочитанные — числом у значка «Почты» в нижней панели.
-  setMailBadge('mail', messages.filter((message) => message.read === false).length);
+  if (inbox) setMailBadge('mail', messages.filter((message) => message.read === false).length);
   const container = $('mailContent');
   // Чаты рисуются в этом же списке и могли оставить «тихий» режим.
   container.classList.remove('quiet');
   $('mailFilters').querySelectorAll('[data-filter]').forEach((chip) =>
-    chip.classList.toggle('active', chip.dataset.filter === filter));
+    chip.classList.toggle('active', inbox ? chip.dataset.filter === filter : chip.dataset.filter === 'deleted'));
   $('mailSort').textContent = newestFirst ? '↓ Новые' : '↑ Старые';
-  $('mailReadAll').hidden = !messages.some((message) => message.read === false);
-  if (!messages.length) {
-    container.innerHTML = '<div class="empty big">Писем нет</div>';
+  $('mailReadAll').hidden = !inbox || !messages.some((message) => message.read === false);
+  const title = document.querySelector('.subbar[data-for="mail"] .segment-title');
+  if (title) title.textContent = inbox ? 'Входящие' : 'Удалённые';
+  moreObserver?.disconnect();
+  const hasMore = (list.page || 1) < (list.pages || 1);
+  if (!messages.length && !hasMore) {
+    container.innerHTML = `<div class="empty big">${inbox ? 'Писем нет' : 'Удалённых писем нет'}</div>`;
     return;
   }
   const visible = visibleMessages(messages);
+  const more = hasMore ? `<div class="mail-more" id="mailMore">${skeleton(2)}</div>` : '';
   if (!visible.length) {
     const empty = query.trim() ? 'Ничего не найдено'
+      : !inbox ? 'Удалённых писем нет'
       : filter === 'unread' ? 'Непрочитанных писем нет' : 'Прочитанных писем нет';
-    container.innerHTML = `<div class="empty big">${empty}</div>`;
+    // Ещё не всё загружено — ищем дальше по старым письмам.
+    container.innerHTML = hasMore ? more : `<div class="empty big">${empty}</div>`;
+    watchMore();
     return;
   }
   const before = new Map([...container.querySelectorAll('[data-mail]')]
     .map((element) => [element.dataset.mail, element.getBoundingClientRect().top]));
-  container.innerHTML = visible.map(card).join('');
+  container.innerHTML = visible.map(card).join('') + more;
   container.querySelectorAll('[data-mail]').forEach((element) =>
     element.addEventListener('click', () => openMessage(element.dataset.mail))
   );
+  watchMore();
   const still = stillMotion();
   if (shownIds && !still) {
     let arrived = 0;
@@ -109,6 +193,7 @@ function render() {
  *  перерисовки. Под фильтром «Непрочитанные» оно уходит — там перерисовка. */
 function markRead(message) {
   message.read = true;
+  if (folder !== 'Inbox') return;
   const element = [...$('mailContent').querySelectorAll('[data-mail]')].find((item) => item.dataset.mail === String(message.id));
   if (!element || filter === 'unread' || query.trim()) {
     render();
@@ -151,8 +236,9 @@ async function readAll() {
 
 function visibleMessages(messages) {
   const needle = query.trim().toLowerCase();
+  const byRead = folder === 'Inbox' ? filter : 'all';
   const list = messages.filter((message) =>
-    (filter === 'all' || (filter === 'unread' ? message.read === false : message.read !== false))
+    (byRead === 'all' || (byRead === 'unread' ? message.read === false : message.read !== false))
     && (!needle || `${message.subject || ''} ${message.author || ''}`.toLowerCase().includes(needle)));
   // Сервер отдаёт новые сверху; сортируем сами, чтобы не зависеть от этого.
   const time = (message) => Date.parse(message.sent || '') || 0;
@@ -171,7 +257,49 @@ function card(message) {
     </div>`;
 }
 
+/** Письмо ушло из открытой папки: карточка схлопывается, список не мигает. */
+function dropFromList(id) {
+  const list = current();
+  if (list) list.messages = list.messages.filter((item) => String(item.id) !== String(id));
+  const element = [...$('mailContent').querySelectorAll('[data-mail]')].find((item) => item.dataset.mail === String(id));
+  if (!element || stillMotion()) {
+    if (list) render();
+    return;
+  }
+  const height = element.offsetHeight;
+  element.animate([
+    { opacity: 1, transform: 'none', height: `${height}px` },
+    { opacity: 0, transform: 'translateX(-30%)', height: `${height}px`, offset: 0.6 },
+    { opacity: 0, transform: 'translateX(-30%)', height: '0px', marginTop: '0px', marginBottom: '0px', paddingTop: '0px', paddingBottom: '0px' },
+  ], { duration: 420, easing: 'cubic-bezier(.2, .8, .3, 1)' }).finished.then(() => { if (list) render(); }, () => {});
+}
+
+/** Удалить письмо или вернуть его из «Удалённых». */
+async function moveMessage(id, restore, button) {
+  if (!restore && !window.confirm('Переместить письмо в «Удалённые»? Вернуть его можно оттуда же.')) return;
+  select();
+  button.disabled = true;
+  button.classList.add('loading');
+  try {
+    await api(`/api/mail/${encodeURIComponent(id)}${restore ? '/restore' : ''}`, { method: restore ? 'POST' : 'DELETE' });
+  } catch (error) {
+    notify('error');
+    banner(error.message, true);
+    button.disabled = false;
+    button.classList.remove('loading');
+    return;
+  }
+  notify('success');
+  popScreen();
+  dropFromList(id);
+  // Другая папка изменилась тоже — перечитаем её, когда откроют.
+  if (restore) state.mail = null;
+  else deleted = null;
+  banner(restore ? 'Письмо вернулось во входящие' : 'Письмо перемещено в «Удалённые»', false, 2500);
+}
+
 export async function openMessage(id) {
+  const inDeleted = folder === 'Deleted';
   const body = pushScreen('Письмо');
   body.innerHTML = skeleton(4);
   try {
@@ -185,9 +313,11 @@ export async function openMessage(id) {
         </div>
         <div class="detail-text mail-message-text">${escRich(data.text) || '<span class="muted">Пустое письмо</span>'}</div>
         ${attachmentsHtml(data.attachments)}
+        <button class="btn outline mail-move${inDeleted ? '' : ' danger'}" id="mailMove" data-online>${inDeleted ? '↩ Вернуть во входящие' : '🗑 Удалить'}</button>
       </div>`;
+    $('mailMove').addEventListener('click', (event) => moveMessage(id, inDeleted, event.currentTarget));
     // Письмо прочитано — отметка в списке без перезагрузки.
-    const message = (state.mail?.messages || []).find((item) => String(item.id) === String(id));
+    const message = (current()?.messages || []).find((item) => String(item.id) === String(id));
     if (message && !message.read) markRead(message);
   } catch (error) {
     body.innerHTML = errorCard(error);
@@ -262,20 +392,26 @@ export function initMail() {
 
   $('mailSearch').addEventListener('input', (event) => {
     query = event.target.value;
-    if (state.mail) render();
+    if (current()) render();
   });
   $('mailReadAll').addEventListener('click', readAll);
   $('mailFilters').addEventListener('click', (event) => {
     const chip = event.target.closest('[data-filter]');
-    if (!chip || chip.dataset.filter === filter) return;
+    if (!chip) return;
+    // «Удалённые» — другая папка, остальные чипы — фильтры входящих.
+    const wanted = chip.dataset.filter === 'deleted' ? 'Deleted' : 'Inbox';
+    if (wanted === folder && (wanted === 'Deleted' || chip.dataset.filter === filter)) return;
     select();
-    filter = chip.dataset.filter;
-    if (state.mail) render();
+    if (wanted === 'Inbox') filter = chip.dataset.filter;
+    if (wanted !== folder) {
+      folder = wanted;
+      loadMail();
+    } else if (current()) render();
   });
   $('mailSort').addEventListener('click', () => {
     select();
     newestFirst = !newestFirst;
-    if (state.mail) render();
+    if (current()) render();
   });
 }
 
