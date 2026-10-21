@@ -3,6 +3,7 @@
 
 import { initData, tg } from './core.js';
 import { getPref, setPref } from './prefs.js';
+import { flyBats, landBats, swoopOnce } from './bats.js';
 import { HALLOWEEN_ICONS, ICONS } from './icons.js';
 
 export const ACCENTS = [
@@ -181,6 +182,7 @@ export function applyHalloween() {
     fog.ariaHidden = 'true';
     (document.getElementById('appHeader') || document.body).prepend(decor);
     document.body.append(stars, fog);
+    flyBats(decor, batsAllowed);
     swoop();
   } else if (!on) {
     document.querySelectorAll('.hw-decor, .hw-stars, .hw-fog, .hw-swoop').forEach((el) => el.remove());
@@ -219,19 +221,23 @@ export function halloweenCountdown(now = new Date()) {
   return `до Хеллоуина ${left} ${word}`;
 }
 
-/** Раз за запуск большая летучая мышь пролетает через весь экран. */
-let swooped = false;
+function batsAllowed() {
+  return showMotion() && !matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
+/** Большая летучая мышь пролетает через экран: через 2,5 с после запуска,
+ *  потом изредка, раз в 1,5–3 минуты, каждый раз своим маршрутом (bats.js).
+ *  Пока приложение свёрнуто, не летает. */
+let swooping = false;
 function swoop() {
-  if (swooped || !showMotion() || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-  swooped = true;
-  setTimeout(() => {
-    if (!isHalloween()) return;
-    const bat = document.createElement('div');
-    bat.className = 'hw-swoop';
-    bat.ariaHidden = 'true';
-    bat.addEventListener('animationend', () => bat.remove(), { once: true });
-    document.body.append(bat);
-  }, 2500);
+  if (swooping) return;
+  swooping = true;
+  const next = (delay) => setTimeout(() => {
+    if (!isHalloween()) { swooping = false; return; }
+    if (batsAllowed() && !document.hidden) swoopOnce();
+    next(90000 + Math.random() * 90000);
+  }, delay);
+  next(2500);
 }
 
 /** Профиль сказал, доступно ли оформление этому человеку. */
@@ -263,6 +269,11 @@ export function showMotion() {
 
 export function applyMotion() {
   document.documentElement.classList.toggle('no-motion', !showMotion());
+  if (!showMotion()) landBats();
+  else {
+    const decor = document.querySelector('.hw-decor');
+    if (decor) flyBats(decor, batsAllowed);
+  }
 }
 
 export function saveMotion(on) {
