@@ -104,7 +104,7 @@ async def security_headers(request: web.Request, handler):
 
 def create_app(context: AppContext, bot=None) -> web.Application:
     """Собрать сервер: подприложение под префиксом плюс проверка живости."""
-    inner = web.Application(middlewares=[security_headers, caldav.root_discovery, compress_static, api.error_middleware, api.auth_middleware, sync.sync_middleware])
+    inner = web.Application(middlewares=[security_headers, caldav.root_discovery, compress_static, api.error_middleware, api.auth_middleware, chat.off_middleware, sync.sync_middleware])
     inner[CONTEXT] = context
     inner[BOT] = bot
     inner[chat.HUB] = context.hub
