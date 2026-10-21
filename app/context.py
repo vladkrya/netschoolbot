@@ -25,6 +25,7 @@ if TYPE_CHECKING:
 
 from .db.crypto import PasswordCipher
 from .db.engine import Database
+from .domain.models import ApiMode
 from .db.repositories import (
     CacheRepository,
     FamilyRepository,
@@ -44,6 +45,9 @@ from .notifications.watcher import Notifier, WatcherRegistry
 from .settings import Settings
 
 logger = logging.getLogger("netschoolbot")
+
+# Общая настройка «Не выходить из аккаунта» (Госуслуги): нет ключа — включено.
+KEEP_SIGNED_IN_PREF = "keepSignedIn"
 
 
 @dataclass(slots=True)
@@ -179,7 +183,7 @@ class AppContext:
         state = MarkStateRepository(db)
         diary = DiaryService(pool, users)
 
-        return cls(
+        context = cls(
             settings=settings,
             db=db,
             users=users,
@@ -194,12 +198,46 @@ class AppContext:
                 notes=NotesRepository(db),
             ),
         )
+        context.watchers.keep_signed_in = context.keep_signed_in
+        context.watchers.weekly_review = context.weekly_review
+        return context
 
     async def keep_attachments_wanted(self, user: User) -> bool:
         """Сохранять ли файлы этого человека: у всех включено, пока сам не выключил."""
         from .attachments.keeper import PREF
 
         return (await self.miniapp.prefs(user.telegram_id)).get(PREF) is not False
+
+    async def keep_signed_in(self, user: User) -> bool:
+        """«Не выходить из аккаунта» (включено у всех, выключается в настройках):
+        живую веб-сессию Госуслуг меняем на мобильный токен, который бот
+        продлевает сам. Веб-сессия Госуслуг рано или поздно истекает, и
+        вернуть её может только человек — с кодом или подтверждением.
+        True — переключили."""
+        if not (user.credentials.login_type.is_gosuslugi and user.api_mode is ApiMode.WEB
+                and self.diary.mobile_available):
+            return False
+        if (await self.miniapp.prefs(user.telegram_id)).get(KEEP_SIGNED_IN_PREF) is False:
+            return False
+        updated = await self.diary.switch_api(user, ApiMode.MOBILE)
+        # Как при ручной смене API: другое API собирает те же работы иначе,
+        # и первая проверка без тихой пересборки разослала бы «новые» оценки.
+        await self.state.mark_baseline_pending(updated.telegram_id, True)
+        await self.cache.clear(updated.telegram_id)
+        return True
+
+    async def weekly_review(self, facts: str) -> str | None:
+        """Разбор недели для понедельничной сводки: факты — ИИ-помощнику.
+        None — помощник выключен на сервере."""
+        if not self.settings.assistant.enabled:
+            return None
+        from .domain.review import SYSTEM_PROMPT
+        from .web.assistant import complete
+
+        return await complete(self.settings.assistant, [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": facts},
+        ])
 
     async def shutdown(self) -> None:
         """Аккуратно закрыть всё, что открыли. Порядок важен."""

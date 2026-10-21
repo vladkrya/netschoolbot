@@ -854,6 +854,39 @@ class TestDigests:
         assert len(notifier.texts) == 1
         assert "Сводка за неделю" in notifier.texts[0]
 
+    async def test_weekly_review_from_assistant(self, users, marks, diary, notifier, monkeypatch):
+        """Разбор недели: модели уходят посчитанные факты, ответ — в сводку."""
+        from app.domain.models import NotificationPrefs
+
+        self._at(monkeypatch, dt.datetime(2026, 3, 9, 9, 0))
+        await users.save(make_user(notifications=NotificationPrefs(weekly_summary=True, weekly_review=True)))
+        diary.marks = [record(0, date=dt.date(2026, 3, 4))]
+        asked = []
+
+        async def review(facts):
+            asked.append(facts)
+            return "**Подтяните** <алгебру>."
+
+        watcher = UserWatcher(1, users=users, state=marks, diary=diary, notifier=notifier, weekly_review=review)
+        await watcher.run_once()
+        assert asked and "Оценки за прошлую неделю" in asked[0]
+        assert "Разбор недели" in notifier.texts[0]
+        assert "Подтяните &lt;алгебру&gt;." in notifier.texts[0] and "**" not in notifier.texts[0]
+
+    async def test_weekly_review_failure_keeps_summary(self, users, marks, diary, notifier, monkeypatch):
+        from app.domain.models import NotificationPrefs
+
+        self._at(monkeypatch, dt.datetime(2026, 3, 9, 9, 0))
+        await users.save(make_user(notifications=NotificationPrefs(weekly_summary=True, weekly_review=True)))
+        diary.marks = [record(0, date=dt.date(2026, 3, 4))]
+
+        async def broken(facts):
+            raise RuntimeError("модель недоступна")
+
+        watcher = UserWatcher(1, users=users, state=marks, diary=diary, notifier=notifier, weekly_review=broken)
+        await watcher.run_once()
+        assert len(notifier.texts) == 1 and "Разбор недели" not in notifier.texts[0]
+
     async def test_disabled_by_default(self, users, watcher, diary, notifier, monkeypatch):
         self._at(monkeypatch, dt.datetime(2026, 3, 9, 20, 0))
         await users.save(make_user())
@@ -1021,3 +1054,66 @@ async def test_server_down_noticed_only_after_an_hour(users, marks, diary, notif
     now[0] = 6000
     await watcher.run_once()
     assert len(notifier.errors) == 1
+
+
+async def test_gosuslugi_web_session_is_traded_for_token(users, marks, diary, notifier):
+    """«Не выходить из аккаунта»: живую веб-сессию Госуслуг — на мобильный токен."""
+    await users.save(make_user(credentials=Credentials(login_type=LoginType.ESIA)))
+    now = [0.0]
+    calls = []
+
+    async def keep(user):
+        calls.append(user.telegram_id)
+        return True
+
+    watcher = UserWatcher(1, users=users, state=marks, diary=diary, notifier=notifier,
+                          clock=lambda: now[0], keep_signed_in=keep)
+    await watcher.run_once()
+    assert calls == [1]
+    assert notifier.texts and "Госуслуги" in notifier.texts[0] and notifier.family is False
+    # Не чаще раза в 6 часов.
+    await watcher.run_once()
+    assert calls == [1]
+    now[0] = 7 * 3600
+    await watcher.run_once()
+    assert calls == [1, 1]
+
+
+async def test_keep_signed_in_skips_password_users_and_failed_checks(users, marks, diary, notifier):
+    calls = []
+
+    async def keep(user):
+        calls.append(user.telegram_id)
+        return False
+
+    await users.save(make_user())
+    watcher = UserWatcher(1, users=users, state=marks, diary=diary, notifier=notifier, keep_signed_in=keep)
+    await watcher.run_once()
+    assert calls == []
+    await users.save(make_user(credentials=Credentials(login_type=LoginType.ESIA)))
+    diary.error = NetSchoolError(Reason.SERVER_UNAVAILABLE, "Технические работы")
+    await watcher.run_once()
+    assert calls == []
+    assert notifier.texts == []
+
+
+async def test_vacation_quiet_mode_holds_notifications(users, watcher, diary, notifier, monkeypatch):
+    """Тихий режим на каникулы: новые оценки записываются, но не присылаются."""
+    import app.notifications.watcher as module
+    from app.domain.models import NotificationPrefs
+    from app.domain.vacations import Vacation
+
+    today = dt.date.today()
+    monkeypatch.setattr(module, "vacations", lambda *a, **k: [
+        Vacation("Осенние каникулы", today - dt.timedelta(days=30), today + dt.timedelta(days=30))])
+    await users.save(make_user(notifications=NotificationPrefs(vacation_quiet=True)))
+    diary.marks = [record(0)]
+    await watcher.run_once()
+    diary.marks = [record(0), record(1)]
+    await watcher.run_once()
+    assert notifier.mark_events == []
+    # Без тихого режима — как обычно.
+    await users.save(make_user(notifications=NotificationPrefs(vacation_quiet=False)))
+    diary.marks = [record(0), record(1), record(2)]
+    await watcher.run_once()
+    assert len(notifier.mark_events) == 1

@@ -32,6 +32,8 @@ def settings_menu(user: User) -> InlineKeyboardMarkup:
         [toggle("Контрольные — за день-два", user.notifications.test_reminder, "tests")],
         [toggle("Итоговая оценка под угрозой", user.notifications.grade_risk, "risk")],
         [toggle("Итоги месяца и четверти", user.notifications.monthly_summary, "monthly")],
+        [toggle("Разбор недели от помощника", user.notifications.weekly_review, "review")],
+        [toggle("Тихий режим на каникулы", user.notifications.vacation_quiet, "vacation")],
         *(
             [[toggle("Следить за всеми детьми", user.notifications.all_children, "allkids")]]
             if len(user.available_students) > 1
