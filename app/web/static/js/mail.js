@@ -289,7 +289,7 @@ export async function loadRecipients() {
   return recipients;
 }
 
-// Те же пределы, что на сервере (api.py): лишнее отсекаем сразу, без загрузки.
+// Те же пределы, что на сервере (api/mail.py): лишнее отсекаем сразу, без загрузки.
 const MAX_FILES = 5;
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
 const MAX_TOTAL_BYTES = 15 * 1024 * 1024;

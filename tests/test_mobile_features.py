@@ -1082,7 +1082,7 @@ class TestMailAttachments:
         assert response.status == 200 and calls == [(["a"], "Тема", "Текст", None)]
 
     async def test_limits_are_enforced(self, client, sent, monkeypatch):
-        from app.web import api
+        from app.web.api import mail as api
         from tests.test_web import BASE
 
         calls, token = sent
