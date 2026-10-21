@@ -63,6 +63,9 @@ class Quarter:
     end: dt.date
     # «2/4» — номер и сколько всего периодов, для узкой колонки таблицы.
     short: str = ""
+    # Последний учебный день по данным школы: `end` растянут до следующего
+    # периода (см. periods_from_terms), а каникулы ищутся по настоящему.
+    lessons_end: dt.date | None = None
 
     def covers(self, day: dt.date) -> bool:
         return self.start <= day <= self.end
@@ -168,9 +171,10 @@ def periods_from_terms(terms: list[dict[str, Any]], today: dt.date) -> list[Quar
         for index, (key, label, start, end) in enumerate(found):
             # Каникулы между периодами приписываем предыдущему: оценка,
             # выставленная задним числом на каникулах, не должна потеряться.
+            lessons_end = end
             if index + 1 < total:
                 end = max(end, found[index + 1][2] - dt.timedelta(days=1))
-            result.append(Quarter(key, label, start, end, f"{index + 1}/{total}"))
+            result.append(Quarter(key, label, start, end, f"{index + 1}/{total}", lessons_end))
         return result
     return None
 

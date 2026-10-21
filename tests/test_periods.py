@@ -130,6 +130,18 @@ class TestSchoolTerms:
         assert period_of(dt.date(2026, 10, 30), year) == "q1"
         assert year[-1].end == dt.date(2027, 5, 26)
 
+    def test_school_holidays_survive_for_countdown(self):
+        """Конец периода растянут до следующего, но каникулы из дат школы
+        видны: раньше отсчёт находил между такими периодами только лето."""
+        from app.domain.periods import periods_from_terms
+        from app.domain.vacations import next_vacation, vacations
+
+        today = dt.date(2026, 10, 5)
+        year = periods_from_terms(self.TERMS, today)
+        autumn = next_vacation(today, vacations(today, year, "school"))
+        assert autumn.label == "Осенние каникулы" and autumn.exact
+        assert autumn.start == year[0].lessons_end + dt.timedelta(days=1)
+
     def test_incomplete_terms_give_none(self):
         from app.domain.periods import periods_from_terms
 
