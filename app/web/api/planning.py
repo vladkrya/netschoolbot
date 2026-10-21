@@ -12,7 +12,9 @@ from ...domain import formatting
 from ...domain.models import User
 from ...domain.periods import academic_year_start, current_period
 from ...domain.records import DUTY_MARK
-from ...domain.vacations import exam_for, next_vacation, on_vacation, vacations
+from ...domain.vacations import (
+    DIARY_MARGIN_DAYS, Vacation, exam_for, next_vacation, on_vacation, refine_by_diary, vacations,
+)
 from ...netschool.errors import NetSchoolError
 from .base import BOT, _cached, context, current_user, json_error, logger, routes
 from .diary import _homework_to_json
@@ -21,6 +23,25 @@ from .profile import class_name
 
 # Каникулы и экзамены меняются раз в год, а класс — раз в год тем более.
 COUNTDOWN_FRESH_SECONDS = 6 * 3600
+# Примерные каникулы ближе этого уточняются по дневнику: расписание на
+# ближайшие недели школа обычно уже заполнила.
+REFINE_AHEAD_DAYS = 21
+
+
+async def _refined(app: AppContext, user: User, today: dt.date, items: list[Vacation]) -> list[Vacation]:
+    """Ближайшие примерные каникулы — по дневнику (domain/vacations.py)."""
+    near = [item for item in items if not item.exact and item.end >= today
+            and (item.start - today).days <= REFINE_AHEAD_DAYS]
+    if not near:
+        return items
+    margin = dt.timedelta(days=DIARY_MARGIN_DAYS)
+    try:
+        days = await app.diary.fetch_period(
+            user, min(item.start for item in near) - margin, max(item.end for item in near) + margin, today=today)
+    except NetSchoolError:
+        return items
+    lessons = {day.day: [lesson.is_elective for lesson in day.lessons] for day in days}
+    return [refine_by_diary(item, lessons) if item in near else item for item in items]
 
 
 @routes.get("/api/countdown")
@@ -34,16 +55,17 @@ async def countdown(request: web.Request) -> web.Response:
     async def produce(app: AppContext, user: User):
         today = user.today()
         year, source = await _user_periods(app, user, today)
-        items = vacations(today, year, source)
+        items = await _refined(app, user, today, vacations(today, year, source))
         now, upcoming = on_vacation(today, items), next_vacation(today, items)
         exam = exam_for(await class_name(app, user), today)
+        shown = now or upcoming
         return {
             "vacation": {"label": now.label, "start": now.start.isoformat(), "end": now.end.isoformat(), "now": True}
             if now else
             {"label": upcoming.label, "start": upcoming.start.isoformat(), "end": upcoming.end.isoformat(), "now": False}
             if upcoming else None,
             # Каникулы по общепринятым датам — приложение пишет «примерно».
-            "vacation_exact": source == "school",
+            "vacation_exact": bool(shown and shown.exact),
             "exam": {"name": exam[0], "start": exam[1].isoformat(), "confirmed": exam[2]} if exam else None,
         }
 

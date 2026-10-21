@@ -1528,7 +1528,8 @@ main.leaving { transition: transform .22s var(--ease); box-shadow: -8px 0 24px r
 .hi-subject { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hi-title { margin-top: 1px; font-size: 13px; color: var(--text2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hi-meta { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 12px; color: var(--text2); font-variant-numeric: tabular-nums; }
-.history-item.hi-unseen .hi-subject::after { content: ''; display: inline-block; width: 7px; height: 7px; margin-left: 6px; border-radius: 50%; background: var(--k); vertical-align: middle; }
+/* Невиденная запись — точкой; у новой это уже говорит плашка «Новая». */
+.history-item.hi-unseen:not(.hi-new) .hi-subject::after { content: ''; display: inline-block; width: 7px; height: 7px; margin-left: 6px; border-radius: 50%; background: var(--k); vertical-align: middle; }
 .hi-kind { padding: 1px 7px; border-radius: 7px; background: color-mix(in srgb, var(--k) 15%, transparent); color: var(--k); font-weight: 600; }
 .hi-marks { flex: none; display: flex; align-items: center; gap: 4px; }
 .hi-marks .mark-box.old { opacity: .45; text-decoration: line-through; }

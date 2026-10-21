@@ -41,6 +41,8 @@ class Vacation:
     label: str
     start: dt.date
     end: dt.date
+    # Даты от школы или из дневника; общепринятые — «примерно».
+    exact: bool = True
 
     def covers(self, day: dt.date) -> bool:
         return self.start <= day <= self.end
@@ -56,13 +58,17 @@ def _season(start: dt.date) -> str:
     return "Весенние каникулы"
 
 
+# Промежуток между периодами длиннее выходных — каникулы.
+MIN_GAP_DAYS = 3
+
+
 def default_vacations(year: int) -> list[Vacation]:
     """Общепринятые каникулы учебного года, начавшегося в сентябре `year`."""
     result = []
     for label, (sm, sd), (em, ed) in DEFAULT_HOLIDAYS:
         start = dt.date(year if sm >= 9 else year + 1, sm, sd)
         end = dt.date(year if em >= 9 else year + 1, em, ed)
-        result.append(Vacation(label, start, end))
+        result.append(Vacation(label, start, end, exact=False))
     return result
 
 
@@ -71,7 +77,8 @@ def school_vacations(periods: list[Quarter]) -> list[Vacation]:
     ordered = sorted(periods, key=lambda q: q.start)
     result = []
     for before, after in zip(ordered, ordered[1:]):
-        if (after.start - before.end).days > 1:
+        # Выходные между периодами — ещё не каникулы.
+        if (after.start - before.end).days > MIN_GAP_DAYS:
             start = before.end + dt.timedelta(days=1)
             result.append(Vacation(_season(start), start, after.start - dt.timedelta(days=1)))
     if ordered:
@@ -83,14 +90,72 @@ def school_vacations(periods: list[Quarter]) -> list[Vacation]:
 
 
 def vacations(today: dt.date, periods: list[Quarter] | None = None, source: str = "default") -> list[Vacation]:
-    """Каникулы учебного года: из периодов школы, если они настоящие, иначе общепринятые."""
-    if periods and source == "school":
-        found = school_vacations(periods)
-        if found:
-            return found
+    """Каникулы учебного года: из периодов школы, если они настоящие, иначе общепринятые.
+
+    У школ с полугодиями или триместрами между периодами видно не все
+    каникулы: осенние и весенние приходятся на середину полугодия. Тех, что
+    школа не показала, добавляем по общепринятым датам — «примерно».
+    """
     year = academic_year_start(today)
     # Лето относится к прошлому учебному году, а 1–31 августа ждём уже новый.
-    return default_vacations(year - 1)[-1:] + default_vacations(year)
+    defaults = default_vacations(year - 1)[-1:] + default_vacations(year)
+    if not (periods and source == "school"):
+        return defaults
+    found = school_vacations(periods)
+    if not found:
+        return defaults
+    seasons = {item.label for item in found}
+    missing = [item for item in defaults if item.label not in seasons
+               and not any(item.start <= other.end and other.start <= item.end for other in found)]
+    return sorted(found + missing, key=lambda item: item.start)
+
+
+# Насколько дальше общепринятых дат смотреть в дневник, уточняя каникулы.
+DIARY_MARGIN_DAYS = 7
+
+
+def refine_by_diary(item: Vacation, days: dict[dt.date, list[bool]]) -> Vacation:
+    """Уточнить примерные каникулы по дневнику.
+
+    `days` — дни дневника вокруг каникул: для каждого урока, внеурочка ли
+    он. В каникулы в расписании остаётся только внеурочка, поэтому день
+    лишь с внеурочкой — каникулы, день с обычным уроком — учёба, а пустой
+    день (выходной или ещё не заполненный) ничего не говорит.
+
+    От ближайшего к каникулам дня с одной внеурочкой расширяемся до дней
+    учёбы. Где учёбы в дневнике не нашлось, остаётся общепринятая граница.
+    Нет ни одного дня с одной внеурочкой — даты не трогаем.
+    """
+    if item.exact:
+        return item
+    low = item.start - dt.timedelta(days=DIARY_MARGIN_DAYS)
+    high = item.end + dt.timedelta(days=DIARY_MARGIN_DAYS)
+    days = {day: flags for day, flags in days.items() if low <= day <= high}
+    study = {day for day, flags in days.items() if any(not elective for elective in flags)}
+    # Субботний кружок бывает и в учебную неделю — считаем только будни.
+    free = sorted(day for day, flags in days.items() if flags and all(flags) and day.weekday() < 5)
+    if not free:
+        return item
+    inside = [day for day in free if item.covers(day)]
+    anchor = inside[0] if inside else min(
+        free, key=lambda day: min(abs((day - item.start).days), abs((day - item.end).days)))
+    one = dt.timedelta(days=1)
+    start = anchor
+    while start - one >= low and start - one not in study:
+        start -= one
+    end = anchor
+    while end + one <= high and end + one not in study:
+        end += one
+    bounded_left = start - one in study
+    bounded_right = end + one in study
+    if not bounded_left:
+        start = min(item.start, min(day for day in free if day >= start))
+    if not bounded_right:
+        end = max(item.end, max(day for day in free if day <= end))
+    if (end - start).days < MIN_GAP_DAYS:
+        # Один-два дня без уроков — не каникулы, а что-то разовое.
+        return item
+    return Vacation(item.label, start, end, exact=bounded_left and bounded_right)
 
 
 def on_vacation(today: dt.date, items: list[Vacation]) -> Vacation | None:

@@ -3,7 +3,9 @@
 import datetime as dt
 
 from app.domain.periods import Quarter
-from app.domain.vacations import exam_for, grade_of, next_vacation, on_vacation, school_vacations, vacations
+from app.domain.vacations import (
+    Vacation, exam_for, grade_of, next_vacation, on_vacation, refine_by_diary, school_vacations, vacations,
+)
 
 
 def test_default_vacations_of_the_year():
@@ -32,6 +34,72 @@ def test_school_terms_gaps_are_vacations():
         ("Летние каникулы", dt.date(2027, 5, 27), dt.date(2027, 8, 31)),
     ]
     assert vacations(dt.date(2026, 10, 21), terms, "school") == found
+
+
+def test_half_years_without_gaps_still_have_autumn_and_spring():
+    """Полугодия встык: школа не показывает осенние и весенние каникулы,
+    отсчёт всё равно ведёт к ближайшим, а не к летним."""
+    terms = [
+        Quarter("h1", "1 полугодие", dt.date(2026, 9, 1), dt.date(2026, 12, 28)),
+        Quarter("h2", "2 полугодие", dt.date(2027, 1, 11), dt.date(2027, 5, 26)),
+    ]
+    items = vacations(dt.date(2026, 10, 21), terms, "school")
+    autumn = next_vacation(dt.date(2026, 10, 21), items)
+    assert autumn.label == "Осенние каникулы" and not autumn.exact
+    winter = on_vacation(dt.date(2027, 1, 5), items)
+    assert winter.label == "Зимние каникулы" and winter.exact and winter.start == dt.date(2026, 12, 29)
+    assert on_vacation(dt.date(2027, 4, 1), items).label == "Весенние каникулы"
+    assert [item.label for item in items].count("Зимние каникулы") == 1
+
+
+def test_weekend_between_periods_is_not_vacation():
+    terms = [
+        Quarter("t1", "1 триместр", dt.date(2026, 9, 1), dt.date(2026, 11, 27)),
+        Quarter("t2", "2 триместр", dt.date(2026, 11, 30), dt.date(2027, 2, 26)),
+    ]
+    assert all(item.label != "Осенние каникулы" or item.start.month == 10
+               for item in school_vacations(terms))
+    assert not any(item.start == dt.date(2026, 11, 28) for item in school_vacations(terms))
+
+
+def _diary(first: dt.date, last: dt.date, free: tuple[dt.date, dt.date]) -> dict[dt.date, list[bool]]:
+    """Будни с уроками; в дни `free` — только внеурочка."""
+    days, day = {}, first
+    while day <= last:
+        if day.weekday() < 5:
+            days[day] = [True] if free[0] <= day <= free[1] else [False, False, True]
+        day += dt.timedelta(days=1)
+    return days
+
+
+def test_diary_with_only_electives_gives_exact_vacation_dates():
+    guess = Vacation("Осенние каникулы", dt.date(2026, 10, 25), dt.date(2026, 11, 3), exact=False)
+    # Школа ушла на каникулы со 2 по 8 ноября, а не с 25 октября.
+    diary = _diary(dt.date(2026, 10, 18), dt.date(2026, 11, 10), (dt.date(2026, 11, 2), dt.date(2026, 11, 6)))
+    found = refine_by_diary(guess, diary)
+    assert (found.start, found.end, found.exact) == (dt.date(2026, 10, 31), dt.date(2026, 11, 8), True)
+
+
+def test_diary_without_electives_only_days_keeps_guess():
+    guess = Vacation("Осенние каникулы", dt.date(2026, 10, 25), dt.date(2026, 11, 3), exact=False)
+    assert refine_by_diary(guess, {}) == guess
+    # Дневник заполнен только до каникул — даты не трогаем.
+    diary = _diary(dt.date(2026, 10, 18), dt.date(2026, 10, 23), (dt.date(2000, 1, 1), dt.date(2000, 1, 1)))
+    assert refine_by_diary(guess, diary) == guess
+
+
+def test_diary_filled_only_into_vacation_keeps_guessed_end():
+    guess = Vacation("Осенние каникулы", dt.date(2026, 10, 25), dt.date(2026, 11, 3), exact=False)
+    diary = _diary(dt.date(2026, 10, 18), dt.date(2026, 10, 28), (dt.date(2026, 10, 26), dt.date(2026, 10, 28)))
+    found = refine_by_diary(guess, diary)
+    assert (found.start, found.end, found.exact) == (dt.date(2026, 10, 24), dt.date(2026, 11, 3), False)
+
+
+def test_saturday_club_is_not_vacation():
+    guess = Vacation("Осенние каникулы", dt.date(2026, 10, 25), dt.date(2026, 11, 3), exact=False)
+    diary = _diary(dt.date(2026, 10, 18), dt.date(2026, 11, 10), (dt.date(2000, 1, 1), dt.date(2000, 1, 1)))
+    diary[dt.date(2026, 10, 24)] = [True]
+    assert refine_by_diary(guess, diary) == guess
 
 
 def test_exam_only_for_graduating_classes():
