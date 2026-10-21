@@ -3,6 +3,7 @@
 'use strict';
 
 import { $, stillMotion } from './core.js';
+import { syncBackButton } from './screens.js';
 
 let onClose = null;
 // Шторка уезжает вниз, а не пропадает разом; прячется по окончании.
@@ -17,6 +18,7 @@ export function openSheet(title, body, options = {}) {
   $('sheet').hidden = false;
   document.body.style.overflow = 'hidden';
   onClose = options.onClose || null;
+  syncBackButton();
   return $('sheetBody');
 }
 
@@ -44,9 +46,11 @@ export function closeSheet() {
   };
   if (stillMotion()) {
     done();
+    syncBackButton();
     return;
   }
   sheet.classList.add('closing');
+  syncBackButton();
   clearTimeout(closing);
   closing = setTimeout(done, CLOSE_MS);
 }
