@@ -2195,6 +2195,40 @@ class KeptAttachmentRepository:
             "DELETE FROM kept_attachment_access WHERE host = ? AND mode = ? AND attachment_id = ?", items)
 
 
+class NetschoolAccountRepository:
+    """Какой аккаунт «Сетевого города» у какого аккаунта приложения
+    (netschool/ownership.py): по одной записи на аккаунт приложения."""
+
+    def __init__(self, db: Database) -> None:
+        self._db = db
+
+    async def holders(self, school_url: str, ns_user_id: int) -> list[int]:
+        """Аккаунты приложения с этим СГ — от подключившего раньше всех."""
+        rows = await self._db.fetch_all(
+            "SELECT telegram_id FROM netschool_accounts WHERE school_url = ? AND ns_user_id = ? "
+            "ORDER BY created_at, rowid", (school_url, ns_user_id))
+        return [row["telegram_id"] for row in rows]
+
+    async def get(self, telegram_id: int) -> tuple[str, int] | None:
+        row = await self._db.fetch_one(
+            "SELECT school_url, ns_user_id FROM netschool_accounts WHERE telegram_id = ?", (telegram_id,))
+        return (row["school_url"], row["ns_user_id"]) if row else None
+
+    async def set(self, telegram_id: int, school_url: str, ns_user_id: int) -> None:
+        """Запомнить СГ аккаунта; другой СГ того же аккаунта заменяется."""
+        await self._db.execute(
+            "INSERT INTO netschool_accounts (telegram_id, school_url, ns_user_id) VALUES (?, ?, ?) "
+            "ON CONFLICT(telegram_id) DO UPDATE SET school_url = excluded.school_url, "
+            "ns_user_id = excluded.ns_user_id, created_at = CASE WHEN "
+            "netschool_accounts.school_url = excluded.school_url AND netschool_accounts.ns_user_id = excluded.ns_user_id "
+            "THEN netschool_accounts.created_at ELSE excluded.created_at END",
+            (telegram_id, school_url, ns_user_id),
+        )
+
+    async def release(self, telegram_id: int) -> None:
+        await self._db.execute("DELETE FROM netschool_accounts WHERE telegram_id = ?", (telegram_id,))
+
+
 class AppFlagRepository:
     """Переключатели на весь бот (app_flags): бета-возможности и т. п."""
 

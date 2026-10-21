@@ -406,6 +406,43 @@ class TestSiteLoginThroughWidget:
         assert await app_context.users.get(1) is None
 
 
+class TestWidgetLink:
+    """Привязка Telegram виджетом: те же бот и переключатель /tgwidget, что у входа."""
+
+    @pytest.fixture
+    def widget_on(self, app_context):
+        app_context.settings = replace(
+            app_context.settings,
+            telegram=replace(app_context.settings.telegram, bot_token=WIDGET_TOKEN),
+            web=replace(app_context.settings.web, login_widget_domain="127.0.0.1"),
+        )
+
+    async def test_signed_data_links_telegram(self, client, app_context, widget_on):
+        _, body, _ = await register(client)
+        token = body["data"]["token"]
+        info = (await (await client.get(f"{BASE}/api/account", params={"token": token})).json())["data"]
+        assert info["tg_link"] == {"oidc": False, "widget": 777}
+        assert (await post(client, "/api/account/telegram-link/widget",
+                           {**make_widget_data(WIDGET_TOKEN, id="4260"), "id": "1"}, token))[0] == 400
+        status, _, _ = await post(client, "/api/account/telegram-link/widget",
+                                  make_widget_data(WIDGET_TOKEN, id="4260"), token)
+        assert status == 200
+        assert await app_context.miniapp.resolve_token(token) == 4260
+        assert (await app_context.accounts.by_email("kid@example.com"))["telegram_id"] == 4260
+
+    async def test_widget_off_hides_link_button(self, client, app_context, widget_on):
+        from app.db.repositories import AppFlagRepository
+
+        _, body, _ = await register(client)
+        token = body["data"]["token"]
+        await AppFlagRepository(app_context.db).set(account_web.WIDGET_OFF_FLAG, True)
+        info = (await (await client.get(f"{BASE}/api/account", params={"token": token})).json())["data"]
+        assert info["tg_link"] is None
+        status, _, _ = await post(client, "/api/account/telegram-link/widget",
+                                  make_widget_data(WIDGET_TOKEN, id="4261"), token)
+        assert status == 400 and await app_context.users.get(4261) is None
+
+
 class TestSignOut:
     async def test_logout_revokes_only_this_device(self, client, app_context):
         _, body, _ = await register(client)

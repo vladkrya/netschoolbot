@@ -583,6 +583,12 @@ class DiaryService:
 
         return await self._with_session(user, call)
 
+    async def fetch_account_id(self, user: User) -> int | None:
+        """id пользователя в «Сетевом городе» — чей это аккаунт (netschool/ownership.py)."""
+        from .ownership import account_id
+
+        return await self._with_session(user, account_id)
+
     async def fetch_recipients(self, user: User) -> list[dict[str, str]]:
         """Кому можно написать: учителя и администрация школы."""
 

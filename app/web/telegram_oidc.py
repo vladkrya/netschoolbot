@@ -51,6 +51,8 @@ class Pending:
     nonce: str
     redirect_uri: str
     created: float
+    # Не вход, а привязка Telegram к этому аккаунту с сайта.
+    link_to: int | None = None
 
 
 class OidcLogins:
@@ -61,14 +63,14 @@ class OidcLogins:
         self._jwks: dict[str, dict] = {}
         self._jwks_at = 0.0
 
-    def start(self, client_id: str, redirect_uri: str) -> tuple[str, str]:
+    def start(self, client_id: str, redirect_uri: str, *, link_to: int | None = None) -> tuple[str, str]:
         """Новый вход: (state, адрес страницы входа Telegram)."""
         now = time.monotonic()
         self._items = {k: v for k, v in self._items.items() if now - v.created < PENDING_TTL_S}
         if len(self._items) >= MAX_PENDING:
             self._items.pop(next(iter(self._items)))
         state, verifier, nonce = (secrets.token_urlsafe(32) for _ in range(3))
-        self._items[state] = Pending(verifier, nonce, redirect_uri, now)
+        self._items[state] = Pending(verifier, nonce, redirect_uri, now, link_to)
         challenge = _b64url(hashlib.sha256(verifier.encode()).digest())
         query = {
             "client_id": client_id, "redirect_uri": redirect_uri, "response_type": "code",
