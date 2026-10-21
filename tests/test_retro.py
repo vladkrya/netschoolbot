@@ -133,7 +133,7 @@ async def test_retro_pin_guards_data_and_supports_unlock_and_change(client, toke
     response = await client.post(f"{BASE}/api/lock/unlock", headers=headers, json={"pin": "1234"})
     headers["X-Netschool-Unlock"] = (await response.json())["data"]["unlock"]
     assert (await client.get(f"{BASE}/api/retro/guestbook", headers=headers)).status == 200
-    response = await client.post(f"{BASE}/api/lock/pin", headers=headers, json={"pin": "5678"})
+    response = await client.post(f"{BASE}/api/lock/pin", headers=headers, json={"pin": "5678", "current": "1234"})
     assert response.status == 200
     assert (await client.get(f"{BASE}/api/retro/guestbook", headers=headers)).status == 423
     headers["X-Netschool-Unlock"] = (await response.json())["data"]["unlock"]

@@ -100,24 +100,44 @@ class TestEmailVerification:
 
 
 class TestPasswords:
-    async def test_reset_by_mail_revokes_old_tokens(self, client, app_context):
+    async def test_reset_by_mail_link_revokes_old_tokens(self, client, app_context):
         app_context.mailer.outbox = []
         _, body, _ = await register(client)
         old_token = body["data"]["token"]
         assert "Код подтверждения" in app_context.mailer.outbox[0].get_body(("plain",)).get_content()
         status, data, _ = await post(client, "/api/account/reset/request", {"email": "kid@example.com"})
         assert status == 200 and data["data"]["channel"] == "mail"
-        code = app_context.mailer.outbox[-1].get_body(("plain",)).get_content().split("сброса пароля: ")[1][:6]
+        letter = app_context.mailer.outbox[-1]
+        text = letter.get_body(("plain",)).get_content()
+        link = next(word for word in text.split() if "#reset=" in word)
+        assert link.startswith(app_context.settings.web.miniapp_url + "/#reset=")
+        assert "Задать новый пароль" in letter.get_body(("html",)).get_content()
+        secret = link.split("#reset=")[1]
+        check = await client.get(f"{BASE}/api/account/reset/check", params={"token": secret})
+        assert (await check.json())["data"]["email"] == "kid@example.com"
+        assert (await client.get(f"{BASE}/api/account/reset/check", params={"token": "x" * 43})).status == 400
         assert (await post(client, "/api/account/reset/confirm",
-                           {"email": "kid@example.com", "code": "000000", "password": "новый-пароль-1"}))[0] == 400
+                           {"token": "x" * 43, "password": "новый-пароль-1"}))[0] == 400
+        # Слабый пароль не гасит ссылку.
+        assert (await post(client, "/api/account/reset/confirm", {"token": secret, "password": "1"}))[0] == 400
         status, data, _ = await post(client, "/api/account/reset/confirm",
-                                     {"email": "kid@example.com", "code": code, "password": "новый-пароль-1"})
+                                     {"token": secret, "password": "новый-пароль-1"})
         assert status == 200
         assert await app_context.miniapp.resolve_token(old_token) is None
         assert (await post(client, "/api/account/login", {"email": "kid@example.com", "password": "новый-пароль-1"}))[0] == 200
-        # Код одноразовый.
+        # Ссылка одноразовая.
         assert (await post(client, "/api/account/reset/confirm",
-                           {"email": "kid@example.com", "code": code, "password": "ещё-пароль-2"}))[0] == 400
+                           {"token": secret, "password": "ещё-пароль-2"}))[0] == 400
+
+    async def test_reset_link_expires_and_new_one_replaces_old(self, client, app_context):
+        await register(client)
+        first = await app_context.accounts.issue_reset_link("kid@example.com")
+        second = await app_context.accounts.issue_reset_link("kid@example.com")
+        assert await app_context.accounts.reset_link_email(first) is None
+        assert await app_context.accounts.reset_link_email(second) == "kid@example.com"
+        await app_context.db.execute("UPDATE account_codes SET expires_at = 0")
+        assert (await post(client, "/api/account/reset/confirm",
+                           {"token": second, "password": "новый-пароль-1"}))[0] == 400
 
     async def test_unknown_email_reset_looks_the_same(self, client, app_context):
         app_context.mailer.outbox = []
@@ -581,11 +601,11 @@ async def test_delete_also_removes_reset_codes_and_legacy_client_metadata(client
     _, body, _ = await register(client)
     token = body["data"]["token"]
     uid = await app_context.miniapp.resolve_token(token)
-    code = await app_context.accounts.issue_code("kid@example.com", "reset")
+    link = await app_context.accounts.issue_reset_link("kid@example.com")
     legacy = await app_context.miniapp.issue_token(uid)
     await app_context.miniapp.touch_token(legacy, "Safari")
     assert (await post(client, "/api/account/delete", {"password": "длинный-пароль"}, token))[0] == 200
-    assert not await app_context.accounts.check_code("kid@example.com", "reset", code)
+    assert not await app_context.accounts.reset_link_email(link)
     assert not await app_context.db.fetch_all("SELECT * FROM token_clients WHERE telegram_id = ?", (uid,))
 
 

@@ -81,11 +81,22 @@ class Mailer:
                 pass
 
 
-def letter(title: str, lead: str, *, code: str = "", note: str = "", site: str = "") -> tuple[str, str]:
-    """Письмо в двух видах: (простой текст, HTML). Код — крупно посередине.
+def letter(title: str, lead: str, *, code: str = "", note: str = "", site: str = "",
+           link: str = "", button: str = "") -> tuple[str, str]:
+    """Письмо в двух видах: (простой текст, HTML). Код — крупно посередине,
+    ссылка — кнопкой (в простом тексте — адресом).
     site — адрес сайта: сверху иконка приложения, как на домашнем экране."""
-    text = "\n\n".join(part for part in (f"{lead} {code}".strip(), note) if part)
+    text = "\n\n".join(part for part in (f"{lead} {code}".strip(), link, note) if part)
     esc = html.escape
+    if link:
+        code_html_link = (
+            f'<p style="margin:24px 0"><a href="{esc(link)}" style="display:inline-block;padding:14px 28px;'
+            f'border-radius:14px;background:#4f46e5;color:#fff;font-weight:600;font-size:16px;text-decoration:none">'
+            f'{esc(button or title)}</a></p>'
+            f'<p style="margin:0 0 16px;color:#9ca3af;font-size:12px;line-height:1.4;word-break:break-all">'
+            f'Если кнопка не нажимается, откройте адрес:<br>{esc(link)}</p>')
+    else:
+        code_html_link = ""
     code_html = (
         f'<div style="margin:24px 0;padding:18px 0;border-radius:16px;background:#eef2ff;'
         f'font:700 34px/1 ui-monospace,Menlo,monospace;letter-spacing:10px;color:#3730a3">{esc(code)}</div>'
@@ -106,7 +117,7 @@ def letter(title: str, lead: str, *, code: str = "", note: str = "", site: str =
 {logo_html}
 <h1 style="margin:12px 0 8px;font-size:22px">{esc(title)}</h1>
 <p style="margin:0 0 4px;font-size:16px;line-height:1.5">{esc(lead)}</p>
-{code_html}{note_html}
+{code_html}{code_html_link}{note_html}
 </div>
 <p style="text-align:center;color:#9ca3af;font-size:12px;margin:16px 0 0">Дневник · {footer}</p>
 </body></html>"""

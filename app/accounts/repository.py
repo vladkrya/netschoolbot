@@ -14,6 +14,7 @@ from . import WEB_ID_BASE
 CODE_TTL_S = 15 * 60
 CODE_ATTEMPTS = 5
 LINK_CODE_TTL_S = 15 * 60
+RESET_LINK_TTL_S = 30 * 60
 # Колонки с id пользователя, кроме telegram_id: перенос при привязке Telegram.
 # owner_id, follower_id, viewer_id — родные (followers, follow_invites, follow_views).
 USER_COLUMNS = ("telegram_id", "author_id", "reporter_id", "actor_id", "deleted_by",
@@ -118,6 +119,35 @@ class AccountRepository:
             return False
 
     # ─────────────────────────── Привязка Telegram ───────────────────────────
+
+    async def number(self, telegram_id: int) -> int | None:
+        """Номер аккаунта в приложении (виден в настройках, логин CalDAV)."""
+        row = await self._db.fetch_one("SELECT account_no FROM users WHERE telegram_id = ?", (telegram_id,))
+        return row["account_no"] if row else None
+
+    async def issue_reset_link(self, email: str) -> str:
+        """Секрет для ссылки сброса пароля. Хранится только хэш, новая ссылка
+        отменяет прежнюю; живёт RESET_LINK_TTL_S и гасится при использовании."""
+        token = secrets.token_urlsafe(32)
+        await self._db.execute(
+            """INSERT INTO account_codes (email, purpose, code_hash, expires_at, attempts) VALUES (?, 'reset', ?, ?, 0)
+               ON CONFLICT(email, purpose) DO UPDATE SET code_hash = excluded.code_hash,
+                   expires_at = excluded.expires_at, attempts = 0""",
+            (normalize_email(email), _digest(token), time.time() + RESET_LINK_TTL_S))
+        return token
+
+    async def reset_link_email(self, token: str, *, take: bool = False) -> str | None:
+        """Почта, к которой ведёт живая ссылка сброса; take — сразу погасить."""
+        if not token or len(token) > 128:
+            return None
+        async with self._db.transaction() as db:
+            cursor = await db.execute(
+                "SELECT email FROM account_codes WHERE purpose = 'reset' AND code_hash = ? AND expires_at > ?",
+                (_digest(token), time.time()))
+            row = await cursor.fetchone()
+            if row and take:
+                await db.execute("DELETE FROM account_codes WHERE email = ? AND purpose = 'reset'", (row[0],))
+            return row[0] if row else None
 
     async def issue_link_code(self, telegram_id: int) -> str:
         code = secrets.token_hex(4).upper()
