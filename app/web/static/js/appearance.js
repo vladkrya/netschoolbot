@@ -1,8 +1,9 @@
 // Оформление: цвет шапки и меню, полноэкранный режим в Telegram.
 'use strict';
 
-import { initData, tg } from './core.js';
+import { initData, motionAtLeast, tg } from './core.js';
 import { getPref, setPref } from './prefs.js';
+import { flyBats, landBats, swoopOnce } from './bats.js';
 import { HALLOWEEN_ICONS, ICONS } from './icons.js';
 
 export const ACCENTS = [
@@ -181,6 +182,7 @@ export function applyHalloween() {
     fog.ariaHidden = 'true';
     (document.getElementById('appHeader') || document.body).prepend(decor);
     document.body.append(stars, fog);
+    flyBats(decor, batsAllowed);
     swoop();
   } else if (!on) {
     document.querySelectorAll('.hw-decor, .hw-stars, .hw-fog, .hw-swoop').forEach((el) => el.remove());
@@ -219,19 +221,24 @@ export function halloweenCountdown(now = new Date()) {
   return `до Хеллоуина ${left} ${word}`;
 }
 
-/** Раз за запуск большая летучая мышь пролетает через весь экран. */
-let swooped = false;
+/** Мыши летают от 75% «Анимаций»: ниже motion.css ставит их на место. */
+function batsAllowed() {
+  return motionAtLeast(75);
+}
+
+/** Большая летучая мышь пролетает через экран: через 2,5 с после запуска,
+ *  потом изредка, раз в 1,5–3 минуты, каждый раз своим маршрутом (bats.js).
+ *  Пока приложение свёрнуто, не летает. */
+let swooping = false;
 function swoop() {
-  if (swooped || !showMotion() || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-  swooped = true;
-  setTimeout(() => {
-    if (!isHalloween()) return;
-    const bat = document.createElement('div');
-    bat.className = 'hw-swoop';
-    bat.ariaHidden = 'true';
-    bat.addEventListener('animationend', () => bat.remove(), { once: true });
-    document.body.append(bat);
-  }, 2500);
+  if (swooping) return;
+  swooping = true;
+  const next = (delay) => setTimeout(() => {
+    if (!isHalloween()) { swooping = false; return; }
+    if (batsAllowed() && !document.hidden) swoopOnce();
+    next(90000 + Math.random() * 90000);
+  }, delay);
+  next(2500);
 }
 
 /** Профиль сказал, доступно ли оформление этому человеку. */
@@ -255,18 +262,45 @@ export function showHomeworkStatus() {
   return getPref('hwStatus') !== 'hide';
 }
 
-/** Анимации в приложении. По умолчанию включены; выключенные — класс
- *  no-motion на <html> (его же ставит скрипт в <head> до отрисовки). */
-export function showMotion() {
-  return getPref('motion') !== 'off';
+/** Телефон, на котором полные анимации и размытие подтормаживают: мало
+ *  памяти (знает только Chrome на Android; iPhone не сообщает). */
+export function weakDevice() {
+  return (navigator.deviceMemory || 8) <= 2;
+}
+
+/** Сколько анимаций играть, в процентах: 0, 25, 50, 75 или 100. Хранится
+ *  'off' и 'on' для краёв (так их понимали прежние версии и ретро-сайт) и
+ *  числом между ними. Не выбрано — 100%, а на слабом телефоне 50%. Классы
+ *  на <html> ставит и скрипт в <head> до отрисовки — правила те же. */
+export function motionLevel() {
+  const raw = getPref('motion');
+  if (raw === 'off') return 0;
+  if (raw === 'on') return 100;
+  if (/^(25|50|75)$/.test(raw || '')) return Number(raw);
+  return weakDevice() ? 50 : 100;
+}
+
+/** Уровень выбран сам, а не подобран под телефон. */
+export function motionChosen() {
+  return getPref('motion') != null;
 }
 
 export function applyMotion() {
-  document.documentElement.classList.toggle('no-motion', !showMotion());
+  const level = motionLevel();
+  const classes = document.documentElement.classList;
+  classes.toggle('motion-calm', level < 100);
+  classes.toggle('motion-lite', level < 75);
+  classes.toggle('motion-min', level < 50);
+  classes.toggle('no-motion', level === 0);
+  if (!batsAllowed()) landBats();
+  else {
+    const decor = document.querySelector('.hw-decor');
+    if (decor) flyBats(decor, batsAllowed);
+  }
 }
 
-export function saveMotion(on) {
-  setPref('motion', on ? 'on' : 'off');
+export function saveMotion(level) {
+  setPref('motion', level === 0 ? 'off' : level === 100 ? 'on' : String(level));
   applyMotion();
 }
 

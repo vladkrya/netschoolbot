@@ -75,10 +75,22 @@ export function keepTouch(target, { move, end, cancel = end }) {
   target.addEventListener('touchcancel', off);
 }
 
-/** Движение выключено: системное «Уменьшить движение» или тумблер
- *  «Анимации» в настройках (класс no-motion на <html>, appearance.js). */
+/** Движение выключено: системное «Уменьшить движение» или «Анимации» на 0%
+ *  в настройках (класс no-motion на <html>, appearance.js). */
 export const stillMotion = () => document.documentElement.classList.contains('no-motion')
   || matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/** Играть ли анимацию, которой нужен уровень «Анимаций» не ниже percent
+ *  (25, 50, 75 или 100). Уровень лежит классами на <html>: ниже 100% —
+ *  motion-calm, ниже 75% — ещё motion-lite, ниже 50% — ещё motion-min. */
+export function motionAtLeast(percent) {
+  if (stillMotion()) return false;
+  const classes = document.documentElement.classList;
+  if (percent > 75) return !classes.contains('motion-calm');
+  if (percent > 50) return !classes.contains('motion-lite');
+  if (percent > 25) return !classes.contains('motion-min');
+  return true;
+}
 
 /** Номер урока для показа. В день со своими уроками они нумеруются по
  *  порядку вместе со школьными (place, edits.js); сам number не трогаем —
@@ -229,10 +241,11 @@ export const isOffline = () => offline;
 const offlineTitle = () => (navigator.onLine === false ? 'Нет интернета' : 'Нет связи с сервером');
 
 // Плашка — кружок справа над панелью, как у решения в фоне (и на месте
-// кнопки помощника: без сети она прячется). Раскрывается на три секунды:
-// когда сеть пропала и по касанию — с заголовком; когда изменение встало
-// в очередь — одной строкой «1 изменение ждёт сети».
+// кнопки помощника: без сети она прячется). Раскрывается на три секунды,
+// когда сеть пропала и по касанию — с заголовком; на две, когда изменение
+// встало в очередь — одной строкой «1 изменение ждёт сети».
 const PILL_OPEN_MS = 3000;
+const PILL_BRIEF_MS = 2000;
 let pillTimer = 0;
 
 // Ширина плашки — по тексту, а не max-width с запасом: иначе закрытие
@@ -256,7 +269,7 @@ function openOfflinePill(brief = false) {
   pillTimer = setTimeout(() => {
     pill.classList.remove('open');
     pill.style.width = '';
-  }, PILL_OPEN_MS);
+  }, pill.classList.contains('brief') ? PILL_BRIEF_MS : PILL_OPEN_MS);
 }
 
 function paintOfflinePill() {

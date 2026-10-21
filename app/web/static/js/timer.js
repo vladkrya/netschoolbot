@@ -9,6 +9,7 @@
 
 import { base, demo, esc, lessonNo, stillMotion } from './core.js';
 import { notify } from './haptics.js';
+import { getPref } from './prefs.js';
 
 // До начала урока отсчёт показывается не раньше чем за столько минут — и
 // перед первым, и после длинного окна (свой урок ночью, а дальше уроки с утра).
@@ -27,6 +28,18 @@ const URGENT_S = 10;
 // MAX_RTT_MS не годится — погрешность выйдет больше, чем расхождение.
 const CLOCK_SYNC_MS = 10 * 60000;
 const MAX_RTT_MS = 3000;
+// Замеров за сверку: берём самый быстрый — у него меньше всего погрешность.
+const CLOCK_SAMPLES = 3;
+// Расхождение меньше этого — погрешность замера, а не неточные часы: точный
+// телефон (автоматическое время) считает по своим, иначе поправка в доли
+// секунды уводила «00» от часов на экране.
+const CLOCK_TRUST_MS = 1000;
+// Сервер не сверился с NTP — его часы сами могут спешить на секунды, и
+// верим им, только когда телефон расходится с ними заметно.
+const CLOCK_TRUST_UNSYNCED_MS = 10000;
+// Сдвиг звонка в настройках: школьный звонок звенит на несколько секунд
+// позже или раньше ровного времени.
+export const BELL_SHIFTS = [-5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
 let lessons = [];
 let active = false;
@@ -46,35 +59,55 @@ let clockSyncedAt = 0;
 const nowMs = () => Date.now() + clockOffset;
 const clock = () => new Date(nowMs());
 
-/** Сверить часы с сервером: середина запроса — момент его ответа. */
+/** Один замер: середина запроса — момент ответа сервера. */
+async function sampleClock() {
+  const sent = Date.now();
+  const response = await fetch(`${base}/time`, { cache: 'no-store' });
+  const { now, synced } = await response.json();
+  const received = Date.now();
+  if (!Number.isFinite(now) || received - sent > MAX_RTT_MS) return null;
+  return { rtt: received - sent, offset: now * 1000 - (sent + received) / 2, synced: synced !== false };
+}
+
+/** Сверить часы с сервером. Первый запрос часто медленный (соединение ещё
+ *  устанавливается) и смещён, поэтому замеров несколько. */
 async function syncClock() {
   if (demo || Date.now() - clockSyncedAt < CLOCK_SYNC_MS) return;
   clockSyncedAt = Date.now();
   try {
-    const sent = Date.now();
-    const response = await fetch(`${base}/time`, { cache: 'no-store' });
-    const { now } = await response.json();
-    const received = Date.now();
-    if (!Number.isFinite(now) || received - sent > MAX_RTT_MS) return;
-    clockOffset = Math.round(now * 1000 - (sent + received) / 2);
+    let best = null;
+    for (let i = 0; i < CLOCK_SAMPLES; i += 1) {
+      const sample = await sampleClock();
+      if (sample && (!best || sample.rtt < best.rtt)) best = sample;
+    }
+    if (!best) return;
+    const trust = best.synced ? CLOCK_TRUST_MS : CLOCK_TRUST_UNSYNCED_MS;
+    clockOffset = Math.abs(best.offset) < trust ? 0 : Math.round(best.offset);
   } catch {
     // Без сети считаем по часам телефона и попробуем позже.
     clockSyncedAt = 0;
   }
 }
 
-function at(time, base) {
+/** Сдвиг звонка из настроек, с. */
+export function bellShift() {
+  const value = Number(getPref('bellShift'));
+  return BELL_SHIFTS.includes(value) ? value : 0;
+}
+
+function at(time, base, shift = 0) {
   const [h, m] = String(time || '').split(':').map(Number);
   if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
   const date = new Date(base);
-  date.setHours(h, m, 0, 0);
+  date.setHours(h, m, shift, 0);
   return date;
 }
 
-/** Что сейчас: урок, перемена перед уроком или ничего. */
-export function timerPhase(list, now = new Date()) {
+/** Что сейчас: урок, перемена перед уроком или ничего. shift — сдвиг
+ *  звонка, с: и начало, и конец урока наступают на столько позже. */
+export function timerPhase(list, now = new Date(), shift = 0) {
   const items = list
-    .map((lesson) => ({ lesson, start: at(lesson.start, now), end: at(lesson.end, now) }))
+    .map((lesson) => ({ lesson, start: at(lesson.start, now, shift), end: at(lesson.end, now, shift) }))
     .filter((item) => item.start && item.end && item.end > item.start)
     .sort((a, b) => a.start - b.start);
   for (let i = 0; i < items.length; i += 1) {
@@ -226,7 +259,7 @@ async function tick() {
   if (!box || busy) return;
   const daySwitch = instant;
   instant = false;
-  const phase = active ? timerPhase(lessons, clock()) : null;
+  const phase = active ? timerPhase(lessons, clock(), bellShift()) : null;
   const key = phase?.key || '';
   if (key === shownKey) {
     if (phase) paint(box, phase);
@@ -243,7 +276,7 @@ async function tick() {
         // Отсчёт дошёл до нуля: «Урок окончен», затем — следующий отсчёт
         // на том же месте, а если дальше ничего — карточка сворачивается.
         await celebrate(box);
-        const next = active ? timerPhase(lessons, clock()) : null;
+        const next = active ? timerPhase(lessons, clock(), bellShift()) : null;
         if (next) {
           await wait(NEXT_PAUSE_MS);
           await morph(box, next);
@@ -256,7 +289,7 @@ async function tick() {
       return;
     }
   }
-  const fresh = active ? timerPhase(lessons, clock()) : null;
+  const fresh = active ? timerPhase(lessons, clock(), bellShift()) : null;
   if (fresh) await show(box, fresh, daySwitch);
 }
 

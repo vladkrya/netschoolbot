@@ -9,7 +9,7 @@ import {
 } from './core.js';
 import {
   ACCENTS, currentAccent, forgetAccent, isNewDesign, rememberAccent, saveAccent, savedAccents, saveAnswers, saveBells, saveDesign, saveHomeworkStatus, saveWeekends, showAnswers, showBells,
-  applyMotion, HALLOWEEN_ACCENTS, halloweenAccent, halloweenCountdown, isHalloween, saveHalloween, saveHalloweenAccent, showConfetti, saveConfetti, showMotion, saveMotion, showHomeworkStatus, showWeekends, syncChromeColor,
+  applyMotion, HALLOWEEN_ACCENTS, halloweenAccent, halloweenCountdown, isHalloween, saveHalloween, saveHalloweenAccent, showConfetti, saveConfetti, motionChosen, motionLevel, saveMotion, weakDevice, showHomeworkStatus, showWeekends, syncChromeColor,
 } from './appearance.js';
 import { ICONS } from './icons.js';
 import { smoothRepaint } from './motion.js';
@@ -27,6 +27,7 @@ import { openBugReport } from './bugreport.js';
 import { openLockSettings } from './lock.js';
 import { canInstall, openInBrowser, openInstallGuide, wantsInstall } from './install.js';
 import { pendingOps, send } from './outbox.js';
+import { BELL_SHIFTS, bellShift } from './timer.js';
 
 export async function loadProfile(force = false) {
   if (state.profile && !force) return state.profile;
@@ -571,8 +572,8 @@ async function openCalendar() {
   await load();
 }
 
-const HISTORY_KINDS = { new: 'Новая', changed: 'Исправлена', deleted: 'Удалена' };
-const HISTORY_FILTERS = [['all', 'Все'], ['new', 'Новые'], ['changed', 'Исправленные'], ['deleted', 'Удалённые']];
+const HISTORY_KINDS = { new: 'Поставлена', changed: 'Исправлена', deleted: 'Удалена' };
+const HISTORY_FILTERS = [['all', 'Все'], ['new', 'Поставленные'], ['changed', 'Исправленные'], ['deleted', 'Удалённые']];
 const dayFormat = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long' });
 const clockFormat = new Intl.DateTimeFormat('ru-RU', { hour: '2-digit', minute: '2-digit' });
 
@@ -586,17 +587,19 @@ function historyDay(date) {
   return diff === 0 ? 'Сегодня' : diff === 1 ? 'Вчера' : dayFormat.format(date);
 }
 
-function historyItem(item, index) {
+function historyItem(item, index, unseen) {
   const seen = new Date(item.seen);
   const date = item.date.split('-').reverse().slice(0, 2).join('.');
   const marks = item.kind === 'changed'
     ? `${markBox(item.old, 'old')}<span class="hi-arrow">${ICONS.right}</span>${markBox(item.new, 'fresh')}`
     : markBox(item.mark, item.kind === 'deleted' ? 'old' : 'fresh');
-  return `<div class="history-item hi-${esc(item.kind)}" data-history="${esc(item.id)}" role="button" tabindex="0" style="--d:${Math.min(index, 12) * 35}ms">
+  // «Новая» — только пока запись не видели; потом остаётся «Поставлена» и время.
+  const kind = unseen && item.kind === 'new' ? 'Новая' : HISTORY_KINDS[item.kind] || '';
+  return `<div class="history-item hi-${esc(item.kind)}${unseen ? ' hi-unseen' : ''}" data-history="${esc(item.id)}" role="button" tabindex="0" style="--d:${Math.min(index, 12) * 35}ms">
       <div class="hi-main">
         <div class="hi-subject">${esc(item.subject)}</div>
         <div class="hi-title">${esc(item.title || 'Оценка')} · за ${esc(date)}</div>
-        <div class="hi-meta"><span class="hi-kind">${HISTORY_KINDS[item.kind] || ''}</span>${esc(clockFormat.format(seen))}</div>
+        <div class="hi-meta"><span class="hi-kind">${kind}</span>${esc(clockFormat.format(seen))}</div>
       </div>
       <div class="hi-marks">${marks}</div>
     </div>`;
@@ -605,6 +608,16 @@ function historyItem(item, index) {
 // Первая страница истории — и на устройстве: без сети её видно, даже если
 // service worker нет (Telegram) или он её ещё не сохранил.
 const HISTORY_KEY = 'ns-history';
+
+// Последняя запись, которую уже показывали: всё, что старше, — не новое.
+const HISTORY_SEEN_KEY = 'ns-history-seen';
+
+function historySeenId() {
+  try {
+    const value = Number(localStorage.getItem(HISTORY_SEEN_KEY));
+    return Number.isFinite(value) && value > 0 ? value : null;
+  } catch { return null; }
+}
 
 function savedHistory() {
   try { return JSON.parse(localStorage.getItem(HISTORY_KEY) || 'null'); } catch { return null; }
@@ -655,6 +668,11 @@ async function openHistory() {
   let filter = 'all';
   let more = true;
   let loading = false;
+  // Отметку снимаем при следующем открытии, а не сразу: новые видно, пока
+  // экран открыт. Отметки ещё не было — новыми считаем записи за сутки.
+  const seenId = historySeenId();
+  const dayAgo = Date.now() - 86400000;
+  const unseen = (item) => (seenId == null ? new Date(item.seen) > dayAgo : item.id > seenId);
 
   const draw = () => {
     const shown = items.filter((item) => filter === 'all' || item.kind === filter);
@@ -665,7 +683,7 @@ async function openHistory() {
       const day = historyDay(new Date(item.seen));
       const head = day !== lastDay ? `<div class="hi-day">${esc(day)}</div>` : '';
       lastDay = day;
-      return head + historyItem(item, index++);
+      return head + historyItem(item, index++, unseen(item));
     }).join('');
     screen.innerHTML = `
       <div class="chips history-filters">${HISTORY_FILTERS.map(([key, label]) =>
@@ -704,6 +722,10 @@ async function openHistory() {
         data = saved;
       }
       items.push(...data.items);
+      if (!demo && !before && data.items.length) {
+        const top = Math.max(...data.items.map((item) => item.id));
+        try { if (top > (seenId || 0)) localStorage.setItem(HISTORY_SEEN_KEY, String(top)); } catch { /* хранилище недоступно */ }
+      }
       // Сервер отдаёт по 50: меньше — значит, старше ничего нет.
       more = data.items.length >= 50;
       if (!items.length) {
@@ -875,9 +897,6 @@ function render() {
       <div class="drawer-heading">Оформление</div>
       ${data.halloween ? `<label class="switch-row halloween-row"><span>🎃 Хеллоуин<span class="muted small switch-note">${halloweenCountdown()}</span></span>
         <input type="checkbox" switch class="switch" id="halloweenOn" ${isHalloween() ? 'checked' : ''}></label>` : ''}
-      <label class="switch-row retro-row"><span>📟 Ретро-сайт<span class="muted small switch-note">дневник страничкой из 90-х: звёзды, котики, окна Windows 98</span></span>
-        <input type="checkbox" switch class="switch" id="retroSite"></label>
-      <div class="muted small retro-credit">Разработано: <a href="${RETRO_AUTHOR_URL}" target="_blank" rel="noopener">faustyu1</a> (netschool-retro). Спасибо!</div>
       ${spooky ? '<div class="muted small halloween-note">В Хеллоуин тема всегда ночная. Светлая и свой цвет вернутся, когда выключите праздник.</div>'
         : isNewDesign() ? themeSegment : `${radio('light', 'Светлая тема')}
       ${radio('auto', 'Как в системе')}
@@ -894,14 +913,19 @@ function render() {
       ${more('look', 'Ещё настройки вида', `
       <label class="switch-row design-row"><span>Старый дизайн</span>
         <input type="checkbox" switch class="switch" id="designOld" ${isNewDesign() ? '' : 'checked'}></label>
+      <label class="switch-row retro-row"><span>📟 Ретро-сайт<span class="muted small switch-note">дневник страничкой из 90-х: звёзды, котики, окна Windows 98</span></span>
+        <input type="checkbox" switch class="switch" id="retroSite"></label>
+      <div class="muted small retro-credit">Разработано: <a href="${RETRO_AUTHOR_URL}" target="_blank" rel="noopener">faustyu1</a> (netschool-retro). Спасибо!</div>
       <label class="switch-row"><span>Подсвечивать Д/З на главной<span class="muted small switch-note">красным — не сделано, зелёным — сделано</span></span>
         <input type="checkbox" switch class="switch" id="hwStatusShow" ${showHomeworkStatus() ? 'checked' : ''}></label>
       ${data.api_mode === 'mobile' ? `<label class="switch-row"><span>Отправка ответа на задание<span class="muted small switch-note">блок «Мой ответ» на экране задания</span></span>
         <input type="checkbox" switch class="switch" id="answersShow" ${showAnswers() ? 'checked' : ''}></label>` : ''}
-      <label class="switch-row"><span>Анимации<span class="muted small switch-note">выключите, если телефон подтормаживает</span></span>
-        <input type="checkbox" switch class="switch" id="motionShow" ${showMotion() ? 'checked' : ''}></label>
+      ${motionRow()}
       <label class="switch-row"><span>Конфетти за пятёрку<span class="muted small switch-note">когда приходит новая 5</span></span>
         <input type="checkbox" switch class="switch" id="confettiShow" ${showConfetti() ? 'checked' : ''}></label>
+      <label class="switch-row"><span>Сдвиг звонка<span class="muted small switch-note">таймер урока: если звонок звенит позже или раньше ровной минуты</span></span>
+        <select class="field reminder-hour" id="bellShift">${BELL_SHIFTS.map((value) =>
+          `<option value="${value}" ${value === bellShift() ? 'selected' : ''}>${value ? `${value > 0 ? '+' : '−'}${Math.abs(value)} с` : 'точно'}</option>`).join('')}</select></label>
       <label class="switch-row"><span>Показывать выходные без уроков</span>
         <input type="checkbox" switch class="switch" id="weekendsShow" ${showWeekends() ? 'checked' : ''}></label>
       ${isNewDesign() ? '' : `<label class="switch-row"><span>Звонки вместо расписания недели</span>
@@ -946,6 +970,38 @@ function render() {
   bindDrawer();
   loadStudentClass(currentStudent);
   checkReferences();
+}
+
+// Что остаётся на каждом уровне «Анимаций» — подпись под ползунком.
+const MOTION_NOTES = {
+  0: 'всё без движения',
+  25: 'только переходы между экранами и шторки',
+  50: 'для старых телефонов: без размытия, счётчиков и конфетти',
+  75: 'без украшений: волн от касаний и фоновых анимаций',
+  100: 'все анимации',
+};
+
+/** «Анимации» — ползунок в процентах, шагами по 25. */
+function motionRow() {
+  const level = motionLevel();
+  return `<div class="motion-row">
+        <label class="motion-head" for="motionLevel"><span>Анимации</span><b id="motionValue">${level}%</b></label>
+        <input type="range" class="motion-range" id="motionLevel" min="0" max="100" step="25" value="${level}" style="--p:${level}%">
+        <div class="motion-ticks" aria-hidden="true"><span>0</span><span>25</span><span>50</span><span>75</span><span>100</span></div>
+        <div class="muted small" id="motionNote">${motionNote(level)}</div>
+      </div>`;
+}
+
+function motionNote(level) {
+  const auto = !motionChosen() && weakDevice() ? ' · подобрано под этот телефон' : '';
+  return MOTION_NOTES[level] + auto;
+}
+
+/** Ползунок двигают — число и подпись меняются сразу, сохраняется по отпусканию. */
+function showMotionLevel(level) {
+  $('motionValue').textContent = `${level}%`;
+  $('motionNote').textContent = MOTION_NOTES[level];
+  $('motionLevel').style.setProperty('--p', `${level}%`);
 }
 
 /** Плитка инструмента: значок над подписью — восемь пунктов помещаются в
@@ -1005,13 +1061,19 @@ function bindDrawer() {
     select();
     saveAnswers(event.target.checked);
   });
-  $('motionShow').addEventListener('change', (event) => {
+  const motion = $('motionLevel');
+  motion.addEventListener('input', () => {
     select();
-    saveMotion(event.target.checked);
+    showMotionLevel(Number(motion.value));
   });
+  motion.addEventListener('change', () => saveMotion(Number(motion.value)));
   $('confettiShow').addEventListener('change', (event) => {
     select();
     saveConfetti(event.target.checked);
+  });
+  $('bellShift').addEventListener('change', (event) => {
+    select();
+    setPref('bellShift', event.target.value);
   });
   $('weekendsShow').addEventListener('change', (event) => {
     select();

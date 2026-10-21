@@ -376,7 +376,6 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
   height: 52px; width: 52px;
   padding: 0 6px; box-sizing: border-box;
   border: 0; border-radius: 999px;
-  overflow: hidden;
   font: inherit; text-align: left;
   color: #fff;
   background: color-mix(in srgb, #37404d 92%, transparent);
@@ -389,7 +388,9 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .net-pill:active { transform: scale(.92); }
 .net-pill.leaving { opacity: 0; transform: scale(.6); pointer-events: none; }
 .net-pill-icon { flex: none; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; }
-.net-pill-text { display: grid; flex: none; max-width: calc(min(300px, 100vw - 92px) - 72px); line-height: 1.2; opacity: 0; transform: translateX(-6px);
+/* Обрезает текст сама надпись, а не плашка: overflow на плашке срезал
+   по скруглению и бейдж со счётчиком. */
+.net-pill-text { display: grid; flex: 0 1 auto; min-width: 0; overflow: hidden; max-width: calc(min(300px, 100vw - 92px) - 72px); line-height: 1.2; opacity: 0; transform: translateX(-6px);
   transition: opacity .15s ease, transform .2s ease; }
 .net-pill.open .net-pill-text { opacity: 1; transform: none; transition: opacity .25s ease .15s, transform .35s var(--ease) .1s; }
 .net-pill b { font-size: 13px; font-weight: 650; white-space: nowrap; }
@@ -397,14 +398,14 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .net-pill.brief b { display: none; }
 .net-pill.brief small { font-size: 13px; font-weight: 600; opacity: 1; }
 /* Сколько изменений ждёт сети — бейдж на свёрнутом кружке. */
-.net-pill-count { position: absolute; top: 2px; left: 32px; min-width: 18px; padding: 1px 4px; box-sizing: border-box;
+.net-pill-count { position: absolute; top: -4px; left: 32px; min-width: 18px; padding: 1px 4px; box-sizing: border-box;
   border-radius: 9px; font-size: 11px; font-weight: 700; text-align: center; color: #fff; background: var(--g2, #e0533d);
   transition: opacity .2s ease; }
 .net-pill.open .net-pill-count { opacity: 0; }
 @media (prefers-reduced-motion: reduce) { .net-pill, .net-pill-text { animation: none; transition: none; } }
-/* Без сети помощник не работает, а его кнопка стоит там же, где плашка, —
-   плашка встаёт вместо неё. */
-:root.offline[data-design] .ai-fab:not([hidden]) { display: none; }
+/* Без сети ни помощник, ни новое письмо не работают, а их кнопки стоят там же,
+   где плашка, — плашка встаёт вместо них. */
+:root.offline[data-design] :is(.ai-fab, #composeBtn):not([hidden]) { display: none; }
 /* Запас снизу под плашку: иначе она закрывала конец списка и кнопки внизу экрана. */
 html.offline body, html.offline .screen { padding-bottom: calc(var(--nav-h) + 68px); }
 /* То, что без сети не работает, бледнеет; касание объясняет почему.
@@ -1429,8 +1430,14 @@ html.repin body::after, html.repin .bottom-nav, html.repin .fab { position: abso
 .whatif-item { position: relative; display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 11px; color: var(--text2); }
 .whatif-item .mark-box { border-style: dashed; }
 .whatif-item .x { position: absolute; top: -6px; right: -6px; width: 18px; height: 18px; border-radius: 50%; background: var(--text2); color: var(--card); font-size: 12px; line-height: 18px; text-align: center; }
+/* «Добавить / Убрать» — переключатель, как у периодов в итогах. */
+.whatif-mode { display: flex; margin: 8px 0 12px; padding: 3px; border-radius: 999px; background: color-mix(in srgb, var(--text2) 12%, transparent); }
+.whatif-mode[hidden] { display: none; }
+.whatif-mode .seg-lens { display: none; }
+.whatif-mode button { flex: 1; padding: 6px 0; border-radius: 999px; font-size: 13px; font-weight: 600; color: var(--text2); transition: color .25s, background .25s; }
+.whatif-mode button.on { background: var(--card); color: var(--primary); box-shadow: 0 1px 4px rgba(16, 24, 40, .12); }
+.whatif-hint { margin-bottom: 8px; }
 /* Настоящие оценки, которые можно убрать из расчёта. */
-.whatif-pick { display: block; margin: 0 0 10px; font-size: 13px; color: var(--primary); }
 .whatif-real { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
 .whatif-item.real .mark-box { border-style: solid; }
 .whatif-item.off { opacity: .45; }
@@ -1517,6 +1524,7 @@ main.leaving { transition: transform .22s var(--ease); box-shadow: -8px 0 24px r
 .hi-subject { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hi-title { margin-top: 1px; font-size: 13px; color: var(--text2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hi-meta { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 12px; color: var(--text2); font-variant-numeric: tabular-nums; }
+.history-item.hi-unseen .hi-subject::after { content: ''; display: inline-block; width: 7px; height: 7px; margin-left: 6px; border-radius: 50%; background: var(--k); vertical-align: middle; }
 .hi-kind { padding: 1px 7px; border-radius: 7px; background: color-mix(in srgb, var(--k) 15%, transparent); color: var(--k); font-weight: 600; }
 .hi-marks { flex: none; display: flex; align-items: center; gap: 4px; }
 .hi-marks .mark-box.old { opacity: .45; text-decoration: line-through; }

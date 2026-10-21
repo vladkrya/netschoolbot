@@ -13,6 +13,8 @@ const KEYS = {
   halloween: 'ns-halloween-choice', halloweenAccent: 'ns-halloween-accent',
   // Ретро-сайт ('on'/'off'), retro.js.
   retro: 'ns-retro',
+  // Сдвиг звонка для таймера урока, секунды строкой (timer.js).
+  bellShift: 'ns-bell-shift',
 };
 // Тема, дизайн и цвет лежат строкой (их читает скрипт в <head>), остальное — JSON.
 const JSON_PREFS = new Set(['weights', 'thresholds', 'tabs', 'pins', 'accents', 'lessonEdits']);

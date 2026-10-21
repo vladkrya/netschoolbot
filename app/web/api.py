@@ -991,6 +991,28 @@ async def subject_stats(request: web.Request) -> web.Response:
     )
 
 
+@routes.get("/api/class-averages")
+async def class_averages(request: web.Request) -> web.Response:
+    """Средний балл класса по всем предметам за четверть — для карточек «Итогов».
+
+    Как и `/api/subject`, только мобильный режим; иначе `{"available": false}`.
+    """
+    quarter = (request.query.get("quarter") or "").strip()
+    if quarter not in PERIOD_KEYS:
+        return json_error("Не указана четверть")
+    if current_user(request).effective_api_mode is not ApiMode.MOBILE:
+        return web.json_response({"ok": True, "data": {"available": False}, "stale": False})
+
+    async def produce(app: AppContext, user: User):
+        averages = await app.diary.fetch_class_averages(user, quarter)
+        return {"available": True, "averages": averages} if averages else {"available": False}
+
+    return await _cached(
+        request, f"class-averages:{quarter}", produce,
+        cacheable=lambda payload: payload.get("available", False),
+    )
+
+
 @routes.get("/api/announcements")
 async def announcements(request: web.Request) -> web.Response:
     async def produce(app: AppContext, user: User):
@@ -1590,6 +1612,8 @@ MAX_PINS = 40
 # Свои цвета акцента, сохранённые рядом с готовыми.
 MAX_SAVED_ACCENTS = 8
 DESIGNS = ("classic", "new")
+# Сдвиг звонка для таймера урока, с (BELL_SHIFTS в timer.js).
+BELL_SHIFTS = tuple(str(value) for value in range(-5, 11))
 ACCENT_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 
 
@@ -1854,7 +1878,8 @@ async def save_prefs(request: web.Request) -> web.Response:
             return json_error("Некорректная настройка подсветки заданий")
         changes["hwStatus"] = body["hwStatus"]
     if "motion" in body:
-        if body["motion"] not in ("on", "off"):
+        # Доля анимаций: края — 'on' и 'off', между ними — проценты.
+        if body["motion"] not in ("on", "75", "50", "25", "off"):
             return json_error("Некорректная настройка анимаций")
         changes["motion"] = body["motion"]
     if "halloween" in body:
@@ -1869,6 +1894,11 @@ async def save_prefs(request: web.Request) -> web.Response:
         if body["retro"] not in ("on", "off"):
             return json_error("Некорректная настройка ретро-сайта")
         changes["retro"] = body["retro"]
+    if "bellShift" in body:
+        # Сдвиг звонка для таймера урока, секунды строкой: -5…+10.
+        if body["bellShift"] not in BELL_SHIFTS:
+            return json_error("Некорректный сдвиг звонка")
+        changes["bellShift"] = body["bellShift"]
     if "confetti" in body:
         if body["confetti"] not in ("show", "hide"):
             return json_error("Некорректная настройка конфетти")

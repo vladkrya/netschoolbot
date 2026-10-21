@@ -89,6 +89,7 @@ class FakeDiary:
         self.absent: list = []
         self.stats = None
         self.stats_calls: list = []
+        self.class_averages = None
         self.diary_calls = 0
 
     async def fetch_marks(self, user, **kwargs):
@@ -136,6 +137,10 @@ class FakeDiary:
     async def fetch_subject_stats(self, user, subject, quarter):
         self.stats_calls.append((subject, quarter))
         return self.stats
+
+    async def fetch_class_averages(self, user, quarter):
+        self.stats_calls.append(("*", quarter))
+        return self.class_averages
 
     async def fetch_period(self, user, start, end, **kwargs):
         return await self.fetch_diary(user)

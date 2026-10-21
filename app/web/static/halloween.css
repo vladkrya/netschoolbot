@@ -114,39 +114,50 @@
   background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 160 160' fill='none' stroke='%23d9c8ee' stroke-opacity='.5' stroke-width='1.4'%3E%3Cpath d='M160 0L0 40M160 0L40 120M160 0L120 160M160 0L0 95M160 0L70 160'/%3E%3Cpath d='M132 7Q136 20 139 22Q146 26 152 30'/%3E%3Cpath d='M102 15Q110 38 117 43Q130 52 145 59'/%3E%3Cpath d='M70 23Q82 55 94 66Q114 82 138 89'/%3E%3Cpath d='M36 31Q54 72 71 88Q98 110 130 119'/%3E%3C/svg%3E") center / contain no-repeat;
   opacity: .55;
 }
+/* Маршруты задаёт bats.js (Web Animations, transform): каждый пролёт —
+   слева или справа, волной, нырком, с петлёй или разворотом. Пока мышь
+   ждёт вылета, она за левым краем. Крылья машут у ::before — масштаб
+   самого элемента сжал бы и его сдвиг. Мелкие мыши — дальние: тусклее
+   и чуть размыты, крупные — ближе и ярче. */
 .hw-bat {
   position: absolute;
   left: 0;
   top: calc(var(--bar-top, 0px) + var(--y, 10px));
   width: var(--w, 26px);
   aspect-ratio: 2;
+  transform: translateX(-60px);
+  opacity: var(--o, .8);
+  filter: var(--blur, none);
+  will-change: transform;
+}
+.hw-bat::before {
+  content: '';
+  position: absolute;
+  inset: 0;
   background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 32'%3E%3Cpath fill='%23b9a2d6' d='M32 9c-2 0-3 2-3 4l-2-3c0 2 0 4 1 5-4-1-7-5-9-10-3 4-8 6-14 5 4 3 6 7 6 11 4-2 8-1 11 2 1-3 4-5 7-5l3 3 3-3c3 0 6 2 7 5 3-3 7-4 11-2 0-4 2-8 6-11-6 1-11-1-14-5-2 5-5 9-9 10 1-1 1-3 1-5l-2 3c0-2-1-4-3-4z'/%3E%3C/svg%3E") center / contain no-repeat;
-  opacity: .8;
-    animation: hw-fly var(--t, 18s) linear var(--d, 0s) infinite, hw-flap .35s ease-in-out infinite alternate;
+  animation: hw-flap var(--f, .35s) ease-in-out infinite alternate;
 }
-.hw-bat:nth-child(3) { --y: 6px; --w: 26px; --t: 17s; --d: -3s; }
-.hw-bat:nth-child(4) { --y: 26px; --w: 18px; --t: 23s; --d: -12s; }
-.hw-bat:nth-child(5) { --y: 14px; --w: 22px; --t: 29s; --d: -20s; }
+.hw-bat:nth-child(3) { --y: 6px; --w: 26px; }
+.hw-bat:nth-child(4) { --y: 22px; --w: 16px; --o: .5; --blur: blur(.4px); --f: .28s; }
+.hw-bat:nth-child(5) { --y: 14px; --w: 21px; --o: .68; --f: .31s; }
 /* 31 октября мышей шесть. */
-.hw-bat:nth-child(6) { --y: 30px; --w: 16px; --t: 14s; --d: -7s; }
-.hw-bat:nth-child(7) { --y: 2px; --w: 20px; --t: 21s; --d: -16s; }
-.hw-bat:nth-child(8) { --y: 20px; --w: 28px; --t: 33s; --d: -26s; }
-@keyframes hw-fly {
-  0%   { translate: -60px 0; }
-  25%  { translate: 25vw -6px; }
-  50%  { translate: 50vw 4px; }
-  75%  { translate: 75vw -4px; }
-  100% { translate: calc(100vw + 60px) 0; }
-}
+.hw-bat:nth-child(6) { --y: 26px; --w: 14px; --o: .45; --blur: blur(.5px); --f: .26s; }
+.hw-bat:nth-child(7) { --y: 2px; --w: 19px; --o: .62; --f: .3s; }
+.hw-bat:nth-child(8) { --y: 18px; --w: 29px; --o: .9; --f: .4s; }
 @keyframes hw-flap { to { scale: 1 .6; } }
-/* Без анимаций мыши просто висят у шапки. */
-.no-motion .hw-bat { animation: none; translate: var(--x, 30vw) 0; }
+/* Без анимаций мыши просто висят у шапки и не машут. */
+.no-motion .hw-bat { transform: translateX(var(--x, 30vw)); }
+.no-motion .hw-bat::before { animation: none; }
 .no-motion .hw-bat:nth-child(3) { --x: 30vw; }
 .no-motion .hw-bat:nth-child(4) { --x: 64vw; }
 .no-motion .hw-bat:nth-child(5) { --x: 46vw; }
 .no-motion .hw-bat:nth-child(n+6) { display: none; }
 @media (prefers-reduced-motion: reduce) {
-  .hw-bat { animation: none; translate: var(--x, 30vw) 0; }
+  .hw-bat { transform: translateX(var(--x, 30vw)); }
+  .hw-bat::before { animation: none; }
+  .hw-bat:nth-child(4) { --x: 64vw; }
+  .hw-bat:nth-child(5) { --x: 46vw; }
+  .hw-bat:nth-child(n+6) { display: none; }
 }
 
 
@@ -215,7 +226,8 @@
 }
 @keyframes hw-fog { to { translate: 18% 0; } }
 
-/* Раз за запуск большая мышь с горящими глазами пролетает по диагонали. */
+/* Большая мышь с горящими глазами пролетает через экран — каждый раз
+   своим маршрутом (bats.js, swoopOnce). */
 .hw-swoop {
   position: fixed;
   left: 0;
@@ -224,15 +236,15 @@
   width: 120px;
   aspect-ratio: 2;
   pointer-events: none;
-  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 32'%3E%3Cpath fill='%23060309' d='M32 9c-2 0-3 2-3 4l-2-3c0 2 0 4 1 5-4-1-7-5-9-10-3 4-8 6-14 5 4 3 6 7 6 11 4-2 8-1 11 2 1-3 4-5 7-5l3 3 3-3c3 0 6 2 7 5 3-3 7-4 11-2 0-4 2-8 6-11-6 1-11-1-14-5-2 5-5 9-9 10 1-1 1-3 1-5l-2 3c0-2-1-4-3-4z'/%3E%3Ccircle cx='30.6' cy='13.4' r='.7' fill='%23ffb347'/%3E%3Ccircle cx='33.4' cy='13.4' r='.7' fill='%23ffb347'/%3E%3C/svg%3E") center / contain no-repeat;
+  transform: translateX(-200px);
   filter: drop-shadow(0 6px 12px rgba(0, 0, 0, .5));
-  animation: hw-swoop 2.4s cubic-bezier(.45, .05, .55, .95) forwards, hw-flap .18s ease-in-out infinite alternate;
 }
-@keyframes hw-swoop {
-  0%   { translate: -140px 70vh; scale: .6; }
-  40%  { translate: 35vw 35vh; scale: 1.15; }
-  70%  { translate: 65vw 22vh; scale: .9; }
-  100% { translate: calc(100vw + 140px) -10vh; scale: .5; }
+.hw-swoop::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 32'%3E%3Cpath fill='%23060309' d='M32 9c-2 0-3 2-3 4l-2-3c0 2 0 4 1 5-4-1-7-5-9-10-3 4-8 6-14 5 4 3 6 7 6 11 4-2 8-1 11 2 1-3 4-5 7-5l3 3 3-3c3 0 6 2 7 5 3-3 7-4 11-2 0-4 2-8 6-11-6 1-11-1-14-5-2 5-5 9-9 10 1-1 1-3 1-5l-2 3c0-2-1-4-3-4z'/%3E%3Ccircle cx='30.6' cy='13.4' r='.7' fill='%23ffb347'/%3E%3Ccircle cx='33.4' cy='13.4' r='.7' fill='%23ffb347'/%3E%3C/svg%3E") center / contain no-repeat;
+  animation: hw-flap .18s ease-in-out infinite alternate;
 }
 
 /* Звёзды на небе мерцают — по одной, вразнобой. Слой за всем экраном
@@ -269,15 +281,60 @@
   80% { opacity: .9; }
 }
 
+/* Падающая звезда: раз в 17 с чиркает по небу из правого верха и гаснет
+   (большую часть цикла её не видно). */
+:root[data-holiday="halloween"]:not(#_) .hw-stars::after {
+  content: '';
+  position: absolute;
+  right: 12%;
+  top: 14%;
+  width: 90px;
+  height: 2px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, #fff6dc, rgba(255, 240, 200, 0));
+  rotate: -28deg;
+  transform-origin: left center;
+  opacity: 0;
+  animation: hw-meteor 17s ease-out 4s infinite;
+}
+@keyframes hw-meteor {
+  0%, 88% { opacity: 0; translate: 0 0; scale: .3 1; }
+  90% { opacity: 1; }
+  96% { opacity: 0; translate: -46vw 26vh; scale: 1 1; }
+  100% { opacity: 0; translate: -46vw 26vh; }
+}
+
+/* В тумане над вкладками изредка моргают чьи-то глаза. */
+:root[data-holiday="halloween"]:not(#_) .hw-fog::before {
+  content: '';
+  position: absolute;
+  left: 45%;
+  top: 34px;
+  width: 16px;
+  height: 4px;
+  background:
+    radial-gradient(circle at 2px 2px, #ffb347 1.6px, transparent 2.4px),
+    radial-gradient(circle at 14px 2px, #ffb347 1.6px, transparent 2.4px);
+  filter: drop-shadow(0 0 4px #ff8a1f);
+  opacity: 0;
+  animation: hw-eyes 23s ease-in-out 9s infinite;
+}
+@keyframes hw-eyes {
+  0%, 80%, 100% { opacity: 0; scale: 1 1; }
+  83%, 88%, 92% { opacity: .85; scale: 1 1; }
+  85.5%, 90% { opacity: .85; scale: 1 .1; }
+}
+
 /* Без анимаций паук висит, туман стоит, луна и звёзды не мерцают.
    Псевдоэлементы — отдельно: внутри :is() браузер их молча отбрасывает. */
 .no-motion :is(.hw-fog, .hw-moon, .hw-stars span),
-.no-motion :is(.hw-spider, .hw-moon)::before,
+.no-motion :is(.hw-spider, .hw-moon, .hw-fog)::before,
+.no-motion .hw-stars::after,
 .no-motion .hw-spider::after { animation: none !important; }
 @media (prefers-reduced-motion: reduce) {
   :is(.hw-fog, .hw-moon, .hw-stars span),
-  :is(.hw-spider, .hw-moon)::before,
-  .hw-spider::after { animation: none !important; }
+  :is(.hw-spider, .hw-moon, .hw-fog)::before,
+  :is(.hw-spider, .hw-stars)::after { animation: none !important; }
 }
 
 /* ──────────────────────── Шапка и меню ──────────────────────── */

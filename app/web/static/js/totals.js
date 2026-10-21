@@ -3,7 +3,7 @@
 
 import {
   $, ABSENCES, DEFAULT_THRESHOLDS, api, avgClass, errorCard, esc, formatAverage, isAbsence, isoToday, dayMonth,
-  plural, shortDate, showFailure, showLoading, skeleton, state, syncFinished, syncStarted, weightedAverage, stillMotion, demo,
+  plural, shortDate, showFailure, showLoading, skeleton, state, syncFinished, syncStarted, weightedAverage, motionAtLeast, demo,
 } from './core.js';
 import { markBox, openMark } from './details.js';
 import { pushScreen } from './screens.js';
@@ -299,7 +299,7 @@ function skeletonCards(count) {
     </div>`).join('');
 }
 
-function cardsHtml(rows) {
+function cardsHtml(rows, averages) {
   const pinned = pins();
   return orderRows(rows).map((row) => {
     const isPinned = pinned.has(row.subject.subject);
@@ -309,7 +309,6 @@ function cardsHtml(rows) {
     const fill = row.avg == null ? 0 : Math.max(0, Math.min(100, (row.avg - 1) / 4 * 100));
     const trend = Math.abs(row.trend) >= 0.005 && !row.official
       ? `<span class="sc-trend ${row.trend > 0 ? 'up' : 'down'}">${row.trend > 0 ? '▲' : '▼'} ${signed(row.trend)}</span>` : '';
-    const goal = goalText(row);
     return `<button class="card subject-card glass" data-subject="${row.index}">
         <div class="sc-top">
           <span class="sc-pin${isPinned ? ' on' : ''}" role="button" data-pin aria-pressed="${isPinned}"
@@ -320,12 +319,47 @@ function cardsHtml(rows) {
         </div>
         <div class="sc-bar ${grade}"><span style="width:${fill}%"></span></div>
         <div class="sc-marks">${recent || '<span class="muted small">Оценок пока нет</span>'}</div>
-        ${goal || (row.official && row.avg != null) ? `<div class="sc-foot">
-          <span>${esc(goal)}</span>
-          ${row.official && row.avg != null ? `<span>ср. ${formatAverage(row.avg)}</span>` : ''}
-        </div>` : ''}
+        ${footHtml(row, averages?.[row.subject.subject])}
       </button>`;
   }).join('');
+}
+
+/** Низ карточки: что нужно до следующей оценки, справа — средний ученика
+ *  (если стоит выставленная) и средний класса. */
+function footHtml(row, classAvg) {
+  const goal = goalText(row);
+  const right = [
+    row.official && row.avg != null ? `ср. ${formatAverage(row.avg)}` : '',
+    classAvg != null ? `у класса ${formatAverage(classAvg)}` : '',
+  ].filter(Boolean).join(' · ');
+  return goal || right ? `<div class="sc-foot"><span>${esc(goal)}</span>${right ? `<span>${right}</span>` : ''}</div>` : '';
+}
+
+// Средние баллы класса за период (только мобильное API): «год|период» → { предмет: балл }.
+const classAverages = new Map();
+
+/** Средние класса приходят одним запросом на период и дописываются в карточки. */
+async function loadClassAverages(data, list, rows) {
+  if (!(data.mobile || demo) || data.archived) return;
+  const key = `${data.year_id}|${period}`;
+  if (!classAverages.has(key)) {
+    const wanted = period;
+    try {
+      const { data: payload } = await api(`/api/class-averages?quarter=${wanted}`);
+      classAverages.set(key, payload?.available ? payload.averages : null);
+    } catch {
+      return; // Строка необязательная.
+    }
+    if (wanted !== period || !list.isConnected) return;
+  }
+  const averages = classAverages.get(key);
+  if (!averages) return;
+  for (const row of rows) {
+    const card = list.querySelector(`[data-subject="${row.index}"]`);
+    if (!card) continue;
+    card.querySelector('.sc-foot')?.remove();
+    card.insertAdjacentHTML('beforeend', footHtml(row, averages[row.subject.subject]));
+  }
 }
 
 let lastEntrance = 0;
@@ -358,7 +392,8 @@ function renderCards(data, quarters) {
   const fill = (animate) => {
     const rows = periodRows(data);
     hero.innerHTML = heroHtml(rows, quarters.find((q) => q.key === period));
-    list.innerHTML = cardsHtml(rows);
+    list.innerHTML = cardsHtml(rows, classAverages.get(`${data.year_id}|${period}`));
+    loadClassAverages(data, list, rows);
     // Средний сдвинулся с прошлого показа — цифры прокручиваются.
     // При входе во вкладку цифры прокручиваются всегда, при смене периода и
     // повторной отрисовке свежими данными — только если средний сдвинулся.
@@ -695,13 +730,22 @@ function openSubject(subject, key, existingBody = null, data = state.totals) {
         <div class="card-title">Что если</div>
         <button class="whatif-clear" data-clear hidden>Очистить всё</button>
       </div>
-      <div class="whatif-weights">Вес <span class="whatif-chips"></span>
-        <input class="whatif-custom" inputmode="decimal" enterkeyhint="done" placeholder="+ свой" aria-label="Добавить свой вес"></div>
-      <div class="whatif-add">${[5, 4, 3, 2]
-        .map((value) => `<button class="mark-box mark m${value}" data-add="${value}">${value}</button>`).join('')}</div>
-      <button class="whatif-pick" data-pick hidden aria-expanded="false">Убрать оценку</button>
-      <div class="whatif-real" hidden></div>
-      <div class="whatif-list"></div>
+      <div class="seg-glass whatif-mode" role="tablist" style="--n:2;--i:0" hidden>
+        <span class="seg-lens" aria-hidden="true"></span>
+        <button class="on" data-mode="add" role="tab" aria-selected="true">Добавить</button>
+        <button data-mode="remove" role="tab" aria-selected="false">Убрать</button>
+      </div>
+      <div class="whatif-pane" data-pane="add">
+        <div class="whatif-weights">Вес <span class="whatif-chips"></span>
+          <input class="whatif-custom" inputmode="decimal" enterkeyhint="done" placeholder="+ свой" aria-label="Добавить свой вес"></div>
+        <div class="whatif-add">${[5, 4, 3, 2]
+          .map((value) => `<button class="mark-box mark m${value}" data-add="${value}">${value}</button>`).join('')}</div>
+        <div class="whatif-list"></div>
+      </div>
+      <div class="whatif-pane" data-pane="remove" hidden>
+        <div class="muted small whatif-hint">Нажмите оценку, чтобы убрать её из среднего</div>
+        <div class="whatif-real"></div>
+      </div>
       <div class="whatif-result"></div>
       <div class="muted small whatif-goals"></div>
       <div class="thr">
@@ -747,7 +791,7 @@ function openSubject(subject, key, existingBody = null, data = state.totals) {
       tile.hidden = value != null && !isAttendance(mark) && Number(mark.mark) !== value;
     });
     body.querySelector('[data-mark-reset]').hidden = value == null;
-    if (tiles && !stillMotion()) {
+    if (tiles && motionAtLeast(50)) {
       const height = tiles.getBoundingClientRect().height;
       filterAnimation = tiles.animate([{ height: `${oldHeight}px` }, { height: `${height}px` }], {
         duration: 220, easing: 'cubic-bezier(.2,.8,.3,1)',
@@ -838,7 +882,7 @@ function markKeys(marks) {
 
 function bindWhatIf(card, marks, id, subjectName) {
   const weights = savedWeights();
-  if (!whatIf.has(id)) whatIf.set(id, { weight: weights[0], extra: [], removed: [] });
+  if (!whatIf.has(id)) whatIf.set(id, { weight: weights[0], extra: [], removed: [], mode: 'add' });
   const plan = whatIf.get(id);
   // Убрать можно только оценку, которая входит в средний, — не пропуск.
   const keys = markKeys(marks);
@@ -847,7 +891,8 @@ function bindWhatIf(card, marks, id, subjectName) {
     .filter(({ mark }) => !isAttendance(mark) && weightedAverage([mark]) != null);
   // Оценку исправили или удалили в журнале — её ключа больше нет.
   plan.removed = plan.removed.filter((key) => graded.some((item) => item.key === key));
-  let picking = false;
+  // Вкладка «Добавить» или «Убрать» запоминается вместе с прикидками.
+  if (!graded.length) plan.mode = 'add';
   const kept = () => marks.filter((_, index) => !plan.removed.includes(keys[index]));
   if (!weights.includes(plan.weight)) plan.weight = weights[0];
   const custom = card.querySelector('.whatif-custom');
@@ -866,13 +911,19 @@ function bindWhatIf(card, marks, id, subjectName) {
     const changed = plan.extra.length || plan.removed.length;
     card.querySelector('[data-clear]').hidden = !changed;
 
-    const pick = card.querySelector('[data-pick]');
-    pick.hidden = !graded.length;
-    pick.textContent = picking ? 'Готово' : plan.removed.length ? `Убрано ${plan.removed.length} · изменить` : 'Убрать оценку';
-    pick.setAttribute('aria-expanded', String(picking));
-    const real = card.querySelector('.whatif-real');
-    real.hidden = !picking;
-    real.innerHTML = picking
+    const removing = plan.mode === 'remove';
+    const mode = card.querySelector('.whatif-mode');
+    mode.hidden = !graded.length;
+    mode.style.setProperty('--i', removing ? 1 : 0);
+    mode.querySelectorAll('[data-mode]').forEach((button) => {
+      const on = button.dataset.mode === plan.mode;
+      button.classList.toggle('on', on);
+      button.setAttribute('aria-selected', String(on));
+    });
+    mode.querySelector('[data-mode="remove"]').textContent = plan.removed.length ? `Убрать · ${plan.removed.length}` : 'Убрать';
+    mode.querySelector('[data-mode="add"]').textContent = plan.extra.length ? `Добавить · ${plan.extra.length}` : 'Добавить';
+    card.querySelectorAll('[data-pane]').forEach((pane) => { pane.hidden = pane.dataset.pane !== plan.mode; });
+    card.querySelector('.whatif-real').innerHTML = removing
       ? graded
         .map(({ mark, key }) => {
           const off = plan.removed.includes(key);
@@ -891,7 +942,7 @@ function bindWhatIf(card, marks, id, subjectName) {
           <span class="mark-box mark m${item.mark}">${item.mark}</span>
           <span>вес ${formatWeight(item.weight)}</span><span class="x">×</span>
         </button>`)
-      .join('') || (picking ? '' : '<div class="muted small">Нажмите оценку, чтобы добавить её к настоящим</div>');
+      .join('') || '<div class="muted small">Нажмите оценку, чтобы добавить её к настоящим</div>';
 
     const before = weightedAverage(marks);
     const after = weightedAverage([...kept(), ...plan.extra]);
@@ -923,10 +974,11 @@ function bindWhatIf(card, marks, id, subjectName) {
     const add = event.target.closest('[data-add]');
     const remove = event.target.closest('[data-remove]');
     const clear = event.target.closest('[data-clear]');
-    const pick = event.target.closest('[data-pick]');
+    const mode = event.target.closest('[data-mode]');
     const toggle = event.target.closest('[data-toggle]');
-    if (pick) {
-      picking = !picking;
+    if (mode) {
+      if (mode.dataset.mode === plan.mode) return;
+      plan.mode = mode.dataset.mode;
       select();
     } else if (toggle) {
       const key = toggle.dataset.toggle;
