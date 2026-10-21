@@ -90,7 +90,7 @@ async def calendar_client(app_context, tmp_path):
 
 async def query(client, auth):
     body = '<C:calendar-query xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav"><D:prop><D:getetag/><C:calendar-data/></D:prop><C:filter><C:comp-filter name="VCALENDAR"><C:comp-filter name="VEVENT"/></C:comp-filter></C:filter></C:calendar-query>'
-    response = await client.request('REPORT', BASE + '/caldav/ns1/schedule/', auth=auth, data=body,
+    response = await client.request('REPORT', BASE + f'/caldav/{auth.login}/schedule/', auth=auth, data=body,
                                     headers={'Depth': '1', 'Content-Type': 'application/xml'})
     assert response.status == 207, await response.text()
     return ET.fromstring(await response.text())
@@ -110,18 +110,19 @@ async def test_discovery_and_real_calendar_query(calendar_client):
     body = '<D:propfind xmlns:D="DAV:"><D:prop><D:current-user-principal/></D:prop></D:propfind>'
     response = await client.request('PROPFIND', '/', auth=auth, data=body, headers={'Depth': '0'})
     assert response.status == 207, await response.text()
-    assert BASE + '/caldav/ns1/' in await response.text()
+    assert BASE + f'/caldav/{auth.login}/' in await response.text()
     response = await client.request('PROPFIND', '/')
     assert response.status == 401
     response = await client.request('PROPFIND', BASE + '/caldav/', auth=auth, data=body, headers={'Depth': '0'})
     assert response.status == 207, await response.text()
-    assert BASE + '/caldav/ns1/' in await response.text()
+    assert BASE + f'/caldav/{auth.login}/' in await response.text()
     root = await query(client, auth)
     assert len(objects(root)) == 2
     assert 'DTSTART:' in next(iter(objects(root).values()))[1]
     status = await client.get(BASE + '/api/caldav-account', headers={'X-Netschool-Token': token})
     data = (await status.json())['data']
-    assert data['account_url'].endswith(BASE + '/caldav/ns1/')
+    assert auth.login.startswith('cal-') and data['login'] == auth.login
+    assert data['account_url'].endswith(BASE + f'/caldav/{auth.login}/')
     assert data['last_sync_at'] and not data['last_error']
     assert 'password' not in data
     assert status.headers['Cache-Control'] == 'no-store'
@@ -150,11 +151,11 @@ async def test_multiget_conditional_get_and_sync_report(calendar_client):
     response = await client.get(href, auth=auth, headers={'If-None-Match': etag})
     assert response.status == 304
     body = f'<C:calendar-multiget xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav"><D:prop><D:getetag/><C:calendar-data/></D:prop><D:href>{href}</D:href></C:calendar-multiget>'
-    response = await client.request('REPORT', BASE + '/caldav/ns1/schedule/', auth=auth, data=body)
+    response = await client.request('REPORT', BASE + f'/caldav/{auth.login}/schedule/', auth=auth, data=body)
     assert response.status == 207
     assert len(objects(ET.fromstring(await response.text()))) == 1
     body = '<D:sync-collection xmlns:D="DAV:"><D:sync-token/><D:sync-level>1</D:sync-level><D:prop><D:getetag/></D:prop></D:sync-collection>'
-    response = await client.request('REPORT', BASE + '/caldav/ns1/schedule/', auth=auth, data=body)
+    response = await client.request('REPORT', BASE + f'/caldav/{auth.login}/schedule/', auth=auth, data=body)
     assert response.status == 207, await response.text()
     assert 'sync-token' in await response.text()
 
@@ -163,12 +164,14 @@ async def test_read_only_and_no_cross_user_access(calendar_client):
     client, app, _, auth = calendar_client
     await app.caldav.accounts.create(2)
     await app.caldav.sync(2)
-    response = await client.request('PROPFIND', BASE + '/caldav/ns2/schedule/', auth=auth, headers={'Depth': '1'})
+    other = await app.caldav.accounts.login(2)
+    assert other != auth.login
+    response = await client.request('PROPFIND', BASE + f'/caldav/{other}/schedule/', auth=auth, headers={'Depth': '1'})
     assert response.status in (403, 404)
     for method in ['PUT', 'DELETE', 'PROPPATCH', 'MKCALENDAR', 'MOVE', 'COPY']:
-        response = await client.request(method, BASE + '/caldav/ns1/schedule/', auth=auth)
+        response = await client.request(method, BASE + f'/caldav/{auth.login}/schedule/', auth=auth)
         assert response.status == 403
-    response = await client.request('PROPFIND', BASE + '/caldav/ns2/schedule/', auth=auth,
+    response = await client.request('PROPFIND', BASE + f'/caldav/{other}/schedule/', auth=auth,
                                    headers={'X-Remote-User': '__netschool_publisher__', 'X-Script-Name': '/evil', 'Depth': '0'})
     assert response.status in (403, 404)
 
@@ -190,14 +193,14 @@ async def test_failure_retains_calendar_and_credentials_can_be_revoked(calendar_
 async def test_logout_empties_calendar_and_login_refills_it(calendar_client):
     client, app, token, old_auth = calendar_client
     password = await app.caldav.accounts.create(1)
-    assert await app.caldav.accounts.authenticate('ns1', old_auth.password) is None
-    assert await app.caldav.accounts.authenticate('ns1', password) == 1
+    assert await app.caldav.accounts.authenticate(old_auth.login, old_auth.password) is None
+    assert await app.caldav.accounts.authenticate(old_auth.login, password) == (1, old_auth.login)
     from app.bot.handlers.settings import logout
     from tests.test_bot_handlers import FakeMessage
     user = await app.users.get(1)
     await logout(FakeMessage(), user, app)
     # Подписка на телефоне остаётся, а уроки из календаря уходят.
-    auth = BasicAuth('ns1', password)
+    auth = BasicAuth(old_auth.login, password)
     assert await app.caldav.accounts.get(1) is not None
     assert objects(await query(client, auth)) == {}
     # Вход (в тот же или другой аккаунт) сразу публикует новое расписание.
@@ -247,13 +250,14 @@ async def test_root_path_discovery_and_reading(app_context, tmp_path):
     await client.start_server()
     try:
         password = await app_context.caldav.accounts.create(1)
+        login = await app_context.caldav.accounts.login(1)
         await app_context.caldav.sync(1)
-        response = await client.request('PROPFIND', '/', auth=BasicAuth('ns1', password),
+        response = await client.request('PROPFIND', '/', auth=BasicAuth(login, password),
                                        data='<D:propfind xmlns:D="DAV:"><D:prop><D:current-user-principal/></D:prop></D:propfind>',
                                        headers={'Depth': '0'})
         assert response.status == 207
-        assert '/caldav/ns1/' in await response.text()
-        response = await client.get('/caldav/ns1/schedule/', auth=BasicAuth('ns1', password))
+        assert f'/caldav/{login}/' in await response.text()
+        response = await client.get(f'/caldav/{login}/schedule/', auth=BasicAuth(login, password))
         assert response.status == 200
         assert 'BEGIN:VEVENT' in await response.text()
     finally:
@@ -277,6 +281,64 @@ async def test_full_deletion_removes_calendar_storage(calendar_client):
     assert await app.users.get(1) is None
     assert await app.miniapp.resolve_token(token) is None
     from app.caldav.rights import PUBLISHER
-    result = await app.caldav.call('PROPFIND', '/ns1/', PUBLISHER)
+    result = await app.caldav.call('PROPFIND', f'/{auth.login}/', PUBLISHER)
     assert result['status'] == 404
     assert await app.users.get(2) is not None
+
+
+async def test_legacy_ns_login_keeps_working_until_recreated(calendar_client):
+    client, app, token, auth = calendar_client
+    # Доступ, выданный до номеров аккаунтов: логин ns<Telegram ID>.
+    password = await app.caldav.accounts.create(1)
+    await app.db.execute("UPDATE caldav_accounts SET login='ns1' WHERE telegram_id=1")
+    await app.caldav.sync(1)
+    legacy = BasicAuth('ns1', password)
+    assert len(objects(await query(client, legacy))) == 2
+    status = await client.get(BASE + '/api/caldav-account', headers={'X-Netschool-Token': token})
+    assert (await status.json())['data']['login'] == 'ns1'
+    # Номером аккаунта со старым паролем не войти и наоборот.
+    assert await app.caldav.accounts.authenticate(auth.login, password) is None
+    # Новый пароль — новый логин, старая папка удаляется.
+    response = await client.post(BASE + '/api/caldav-account', headers={'X-Netschool-Token': token})
+    account = (await response.json())['data']
+    assert account['login'] == auth.login and account['login'].startswith('cal-')
+    await asyncio.gather(*list(app.caldav.jobs.values()))
+    assert len(objects(await query(client, BasicAuth(account['login'], account['password'])))) == 2
+    response = await client.request('PROPFIND', BASE + '/caldav/', auth=legacy)
+    assert response.status == 401
+    from app.caldav.rights import PUBLISHER
+    assert (await app.caldav.call('PROPFIND', '/ns1/', PUBLISHER))['status'] == 404
+
+
+async def test_account_numbers_are_unique_and_not_reused(app_context):
+    await app_context.users.save(make_user(1))
+    await app_context.users.save(make_user(2))
+    first, second = await app_context.accounts.number(1), await app_context.accounts.number(2)
+    assert first and second == first + 1
+    await app_context.delete_user_data(2)
+    await app_context.users.save(make_user(3))
+    assert await app_context.accounts.number(3) == second + 1
+    # Повторное сохранение не меняет номер.
+    await app_context.users.save(make_user(1))
+    assert await app_context.accounts.number(1) == first
+
+
+async def test_migration_numbers_old_accounts_and_keeps_ns_logins(tmp_path):
+    import aiosqlite
+    from app.db.migrations import MIGRATIONS, migrate
+    async with aiosqlite.connect(tmp_path / 'old.sqlite3') as db:
+        before = len(MIGRATIONS) - 1
+        for script in MIGRATIONS[:before]:
+            await db.executescript(script)
+        await db.execute(f'PRAGMA user_version = {before}')
+        await db.execute("INSERT INTO users (telegram_id, created_at) VALUES (5, '2024-01-02'), (9, '2024-01-01')")
+        await db.execute("INSERT INTO caldav_accounts (telegram_id, password_hash) VALUES (5, 'x')")
+        await db.commit()
+        assert await migrate(db) == len(MIGRATIONS)
+        cursor = await db.execute('SELECT telegram_id, account_no FROM users ORDER BY account_no')
+        assert await cursor.fetchall() == [(9, 10001), (5, 10002)]
+        cursor = await db.execute('SELECT login FROM caldav_accounts WHERE telegram_id = 5')
+        assert (await cursor.fetchone())[0] == 'ns5'
+        await db.execute('INSERT INTO users (telegram_id) VALUES (11)')
+        cursor = await db.execute('SELECT account_no FROM users WHERE telegram_id = 11')
+        assert (await cursor.fetchone())[0] == 10003

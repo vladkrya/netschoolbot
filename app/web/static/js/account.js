@@ -265,15 +265,11 @@ function renderRegister(email = '') {
 function renderReset(email = '') {
   const card = landing(`
     <h2>Сброс пароля</h2>
-    <p class="muted">Пришлём код на почту — или в Telegram, если он привязан.</p>
-    <form class="account-form" data-step="email">
+    <p class="muted">Пришлём ссылку на почту — или в Telegram, если он привязан. По ней можно задать новый пароль.</p>
+    <form class="account-form">
       <input class="field" type="email" name="email" autocomplete="username" placeholder="Почта" required>
-      <div class="account-code" hidden>
-        <input class="field" name="code" inputmode="numeric" autocomplete="one-time-code" placeholder="Код из 6 цифр">
-        <input class="field" type="password" name="password" autocomplete="new-password" placeholder="Новый пароль">
-      </div>
       <p class="account-error" hidden></p>
-      <button class="btn" type="submit">Получить код</button>
+      <button class="btn" type="submit">Прислать ссылку</button>
     </form>
     <div class="account-links"><button class="link" data-go="login">Назад ко входу</button></div>`);
   bindLinks(card);
@@ -284,27 +280,63 @@ function renderReset(email = '') {
     event.preventDefault();
     busy(button, async () => {
       try {
-        if (form.dataset.step === 'email') {
-          const { data } = await post('/api/account/reset/request', { email: form.email.value });
-          form.dataset.step = 'code';
-          form.querySelector('.account-code').hidden = false;
-          form.email.readOnly = true;
-          button.textContent = 'Сменить пароль';
-          showError(card, '');
-          card.querySelector('.muted').textContent = data.channel === 'mail'
-            ? 'Если такая почта зарегистрирована, код уже в письме. Проверьте и «Спам».'
-            : 'Если к аккаунту привязан Telegram, код пришёл от бота. Без Telegram сброс пока недоступен — напишите администратору.';
-          return;
-        }
-        await post('/api/account/reset/confirm', {
-          email: form.email.value, code: form.code.value, password: form.password.value,
-        });
+        const { data } = await post('/api/account/reset/request', { email: form.email.value });
+        showError(card, '');
+        button.textContent = 'Прислать ещё раз';
+        card.querySelector('.muted').textContent = data.channel === 'mail'
+          ? 'Если такая почта зарегистрирована, ссылка уже в письме. Проверьте и «Спам». Она действует 30 минут.'
+          : 'Если к аккаунту привязан Telegram, ссылка пришла от бота. Без Telegram сброс пока недоступен — напишите администратору.';
+      } catch (error) {
+        showError(card, error.message);
+      }
+    });
+  });
+}
+
+/** Открыли ссылку из письма: #reset=<секрет>. Новый пароль дважды. */
+export async function showResetLink(secret) {
+  // Секрет из адреса убираем сразу: не останется в истории и в закладке.
+  history.replaceState(null, '', location.pathname + location.search);
+  let email = '';
+  try {
+    ({ data: { email } } = await api(`/api/account/reset/check?token=${encodeURIComponent(secret)}`));
+  } catch (error) {
+    const card = landing(`
+      <h2>Сброс пароля</h2>
+      <p class="account-error"></p>
+      <button class="btn" type="button" data-go="reset">Прислать новую ссылку</button>
+      <div class="account-links"><button class="link" data-go="login">Ко входу</button></div>`);
+    card.querySelector('.account-error').textContent = error.message;
+    bindLinks(card);
+    return new Promise(() => {});
+  }
+  const card = landing(`
+    <h2>Новый пароль</h2>
+    <p class="muted">Для <b>${esc(email)}</b>. После смены остальные устройства выйдут из аккаунта.</p>
+    <form class="account-form">
+      <input type="email" name="email" autocomplete="username" value="${esc(email)}" hidden>
+      <input class="field" type="password" name="password" autocomplete="new-password" placeholder="Новый пароль (от 8 символов)" required>
+      <input class="field" type="password" name="repeat" autocomplete="new-password" placeholder="Повторите пароль" required>
+      <p class="account-error" hidden></p>
+      <button class="btn" type="submit">Сохранить пароль</button>
+    </form>
+    <div class="account-links"><button class="link" data-go="login">Ко входу</button></div>`);
+  bindLinks(card);
+  const form = card.querySelector('form');
+  form.password.focus();
+  form.addEventListener('submit', (event) => {
+    event.preventDefault();
+    if (form.password.value !== form.repeat.value) { showError(card, 'Пароли не совпадают'); return; }
+    busy(form.querySelector('button'), async () => {
+      try {
+        await post('/api/account/reset/confirm', { token: secret, password: form.password.value });
         signedIn();
       } catch (error) {
         showError(card, error.message);
       }
     });
   });
+  return new Promise(() => {}); // страница перезагрузится после смены
 }
 
 const TG_ICON = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M9.8 15.2 9.6 19c.4 0 .6-.2.8-.4l1.9-1.8 4 2.9c.7.4 1.3.2 1.5-.7l2.7-12.6c.3-1.1-.4-1.6-1.1-1.3L3.6 10.9c-1 .4-1 1-.2 1.3l4 1.2 9.3-5.9c.4-.3.8-.1.5.2z"/></svg>';
@@ -953,8 +985,8 @@ export async function openAccountSettings() {
       <form class="account-form" data-form="attach">
         <div class="card-title">${title}</div>
         <input class="field" type="email" name="email" autocomplete="username" placeholder="Почта" value="${esc(info.email || '')}" required>
-        <input class="field" type="password" name="password" autocomplete="new-password" placeholder="${withCurrent ? 'Новый пароль' : 'Пароль (от 8 символов)'}" required>
         ${withCurrent ? '<input class="field" type="password" name="current" autocomplete="current-password" placeholder="Текущий пароль" required>' : ''}
+        <input class="field" type="password" name="password" autocomplete="new-password" placeholder="${withCurrent ? 'Новый пароль (от 8 символов)' : 'Пароль (от 8 символов)'}" required>
         <p class="account-error" hidden></p>
         <button class="btn" type="submit">Сохранить</button>
       </form>`;
@@ -971,6 +1003,7 @@ export async function openAccountSettings() {
             </form>
             <button class="link" data-act="resend">Прислать код ещё раз</button>` : ''}`
           : `<p class="muted">Задайте почту и пароль — и на сайт можно будет входить без Telegram. Если почта уже зарегистрирована, введите её текущий пароль: аккаунты объединятся с сохранением дневника Telegram и записей.</p>${emailForm('Почта и пароль', false)}`}
+        ${info.number ? `<p class="muted small">ID аккаунта: <b>${esc(String(info.number))}</b></p>` : ''}
       </div>
       ${info.email ? `<div class="card">${emailForm('Сменить почту или пароль', true)}</div>` : ''}
       ${info.telegram ? '' : `

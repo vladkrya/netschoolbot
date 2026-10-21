@@ -36,7 +36,8 @@ async def dav(request):
         auth = BasicAuth.decode(request.headers.get('Authorization', ''), encoding='utf-8')
     except ValueError:
         return web.Response(status=401, headers=headers)
-    telegram_id = await service.accounts.authenticate(auth.login, auth.password)
+    found = await service.accounts.authenticate(auth.login, auth.password)
+    telegram_id, login = found or (None, '')
     user = await context(request).users.get(telegram_id) if telegram_id is not None else None
     # Вход в «Сетевой город» не требуется: после /logout календарь на телефоне
     # показывает последнее расписание, а не просит пароль заново.
@@ -53,7 +54,7 @@ async def dav(request):
         body.extend(chunk)
         if len(body) > 262144:
             raise web.HTTPRequestEntityTooLarge(max_size=262144, actual_size=len(body))
-    result = await service.call(request.method, '/' + request.match_info['path'], f'ns{telegram_id}', bytes(body), dict(request.headers))
+    result = await service.call(request.method, '/' + request.match_info['path'], login, bytes(body), dict(request.headers))
     response_headers = {key: value for key, value in result['headers'] if key.lower() not in {'transfer-encoding', 'connection', 'content-length'}}
     response_headers['Cache-Control'] = 'no-store'
     etag = response_headers.get('ETag', '').strip('"')
@@ -75,10 +76,11 @@ async def account(request):
     app, user = context(request), current_user(request)
     service = app.caldav
     row = await service.accounts.get(user.telegram_id) if service else None
+    login = await service.accounts.login(user.telegram_id) if service else ''
     return web.json_response({'ok': True, 'data': {
         'server': app.settings.web.miniapp_url + '/caldav/',
-        'account_url': app.settings.web.miniapp_url + f'/caldav/ns{user.telegram_id}/',
-        'login': f'ns{user.telegram_id}', 'connected': bool(row), 'available': service is not None,
+        'account_url': app.settings.web.miniapp_url + f'/caldav/{login}/',
+        'login': login, 'connected': bool(row), 'available': service is not None,
         'interval_minutes': app.settings.caldav_interval // 60,
         'last_sync_at': row['last_sync_at'] if row else None,
         'last_error': row['last_error'] if row else None,
@@ -91,8 +93,7 @@ async def create_account(request):
     if not user.school.configured or not user.credentials.usable:
         return json_error('Сначала войдите в школу через /login', status=401, reason='login')
     # Новый пароль показывается только в ответе; в базе остаётся хэш.
-    await service.prepare(user.telegram_id)
-    password = await service.accounts.create(user.telegram_id)
+    password = await service.create(user.telegram_id)
     service.request_sync(user.telegram_id)
     response = await account(request)
     payload = json.loads(response.text)

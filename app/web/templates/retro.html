@@ -334,6 +334,7 @@
         <h2>Защита дневника</h2>
         <p id="retroProtectionStatus" role="status"></p>
         <form id="retroPinSettings">
+          <label id="retroCurrentPin">Текущий PIN <input name="current" type="password" inputmode="numeric" pattern="[0-9]{4}" minlength="4" maxlength="4" autocomplete="current-password" /></label>
           <label>Новый PIN <input name="pin" type="password" inputmode="numeric" pattern="[0-9]{4}" minlength="4" maxlength="4" autocomplete="new-password" required /></label>
           <label>Повторите PIN <input name="confirm" type="password" inputmode="numeric" pattern="[0-9]{4}" minlength="4" maxlength="4" autocomplete="new-password" required /></label>
           <button class="btn" type="submit">Сохранить PIN</button>

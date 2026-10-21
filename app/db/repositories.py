@@ -1854,13 +1854,26 @@ class CaldavRepository:
     def __init__(self, db: Database) -> None:
         self._db = db
 
+    async def new_login(self, telegram_id: int) -> str:
+        """Логин нового формата: номер аккаунта в приложении, без Telegram ID."""
+        row = await self._db.fetch_one("SELECT account_no FROM users WHERE telegram_id=?", (telegram_id,))
+        return f'cal-{row["account_no"]}' if row and row['account_no'] else f'ns{telegram_id}'
+
+    async def login(self, telegram_id: int) -> str:
+        """Выданный логин (он же папка календаря), а без доступа — каким он станет."""
+        row = await self.get(telegram_id)
+        return row['login'] if row and row['login'] else await self.new_login(telegram_id)
+
     async def create(self, telegram_id: int) -> str:
+        """Новый пароль. Логин — всегда нового формата: «ns<id>» остаётся
+        только у тех, кто подключил календарь раньше и не пересоздавал доступ."""
         password = secrets.token_urlsafe(32)
         digest = hashlib.sha256(password.encode()).hexdigest()
         await self._db.execute(
-            "INSERT INTO caldav_accounts (telegram_id, password_hash) VALUES (?, ?) "
-            "ON CONFLICT(telegram_id) DO UPDATE SET password_hash=excluded.password_hash, created_at=datetime('now')",
-            (telegram_id, digest),
+            "INSERT INTO caldav_accounts (telegram_id, password_hash, login) VALUES (?, ?, ?) "
+            "ON CONFLICT(telegram_id) DO UPDATE SET password_hash=excluded.password_hash, login=excluded.login, "
+            "created_at=datetime('now')",
+            (telegram_id, digest, await self.new_login(telegram_id)),
         )
         return password
 
@@ -1868,14 +1881,14 @@ class CaldavRepository:
         row = await self._db.fetch_one("SELECT * FROM caldav_accounts WHERE telegram_id=?", (telegram_id,))
         return dict(row) if row else None
 
-    async def authenticate(self, login: str, password: str) -> int | None:
-        if not login.startswith('ns') or not login[2:].isascii() or not login[2:].isdigit() or len(login) > 22:
+    async def authenticate(self, login: str, password: str) -> tuple[int, str] | None:
+        """(telegram_id, логин) при верном пароле."""
+        if not login or len(login) > 40 or not login.isascii():
             return None
-        telegram_id = int(login[2:])
-        row = await self.get(telegram_id)
+        row = await self._db.fetch_one("SELECT telegram_id, password_hash FROM caldav_accounts WHERE login=?", (login,))
         digest = hashlib.sha256(password.encode()).hexdigest()
         if row and hmac.compare_digest(row['password_hash'], digest):
-            return telegram_id
+            return row['telegram_id'], login
         return None
 
     async def revoke(self, telegram_id: int) -> None:

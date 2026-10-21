@@ -79,6 +79,13 @@ async function boot() {
   tg?.expand();
   initIosHaptics();
   rememberInvite();
+  // Ссылка из письма «Сброс пароля» — открывается и без входа, и поверх входа.
+  const reset = !demo && !tg?.initData && new URLSearchParams(location.hash.slice(1)).get('reset');
+  if (reset) {
+    const { showResetLink } = await import('./account.js');
+    await showResetLink(reset);
+    return;
+  }
   // Ни Telegram, ни ссылки с токеном — главный экран со входом. Сюда же —
   // после «Выйти из аккаунта», если адрес иконки на домашнем экране всё ещё
   // несёт прежний общий токен (signOut в profile.js).

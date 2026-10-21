@@ -319,13 +319,31 @@ function statusPath(native) {
   return `/api/lock/status?${params}`;
 }
 
-function choosePin({ required = false, changing = false } = {}) {
-  const root = panel(changing ? 'Новый PIN' : 'Создайте PIN');
+function forgotFor(status) {
+  return status?.password_reset && !tg?.initData ? FORGOT_PASSWORD : FORGOT_TELEGRAM;
+}
+
+/** Новый PIN. При смене сначала текущий: сервер без него PIN не меняет,
+ * чтобы оставленный открытым телефон не давал задать чужой PIN. current —
+ * уже проверенный прежний код (старый пароль защиты при переходе на PIN). */
+function choosePin({ required = false, changing = false, current = '', status = null } = {}) {
+  const askOld = changing && !current;
+  const root = panel(askOld ? 'Текущий PIN' : changing ? 'Новый PIN' : 'Создайте PIN');
   root.querySelector('.lock-actions').innerHTML = required ? '' : '<button type="button" data-close>Отмена</button>';
-  let first = '';
+  let first = '', old = current;
   return new Promise(resolve => {
-    const close = result => { pad.destroy(); first = ''; root.close(); resolve(result); };
+    const close = result => { pad.destroy(); first = ''; old = ''; root.close(); resolve(result); };
     const pad = mountPinpad(root, async (pin, controls) => {
+      if (askOld && !old) {
+        // Проверяем сразу, а не после нового PIN: ошибка видна на своём шаге.
+        const result = await post('unlock', { pin });
+        setUnlock(result.data.unlock);
+        old = pin;
+        root.querySelector('[data-forgot]')?.remove();
+        root.querySelector('h2').textContent = 'Новый PIN';
+        controls.reset('Придумайте 4 цифры для входа');
+        return;
+      }
       if (!first) {
         first = pin;
         root.querySelector('h2').textContent = 'Повторите PIN';
@@ -338,12 +356,29 @@ function choosePin({ required = false, changing = false } = {}) {
         controls.reset('Повторите выбранный PIN');
         return;
       }
-      const result = await post('pin', { pin });
+      const result = await post('pin', old ? { pin, current: old } : { pin });
       setUnlock(result.data.unlock); setActive(true); markUnlocked(); rememberPin(pin);
       await controls.success();
       close(true);
-    }, { hint: 'Придумайте 4 цифры для входа' });
+    }, askOld ? { hint: 'Сначала введите текущий PIN', forgot: forgotFor(status) }
+      : { hint: 'Придумайте 4 цифры для входа' });
     root.querySelector('[data-close]')?.addEventListener('click', () => close(false));
+  });
+}
+
+/** Выключить защиту можно, только введя PIN. */
+function disableWithPin(status) {
+  const root = panel('Выключить защиту');
+  root.querySelector('.lock-actions').innerHTML = '<button type="button" data-close>Отмена</button>';
+  return new Promise(resolve => {
+    const close = result => { pad.destroy(); root.close(); resolve(result); };
+    const pad = mountPinpad(root, async (pin, controls) => {
+      await post('disable', { pin });
+      setActive(false); forgetPin(); setUnlock('');
+      await controls.success();
+      close(true);
+    }, { hint: 'Введите PIN, чтобы выключить', forgot: forgotFor(status) });
+    root.querySelector('[data-close]').addEventListener('click', () => close(false));
   });
 }
 
@@ -415,12 +450,14 @@ export async function unlockApp() {
     })();
     await new Promise(resolve => {
       let pad;
-      const finish = async () => {
+      const finish = async (password = '') => {
         pad?.destroy(); markUnlocked();
         // Уже заданные пароли не сбрасываем: сначала подтверждение, затем выбор PIN.
-        if (!status.pin) {
+        // Сервер меняет защиту только со старым паролем, поэтому после
+        // биометрии без него PIN не предлагаем — спросим при входе паролем.
+        if (!status.pin && password) {
           root.remove();
-          await choosePin({ required: true });
+          await choosePin({ required: true, current: password });
         } else root.close();
         resolve();
       };
@@ -461,8 +498,9 @@ export async function unlockApp() {
           event.preventDefault();
           const button = root.querySelector('[type="submit"]'); button.disabled = true;
           try {
-            const result = await post('unlock', { password: root.querySelector('input').value });
-            setUnlock(result.data.unlock); await finish();
+            const password = root.querySelector('input').value;
+            const result = await post('unlock', { password });
+            setUnlock(result.data.unlock); await finish(password);
           } catch (failure) { error(root, failure); }
           finally { button.disabled = false; }
         };
@@ -604,7 +642,7 @@ export async function openLockSettings() {
   root.querySelector('[data-close]').onclick = root.close;
   root.querySelector('[data-pin]').onclick = async () => {
     root.remove();
-    await choosePin({ changing: data.pin });
+    await choosePin({ changing: data.pin, status: data });
     await openLockSettings();
   };
   root.tabIndex = -1; root.focus();
@@ -663,18 +701,10 @@ export async function openLockSettings() {
   const note = document.createElement('p'); note.className = 'ls-footnote';
   note.textContent = `Забыли PIN? ${FORGOT_TELEGRAM}`;
   body.append(note);
-  const disable = danger.querySelector('button');
-  let armed = 0;
-  // Выключение — второе нажатие в течение 4 с, чтобы не снять защиту случайно.
-  disable.onclick = async () => {
-    if (!armed) {
-      disable.querySelector('.ls-row-title').textContent = 'Нажмите ещё раз, чтобы выключить';
-      armed = setTimeout(() => { armed = 0; disable.querySelector('.ls-row-title').textContent = 'Выключить защиту'; }, 4000);
-      return;
-    }
-    clearTimeout(armed); armed = 0; disable.disabled = true;
-    try { await post('disable'); setActive(false); forgetPin(); setUnlock(''); root.close(); }
-    catch (failure) { fail(failure); disable.disabled = false; }
+  danger.querySelector('button').onclick = async () => {
+    root.remove();
+    await disableWithPin(data);
+    await openLockSettings();
   };
 }
 
