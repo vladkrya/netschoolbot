@@ -42,6 +42,8 @@ export async function loadProfile(force = false) {
     if (data.notifications) Object.assign(data.notifications, localSettings(path, body));
   }
   state.profile = data;
+  // Раздел «Чаты» в «Сообщениях» прячется, пока их выключил владелец.
+  window.dispatchEvent(new CustomEvent('netschool:profile', { detail: data }));
   return data;
 }
 
@@ -278,6 +280,15 @@ function solverClassSection(solverClass) {
     </section>`;
 }
 
+function chatsSection(toggle) {
+  if (!toggle) return '';
+  return `<section class="drawer-section">
+      <div class="drawer-heading">Чаты</div>
+      <label class="switch-row"><span>Чаты в «Сообщениях»<span class="muted small switch-note">видно только вам: выключенные чаты скрыты у всех, кроме вас; переписка сохраняется</span></span>
+        <input type="checkbox" switch class="switch" id="chatsOn" ${toggle.on ? 'checked' : ''}></label>
+    </section>`;
+}
+
 // Атрибут switch — системный переключатель: в Safari на iPhone он сам
 // тактильно щёлкает от касания (vibrate там нет, см. haptics.js).
 function toggle(key, label, on) {
@@ -462,6 +473,7 @@ function render() {
     ${isNewDesign() ? tabsSection() : ''}
     ${readonly ? '' : keepFilesSection(data.keep_attachments)}
     ${readonly ? '' : solverClassSection(data.solver_class)}
+    ${readonly ? '' : chatsSection(data.chats_toggle)}
     ${readonly ? '' : keepSignedInSection(data.keep_signed_in)}
     ${readonly ? `<section class="drawer-section">
       <div class="drawer-heading">Уведомления</div>
@@ -718,6 +730,24 @@ function bindDrawer() {
         method: 'POST', body: JSON.stringify({ on: input.checked }),
       });
       state.profile.solver_class = data;
+      input.checked = Boolean(data.on);
+    } catch (error) {
+      notify('error');
+      input.checked = !input.checked;
+      banner(error.message, true);
+    } finally {
+      input.disabled = false;
+    }
+  });
+  $('chatsOn')?.addEventListener('change', async (event) => {
+    select();
+    const input = event.target;
+    input.disabled = true;
+    try {
+      const { data } = await api('/api/settings/chats', {
+        method: 'POST', body: JSON.stringify({ on: input.checked }),
+      });
+      state.profile.chats_toggle = data;
       input.checked = Boolean(data.on);
     } catch (error) {
       notify('error');

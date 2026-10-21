@@ -21,6 +21,9 @@ def no_send_interval(monkeypatch):
 
 @pytest.fixture
 async def client(app_context) -> TestClient:
+    from app.db.repositories import AppFlagRepository
+    # Чаты выключаются тумблером владельца; здесь проверяем их самих.
+    await AppFlagRepository(app_context.db).set("chats_on", True)
     client = TestClient(TestServer(create_app(app_context)))
     await client.start_server()
     yield client
@@ -799,3 +802,35 @@ class TestEditAndTyping:
         assert await mine.receive_json(timeout=2) == {'t': 'pong'}  # своё «печатает» себе не приходит
         for ws in sockets:
             await ws.close()
+
+
+class TestChatsSwitch:
+    """Тумблер владельца «Чаты»: выключенные скрыты у всех, кроме админа."""
+
+    async def test_off_blocks_students_but_not_admin(self, client, app_context, student_token, admin_token):
+        from app.db.repositories import AppFlagRepository
+
+        await AppFlagRepository(app_context.db).set("chats_on", False)
+        response = await client.get(f"{BASE}/api/chat", params={"token": student_token})
+        assert response.status == 403
+        assert (await response.json())["reason"] == "chats_off"
+        response = await client.get(f"{BASE}/api/chat/unread", params={"token": student_token})
+        assert (await response.json())["data"] == {"total": 0, "live": True}
+        response = await client.post(f"{BASE}/api/chat/ws-ticket", params={"token": student_token}, json={})
+        assert response.status == 200
+        response = await client.get(f"{BASE}/api/profile", params={"token": student_token})
+        data = (await response.json())["data"]
+        assert data["chats"] is False and data["chats_toggle"] is None
+        response = await client.get(f"{BASE}/api/chat", params={"token": admin_token})
+        assert response.status == 200
+
+    async def test_only_owner_switches(self, client, student_token, admin_token):
+        response = await client.post(f"{BASE}/api/settings/chats", params={"token": student_token}, json={"on": False})
+        assert response.status == 403
+        response = await client.post(f"{BASE}/api/settings/chats", params={"token": admin_token}, json={"on": False})
+        assert (await response.json())["data"] == {"on": False}
+        response = await client.get(f"{BASE}/api/profile", params={"token": admin_token})
+        data = (await response.json())["data"]
+        assert data["chats"] is True and data["chats_toggle"] == {"on": False}
+        status, _ = await join(client, student_token)
+        assert status == 403

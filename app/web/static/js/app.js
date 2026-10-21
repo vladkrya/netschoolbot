@@ -749,7 +749,8 @@ async function showHalloweenNotice() {
   if (!data.show) return;
   await sheetFree();
   const settings = isNewDesign() ? 'вкладке <b>Настройки</b>' : 'меню <b>☰</b>';
-  const feedback = data.bug_report
+  const kind = feedbackKind(data);
+  const feedback = kind === 'bug'
     ? 'в настройках, внизу — <b>«Сообщить об ошибке или идее»</b>'
     : 'во вкладке <b>Сообщения → Чаты</b> — там можно написать админу';
   const body = openSheet('🎃 Хеллоуин в дневнике', `
@@ -762,18 +763,18 @@ async function showHalloweenNotice() {
       <li>🎨 свои цвета: тыквенный, ведьмин, зелье, кровавая луна, призрачный, костяной.</li>
     </ul>
     <p>Не нравится? Выключить можно в ${settings} → <b>Оформление</b> → <b>🎃 Хеллоуин</b>. Ваша тема и цвет вернутся.</p>
-    <p class="muted small">Нашли ошибку или есть идея — напишите ${feedback}.</p>
+    ${kind ? `<p class="muted small">Нашли ошибку или есть идея — напишите ${feedback}.</p>` : ''}
     <div class="chat-actions">
       <button class="btn" id="halloweenOk">Класс 🎃</button>
-      <button class="btn outline" id="halloweenFeedback">${data.bug_report ? 'Сообщить об ошибке или идее' : 'Написать админу'}</button>
+      ${kind ? `<button class="btn outline" id="halloweenFeedback">${kind === 'bug' ? 'Сообщить об ошибке или идее' : 'Написать админу'}</button>` : ''}
     </div>`);
   body.querySelector('#halloweenOk').addEventListener('click', () => {
     tap('light');
     closeSheet();
   });
-  body.querySelector('#halloweenFeedback').addEventListener('click', () => {
+  body.querySelector('#halloweenFeedback')?.addEventListener('click', () => {
     closeSheet();
-    if (data.bug_report) {
+    if (kind === 'bug') {
       openBugReport('bug');
     } else {
       selectChats();
@@ -844,11 +845,11 @@ async function showSurvey() {
   });
   body.querySelector('#surveyStart').addEventListener('click', () => {
     tap('light');
-    surveyScores(body, data.bug_report);
+    surveyScores(body, feedbackKind(data));
   });
 }
 
-function surveyScores(body, bugReport) {
+function surveyScores(body, feedback) {
   const scores = Array.from({ length: 10 }, (_, i) => i + 1)
     .map(n => `<button class="survey-score" data-score="${n}">${n}</button>`).join('');
   body.innerHTML = `
@@ -875,25 +876,30 @@ function surveyScores(body, bugReport) {
       return;
     }
     notify('success');
-    surveyThanks(body, bugReport);
+    surveyThanks(body, feedback);
   });
 }
 
-function surveyThanks(body, bugReport) {
-  const where = bugReport
+/** Куда звать с идеями и ошибками: форма, чаты или некуда (чаты выключены). */
+function feedbackKind(data) {
+  return data.bug_report ? 'bug' : data.chats ? 'chat' : '';
+}
+
+function surveyThanks(body, feedback) {
+  const where = feedback === 'bug'
     ? 'в меню настроек, внизу — «Сообщить об ошибке или идее»'
     : 'во вкладке <b>Сообщения → Чаты</b> — там можно написать админу';
   body.innerHTML = `
     <p><b>Спасибо за оценку!</b></p>
-    <p>Есть идея, что добавить, или заметили ошибку? Напишите нам — ${where}.</p>
+    ${feedback ? `<p>Есть идея, что добавить, или заметили ошибку? Напишите нам — ${where}.</p>` : ''}
     <div class="chat-actions">
-      <button class="btn" id="surveyFeedback">${bugReport ? 'Написать об идее или ошибке' : 'Перейти в чаты'}</button>
+      ${feedback ? `<button class="btn" id="surveyFeedback">${feedback === 'bug' ? 'Написать об идее или ошибке' : 'Перейти в чаты'}</button>` : ''}
       <button class="btn outline" id="surveyDone">Закрыть</button>
     </div>`;
   body.querySelector('#surveyDone').addEventListener('click', closeSheet);
-  body.querySelector('#surveyFeedback').addEventListener('click', () => {
+  body.querySelector('#surveyFeedback')?.addEventListener('click', () => {
     closeSheet();
-    if (bugReport) {
+    if (feedback === 'bug') {
       openBugReport('idea');
     } else {
       selectChats();

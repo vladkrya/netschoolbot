@@ -75,6 +75,32 @@ def admin_id(request: web.Request) -> int:
     return context(request).settings.telegram.admin_id or 0
 
 
+# Тумблер владельца «Чаты» (app_flags). Записи нет — чаты выключены: вкладка
+# скрыта, запросы к чатам отклоняются. Сообщения и профили остаются в базе.
+CHATS_FLAG = "chats_on"
+# Сокет и значок нужны и без чатов: по сокету приходят оценки и синхронизация.
+_ALWAYS_OPEN = ("/api/chat/ws", "/api/chat/ws-ticket", "/api/chat/unread")
+
+
+async def chats_on(app: Any) -> bool:
+    from ..db.repositories import AppFlagRepository
+
+    return await AppFlagRepository(app.db).get(CHATS_FLAG)
+
+
+async def available(request: web.Request) -> bool:
+    """Видны ли чаты: включены тумблером, а администратору — всегда."""
+    return is_admin(request) or await chats_on(context(request))
+
+
+@web.middleware
+async def off_middleware(request: web.Request, handler):
+    path = request.path.rstrip("/")
+    if "/api/chat" in path and not path.endswith(_ALWAYS_OPEN) and not await available(request):
+        return json_error("Чаты сейчас выключены", status=403, reason="chats_off")
+    return await handler(request)
+
+
 def is_admin(request: web.Request) -> bool:
     """Это администратор — неважно, от чьего имени он сейчас пишет."""
     return bool(admin_id(request)) and current_user(request).telegram_id == admin_id(request)
@@ -453,7 +479,8 @@ async def chat_participants(request: web.Request) -> web.Response:
 async def chat_unread(request: web.Request) -> web.Response:
     """Лёгкий запрос для значка «Почты»: число и нужен ли сокет. Сокет нужен
     всем: по нему приходят и чаты, и новые оценки."""
-    return web.json_response({"ok": True, "data": {"total": await unread_total(request), "live": True}})
+    total = await unread_total(request) if await available(request) else 0
+    return web.json_response({"ok": True, "data": {"total": total, "live": True}})
 
 
 async def _check_new_nick(request: web.Request, nick: str, owner_id: int | None = None) -> str:
@@ -1128,10 +1155,25 @@ async def chat_ws_ticket(request: web.Request) -> web.Response:
         context(request), current_user(request).telegram_id, device=fingerprint(token) if token else "")}})
 
 
+@routes.post("/api/settings/chats")
+async def chats_setting(request: web.Request) -> web.Response:
+    """Тумблер владельца «Чаты»."""
+    from ..db.repositories import AppFlagRepository
+
+    if not is_admin(request):
+        return json_error("Это может только владелец", status=403)
+    body = await _body(request)
+    if "on" not in body:
+        return json_error("Некорректный запрос")
+    await AppFlagRepository(context(request).db).set(CHATS_FLAG, bool(body["on"]))
+    return web.json_response({"ok": True, "data": {"on": await chats_on(context(request))}})
+
+
 @routes.get("/api/chat/ws")
 async def chat_ws(request: web.Request) -> web.StreamResponse:
     uid = current_user(request).telegram_id
-    profile = await current_profile(request)
+    # Чаты выключены — сокет остаётся для оценок, но без комнат.
+    profile = await current_profile(request) if await available(request) else None
     acting_admin = await admin_mode(request)
     schools = set() if acting_admin else set(await repo(request).moderated_schools(uid))
     socket = web.WebSocketResponse(heartbeat=25)
