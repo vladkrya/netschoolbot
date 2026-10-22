@@ -7,7 +7,7 @@ import {
   isoToday, lessonNo, markClass, refuseReadOnly, state,
 } from './core.js';
 import { notify, tap } from './haptics.js';
-import { popScreen, pushScreen } from './screens.js';
+import { markScreen, popScreen, pushScreen } from './screens.js';
 import { openLessonEditor } from './edits.js';
 import { ICONS } from './icons.js';
 import { isNewDesign } from './appearance.js';
@@ -187,6 +187,7 @@ function compactTime(value) {
 
 export function openLesson(lesson, iso) {
   const body = pushScreen(`Урок ${lessonNo(lesson)}`.trim(), fullDate(iso));
+  markScreen(body, 'lesson', [lesson, iso]);
   const status = lessonStatus(lesson, iso);
 
   // Горизонтальная лента, как в приложении: кабинет, учитель, тема —
@@ -355,6 +356,7 @@ export function homeworkTimes(item, format = compactTime) {
 export function openHomework(item, topic = '') {
   topic = topic || item.topic || '';
   const body = pushScreen(homeworkKind(item), forDate(item.date));
+  markScreen(body, 'homework', [item, topic]);
   const timestamps = homeworkTimes(item);
   body.innerHTML = `
     <div class="detail">
@@ -387,6 +389,7 @@ function realTopic(text, mark) {
 
 export function openMark(mark, subject, lessonTopic = '') {
   const body = pushScreen(mark.type || 'Оценка', forDate(mark.date));
+  markScreen(body, 'mark', [mark, subject, lessonTopic]);
   // Тема — это тема урока; название работы показываем отдельно, если оно
   // есть и не совпадает с ней. Раньше в «Тему» шло что попало, вплоть до
   // самой оценки, когда у работы не было названия.

@@ -117,3 +117,38 @@ async def test_places_migration_keeps_last_known_place():
         await migrate(db)
         async with db.execute("SELECT * FROM app_clients ORDER BY telegram_id") as cursor:
             assert await cursor.fetchall() == [(1, "telegram", 10, 20), (2, "pwa", 30, 40)]
+
+
+async def test_id_finds_account_by_number(app_context, users):
+    from app.bot.handlers.admin import find_account
+
+    class Bot:
+        async def get_chat(self, chat_id):
+            if chat_id == 2:
+                raise RuntimeError("chat not found")
+            return SimpleNamespace(full_name="Аня <Петрова>", username="anya")
+
+    await users.save(make_user(5, display_name="Старое имя"))
+    await users.save(make_user(2, display_name="Боря"))
+    await users.save(make_user(WEB_ID_BASE + 1))
+    await app_context.db.execute(
+        "INSERT INTO accounts (telegram_id, email, password_hash, created_at, password_changed_at)"
+        " VALUES (?, 'web@example.ru', 'x', 0, 0)", (WEB_ID_BASE + 1,))
+    numbers = {row["telegram_id"]: row["account_no"]
+               for row in await app_context.db.fetch_all("SELECT telegram_id, account_no FROM users")}
+
+    async def ask(args, uid=1):
+        message = FakeMessage(f"/id {args}")
+        message.from_user = SimpleNamespace(id=uid)
+        await find_account(message, SimpleNamespace(args=args), Bot(), app_context)
+        return message.texts
+
+    assert await ask(str(numbers[5]), uid=2) == ""  # не администратор — молчим
+    text = await ask(str(numbers[5]))
+    assert "Аня &lt;Петрова&gt;" in text and "@anya" in text and "<code>5</code>" in text
+    text = await ask(str(numbers[2]))  # чат недоступен — сохранённое имя
+    assert "Боря" in text and "Username: нет" in text and "<code>2</code>" in text
+    text = await ask(str(numbers[WEB_ID_BASE + 1]))
+    assert "Telegram не привязан" in text and "web@example.ru" in text and "Telegram ID" not in text
+    assert "нет" in await ask("99999")
+    assert "число" in await ask("abc")
