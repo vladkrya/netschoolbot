@@ -129,9 +129,6 @@ async def stats_report(app: AppContext) -> str:
         if survey["answered"]:
             lines.append(f"• средняя оценка: {survey['average']:.1f} из 10")
             lines.append("• оценки: " + ", ".join(f"{score} — {n}" for score, n in sorted(survey["scores"].items())))
-    lines.append("")
-    lines.append("<i>До версии 5.21 запоминалось только последнее место открытия, "
-                 "поэтому «в Telegram и в браузере» до неё недосчитано.</i>")
     return "\n".join(lines)
 
 
