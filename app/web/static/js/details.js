@@ -14,6 +14,7 @@ import { isNewDesign } from './appearance.js';
 import { answerSlot, bindDistance, distanceButton, loadAnswers } from './answer.js';
 import { loadSolve, solveSlot } from './solve.js';
 import { pendingOps, send } from './outbox.js';
+import { bellShift, msToBell, syncedNow } from './timer.js';
 
 /* ───────────────────── Отметка «выполнено» ───────────────────── */
 // Общая для «Д/З», экрана урока и экрана задания; хранится на сервере и
@@ -113,8 +114,10 @@ function bindDoneToggles(body, items) {
   }));
 }
 
-/** Статус урока справа от времени, как в официальном приложении. */
-export function lessonStatus(lesson, iso, now = new Date()) {
+/** Статус урока справа от времени, как в официальном приложении. Начало и
+ *  конец — со сдвигом звонка из настроек, как у таймера над днём: иначе
+ *  «Урок окончен» появлялся на несколько секунд раньше звонка. */
+export function lessonStatus(lesson, iso, now = syncedNow(), shift = bellShift()) {
   if (lesson.absence) return absenceText(lesson.absence) || lesson.absence;
   const absence = (lesson.marks || []).map((m) => absenceText(m.mark)).find(Boolean);
   if (absence) return absence;
@@ -124,11 +127,11 @@ export function lessonStatus(lesson, iso, now = new Date()) {
   const day = new Date(`${iso}T00:00:00`);
   if (Number.isFinite(endH)) {
     const end = new Date(day);
-    end.setHours(endH, endM || 0);
+    end.setHours(endH, endM || 0, shift);
     if (now >= end) return 'Урок окончен';
     if (Number.isFinite(startH)) {
       const start = new Date(day);
-      start.setHours(startH, startM || 0);
+      start.setHours(startH, startM || 0, shift);
       if (now >= start) return 'Идёт урок';
     }
   } else if (day < new Date(now.getFullYear(), now.getMonth(), now.getDate())) {
@@ -161,7 +164,7 @@ function bindSubject(body, subject, iso) {
 }
 
 /** Статус на открытом экране урока («Идёт урок» → «Урок окончен») меняется
- *  на границе минуты, пока экран открыт. */
+ *  со звонком, пока экран открыт. */
 function keepStatusFresh(body, lesson, iso) {
   const schedule = () => setTimeout(() => {
     // Экран закрыли — отсчёт больше не нужен.
@@ -169,7 +172,7 @@ function keepStatusFresh(body, lesson, iso) {
     const el = body.querySelector('[data-lesson-status]');
     if (el) el.textContent = lessonStatus(lesson, iso);
     schedule();
-  }, 60000 - Date.now() % 60000 + 50);
+  }, msToBell());
   schedule();
 }
 
