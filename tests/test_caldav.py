@@ -342,3 +342,18 @@ async def test_migration_numbers_old_accounts_and_keeps_ns_logins(tmp_path):
         await db.execute('INSERT INTO users (telegram_id) VALUES (11)')
         cursor = await db.execute('SELECT account_no FROM users WHERE telegram_id = 11')
         assert (await cursor.fetchone())[0] == 10003
+
+
+async def test_new_login_skips_number_still_held_by_old_owner(app_context):
+    await app_context.users.save(make_user(1))
+    await app_context.users.save(make_user(2))
+    repo = CaldavRepository(app_context.db)
+    await repo.create(1)
+    first = await repo.login(1)
+    # Номера поменяли, у первого остался прежний логин.
+    await app_context.db.execute("UPDATE users SET account_no = NULL WHERE telegram_id = 1")
+    number = int(first.removeprefix('cal-'))
+    await app_context.db.execute("UPDATE users SET account_no = ? WHERE telegram_id = 2", (number,))
+    await repo.create(2)
+    second = await repo.login(2)
+    assert second.startswith(first + '-') and await repo.login(1) == first

@@ -643,3 +643,19 @@ async def test_linking_keeps_earliest_date_and_smaller_account_number(app_contex
     await app_context.accounts.move_user(web_id, 5)
     row = await app_context.db.fetch_one("SELECT created_at, account_no FROM users WHERE telegram_id = 5")
     assert row["created_at"] == "2026-01-01 00:00:00" and row["account_no"] == telegram_no
+
+
+async def test_owner_gets_first_number_once(app_context, users):
+    for telegram_id in (3, 4, 1):
+        await users.save(make_user(telegram_id))
+    first, owner = await app_context.accounts.number(3), await app_context.accounts.number(1)
+    await app_context.db.execute("UPDATE app_metadata SET value = '10003' WHERE key = 'account_no_last'")
+    await app_context.db.execute("UPDATE users SET account_no = account_no - ? + 10001", (first,))
+    assert await app_context.accounts.number(3) == 10001
+    owner = await app_context.accounts.number(1)
+    assert await app_context.accounts.give_owner_first_number(1) is True
+    assert await app_context.accounts.number(1) == 10001
+    assert await app_context.accounts.number(3) == owner
+    # Один раз: дальше номера не трогаем.
+    assert await app_context.accounts.give_owner_first_number(4) is False
+    assert await app_context.accounts.number(4) != 10001

@@ -1857,7 +1857,14 @@ class CaldavRepository:
     async def new_login(self, telegram_id: int) -> str:
         """Логин нового формата: номер аккаунта в приложении, без Telegram ID."""
         row = await self._db.fetch_one("SELECT account_no FROM users WHERE telegram_id=?", (telegram_id,))
-        return f'cal-{row["account_no"]}' if row and row['account_no'] else f'ns{telegram_id}'
+        if not row or not row['account_no']:
+            return f'ns{telegram_id}'
+        login = f'cal-{row["account_no"]}'
+        # Номерами могли поменяться (владельцу — 10001), а логин у прежнего
+        # хозяина номера остался: тогда к номеру добавляем хвост.
+        taken = await self._db.fetch_one("SELECT 1 FROM caldav_accounts WHERE login=? AND telegram_id<>?",
+                                         (login, telegram_id))
+        return f'{login}-{secrets.token_hex(2)}' if taken else login
 
     async def login(self, telegram_id: int) -> str:
         """Выданный логин (он же папка календаря), а без доступа — каким он станет."""
