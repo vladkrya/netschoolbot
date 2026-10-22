@@ -11,6 +11,8 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
+<!-- Подпись под иконкой на iPhone; иначе iOS берёт <title>. -->
+<meta name="apple-mobile-web-app-title" content="Дневник">
 <script>
   // Системная область получает цвет шапки уже до первой отрисовки.
   try {
@@ -79,7 +81,7 @@
 <meta property="og:image" content="{{ site_url }}static/icon-512.png">
 <meta property="og:locale" content="ru_RU">
 {% else %}
-<title>{{ school or "Дневник" }}</title>
+<title>Дневник</title>
 {% endif %}
 {% if not demo %}<link rel="manifest" href="{{ base }}/manifest.webmanifest?token={{ token }}">{% endif %}
 <link rel="icon" type="image/png" href="{{ base }}/static/icon-192.png">
@@ -234,6 +236,16 @@
 
 <main>
   <section class="panel active" id="panel-day">
+    <!-- Широкий экран: справа от уроков — кнопки дней, таймер, сводка и
+         отсчёт (day.js переносит их сюда, wide.css показывает колонку). -->
+    <aside class="day-side" id="daySide">
+      <div class="day-nav">
+        <button class="day-nav-btn" id="sidePrev" aria-label="Предыдущий день"><span data-icon="left"></span><span id="sidePrevLabel"></span></button>
+        <button class="day-nav-btn" id="sideNext" aria-label="Следующий день"><span id="sideNextLabel"></span><span data-icon="right"></span></button>
+      </div>
+      <div class="day-keys">Листать дни: ← → на клавиатуре или колесом с Shift</div>
+      <div class="day-side-slot" id="daySideSlot"></div>
+    </aside>
     <!-- Таймер урока (timer.js): отдельно от списка, чтобы перерисовка дня не обрывала анимацию. -->
     <div class="lesson-timer" id="lessonTimer" hidden></div>
     <div class="list" id="dayContent"></div>
@@ -283,6 +295,8 @@
     // Нужные первому экрану — их boot.js качает сразу, остальные — после него.
     appModules: [{% for module in app_modules %}{{ (base ~ '/static/v' ~ version ~ '/js/' ~ module) | tojson }}{{ ',' if not loop.last else '' }}{% endfor %}],
     base: {{ base | tojson }},
+    // Версия статики этой страницы — с ней сверяется X-Netschool-Version.
+    version: {{ version | tojson }},
     appVersion: {{ (app_version or '') | tojson }},
     token: {{ token | tojson }},
     pushEnabled: {{ push_enabled | tojson }},

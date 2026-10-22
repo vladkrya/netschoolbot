@@ -124,6 +124,9 @@ def _secure(request: web.Request, headers) -> None:
     # Личные данные и ключи входа не оседают в кэшах браузера и прокси.
     if '/api/' in request.path:
         headers.setdefault('Cache-Control', 'no-store')
+        # Открытое приложение сверяет её со своей и после выкладки
+        # перезапускается на новую версию (static/js/update.js).
+        headers.setdefault('X-Netschool-Version', STATIC_VERSION)
 
 
 @web.middleware
@@ -554,7 +557,9 @@ async def manifest(request: web.Request) -> web.Response:
     elif token:
         start_url = f"{base}/?token={token}"
     payload = {
-        "name": user.school.name if user and user.school.name else "Сетевой город",
+        # Одно имя для всех: Android подписывает иконку то short_name, то name,
+        # и с названием школы в name у части пользователей под иконкой была школа.
+        "name": "Дневник",
         "short_name": "Дневник",
         "description": "Дневник, оценки и домашние задания",
         # start_url с токеном: иначе установленное приложение открывалось бы

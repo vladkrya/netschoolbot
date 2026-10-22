@@ -1583,6 +1583,15 @@ class TestFastStartup:
         html = await (await client.get(f'{BASE}/')).text()
         assert '/js/day.js' in html.split('appModules:')[1].split(']')[0]
 
+    async def test_api_carries_static_version_for_live_updates(self, client, token):
+        from app.web.server import STATIC_VERSION
+        response = await client.get(f"{BASE}/api/prefs", params={"token": token})
+        assert response.headers['X-Netschool-Version'] == STATIC_VERSION
+        html = await (await client.get(f'{BASE}/')).text()
+        assert f'version: "{STATIC_VERSION}"' in html
+        from app.web.server import APP_MODULES
+        assert 'update.js' in APP_MODULES
+
     async def test_telegram_script_only_inside_telegram(self, client):
         html = await (await client.get(f'{BASE}/')).text()
         # Не обычный тег: в браузере и с экрана «Домой» скрипт не грузится.
