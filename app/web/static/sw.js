@@ -21,10 +21,12 @@ self.addEventListener('activate', (event) => event.waitUntil((async () => {
   await self.clients.claim();
 })()));
 
-/** Ключ кэша без `refresh=1`: принудительное обновление — тот же экран. */
+/** Ключ кэша без `refresh=1` и `update=`: принудительное обновление и
+ *  перезапуск на новую версию — тот же экран. */
 function cacheKey(request) {
   const url = new URL(request.url);
   url.searchParams.delete('refresh');
+  url.searchParams.delete('update');
   return url.toString();
 }
 
@@ -146,7 +148,10 @@ async function networkFirst(request, event) {
     headers.set('X-Netschool-Offline', down ? 'down' : '1');
     return new Response(await saved.blob(), { status: saved.status, headers });
   };
-  const wait = new URL(request.url).searchParams.has('refresh') ? 0
+  // Перезапуск на новую версию (update.js) ждёт сеть: через 3 секунды
+  // отдавалась старая копия страницы, а с ней и старая версия приложения.
+  const params = new URL(request.url).searchParams;
+  const wait = params.has('refresh') || (navigate && params.has('update')) ? 0
     : navigate ? PAGE_TIMEOUT_MS : API_TIMEOUT_MS;
   if (!wait) return network.catch((error) => { markOffline(); return fromCache(error); });
   if (seemsOffline() && wait) {

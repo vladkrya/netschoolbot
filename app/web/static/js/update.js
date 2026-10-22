@@ -17,6 +17,10 @@ import { openSearch } from './search.js';
 import { openGame } from './games.js';
 
 const RESUME_KEY = 'ns-resume';
+// Метка в адресе перезапуска: по ней worker ждёт свежую страницу из сети,
+// а не отдаёт через 3 секунды сохранённую копию (sw.js). На iPhone сеть
+// после сна просыпается секундами, и перезапуск открывал ту же старую версию.
+const UPDATE_PARAM = 'update';
 // На какую версию уже перезапускались. Медленная сеть могла отдать старую
 // страницу из копии worker — второй раз по кругу не перезапускаем.
 const TRIED_KEY = 'ns-update-tried';
@@ -26,6 +30,7 @@ const COUNTDOWN = 3;
 const BUSY_CHECK_MS = 2000;
 
 let pending = false;
+let target = '';
 let postponed = false;
 let toast = null;
 let waitTimer = 0;
@@ -55,7 +60,18 @@ function saveResume() {
 
 function restart() {
   saveResume();
-  location.reload();
+  const url = new URL(location.href);
+  url.searchParams.set(UPDATE_PARAM, target);
+  location.replace(url.href);
+}
+
+/** Метка перезапуска своё отработала — убираем из адреса. */
+function dropUpdateParam() {
+  const params = new URLSearchParams(location.search);
+  if (!params.has(UPDATE_PARAM)) return;
+  params.delete(UPDATE_PARAM);
+  const query = params.toString();
+  history.replaceState(history.state, '', `${location.pathname}${query ? `?${query}` : ''}${location.hash}`);
 }
 
 /** Куда вернуться после перезапуска на новую версию. Читается один раз.
@@ -169,12 +185,14 @@ function waitIdle() {
 
 /** Подписка на «вышла новая версия» — из app.js при запуске. */
 export function initUpdates() {
+  dropUpdateParam();
   document.addEventListener('netschool:newversion', ({ detail }) => {
     try {
       if (sessionStorage.getItem(TRIED_KEY) === detail.version) return;
       sessionStorage.setItem(TRIED_KEY, detail.version);
     } catch { /* приватный режим */ }
     pending = true;
+    target = detail.version;
     if (document.hidden && !busy()) restart();
     else waitIdle();
   });
