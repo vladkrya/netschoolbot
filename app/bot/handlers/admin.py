@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import html
 import time
 
-from aiogram import Router
+from aiogram import Bot, Router
 from aiogram.filters import Command, CommandObject
 from aiogram.types import Message
 
-from ...accounts import WEB_ID_BASE
+from ...accounts import WEB_ID_BASE, has_telegram
 from ...context import AppContext
 from .common import reply
 
@@ -188,4 +189,42 @@ async def tg_widget(message: Message, command: CommandObject, app: AppContext) -
         "",
         "<i>Домен должен быть привязан в @BotFather (/setdomain) именно к выбранному боту.</i>",
     ]
+    await reply(message, "\n".join(lines))
+
+
+@router.message(Command("id"))
+async def find_account(message: Message, command: CommandObject, bot: Bot, app: AppContext) -> None:
+    """/id 10006 — кто стоит за номером аккаунта: имя в Telegram, @username и Telegram ID."""
+    if not _is_admin(message, app):
+        return
+    raw = (command.args or "").strip().lstrip("#")
+    if not raw.isdigit():
+        await reply(message, "Номер аккаунта — число, например <code>/id 10006</code>.")
+        return
+    row = await app.db.fetch_one(
+        """SELECT u.telegram_id, u.display_name, a.email FROM users u
+           LEFT JOIN accounts a ON a.telegram_id = u.telegram_id WHERE u.account_no = ?""",
+        (int(raw),),
+    )
+    if row is None:
+        await reply(message, f"Аккаунта {raw} нет.")
+        return
+    lines = [f"🔎 <b>Аккаунт {raw}</b>", ""]
+    telegram_id = row["telegram_id"]
+    if has_telegram(telegram_id):
+        name, username = row["display_name"], None
+        try:
+            chat = await bot.get_chat(telegram_id)
+            name, username = chat.full_name or name, chat.username
+        except Exception:  # noqa: BLE001 — бот заблокирован или чат недоступен: берём сохранённое имя
+            pass
+        lines += [
+            f"Имя в Telegram: {html.escape(name) if name else '—'}",
+            f"Username: @{html.escape(username)}" if username else "Username: нет",
+            f"Telegram ID: <code>{telegram_id}</code>",
+        ]
+    else:
+        lines.append("Telegram не привязан — входит по почте.")
+    if row["email"]:
+        lines.append(f"Почта: {html.escape(row['email'])}")
     await reply(message, "\n".join(lines))
