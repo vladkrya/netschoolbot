@@ -668,6 +668,10 @@
   text-shadow: 0 0 12px rgba(255, 60, 70, .7);
   animation: lt-throb 1s ease-in-out infinite;
 }
+:root[data-holiday="halloween"]:not(#_) .lt-card.urgent:not(.break) .lt-clock {
+  color: #7dff8a;
+  text-shadow: 0 0 12px rgba(80, 255, 110, .6);
+}
 :root[data-holiday="halloween"]:not(#_) .lt-card.urgent .lt-dot { animation: hw-lt-shake .25s linear infinite; }
 @keyframes hw-lt-shake {
   0%, 100% { transform: rotate(-10deg); }

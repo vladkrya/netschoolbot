@@ -2151,6 +2151,8 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
 .lt-digit.roll { animation: lt-roll .32s var(--ease); }
 @keyframes lt-roll { 0% { transform: translateY(-55%); opacity: 0; } 100% { transform: none; opacity: 1; } }
 .lt-card.urgent .lt-clock { color: var(--red); animation: lt-throb 1s ease-in-out infinite; }
+/* Конец урока близко — зелёным; перед началом урока остаётся красным. */
+.lt-card.urgent:not(.break) .lt-clock { color: var(--green); }
 @keyframes lt-throb { 50% { transform: scale(1.06); } }
 .lt-bar { height: 5px; margin-top: 8px; border-radius: 5px; background: var(--border); overflow: hidden; }
 .lt-bar span { display: block; height: 100%; border-radius: inherit; background: var(--primary); transition: width 1s linear; }
