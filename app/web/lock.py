@@ -244,8 +244,14 @@ async def options(request, kind):
     keys = await db.fetch_all('SELECT credential_id FROM app_passkeys WHERE telegram_id=? AND rp_id=?', (uid, rp))
     descriptors = [PublicKeyCredentialDescriptor(id=row['credential_id']) for row in keys]
     if kind == 'register':
-        opts = generate_registration_options(rp_id=rp, rp_name='Школьный дневник', user_id=str(uid).encode(),
-            user_name=str(uid), exclude_credentials=descriptors,
+        # В ключе — номер аккаунта в приложении, а не Telegram ID: имя ключа
+        # видно в списке паролей на телефоне. Уже созданные ключи сервер
+        # узнаёт по их credential_id, поэтому они продолжают работать.
+        number = await context(request).accounts.number(uid)
+        label = f'Дневник · ID {number}' if number else 'Дневник'
+        opts = generate_registration_options(rp_id=rp, rp_name='Школьный дневник',
+            user_id=f'account-{number}'.encode() if number else secrets.token_bytes(16),
+            user_name=label, user_display_name=label, exclude_credentials=descriptors,
             authenticator_selection=AuthenticatorSelectionCriteria(
                 authenticator_attachment=AuthenticatorAttachment.PLATFORM,
                 user_verification=UserVerificationRequirement.REQUIRED))
