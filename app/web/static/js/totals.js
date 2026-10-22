@@ -6,7 +6,7 @@ import {
   markValue, plural, shortDate, showFailure, showLoading, skeleton, state, syncFinished, syncStarted, weightedAverage, motionAtLeast, demo,
 } from './core.js';
 import { markBox, openMark } from './details.js';
-import { pushScreen } from './screens.js';
+import { keepAcrossRestart, markScreen, pushScreen } from './screens.js';
 import { ICONS } from './icons.js';
 import { openSheet, closeSheet } from './sheet.js';
 import { select, tap } from './haptics.js';
@@ -591,6 +591,7 @@ async function openArchivedSubject(subject, key, data = state.totals, existingBo
 /** Переход из урока/задания с периодом, соответствующим его дате. */
 export async function openSubjectForDate(name, iso) {
   const body = pushScreen('Итоги по предмету', name);
+  markScreen(body, 'subject-date', [name, iso]);
   showLoading(body, skeleton(3));
   try {
     let data = state.grades || (await api('/api/marks')).data;
@@ -725,6 +726,7 @@ function openSubject(subject, key, existingBody = null, data = state.totals) {
     return;
   }
   const body = existingBody || pushScreen('Итоги по предмету', `на ${dayMonth(isoToday())}`);
+  if (!existingBody) markScreen(body, 'subject', [subject.subject, key]);
   // Экран предмета — в том же стекле, что и вкладка (new.css).
   body.closest('.screen')?.classList.add('glassy');
   const marks = quarterMarks(subject, key);
@@ -937,6 +939,15 @@ async function loadClassAverage(body, subject, key) {
 // Свои оценки по предмету и четверти — живут до перезагрузки страницы,
 // чтобы можно было выйти из предмета и вернуться к тем же прикидкам.
 const whatIf = new Map();
+// Перезапуск на новую версию (update.js) возвращает и прикидки.
+keepAcrossRestart('whatif', () => [...whatIf], (entries) => entries.forEach(([id, plan]) => whatIf.set(id, plan)));
+
+/** Предмет по названию — для возврата после перезапуска. */
+export function openSubjectNamed(name, key) {
+  const subject = state.totals?.subjects?.find((item) => item.subject === name);
+  if (subject && !state.totals.archived) openSubject(subject, key);
+  else return openSubjectForDate(name, isoToday());
+}
 const DEFAULT_WEIGHTS = [1, 2, 3, 4];
 
 /** «1,5» вместо «1.5». */

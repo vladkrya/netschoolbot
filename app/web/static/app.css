@@ -1497,6 +1497,8 @@ html.repin body::after, html.repin .bottom-nav, html.repin .fab, html.repin .hw-
 
 /* Свайп «назад» от левого края (swipeback.js). */
 .screen.swiping { animation: none; transition: none; }
+/* Возврат после перезапуска (update.js): экраны встают на место сразу, без выезда. */
+html.resuming .screen, html.resuming .screen * { animation: none !important; }
 .screen.leaving { animation: none; transition: transform .22s var(--ease); }
 /* Вкладка за пальцем: тень слева, как у экрана поверх. */
 main.swiping { transition: none; box-shadow: -8px 0 24px rgba(0, 0, 0, .25); background: var(--bg); }
@@ -2188,7 +2190,9 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
 .lt-card.urgent:not(.break) .lt-clock { color: var(--green); }
 @keyframes lt-throb { 50% { transform: scale(1.06); } }
 .lt-bar { height: 5px; margin-top: 8px; border-radius: 5px; background: var(--border); overflow: hidden; }
-.lt-bar span { display: block; height: 100%; border-radius: inherit; background: var(--primary); transition: width 1s linear; }
+/* Без плавного растягивания: анимация ширины перестраивала страницу каждый
+   кадр весь урок. Полоска и так сдвигается на доли пикселя в секунду. */
+.lt-bar span { display: block; height: 100%; border-radius: inherit; background: var(--primary); }
 .lt-card.break .lt-bar span { background: var(--green); }
 .lt-next { margin-top: 7px; font-size: 13px; color: var(--text2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* Время вышло: содержимое уходит, по центру — галочка. */
@@ -2210,7 +2214,7 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
 @keyframes lt-check { 0% { transform: scale(0) rotate(-30deg); } 70% { transform: scale(1.2) rotate(5deg); } 100% { transform: scale(1); } }
 .lt-card.done > :not(.lt-done) { opacity: 0; filter: blur(3px); transition: opacity .45s ease, filter .45s ease; }
 @media (prefers-reduced-motion: reduce) {
-  .lesson-timer, .lt-bar span { transition: none; }
+  .lesson-timer { transition: none; }
   .lt-digit.roll, .lt-dot, .lt-colon, .lt-card.urgent .lt-clock { animation: none; }
 }
 

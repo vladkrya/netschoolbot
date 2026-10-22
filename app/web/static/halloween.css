@@ -457,14 +457,28 @@
   box-shadow: 0 0 18px color-mix(in srgb, var(--head) 22%, transparent), inset 0 0 0 1px color-mix(in srgb, var(--head) 18%, transparent);
 }
 
-/* Номер урока мерцает, как свеча. */
-:root[data-holiday="halloween"]:not(#_) .lc-num { animation: hw-candle 3.4s ease-in-out infinite; }
-:root[data-holiday="halloween"]:not(#_) .lesson-card:nth-child(2n) .lc-num { animation-delay: -1.3s; }
-:root[data-holiday="halloween"]:not(#_) .lesson-card:nth-child(3n) .lc-num { animation-delay: -2.1s; }
+/* Номер урока мерцает, как свеча. Мерцает ореол за цифрой — прозрачностью,
+   которую телефон рисует сам: анимация text-shadow перерисовывала номера
+   каждый кадр, и на 120 Гц прокрутка проседала. */
+:root[data-holiday="halloween"]:not(#_) .lc-num { position: relative; isolation: isolate; }
+:root[data-holiday="halloween"]:not(#_) .lc-num::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: radial-gradient(circle at 50% 55%, color-mix(in srgb, var(--head) 45%, transparent), transparent 70%);
+  pointer-events: none;
+  will-change: opacity;
+  animation: hw-candle 3.4s ease-in-out infinite;
+}
+:root[data-holiday="halloween"]:not(#_) .lc-num:empty::after { content: none; }
+:root[data-holiday="halloween"]:not(#_) .lesson-card:nth-child(2n) .lc-num::after { animation-delay: -1.3s; }
+:root[data-holiday="halloween"]:not(#_) .lesson-card:nth-child(3n) .lc-num::after { animation-delay: -2.1s; }
 @keyframes hw-candle {
-  0%, 100% { text-shadow: 0 0 8px color-mix(in srgb, var(--head) 60%, transparent); }
-  47% { text-shadow: 0 0 4px color-mix(in srgb, var(--head) 40%, transparent); }
-  52% { text-shadow: 0 0 12px color-mix(in srgb, var(--head) 75%, transparent); }
+  0%, 100% { opacity: .65; }
+  47% { opacity: .3; }
+  52% { opacity: 1; }
 }
 
 /* Двойка — кроваво светится. */
@@ -654,13 +668,27 @@
   to { transform: rotate(8deg) translateY(-1px); }
 }
 :root[data-holiday="halloween"]:not(#_) .lt-clock {
+  position: relative;
+  isolation: isolate;
   color: color-mix(in srgb, var(--lt-glow) 78%, #fff);
+  text-shadow: 0 0 8px color-mix(in srgb, var(--lt-glow) 45%, transparent);
+}
+/* Пламя дрожит ореолом за цифрами, как свеча у номера урока. */
+:root[data-holiday="halloween"]:not(#_) .lt-clock::after {
+  content: '';
+  position: absolute;
+  inset: -6px -10px;
+  z-index: -1;
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--lt-glow) 30%, transparent), transparent);
+  pointer-events: none;
+  will-change: opacity;
   animation: hw-lt-flame 3.2s ease-in-out infinite;
 }
+:root[data-holiday="halloween"]:not(#_) .lt-card.urgent .lt-clock::after { content: none; }
 @keyframes hw-lt-flame {
-  0%, 100% { text-shadow: 0 0 10px color-mix(in srgb, var(--lt-glow) 55%, transparent); }
-  46% { text-shadow: 0 0 5px color-mix(in srgb, var(--lt-glow) 35%, transparent); }
-  52% { text-shadow: 0 0 16px color-mix(in srgb, var(--lt-glow) 75%, transparent); }
+  0%, 100% { opacity: .65; }
+  46% { opacity: .3; }
+  52% { opacity: 1; }
 }
 /* Последние секунды — кроваво-красные, тыква трясётся от страха. */
 :root[data-holiday="halloween"]:not(#_) .lt-card.urgent .lt-clock {
@@ -792,12 +820,14 @@
 /* Без анимаций: тыквы стоят, в конце — просто тыква или привидение без мышей.
    Бесконечные анимации выключаем явно, иначе они мерцали бы. */
 .no-motion :is(.lt-dot, .lt-clock, .lt-check),
-.no-motion .lt-bar span::after { animation: none !important; }
+.no-motion :is(.lt-bar span, .lt-clock, .lc-num)::after { animation: none !important; }
 .no-motion .lt-card.done .lt-check { transform: none; }
 .no-motion .lt-bats { display: none !important; }
 @media (prefers-reduced-motion: reduce) {
   :root[data-holiday="halloween"]:not(#_) :is(.lt-dot, .lt-clock, .lt-card.done .lt-check),
-  :root[data-holiday="halloween"]:not(#_) .lt-bar span::after { animation: none; }
+  :root[data-holiday="halloween"]:not(#_) .lt-bar span::after,
+  :root[data-holiday="halloween"]:not(#_) .lt-clock::after,
+  :root[data-holiday="halloween"]:not(#_) .lc-num::after { animation: none; }
   :root[data-holiday="halloween"]:not(#_) .lt-card.done .lt-check { transform: none; }
   :root[data-holiday="halloween"]:not(#_) .lt-bats { display: none; }
 }
