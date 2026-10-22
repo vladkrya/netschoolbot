@@ -442,6 +442,13 @@ function openWeekSheet() {
   loadSchoolBells().then(() => { if (body.isConnected && showBells()) draw(); });
 }
 
+/** День, на котором были до перезапуска на новую версию (update.js). */
+export function restoreDay(iso) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso || '')) return;
+  state.date = iso;
+  autoDay = false;
+}
+
 export async function goToDay(iso) {
   // Человек выбрал день сам — дальше приложение его не переставляет.
   autoDay = false;
