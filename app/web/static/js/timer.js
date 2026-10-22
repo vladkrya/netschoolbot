@@ -22,8 +22,9 @@ const NEXT_PAUSE_MS = 500;
 const ZERO_HOLD_MS = 900;
 // Длительность сворачивания и раскрытия (как в CSS).
 const COLLAPSE_MS = 520;
-// Последние секунды — заметнее.
-const URGENT_S = 10;
+// Последние секунды — заметнее: перед уроком красным, перед концом урока
+// зелёным (app.css).
+const URGENT_S = 15;
 // Часы сверяются с сервером не чаще чем раз в столько; ответ дольше
 // MAX_RTT_MS не годится — погрешность выйдет больше, чем расхождение.
 const CLOCK_SYNC_MS = 10 * 60000;
@@ -172,19 +173,27 @@ function paintClock(box, text) {
   if (!clock) return;
   if (clock.childElementCount !== text.length) {
     clock.innerHTML = [...text].map((ch) => `<span class="${ch === ':' ? 'lt-colon' : 'lt-digit'}">${ch}</span>`).join('');
-    lastDigits = text;
-    return;
+  } else {
+    [...text].forEach((ch, index) => {
+      if (lastDigits[index] === ch) return;
+      const cell = clock.children[index];
+      cell.textContent = ch;
+      cell.classList.remove('roll');
+      void cell.offsetWidth;
+      cell.classList.add('roll');
+    });
   }
-  [...text].forEach((ch, index) => {
-    if (lastDigits[index] === ch) return;
-    const cell = clock.children[index];
-    cell.textContent = ch;
-    cell.classList.remove('roll');
-    void cell.offsetWidth;
-    cell.classList.add('roll');
-  });
   lastDigits = text;
   card?.classList.toggle('urgent', text.length <= 5 && text <= `00:${String(URGENT_S).padStart(2, '0')}`);
+  syncBeat(clock);
+}
+
+/** Мигание двоеточия и пульс последних секунд — в такт смене секунд: их
+ *  CSS-анимации шли от появления карточки, со сдвигом на долю секунды. */
+function syncBeat(clock) {
+  const delay = `-${nowMs() % 1000}ms`;
+  clock.style.animationDelay = delay;
+  for (const colon of clock.querySelectorAll('.lt-colon')) colon.style.animationDelay = delay;
 }
 
 function paint(box, phase, now = clock()) {
