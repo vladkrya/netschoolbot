@@ -3,6 +3,10 @@
 // Заголовок «Вчера / Сегодня / Завтра» со стрелками, календарь по нажатию на
 // дату, листание дней свайпом, недель — свайпом по полосе недели. Карточка урока: номер и предмет, оценка в
 // рамке, бейдж «Д/З» (сразу открывает задание), время и статус урока.
+//
+// На широком экране компьютера день в две колонки: уроки слева, справа —
+// кнопки соседних дней, таймер, сводка и отсчёт. Дни листаются и стрелками
+// ← → на клавиатуре.
 'use strict';
 
 import {
@@ -15,7 +19,7 @@ import { bellsHtml, bellsNoteHtml, loadSchoolBells, weekCardsHtml } from './sche
 import { canGoBack, topScreen } from './screens.js';
 import { EDGE_PX, swipeBackMode } from './swipeback.js';
 import { isDoneItem, lessonStatus, loadDone, markBox, openHomework, openLesson, realMarks } from './details.js';
-import { closeSheet, openSheet } from './sheet.js';
+import { closeSheet, openSheet, sheetOpen } from './sheet.js';
 import { select, tap } from './haptics.js';
 import { bindInstallCard, installCardHtml } from './install.js';
 import { updateTimer } from './timer.js';
@@ -133,6 +137,7 @@ export async function loadDay(force = false) {
   const container = $('dayContent');
   if (force || !loadedWeeks.has(weekOffsetOf(state.date))) {
     showLoading(container, skeleton());
+    placeSide();
   }
   try {
     // Спрятан ли выходной, ясно только по загруженной неделе: субботу с
@@ -144,11 +149,13 @@ export async function loadDay(force = false) {
       const other = weekOffsetOf(state.date) !== weekOffsetOf(isoToday());
       if (other && (force || !loadedWeeks.has(weekOffsetOf(state.date)))) {
         showLoading(container, skeleton());
+        placeSide();
         await ensureWeek(state.date, force);
       }
     }
   } catch (error) {
     showFailure(container, error, errorCard(error, 'dayRetry'));
+    placeSide();
     $('dayRetry')?.addEventListener('click', () => loadDay(true));
     return;
   }
@@ -174,7 +181,43 @@ function renderHeader() {
   $('daySub').textContent = WEEKDAYS_FULL.includes(label) ? dayMonth(state.date) : fullDate(state.date);
   // В выходной без уроков «домой» — это ближайший учебный день, как при входе.
   $('dayToday').hidden = state.date === isoToday() || state.date === pickDay();
+  $('sidePrevLabel').textContent = shortLabel(neighbour(-1));
+  $('sideNextLabel').textContent = shortLabel(neighbour(1));
   renderWeekStrip();
+}
+
+/** Подпись соседнего дня на кнопке: «Завтра» или «Ср, 14». */
+function shortLabel(iso) {
+  const label = relativeLabel(iso);
+  return WEEKDAYS_FULL.includes(label) ? `${WEEKDAYS[weekdayIndex(iso)]}, ${parseIso(iso).getDate()}` : label;
+}
+
+/* ───────────────────── Две колонки на компьютере ───────────────────── */
+
+// Ширина, с которой справа от уроков есть место для колонки (wide.css).
+const wideDay = matchMedia('(min-width: 1200px)');
+
+/** Таймер, сводку и отсчёт — в колонку справа или обратно над уроками.
+ *  Сводку и отсчёт день рисует в общем списке, а здесь их переносят целиком,
+ *  вместе с обработчиками. */
+function placeSide() {
+  const content = $('dayContent');
+  const slot = $('daySideSlot');
+  const timer = $('lessonTimer');
+  const moved = content.querySelectorAll(':scope > .day-summary, :scope > .countdown-card');
+  if (wideDay.matches) {
+    if (!timer.closest('#daySide')) slot.before(timer);
+    // Старые сводка и отсчёт остались от прошлой отрисовки — заменить.
+    if (moved.length || !content.querySelector(':scope > .lesson-card, :scope > .empty')) slot.replaceChildren(...moved);
+    return;
+  }
+  if (timer.closest('#daySide')) content.before(timer);
+  const back = [...slot.children];
+  if (!back.length) return;
+  if (moved.length || !content.children.length) { slot.replaceChildren(); return; }
+  const install = content.querySelector(':scope > .install-card');
+  if (install) install.after(...back);
+  else content.prepend(...back);
 }
 
 /** Неделя полосой под датой (новый дизайн): день недели и число. Все семь
@@ -270,6 +313,7 @@ function renderDay(quiet = false) {
     bindInstallCard(container);
     bindCountdown(container, () => renderDay(true));
     bindDayEdits(container, day);
+    placeSide();
     return;
   }
 
@@ -323,6 +367,21 @@ function renderDay(quiet = false) {
       const targets = lessonMarks();
       from.forEach((rect, nth) => flyTo(rect, targets[nth]));
     });
+  });
+  placeSide();
+}
+
+/** Стрелки ← → на клавиатуре листают дни, когда открыт «День» и поверх
+ *  ничего нет. В полях ввода стрелки — для текста. */
+function bindArrowKeys() {
+  document.addEventListener('keydown', (event) => {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+    if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || event.defaultPrevented) return;
+    if (state.tab !== 'day' || topScreen() || sheetOpen() || $('drawer').classList.contains('open')) return;
+    if (document.documentElement.classList.contains('app-locked')) return;
+    if (event.target.closest?.('input, textarea, select, [contenteditable]')) return;
+    event.preventDefault();
+    shiftDay(event.key === 'ArrowRight' ? 1 : -1);
   });
 }
 
@@ -449,18 +508,23 @@ export async function goToDay(iso) {
   await loadDay();
 }
 
-export function shiftDay(delta, felt = false) {
-  // Стрелки перешагивают спрятанные выходные.
+/** Соседний день: стрелки перешагивают спрятанные выходные. */
+function neighbour(delta) {
   let iso = addDays(state.date, delta);
   for (let step = 0; step < 2 && isHiddenWeekend(iso); step += 1) iso = addDays(iso, delta);
-  slideTo(iso, felt);
+  return iso;
+}
+
+export function shiftDay(delta, felt = false) {
+  slideTo(neighbour(delta), felt);
 }
 
 /** Перейти на день с листанием в его сторону. felt — отклик уже был (свайп). */
 function slideTo(iso, felt = false) {
   if (!felt) select();
-  // Таймер урока над днём едет вместе с уроками.
-  for (const container of [$('dayContent'), $('lessonTimer')]) {
+  // Таймер урока над днём едет вместе с уроками, в колонке справа — стоит.
+  const timer = $('lessonTimer');
+  for (const container of [$('dayContent'), ...(timer.closest('#daySide') ? [] : [timer])]) {
     container.classList.remove('slide-left', 'slide-right');
     // Перезапуск анимации: без чтения layout класс не срабатывает повторно.
     void container.offsetWidth;
@@ -789,6 +853,10 @@ export function initDay() {
   refreshOnMinute();
   $('dayPrev').addEventListener('click', () => shiftDay(-1));
   $('dayNext').addEventListener('click', () => shiftDay(1));
+  $('sidePrev').addEventListener('click', () => shiftDay(-1));
+  $('sideNext').addEventListener('click', () => shiftDay(1));
+  wideDay.addEventListener('change', placeSide);
+  bindArrowKeys();
   $('dayTitle').addEventListener('click', () => openCalendar());
   $('dayBells').addEventListener('click', openWeekSheet);
   $('dayToday').addEventListener('click', () => slideTo(pickDay()));
