@@ -11,6 +11,67 @@ import { ICONS } from './icons.js';
 
 const stack = [];
 
+/* ───────────── Возврат после перезапуска на новую версию ─────────────
+ * Экран, который умеет открыться заново, помечает себя: что открыть и с
+ * чем (update.js сохраняет стопку перед перезапуском и открывает её снова).
+ * live() — свежие аргументы на момент сохранения (начатое письмо). */
+const restoreOf = new WeakMap();
+
+export function markScreen(body, kind, args = [], live = null) {
+  const screen = body?.closest?.('.screen');
+  if (screen) restoreOf.set(screen, { kind, args, live });
+}
+
+/** Стопка экранов: что открыто, прокрутка и поля — сверху последний. */
+export function screenTrail() {
+  return stack.map((screen) => {
+    const mark = restoreOf.get(screen);
+    let args = mark?.args;
+    try { if (mark?.live) args = mark.live(); } catch { /* экран уже разобран */ }
+    return {
+      kind: mark?.kind || '',
+      args,
+      scroll: screen.scrollTop,
+      fields: [...screen.querySelectorAll(FIELDS)].map((field) => (
+        field.type === 'checkbox' || field.type === 'radio' ? { c: field.checked } : { v: field.value })),
+    };
+  });
+}
+
+const FIELDS = 'input:not([type="file"]):not([type="hidden"]), textarea, select';
+
+/** Поля экрана — как были до перезапуска, по порядку. */
+export function fillFields(screen, saved = []) {
+  [...screen.querySelectorAll(FIELDS)].forEach((field, index) => {
+    const value = saved[index];
+    if (!value) return;
+    if ('c' in value && (field.type === 'checkbox' || field.type === 'radio')) field.checked = value.c;
+    else if ('v' in value && typeof value.v === 'string' && !field.value) field.value = value.v;
+  });
+}
+
+// Состояние модулей, которое должно пережить перезапуск (прикидки «что если»).
+const keepers = new Map();
+
+export function keepAcrossRestart(name, save, load) {
+  keepers.set(name, { save, load });
+}
+
+export function keptState() {
+  const result = {};
+  for (const [name, keeper] of keepers) {
+    try { result[name] = keeper.save(); } catch { /* не сохранилось — откроется пустым */ }
+  }
+  return result;
+}
+
+export function restoreKept(saved = {}) {
+  for (const [name, keeper] of keepers) {
+    if (saved[name] === undefined) continue;
+    try { keeper.load(saved[name]); } catch { /* старый формат — без него */ }
+  }
+}
+
 export function pushScreen(title, subtitle = '') {
   tap();
   const screen = document.createElement('section');
