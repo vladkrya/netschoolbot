@@ -192,6 +192,9 @@ class AccountRepository:
         удаляется. Внешние ключи проверяются в конце транзакции: сначала
         меняется сам пользователь, потом всё, что на него ссылается.
         """
+        # Запись Telegram могла появиться раньше аккаунта с почтой: дата
+        # первого прихода и меньший номер аккаунта остаются за человеком.
+        earlier = await self._db.fetch_one("SELECT created_at, account_no FROM users WHERE telegram_id = ?", (new_id,))
         async with self._db.transaction() as db:
             await db.execute("PRAGMA defer_foreign_keys = ON")
             await db.execute("DELETE FROM users WHERE telegram_id = ?", (new_id,))
@@ -209,6 +212,11 @@ class AccountRepository:
                     await db.execute(f'UPDATE "{table}" SET "{column}" = ? WHERE "{column}" = ?', (new_id, old_id))
             for table in ("chat_messages", "chat_reads"):
                 await db.execute(f"UPDATE {table} SET room = ? WHERE room = ?", (f"support:{new_id}", f"support:{old_id}"))
+        if earlier:
+            await self._db.execute(
+                "UPDATE users SET created_at = MIN(created_at, ?), "
+                "account_no = MIN(COALESCE(account_no, ?), COALESCE(?, account_no)) WHERE telegram_id = ?",
+                (earlier[0], earlier[1], earlier[1], new_id))
 
     async def merge_into(self, old_id: int, new_id: int) -> bool:
         """Join a verified email account to Telegram, retaining Telegram's diary.
