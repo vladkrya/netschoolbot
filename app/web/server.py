@@ -554,7 +554,9 @@ async def manifest(request: web.Request) -> web.Response:
     elif token:
         start_url = f"{base}/?token={token}"
     payload = {
-        "name": user.school.name if user and user.school.name else "Сетевой город",
+        # Одно имя для всех: Android подписывает иконку то short_name, то name,
+        # и с названием школы в name у части пользователей под иконкой была школа.
+        "name": "Дневник",
         "short_name": "Дневник",
         "description": "Дневник, оценки и домашние задания",
         # start_url с токеном: иначе установленное приложение открывалось бы

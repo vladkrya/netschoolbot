@@ -11,6 +11,8 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
+<!-- Подпись под иконкой на iPhone; иначе iOS берёт <title>. -->
+<meta name="apple-mobile-web-app-title" content="Дневник">
 <script>
   // Системная область получает цвет шапки уже до первой отрисовки.
   try {
@@ -79,7 +81,7 @@
 <meta property="og:image" content="{{ site_url }}static/icon-512.png">
 <meta property="og:locale" content="ru_RU">
 {% else %}
-<title>{{ school or "Дневник" }}</title>
+<title>Дневник</title>
 {% endif %}
 {% if not demo %}<link rel="manifest" href="{{ base }}/manifest.webmanifest?token={{ token }}">{% endif %}
 <link rel="icon" type="image/png" href="{{ base }}/static/icon-192.png">
