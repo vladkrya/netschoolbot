@@ -2,7 +2,7 @@
 'use strict';
 
 import {
-  $, api, assistantEnabled, forgetRevalidated, banner, base, demo, isOffline, isReadOnly, keepTouch, loadAttachmentTicket, NO_INTERNET, school, state, student, studentFirstName, syncFinished, syncStarted, tg, token,
+  $, api, assistantEnabled, forgetRevalidated, banner, base, demo, isOffline, isReadOnly, keepTouch, loadAttachmentTicket, noConnectionText, school, state, student, studentFirstName, syncFinished, syncStarted, tg, token,
 } from './core.js';
 import { initDay, loadDay } from './day.js';
 import { initSchedule, loadSchedule } from './schedule.js';
@@ -239,7 +239,7 @@ function bindPullToRefresh() {
     if (isOffline()) {
       hide();
       notify('error');
-      banner(`${NO_INTERNET} — обновить данные не получится`, true, 3500);
+      banner(`${noConnectionText()} — обновить данные не получится`, true, 3500);
       return;
     }
     // Данные остаются на экране, пока идёт запрос, и меняются на месте —
