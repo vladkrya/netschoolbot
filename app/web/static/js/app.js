@@ -4,7 +4,8 @@
 import {
   $, api, assistantEnabled, forgetRevalidated, banner, base, demo, isOffline, isReadOnly, keepTouch, loadAttachmentTicket, noConnectionText, school, state, student, studentFirstName, syncFinished, syncStarted, tg, token,
 } from './core.js';
-import { initDay, loadDay } from './day.js';
+import { initDay, loadDay, restoreDay } from './day.js';
+import { initUpdates, takeResume } from './update.js';
 import { initSchedule, loadSchedule } from './schedule.js';
 import { initHomework, loadHomework } from './homework.js';
 import { loadTotals } from './totals.js';
@@ -956,7 +957,14 @@ async function start() {
   // Первая вкладка панели — та, с которой открывается приложение.
   const requestedSettings = location.hash === '#settings';
   if (requestedSettings) history.replaceState(history.state, '', location.pathname + location.search);
-  const firstTab = switchTab(requestedSettings && isNewDesign() ? 'settings' : navTabs()[0]);
+  // Перезапуск на новую версию (update.js) — туда же, где были: вкладка, день, прокрутка.
+  const resume = requestedSettings ? null : takeResume();
+  if (resume?.date) restoreDay(resume.date);
+  if (Number.isInteger(resume?.scheduleWeek)) state.scheduleWeek = resume.scheduleWeek;
+  const resumeTab = resume && TABS[resume.tab] && (navTabs().includes(resume.tab) || (resume.tab === 'settings' && isNewDesign())) ? resume.tab : null;
+  const firstTab = switchTab(requestedSettings && isNewDesign() ? 'settings' : resumeTab || navTabs()[0]);
+  if (resume?.scroll) firstTab.then(() => requestAnimationFrame(() => window.scrollTo(0, resume.scroll))).catch(() => {});
+  initUpdates();
   if (requestedSettings && !isNewDesign()) openDrawer();
   firstTab.then(() => setTimeout(prefetch, 600)).catch(() => {});
   // Игры качаются заранее: так они откроются и без сети.

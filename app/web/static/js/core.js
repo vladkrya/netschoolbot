@@ -608,6 +608,17 @@ async function readAssistantStream(response, onDelta, timeout = 100000) {
   }
 }
 
+/** Сервер уже на другой версии (выкатили обновление) — update.js
+ *  перезапустит приложение. Копии worker сюда не попадают: в них версия
+ *  того дня, когда их сохранили. */
+let newVersionSeen = false;
+function noticeVersion(response) {
+  const version = response.headers.get('X-Netschool-Version');
+  if (newVersionSeen || demo || !version || !window.NETSCHOOL?.version || version === window.NETSCHOOL.version) return;
+  newVersionSeen = true;
+  document.dispatchEvent(new CustomEvent('netschool:newversion', { detail: { version } }));
+}
+
 /** Запрос к API с удостоверением личности и разбором ошибки. */
 async function request(path, options = {}) {
   // Для FormData браузер сам ставит Content-Type с границей частей.
@@ -717,6 +728,7 @@ async function request(path, options = {}) {
   }
   // Ответ пришёл по сети — связь есть.
   setOffline(false);
+  noticeVersion(response);
   // У кэшированного ответа есть age. Только ответ самой школы снимает
   // сообщение о простое; /profile и сохранённая копия ничего не доказывают.
   if (watched && payload.stale === false && payload.age == null) markSgoUp();

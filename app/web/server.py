@@ -124,6 +124,9 @@ def _secure(request: web.Request, headers) -> None:
     # Личные данные и ключи входа не оседают в кэшах браузера и прокси.
     if '/api/' in request.path:
         headers.setdefault('Cache-Control', 'no-store')
+        # Открытое приложение сверяет её со своей и после выкладки
+        # перезапускается на новую версию (static/js/update.js).
+        headers.setdefault('X-Netschool-Version', STATIC_VERSION)
 
 
 @web.middleware
