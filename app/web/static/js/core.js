@@ -217,7 +217,6 @@ export function banner(text, isError, hideAfter = 0) {
 // они копятся в очереди (outbox.js) и уходят на сервер, когда сеть вернётся.
 
 export const NO_INTERNET = 'Нет подключения к интернету';
-const ONLINE_ONLY_TEXT = 'Нет подключения к интернету — это заработает, когда появится сеть';
 // Что без сети не работает. Тот же список — в app.css (html.offline).
 const ONLINE_ONLY = [
   'a.attach', '[data-online]', '#refreshBtn', '#composeBtn', '#composeSend', '#aiFab',
@@ -250,6 +249,13 @@ const UPDATING_TEXT = 'Приложение обновляется — чере�
 
 const offlineTitle = () => (navigator.onLine === false ? 'Нет интернета'
   : updating ? 'Приложение обновляется' : 'Нет связи с сервером');
+// Сеть есть, а сервер перезапускается — пишем про обновление, а не «нет интернета».
+const isUpdating = () => updating && navigator.onLine !== false;
+/** Почему нет связи — для плашек и карточек ошибок. */
+export const noConnectionText = () => (isUpdating() ? 'Приложение обновляется' : NO_INTERNET);
+const onlineOnlyText = () => (isUpdating()
+  ? 'Приложение обновляется — это заработает через минуту'
+  : 'Нет подключения к интернету — это заработает, когда появится сеть');
 
 /** Сервер перезапускается: та же плашка, что без сети, со своим заголовком.
  *  Проверка связи раз в 8 секунд вернёт экраны, когда он поднимется. */
@@ -398,7 +404,7 @@ if (!demo) {
     if (!offline || !event.target.closest?.(ONLINE_ONLY)) return;
     event.preventDefault();
     event.stopImmediatePropagation();
-    banner(ONLINE_ONLY_TEXT, true, 3500);
+    banner(onlineOnlyText(), true, 3500);
   }, true);
 }
 
@@ -644,14 +650,18 @@ async function request(path, options = {}) {
     }
     // Соединение оборвалось сразу (iPhone после сна, смена сети) — чтение
     // повторяем один раз, прежде чем говорить, что сервер недоступен.
-    if (error.name !== 'AbortError' && !init.method && !networkRetried) {
+    // Уже известно, что связи нет, — не ждём зря: показываем сохранённое.
+    if (error.name !== 'AbortError' && !init.method && !networkRetried && !offline) {
       clearTimeout(timer);
       await new Promise((resolve) => setTimeout(resolve, 700));
       return request(path, { ...options, networkRetried: true });
     }
     // До сервера не достучались совсем — это «нет сети», одна плашка на всё.
     if (error.name !== 'AbortError' || navigator.onLine === false) setOffline(true);
-    const failure = new Error(offline ? NO_INTERNET
+    // Сеть у телефона есть — сразу узнаём, не перезапускается ли сервер, чтобы
+    // писать «Приложение обновляется», а не «нет интернета».
+    if (offline && !updating && navigator.onLine !== false) probe();
+    const failure = new Error(offline ? noConnectionText()
       : error.name === 'AbortError'
         ? 'Сервер приложения не ответил вовремя. Проверьте интернет и повторите попытку.'
         : 'Не удалось подключиться к серверу приложения. Проверьте интернет и повторите попытку.');
@@ -668,7 +678,7 @@ async function request(path, options = {}) {
 
   if (appDown(response)) {
     // Перезапуск длится секунды — чтение повторяем один раз, прежде чем сказать.
-    if (!init.method && !networkRetried) {
+    if (!init.method && !networkRetried && !offline) {
       await new Promise((resolve) => setTimeout(resolve, 2000));
       return request(path, { ...options, networkRetried: true });
     }
@@ -931,8 +941,8 @@ export function errorCard(error, retryId) {
   // Без сети — одинаково на всех экранах: сохранённого здесь ещё нет.
   if (error.offline || (offline && error.source === 'app')) {
     return `<div class="card error-card offline-card">
-      <p><b>${NO_INTERNET}</b></p>
-      <p class="muted small">Этого ещё нет на устройстве — откроется, когда появится сеть.</p>
+      <p><b>${noConnectionText()}</b></p>
+      <p class="muted small">Этого ещё нет на устройстве — откроется, ${isUpdating() ? 'как только сервер обновится' : 'когда появится сеть'}.</p>
       ${retryId ? `<button class="btn outline" id="${retryId}">Повторить</button>` : ''}
     </div>`;
   }
