@@ -1,4 +1,5 @@
-// Обратный отсчёт на «Дне»: до каникул и, у 9-х и 11-х классов, до ОГЭ/ЕГЭ.
+// Обратный отсчёт на «Дне»: до каникул. Отсчёт до ОГЭ/ЕГЭ сервер ещё
+// отдаёт, но на карточке его не показываем — владелец попросил убрать.
 //
 // Сервер отдаёт даты (/api/countdown), число дней считается здесь от
 // сегодняшнего дня: ответ хранится полдня и после полуночи не отстаёт.
@@ -64,12 +65,6 @@ export function countdownHtml() {
         До ${esc(TO_LABEL[vacation.label] || 'каникул')} <b>${days(left)}</b>
         <span class="cd-note">с ${esc(dayMonth(vacation.start))}${data.vacation_exact ? '' : ' · даты примерные'}</span></span></div>`);
     }
-  }
-  if (data.exam) {
-    const left = daysBetween(today, data.exam.start);
-    rows.push(`<div class="cd-row"><span class="cd-ico">🎓</span><span class="cd-text">
-      До ${esc(data.exam.name)} ${data.exam.confirmed ? '' : '≈ '}<b>${days(left)}</b>
-      <span class="cd-note">начало — ${esc(dayMonth(data.exam.start))}${data.exam.confirmed ? '' : ' · примерно, расписание ещё не утвердили'}</span></span></div>`);
   }
   if (!rows.length) return '';
   return `<div class="countdown-card">${rows.join('')}
