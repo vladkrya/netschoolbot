@@ -25,7 +25,7 @@ from aiohttp import web
 
 from .. import __version__
 from ..context import AppContext
-from . import account, api, assistant, bugreport, caldav, captcha_proxy, chat, clock, devices, extras, lock, retro, solver, status, sync
+from . import account, admin, api, assistant, bugreport, caldav, captcha_proxy, chat, clock, devices, extras, lock, retro, solver, status, sync
 from .api import BOT, CONTEXT
 
 logger = logging.getLogger("netschoolbot.web")
@@ -53,7 +53,35 @@ STATIC_VERSION = _static_version()
 # а не цепочкой «app.js → его импорты → их импорты».
 JS_MODULES = sorted(path.name for path in (STATIC_DIR / "js").glob("*.js") if path.name != "demo.js")
 
-BOOT_MODULES = ['boot.js', 'core.js', 'icons.js', 'haptics.js', 'lock.js', 'biometrics.js', 'pinpad.js']
+# prefs.js, outbox.js и retro.js boot.js берёт до дневника: без них в <head>
+# каждый шёл отдельным кругом до сервера, по очереди.
+BOOT_MODULES = ['boot.js', 'core.js', 'icons.js', 'haptics.js', 'lock.js', 'biometrics.js', 'pinpad.js',
+                'prefs.js', 'outbox.js', 'retro.js']
+
+_STATIC_IMPORT = re.compile(r"""^\s*(?:import|export)\b[^'"();]*?['"](\./[\w./-]+\.js)['"]""", re.M)
+
+
+def _static_imports(entry: str) -> list[str]:
+    """Модули, которые entry тянет статическим import (без import()).
+
+    Их boot.js начинает качать сразу, ещё до проверки PIN и аккаунта, а
+    экраны, которые открываются по требованию, — после первой отрисовки.
+    """
+    root = (STATIC_DIR / "js").resolve()
+    seen: set[str] = set()
+    queue = [entry]
+    while queue:
+        name = queue.pop()
+        path = root / name
+        if name in seen or not path.is_file():
+            continue
+        seen.add(name)
+        for target in _STATIC_IMPORT.findall(path.read_text(encoding="utf-8")):
+            queue.append((path.parent / target).resolve().relative_to(root).as_posix())
+    return sorted(seen)
+
+
+APP_MODULES = [name for name in _static_imports("app.js") if name not in BOOT_MODULES]
 
 page_routes = web.RouteTableDef()
 
@@ -70,6 +98,14 @@ async def compress_static(request: web.Request, handler):
         if response.status == 200 and 'Range' not in request.headers:
             # Прокси не сжимал JS/CSS: на мобильной сети уходили сотни килобайт.
             response.enable_compression()
+    # Ответы API (неделя дневника — десятки килобайт) тоже сжимаем: JSON
+    # идёт через туннель зеркала и мобильную сеть, а сжимается в разы.
+    # Потоки (ndjson помощника, WebSocket чатов) уже отправлены — их не трогаем.
+    elif ('/api/' in request.path and type(response) is web.Response and not response.prepared
+          and response.content_type == 'application/json'
+          and isinstance(response.body, (bytes, bytearray)) and len(response.body) > 1024):
+        response.headers['Vary'] = 'Accept-Encoding'
+        response.enable_compression()
     return response
 
 
@@ -136,6 +172,7 @@ def create_app(context: AppContext, bot=None) -> web.Application:
     inner.add_routes(lock.routes)
     inner.add_routes(chat.routes)
     inner.add_routes(account.routes)
+    inner.add_routes(admin.routes)
     inner.add_routes(devices.routes)
     inner.add_routes(bugreport.routes)
     inner.add_routes(assistant.routes)
@@ -390,6 +427,7 @@ async def index(request: web.Request) -> web.Response:
             "version": STATIC_VERSION,
             "app_version": __version__,
             "modules": JS_MODULES,
+            "app_modules": APP_MODULES,
             "boot_modules": BOOT_MODULES,
             "token": token,
             "student": user.student_name if user and not protected else "",
@@ -469,6 +507,7 @@ async def demo(request: web.Request) -> web.Response:
             "version": STATIC_VERSION,
             "app_version": __version__,
             "modules": JS_MODULES,
+            "app_modules": APP_MODULES,
             "boot_modules": BOOT_MODULES,
             "token": "",
             "student": "Пятёркин Отличник",

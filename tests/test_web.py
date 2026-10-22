@@ -1562,6 +1562,34 @@ class TestFastStartup:
         assert 'Content-Encoding' not in partial.headers
         assert len(await partial.read()) == 100
 
+    async def test_api_json_is_compressed(self, client, token, app_context):
+        today = dt.date.today()
+        app_context.diary.marks = [record(index, date=today) for index in range(20)]
+        response = await client.get(f"{BASE}/api/diary", params={"token": token}, headers={'Accept-Encoding': 'gzip'})
+        assert response.status == 200
+        assert response.headers.get('Content-Encoding') == 'gzip'
+        assert 'Accept-Encoding' in response.headers['Vary']
+        assert (await response.json())["ok"] is True
+        # Маленький ответ сжимать незачем.
+        small = await client.get(f"{BASE}/api/prefs", params={"token": token}, headers={'Accept-Encoding': 'gzip'})
+        assert 'Content-Encoding' not in small.headers
+
+    async def test_app_modules_are_the_static_graph_of_app_js(self, client):
+        from app.web.server import APP_MODULES, BOOT_MODULES
+        assert 'day.js' in APP_MODULES and 'games/kit.js' in APP_MODULES
+        # Открываются по требованию через import() — качаются после первой отрисовки.
+        assert 'account.js' not in APP_MODULES and 'chat.js' not in APP_MODULES
+        assert not set(APP_MODULES) & set(BOOT_MODULES)
+        html = await (await client.get(f'{BASE}/')).text()
+        assert '/js/day.js' in html.split('appModules:')[1].split(']')[0]
+
+    async def test_telegram_script_only_inside_telegram(self, client):
+        html = await (await client.get(f'{BASE}/')).text()
+        # Не обычный тег: в браузере и с экрана «Домой» скрипт не грузится.
+        assert not re.search(r'^<script src="[^"]*telegram-web-app\.js"', html, re.M)
+        assert "document.write('<script src=\"/mini/static/v" in html
+        assert "tgWebApp/.test(location.hash + location.search)" in html
+
 
 class TestSecurityHeaders:
     async def test_pages_and_api_carry_security_headers(self, client):

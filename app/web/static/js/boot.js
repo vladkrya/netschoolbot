@@ -49,6 +49,35 @@ function signedOut() {
   try { return localStorage.getItem('ns-signed-out') === token; } catch { return false; }
 }
 
+/** Начать качать модули, не дожидаясь их import: сеть простаивала, пока
+ *  шли проверки PIN, аккаунта и настроек, и дневник ждал ещё и их. */
+function preload(urls) {
+  for (const url of urls || []) {
+    if (document.querySelector(`link[rel="modulepreload"][href="${url}"]`)) continue;
+    const link = document.createElement('link'); link.rel = 'modulepreload'; link.href = url;
+    document.head.append(link);
+  }
+}
+
+// В прошлый раз дошли до дневника этим входом: тогда его запрос идёт сразу
+// после PIN, рядом с проверкой аккаунта, а не после неё. Первый запуск,
+// приглашение и вход в «Сетевой город» — по-старому, по очереди.
+const READY_KEY = 'ns-boot-ready';
+const readyMark = () => token || 'telegram';
+function wasReady() {
+  try { return localStorage.getItem(READY_KEY) === readyMark(); } catch { return false; }
+}
+
+function loadInitialDiary() {
+  state.initialDiary = api('/api/diary?week=0&window=current', {
+    onFresh: fresh => {
+      state.initialDiaryFresh = fresh;
+      window.dispatchEvent(new CustomEvent('netschool:diaryfresh', { detail: fresh }));
+    },
+  })
+    .then(payload => ({ payload }), error => ({ error }));
+}
+
 const OWN_KEY = 'ns-own-token';
 
 /** iPhone при установке копирует в иконку на экране «Домой» cookie Safari —
@@ -95,10 +124,13 @@ async function boot() {
     else await showAuth();
     return;
   }
+  preload(window.NETSCHOOL.appModules);
   await unlockApp();
   await ownToken();
+  const tglink = /[?&]tglink=/.test(location.search) || location.hash.startsWith('#tglink=');
+  if (!demo && !tglink && !pendingInvite() && wasReady()) loadInitialDiary();
   // Вернулись из Telegram после «Привязать через Telegram» (account.js).
-  if (!demo && (/[?&]tglink=/.test(location.search) || location.hash.startsWith('#tglink='))) {
+  if (!demo && tglink) {
     const { finishTelegramLink } = await import('./account.js');
     if (await finishTelegramLink()) return;
   }
@@ -139,20 +171,14 @@ async function boot() {
     }
   }
   // Первый запрос идёт параллельно загрузке модулей интерфейса, после разблокировки.
-  if (!demo) state.initialDiary = api('/api/diary?week=0&window=current', {
-    onFresh: fresh => {
-      state.initialDiaryFresh = fresh;
-      window.dispatchEvent(new CustomEvent('netschool:diaryfresh', { detail: fresh }));
-    },
-  })
-    .then(payload => ({ payload }), error => ({ error }));
-  for (const url of window.NETSCHOOL.modules || []) {
-    if (document.querySelector(`link[rel="modulepreload"][href="${url}"]`)) continue;
-    const link = document.createElement('link'); link.rel = 'modulepreload'; link.href = url;
-    document.head.append(link);
+  if (!demo) {
+    if (!state.initialDiary) loadInitialDiary();
+    try { localStorage.setItem(READY_KEY, readyMark()); } catch { /* приватный режим */ }
   }
   await import('./app.js');
   document.getElementById('bootSplash')?.remove();
+  // Экраны по требованию — заранее, но после дневника: без сети они тоже откроются.
+  setTimeout(() => preload(window.NETSCHOOL.modules), 1000);
   try { sessionStorage.removeItem('bootRetries'); } catch { /* приватный режим */ }
 }
 boot().catch(() => window.netschoolBootFailed());

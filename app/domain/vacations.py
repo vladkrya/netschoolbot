@@ -72,17 +72,21 @@ def default_vacations(year: int) -> list[Vacation]:
     return result
 
 
+def _lessons_end(period: Quarter) -> dt.date:
+    return period.lessons_end or period.end
+
+
 def school_vacations(periods: list[Quarter]) -> list[Vacation]:
     """Каникулы — промежутки между периодами школы и лето после последнего."""
     ordered = sorted(periods, key=lambda q: q.start)
     result = []
     for before, after in zip(ordered, ordered[1:]):
         # Выходные между периодами — ещё не каникулы.
-        if (after.start - before.end).days > MIN_GAP_DAYS:
-            start = before.end + dt.timedelta(days=1)
+        if (after.start - _lessons_end(before)).days > MIN_GAP_DAYS:
+            start = _lessons_end(before) + dt.timedelta(days=1)
             result.append(Vacation(_season(start), start, after.start - dt.timedelta(days=1)))
     if ordered:
-        last = ordered[-1].end
+        last = _lessons_end(ordered[-1])
         summer_end = dt.date(academic_year_start(ordered[0].start) + 1, 8, 31)
         if last < summer_end:
             result.append(Vacation("Летние каникулы", last + dt.timedelta(days=1), summer_end))

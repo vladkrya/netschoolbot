@@ -70,7 +70,9 @@ async def countdown(request: web.Request) -> web.Response:
             "exam": {"name": exam[0], "start": exam[1].isoformat(), "confirmed": exam[2]} if exam else None,
         }
 
-    return await _cached(request, "countdown", produce, fresh_seconds=COUNTDOWN_FRESH_SECONDS)
+    # Раздел кэша с номером: ответ хранится 6 часов, и после смены расчёта
+    # люди полдня видели бы старый — меняя расчёт, поднимайте номер.
+    return await _cached(request, "countdown-v2", produce, fresh_seconds=COUNTDOWN_FRESH_SECONDS)
 
 
 # Поиск по году: задания перечитываются раз в 6 часов, почта — раз в полчаса.

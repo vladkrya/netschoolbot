@@ -1016,12 +1016,6 @@ export async function openAccountSettings() {
             <button class="link" data-act="link">Не открывается? Привязать кодом в боте</button>`
             : '<button class="btn outline" data-act="link">Привязать Telegram</button>'}
         </div>`}
-      ${info.share_sgo === null || info.share_sgo === undefined ? '' : `
-        <div class="card">
-          <label class="switch-row"><span>Разрешить другим аккаунтам использовать мой Сетевой город</span>
-            <input type="checkbox" switch class="switch" data-act="share-sgo" ${info.share_sgo ? 'checked' : ''}></label>
-          <p class="muted">Обычно один аккаунт «Сетевого города» можно подключить только к одному аккаунту приложения. Включите, чтобы ваш Сетевой город могли подключать и другие аккаунты. Кто уже подключился, останется подключён и после выключения.</p>
-        </div>`}
       ${info.email ? `<div class="card"><div class="card-title">Удалить аккаунт</div>
         <p class="muted">Удалятся профиль, почта, записи, сессии, история и серверный календарь. Данные в школе, сообщения Telegram и резервные копии останутся.</p>
         <form class="account-form" data-form="delete"><input class="field" type="password" name="password" autocomplete="current-password" placeholder="Пароль аккаунта" required>
@@ -1088,16 +1082,6 @@ export async function openAccountSettings() {
       }
     });
     body.querySelector('[data-act="link-telegram"]')?.addEventListener('click', () => startTelegramLink(info.tg_link));
-    body.querySelector('[data-act="share-sgo"]')?.addEventListener('change', async (event) => {
-      const input = event.currentTarget;
-      try {
-        await post('/api/account/share-sgo', { on: input.checked });
-        notify('success');
-      } catch (failure) {
-        input.checked = !input.checked;
-        banner(failure.message, true);
-      }
-    });
     body.querySelector('[data-act="link"]')?.addEventListener('click', async (event) => {
       const button = event.currentTarget;
       busy(button, async () => {

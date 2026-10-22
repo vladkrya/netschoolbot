@@ -23,6 +23,9 @@ const KEYS = {
   whatsNew: 'ns-whats-new',
   // «Не выходить из аккаунта» для входа через Госуслуги (true/false).
   keepSignedIn: 'ns-keep-signed-in',
+  // Свайп «назад»: где начинается ('anywhere'/'edge'/'off') и жест от правого
+  // края влево ('on'/'off'), swipeback.js.
+  swipeBack: 'ns-swipe-back', swipeRight: 'ns-swipe-right',
 };
 // Тема, дизайн и цвет лежат строкой (их читает скрипт в <head>), остальное — JSON.
 const JSON_PREFS = new Set(['weights', 'thresholds', 'tabs', 'pins', 'accents', 'lessonEdits', 'goals', 'keepSignedIn']);

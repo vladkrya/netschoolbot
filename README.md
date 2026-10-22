@@ -135,6 +135,14 @@ deploy/deploy.sh
 снятой копии. Итог приходит админу в Telegram с названием упавшего шага
 и хвостом журнала.
 
+Пока служба перезапускается, nginx вместо «502 Bad Gateway» отдаёт страницу
+«Обновляем приложение» (`deploy/nginx/netschool-updating.{conf,html}`), а
+service worker показывает сохранённый дневник. Выкладка ставит оба файла
+сама; на ВМ, где сайт настраивается вручную (yavds), их нужно положить в
+`/etc/nginx/snippets/netschool-updating.conf` и
+`/var/www/netschool-updating/index.html` до копирования конфига сайта, иначе
+`nginx -t` не пройдёт.
+
 ### Резервные копии
 
 `netschoolbot-backup.timer` раз в час снимает копию базы в `data/backups/`

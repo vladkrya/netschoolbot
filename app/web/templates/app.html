@@ -102,7 +102,19 @@
      странице отрисоваться — оставался пустой тёмный экран. -->
 <!-- defer: скрипт Telegram больше не держит первую отрисовку, а выполняется
      всё равно раньше app.js — отложенные скрипты идут по порядку. -->
-<script src="{{ base }}/static/v{{ version }}/telegram-web-app.js" defer></script>
+<!-- Только внутри Telegram: данные входа он передаёт в #tgWebAppData, а при
+     перезагрузке скрипт берёт их из sessionStorage. В браузере и с экрана
+     «Домой» скрипт не нужен, а 116 КБ на медленной сети задерживали запуск:
+     boot.js выполняется только после него. -->
+<script>
+  try {
+    if (/tgWebApp/.test(location.hash + location.search) || /tgWebAppData/.test(sessionStorage.getItem('__telegram__initParams') || '')) {
+      document.write('<script src="{{ base }}/static/v{{ version }}/telegram-web-app.js" defer><\/script>');
+    }
+  } catch (e) {
+    document.write('<script src="{{ base }}/static/v{{ version }}/telegram-web-app.js" defer><\/script>');
+  }
+</script>
 {% for module in boot_modules %}<link rel="modulepreload" href="{{ base }}/static/v{{ version }}/js/{{ module }}">
 {% endfor %}
 </head>
@@ -260,6 +272,8 @@
 <script>
   window.NETSCHOOL = {
     modules: [{% for module in modules %}{{ (base ~ '/static/v' ~ version ~ '/js/' ~ module) | tojson }}{{ ',' if not loop.last else '' }}{% endfor %}],
+    // Нужные первому экрану — их boot.js качает сразу, остальные — после него.
+    appModules: [{% for module in app_modules %}{{ (base ~ '/static/v' ~ version ~ '/js/' ~ module) | tojson }}{{ ',' if not loop.last else '' }}{% endfor %}],
     base: {{ base | tojson }},
     appVersion: {{ (app_version or '') | tojson }},
     token: {{ token | tojson }},

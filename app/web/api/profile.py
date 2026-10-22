@@ -102,6 +102,8 @@ async def profile(request: web.Request) -> web.Response:
                 # Тумблер «Решения заданий всему классу» — только у владельца.
                 "solver_class": {"on": await solver.class_open(app)}
                 if app.settings.assistant.enabled and solver.is_owner(app, viewer or user) else None,
+                # Строка «Администрирование» в настройках (web/admin.py).
+                "admin": solver.is_owner(app, viewer or user),
                 # Раздел «Чаты» в «Сообщениях» и тумблер владельца (web/chat.py).
                 "chats": solver.is_owner(app, viewer or user) or await chat_module.chats_on(app),
                 "chats_toggle": {"on": await chat_module.chats_on(app)}

@@ -29,6 +29,7 @@ import { bindPushToggle, pushHowto, pushRow, syncNowhere, unsubscribePush } from
 import { openExport } from './reports.js';
 import { switchStudent } from './students.js';
 import { countdownShown, saveCountdown } from './countdown.js';
+import { saveSwipeBack, saveSwipeFromRight, swipeBackMode, swipeFromRight } from './swipeback.js';
 import { openWhatsNew, whatsNewRow } from './whatsnew.js';
 import { openSearch } from './search.js';
 import { openChildren } from './children.js';
@@ -270,22 +271,13 @@ function keepSignedInSection(keep) {
     </section>`;
 }
 
-/** «Решения заданий всему классу» — тумблер владельца (web/solver.py). */
-function solverClassSection(solverClass) {
-  if (!solverClass) return '';
+/** «Администрирование» — только у владельца (TG_ADMIN_ID), экран admin.js. */
+function adminSection(admin) {
+  if (!admin || demo) return '';
   return `<section class="drawer-section">
-      <div class="drawer-heading">Решения</div>
-      <label class="switch-row"><span>Решения заданий всему классу<span class="muted small switch-note">видно только вам: кнопка «Решение» появится у одноклассников, которые пользуются ботом</span></span>
-        <input type="checkbox" switch class="switch" id="solverClass" ${solverClass.on ? 'checked' : ''}></label>
-    </section>`;
-}
-
-function chatsSection(toggle) {
-  if (!toggle) return '';
-  return `<section class="drawer-section">
-      <div class="drawer-heading">Чаты</div>
-      <label class="switch-row"><span>Чаты в «Сообщениях»<span class="muted small switch-note">видно только вам: выключенные чаты скрыты у всех, кроме вас; переписка сохраняется</span></span>
-        <input type="checkbox" switch class="switch" id="chatsOn" ${toggle.on ? 'checked' : ''}></label>
+      <div class="drawer-heading">Администрирование</div>
+      <button class="drawer-link" id="drawerAdmin">${ICONS.shield} Админ-настройки</button>
+      <div class="muted small">видно только вам: решения классу, чаты, вход через Telegram, статистика</div>
     </section>`;
 }
 
@@ -465,6 +457,11 @@ function render() {
           `<option value="${value}" ${value === bellShift() ? 'selected' : ''}>${value ? `${value > 0 ? '+' : '−'}${Math.abs(value)} с` : 'точно'}</option>`).join('')}</select></label>
       <label class="switch-row"><span>Отсчёт до каникул и экзаменов<span class="muted small switch-note">карточка на «Дне»</span></span>
         <input type="checkbox" switch class="switch" id="countdownShow" ${countdownShown() ? 'checked' : ''}></label>
+      <label class="switch-row"><span>Свайп назад<span class="muted small switch-note">${SWIPE_NOTES[swipeBackMode()]}</span></span>
+        <select class="field reminder-hour" id="swipeBack">${Object.entries(SWIPE_MODES).map(([value, label]) =>
+          `<option value="${value}" ${value === swipeBackMode() ? 'selected' : ''}>${label}</option>`).join('')}</select></label>
+      <label class="switch-row" id="swipeRightRow" ${swipeBackMode() === 'off' ? 'hidden' : ''}><span>Свайп назад от правого края<span class="muted small switch-note">влево, удобно правой рукой</span></span>
+        <input type="checkbox" switch class="switch" id="swipeRight" ${swipeFromRight() ? 'checked' : ''}></label>
       <label class="switch-row"><span>Показывать выходные без уроков</span>
         <input type="checkbox" switch class="switch" id="weekendsShow" ${showWeekends() ? 'checked' : ''}></label>
       ${isNewDesign() ? '' : `<label class="switch-row"><span>Звонки вместо расписания недели</span>
@@ -472,8 +469,7 @@ function render() {
     </section>
     ${isNewDesign() ? tabsSection() : ''}
     ${readonly ? '' : keepFilesSection(data.keep_attachments)}
-    ${readonly ? '' : solverClassSection(data.solver_class)}
-    ${readonly ? '' : chatsSection(data.chats_toggle)}
+    ${readonly ? '' : adminSection(data.admin)}
     ${readonly ? '' : keepSignedInSection(data.keep_signed_in)}
     ${readonly ? `<section class="drawer-section">
       <div class="drawer-heading">Уведомления</div>
@@ -514,6 +510,14 @@ function render() {
   loadStudentClass(currentStudent);
   checkReferences();
 }
+
+// Свайп «назад» (swipeback.js): где начинается и подпись под ним.
+const SWIPE_MODES = { anywhere: 'везде', edge: 'от края', off: 'выключен' };
+const SWIPE_NOTES = {
+  anywhere: 'вправо с любого места экрана, на «Дне» — от края',
+  edge: 'только от края экрана',
+  off: 'назад — только кнопкой',
+};
 
 // Что остаётся на каждом уровне «Анимаций» — подпись под ползунком.
 const MOTION_NOTES = {
@@ -618,6 +622,17 @@ function bindDrawer() {
     select();
     setPref('bellShift', event.target.value);
   });
+  $('swipeBack').addEventListener('change', (event) => {
+    select();
+    const mode = event.target.value;
+    saveSwipeBack(mode);
+    event.target.closest('.switch-row').querySelector('.switch-note').textContent = SWIPE_NOTES[mode];
+    $('swipeRightRow').hidden = mode === 'off';
+  });
+  $('swipeRight').addEventListener('change', (event) => {
+    select();
+    saveSwipeFromRight(event.target.checked);
+  });
   $('countdownShow').addEventListener('change', (event) => {
     select();
     smoothRepaint(() => saveCountdown(event.target.checked));
@@ -721,42 +736,6 @@ function bindDrawer() {
       }
     });
   }
-  $('solverClass')?.addEventListener('change', async (event) => {
-    select();
-    const input = event.target;
-    input.disabled = true;
-    try {
-      const { data } = await api('/api/settings/solver-class', {
-        method: 'POST', body: JSON.stringify({ on: input.checked }),
-      });
-      state.profile.solver_class = data;
-      input.checked = Boolean(data.on);
-    } catch (error) {
-      notify('error');
-      input.checked = !input.checked;
-      banner(error.message, true);
-    } finally {
-      input.disabled = false;
-    }
-  });
-  $('chatsOn')?.addEventListener('change', async (event) => {
-    select();
-    const input = event.target;
-    input.disabled = true;
-    try {
-      const { data } = await api('/api/settings/chats', {
-        method: 'POST', body: JSON.stringify({ on: input.checked }),
-      });
-      state.profile.chats_toggle = data;
-      input.checked = Boolean(data.on);
-    } catch (error) {
-      notify('error');
-      input.checked = !input.checked;
-      banner(error.message, true);
-    } finally {
-      input.disabled = false;
-    }
-  });
   $('sgoUpdates')?.addEventListener('change', async (event) => {
     select();
     const input = event.target;
@@ -864,6 +843,12 @@ function bindDrawer() {
     closeDrawer();
     const { openDevices } = await import('./devices.js');
     openDevices();
+  });
+  $('drawerAdmin')?.addEventListener('click', async () => {
+    tap();
+    closeDrawer();
+    const { openAdmin } = await import('./admin.js');
+    openAdmin();
   });
   $('drawerAccount')?.addEventListener('click', async () => {
     tap();

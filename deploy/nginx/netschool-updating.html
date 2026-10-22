@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>Обновляем приложение — Дневник</title>
+<!-- Отдаёт nginx вместо голой 502, пока приложение перезапускается при
+     выкладке (deploy/nginx/netschool-updating.conf). Тот же экран рисует
+     service worker (app/web/static/sw.js), когда сохранённых данных нет. -->
+<style>
+:root{--bg:#f5f6f8;--text:#202733;--muted:#6b7280;--accent:#3b82f6}
+@media (prefers-color-scheme:dark){:root{--bg:#000;--text:#f2f3f5;--muted:#9aa0aa;--accent:#5b9cff}}
+body{margin:0;min-height:100vh;display:grid;place-items:center;background:var(--bg);color:var(--text);
+font:16px/1.45 -apple-system,BlinkMacSystemFont,system-ui,sans-serif;text-align:center;padding:24px;box-sizing:border-box}
+main{max-width:340px}.icon{width:56px;height:56px;margin:0 auto 16px;border-radius:18px;display:grid;place-items:center;
+color:var(--accent);background:color-mix(in srgb,var(--accent) 14%,transparent)}
+.icon svg{animation:spin 1.6s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.icon svg{animation:none}}
+h1{font-size:23px;font-weight:650;letter-spacing:-.4px;margin:0 0 8px}p{margin:0 0 22px;color:var(--muted)}
+button{border:0;border-radius:14px;padding:13px 26px;font:inherit;font-weight:600;color:#fff;background:var(--accent)}
+</style>
+</head>
+<body><main>
+<div class="icon"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 4v5h-5"/></svg></div>
+<h1>Обновляем приложение</h1>
+<p>Через минуту всё заработает. Страница откроется сама, как только сервер ответит.</p>
+<button type="button" onclick="location.reload()">Перезапустить</button>
+</main>
+<script>
+// Сервер поднялся — открываем приложение. /sw.js отвечает быстро и без входа.
+setInterval(function () {
+  fetch('/sw.js', { method: 'HEAD', cache: 'no-store' }).then(function (response) {
+    if (response.ok) location.reload();
+  }, function () {});
+}, 5000);
+addEventListener('online', function () { location.reload(); });
+</script>
+</body>
+</html>

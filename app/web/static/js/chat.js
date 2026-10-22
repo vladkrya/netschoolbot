@@ -64,8 +64,11 @@ function renderConsent(container, error = '') {
       <p class="muted">Чат своей параллели (все 9-е твоей школы), всей школы и — с 6 класса — общий чат учеников всех школ.</p>
       <ul class="chat-rules">${overview.rules.map((line) => `<li>${esc(line)}</li>`).join('')}</ul>
       <label class="detail-label" for="chatNick">Твой ник</label>
-      <input class="field" id="chatNick" maxlength="20" autocomplete="off" placeholder="Например, Cosmos_9">
-      <p class="muted small">${esc(overview.nick_hint || '3–20 символов: буквы, цифры и _, начинается с буквы')}</p>
+      ${overview.saved_nick
+    ? `<input class="field" id="chatNick" value="${esc(overview.saved_nick)}" disabled>
+      <p class="muted small">Ник остаётся прежним — сменить его может только админ.</p>`
+    : `<input class="field" id="chatNick" maxlength="20" autocomplete="off" placeholder="Например, Cosmos_9">
+      <p class="muted small">${esc(overview.nick_hint || '3–20 символов: буквы, цифры и _, начинается с буквы')}</p>`}
       <label class="chat-agree"><input type="checkbox" id="chatAgree">
         <span>Согласен с правилами и показом моего ника и номера класса</span></label>
       ${error ? `<p class="chat-error">${esc(error)}</p>` : ''}
