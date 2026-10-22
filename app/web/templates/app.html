@@ -236,6 +236,16 @@
 
 <main>
   <section class="panel active" id="panel-day">
+    <!-- Широкий экран: справа от уроков — кнопки дней, таймер, сводка и
+         отсчёт (day.js переносит их сюда, wide.css показывает колонку). -->
+    <aside class="day-side" id="daySide">
+      <div class="day-nav">
+        <button class="day-nav-btn" id="sidePrev" aria-label="Предыдущий день"><span data-icon="left"></span><span id="sidePrevLabel"></span></button>
+        <button class="day-nav-btn" id="sideNext" aria-label="Следующий день"><span id="sideNextLabel"></span><span data-icon="right"></span></button>
+      </div>
+      <div class="day-keys">Листать дни: ← → на клавиатуре или колесом с Shift</div>
+      <div class="day-side-slot" id="daySideSlot"></div>
+    </aside>
     <!-- Таймер урока (timer.js): отдельно от списка, чтобы перерисовка дня не обрывала анимацию. -->
     <div class="lesson-timer" id="lessonTimer" hidden></div>
     <div class="list" id="dayContent"></div>

@@ -9,6 +9,8 @@
 
 /* Пункт «Меню» в боковой панели — только на компьютере (ниже). */
 .nav-menu { display: none; }
+/* Колонка справа от уроков — только на широком экране (ниже). */
+.day-side { display: none; }
 
 @media (min-width: 720px) {
   :root {
@@ -204,6 +206,60 @@
   :root[data-design="new"] .totals-cards [data-list] { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
+/* Широкий экран: «День» в две колонки. Уроки слева, справа и не уезжая при
+   прокрутке — кнопки соседних дней, таймер урока, сводка и отсчёт (их
+   переносит day.js). Стрелки дней из полосы с датой — здесь, у уроков. */
+@media (min-width: 1200px) {
+  :root { --col: 1120px; }
+
+  #panel-day.active {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 340px;
+    column-gap: 20px;
+    align-items: start;
+  }
+  #panel-day > #dayContent,
+  #panel-day > .lesson-timer { grid-column: 1; }
+  .day-side {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    grid-column: 2;
+    grid-row: 1;
+    position: sticky;
+    top: calc(var(--header-h) + 12px);
+  }
+  .day-side .lesson-timer,
+  .day-side .countdown-card,
+  :root[data-design="new"] .day-side .day-summary { margin: 0; }
+  .day-side .lesson-timer.collapsed { margin: 0 0 -10px; }
+  .day-side-slot { display: flex; flex-direction: column; gap: 10px; }
+  .day-side-slot:empty { display: none; }
+
+  .date-bar #dayPrev, .date-bar #dayNext { display: none; }
+  .day-nav { display: flex; gap: 8px; }
+  .day-nav-btn {
+    flex: 1;
+    min-width: 0;
+    height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    border-radius: var(--radius);
+    background: var(--card);
+    box-shadow: var(--lift, none);
+    color: var(--primary);
+    font-size: 15px;
+    font-weight: 600;
+    white-space: nowrap;
+    transition: transform .15s var(--ease), filter .15s;
+  }
+  .day-nav-btn svg { width: 18px; height: 18px; flex: none; }
+  .day-nav-btn:active { transform: scale(.96); }
+  .day-keys { margin-top: -2px; font-size: 12px; color: var(--text2); text-align: center; }
+}
+
 /* Мышь: подсказка, что карточка нажимается. */
 @media (hover: hover) and (pointer: fine) {
   .lesson-card, .hw-card, .mail-card, .ann-card, .task-block, .week-card, .subject-card {
@@ -213,6 +269,7 @@
   .task-block:hover, .week-card:hover, .subject-card:hover { filter: brightness(1.03); }
   :root[data-theme="dark"] :is(.lesson-card, .hw-card, .mail-card, .ann-card, .task-block, .week-card, .subject-card):hover { filter: brightness(1.15); }
   .date-arrow:hover, .topbar-btn:hover, .screen-back:hover { filter: brightness(1.1); }
+  .day-nav-btn:hover { filter: brightness(.97); }
 }
 @media (hover: hover) and (pointer: fine) and (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) :is(.lesson-card, .hw-card, .mail-card, .ann-card, .task-block, .week-card, .subject-card):hover { filter: brightness(1.15); }
