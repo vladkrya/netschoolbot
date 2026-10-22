@@ -12,6 +12,12 @@
 // Бывает, что окно меняется без единого события — панель уезжает прямо во
 // время прокрутки. Поэтому, когда прокрутка останавливается, сверяем низ
 // панели с низом экрана и, если она съехала, ставим её на место.
+//
+// Пересчёт помогает не всегда: бывает, WebKit так и держит панель по
+// старому окну, а visualViewport врёт с ним заодно — панель висела посреди
+// экрана, и проверка этого не видела. Поэтому низ экрана берём по самой
+// большой из известных высот (включая ту, что сообщает сам Telegram), а
+// если панель всё равно не у края — сдвигаем её на разницу (--pin-shift).
 'use strict';
 
 import { tg } from './core.js';
@@ -34,21 +40,50 @@ function nudge() {
 export function repinFixed() {
   cancelAnimationFrame(frame);
   clearTimeout(later);
-  frame = requestAnimationFrame(nudge);
-  later = setTimeout(nudge, 400);
+  frame = requestAnimationFrame(() => { nudge(); pin(); });
+  later = setTimeout(() => { nudge(); pin(); }, 400);
 }
 
-/** Панель стоит не у нижнего края экрана: WebKit держит её по старому окну. */
-function misplaced() {
+/** Высота экрана. WebKit со старым окном занижает часть своих чисел, но
+ *  не все сразу, а Telegram сообщает высоту окна сам. Больше экрана
+ *  телефона окно не бывает — этим отсекаем неправдоподобное. */
+function screenHeight() {
+  const view = window.visualViewport;
+  const heights = [window.innerHeight, document.documentElement.clientHeight, view?.height];
+  // Только iPhone: там и бывает старое окно, а другие клиенты считают высоту иначе.
+  if (tg?.platform === 'ios' && tg.isExpanded && tg.viewportStableHeight > 0) heights.push(tg.viewportStableHeight);
+  const limit = Math.max(window.screen?.height || 0, window.screen?.width || 0) || Infinity;
+  return Math.max(0, ...heights.filter((h) => h > 0 && h <= limit + 1));
+}
+
+/** На сколько панель не дотягивает до нижнего края экрана без поправки.
+ *  null — когда мерить не к месту: клавиатура, увеличение, панели нет. */
+function drift() {
   const nav = document.querySelector('.bottom-nav');
   const view = window.visualViewport;
   // С клавиатурой или увеличением панель законно не у края видимой области.
-  if (!nav || (view && view.scale > 1.01) || document.activeElement?.matches('input, textarea, [contenteditable]')) return false;
+  if (!nav || (view && view.scale > 1.01) || document.activeElement?.matches('input, textarea, [contenteditable]')) return null;
   const rect = nav.getBoundingClientRect();
-  if (!rect.height) return false;
-  const gap = parseFloat(getComputedStyle(nav).bottom) || 0;
-  const height = view?.height || window.innerHeight;
-  return Math.abs(height - gap - rect.bottom) > 2;
+  if (!rect.height) return null;
+  const style = getComputedStyle(nav);
+  // Панель сбоку (широкий экран) — тянется во всю высоту, мерить нечего.
+  if (style.top !== 'auto' && style.bottom !== 'auto' && rect.height > 200) return null;
+  const gap = parseFloat(style.bottom) || 0;
+  const shift = parseFloat(document.documentElement.style.getPropertyValue('--pin-shift')) || 0;
+  const diff = screenHeight() - gap - (rect.bottom - shift);
+  return Math.abs(diff) > 2 ? Math.round(diff) : 0;
+}
+
+/** Довести панель и всё, что при ней, до нижнего края (app.css: --pin-shift).
+ *  true — если она съехала с прошлой проверки. */
+function pin() {
+  const shift = drift();
+  const root = document.documentElement;
+  const was = parseFloat(root.style.getPropertyValue('--pin-shift')) || 0;
+  if (shift === null || Math.abs(shift - was) <= 2) return false;
+  if (shift) root.style.setProperty('--pin-shift', `${shift}px`);
+  else root.style.removeProperty('--pin-shift');
+  return true;
 }
 
 let settle = 0;
@@ -57,15 +92,17 @@ let fixedAt = 0;
 function checkAfterScroll() {
   clearTimeout(settle);
   settle = setTimeout(() => {
-    // Прокрутка из nudge тоже приходит сюда — не зацикливаемся, если
-    // панель не встала на место с первого раза.
-    if (Date.now() - fixedAt < 2000 || !misplaced()) return;
+    if (!pin()) return;
+    // Съехала — поправили сдвигом и ещё просим WebKit переставить по-честному. Прокрутка из
+    // nudge тоже приходит сюда — не зацикливаемся.
+    if (Date.now() - fixedAt < 2000) return;
     fixedAt = Date.now();
     repinFixed();
   }, 150);
 }
 
 export function initRepin() {
+  repinFixed();
   window.addEventListener('scroll', checkAfterScroll, { passive: true });
   window.addEventListener('resize', repinFixed);
   window.visualViewport?.addEventListener('resize', repinFixed);
