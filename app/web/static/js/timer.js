@@ -60,6 +60,9 @@ let clockSyncedAt = 0;
 const nowMs = () => Date.now() + clockOffset;
 const clock = () => new Date(nowMs());
 
+/** Сейчас по часам, сверенным с сервером, — по ним же статусы уроков. */
+export const syncedNow = clock;
+
 /** Один замер: середина запроса — момент ответа сервера. */
 async function sampleClock() {
   const sent = Date.now();
@@ -94,6 +97,12 @@ async function syncClock() {
 export function bellShift() {
   const value = Number(getPref('bellShift'));
   return BELL_SHIFTS.includes(value) ? value : 0;
+}
+
+/** Сколько мс до следующей смены статусов уроков: граница минуты плюс
+ *  сдвиг звонка, по сверенным часам, с запасом на опоздание таймера. */
+export function msToBell() {
+  return 60000 - ((nowMs() - bellShift() * 1000) % 60000 + 60000) % 60000 + 50;
 }
 
 function at(time, base, shift = 0) {
@@ -183,17 +192,23 @@ function paintClock(box, text) {
       cell.classList.add('roll');
     });
   }
+  // Двоеточие мигает в тот же кадр, что перекатываются цифры.
+  if (text !== lastDigits) {
+    for (const colon of clock.querySelectorAll('.lt-colon')) {
+      colon.classList.remove('beat');
+      void colon.offsetWidth;
+      colon.classList.add('beat');
+    }
+  }
   lastDigits = text;
   card?.classList.toggle('urgent', text.length <= 5 && text <= `00:${String(URGENT_S).padStart(2, '0')}`);
   syncBeat(clock);
 }
 
-/** Мигание двоеточия и пульс последних секунд — в такт смене секунд: их
- *  CSS-анимации шли от появления карточки, со сдвигом на долю секунды. */
+/** Пульс последних секунд — в такт смене секунд: CSS-анимация шла от
+ *  появления карточки, со сдвигом на долю секунды. */
 function syncBeat(clock) {
-  const delay = `-${nowMs() % 1000}ms`;
-  clock.style.animationDelay = delay;
-  for (const colon of clock.querySelectorAll('.lt-colon')) colon.style.animationDelay = delay;
+  clock.style.animationDelay = `-${nowMs() % 1000}ms`;
 }
 
 function paint(box, phase, now = clock()) {

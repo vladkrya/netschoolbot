@@ -2179,7 +2179,10 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
 }
 .lt-card.break .lt-clock { color: color-mix(in srgb, var(--green) 70%, var(--text)); }
 .lt-digit { display: inline-block; min-width: .62em; text-align: center; }
-.lt-colon { display: inline-block; padding: 0 1px; animation: lt-blink 1s steps(1) infinite; }
+.lt-colon { display: inline-block; padding: 0 1px; }
+/* Двоеточие мигает раз за секунду, запускаясь тем же тиком, что и
+   перекат цифр (timer.js): своя бесконечная анимация шла вразнобой. */
+.lt-colon.beat { animation: lt-blink 1s steps(1); }
 @keyframes lt-blink { 50% { opacity: .35; } }
 .lt-digit.roll { animation: lt-roll .32s var(--ease); }
 @keyframes lt-roll { 0% { transform: translateY(-55%); opacity: 0; } 100% { transform: none; opacity: 1; } }
@@ -2211,7 +2214,7 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
 .lt-card.done > :not(.lt-done) { opacity: 0; filter: blur(3px); transition: opacity .45s ease, filter .45s ease; }
 @media (prefers-reduced-motion: reduce) {
   .lesson-timer, .lt-bar span { transition: none; }
-  .lt-digit.roll, .lt-dot, .lt-colon, .lt-card.urgent .lt-clock { animation: none; }
+  .lt-digit.roll, .lt-dot, .lt-colon.beat, .lt-card.urgent .lt-clock { animation: none; }
 }
 
 /* ───────────────────── График среднего на экране предмета ───────────────────── */

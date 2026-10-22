@@ -22,7 +22,7 @@ import { isDoneItem, lessonStatus, loadDone, markBox, openHomework, openLesson, 
 import { closeSheet, openSheet, sheetOpen } from './sheet.js';
 import { select, tap } from './haptics.js';
 import { bindInstallCard, installCardHtml } from './install.js';
-import { updateTimer } from './timer.js';
+import { msToBell, updateTimer } from './timer.js';
 import { isTestWork, loadNotes, noteWhen, openNoteEditor, setNoteDone } from './notes.js';
 import { applyEdits, bindHidden, hiddenHtml, openAddLesson } from './edits.js';
 import { flyTo, markKey, playFresh, takeFresh } from './motion.js';
@@ -849,13 +849,14 @@ function bindWeekSwipe() {
 
 export function initDay() {
   // Статусы уроков («Закончится через 3 мин», «Урок окончен») меняются ровно
-  // на границе минуты — тогда же, когда таймер над днём доходит до нуля.
-  // Раньше день перерисовывался раз в 30 секунд и отставал от таймера.
+  // со звонком (граница минуты плюс сдвиг звонка) — тогда же, когда таймер
+  // над днём доходит до нуля. Раньше день перерисовывался раз в 30 секунд
+  // и отставал от таймера.
   const refreshOnMinute = () => {
     setTimeout(() => {
       if (state.tab === 'day' && dayData(state.date)) renderDay(true);
       refreshOnMinute();
-    }, 60000 - Date.now() % 60000 + 50);
+    }, msToBell());
   };
   refreshOnMinute();
   $('dayPrev').addEventListener('click', () => shiftDay(-1));
