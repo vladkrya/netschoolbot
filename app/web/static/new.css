@@ -419,7 +419,8 @@
   font-weight: 500;
   border-bottom: 1px solid var(--border);
 }
-:root[data-design="new"] .drawer-link:last-child { border-bottom: 0; }
+:root[data-design="new"] .drawer-link:last-child,
+:root[data-design="new"] .drawer-link:has(+ .muted) { border-bottom: 0; }
 /* «Защита входа» и «Вход по почте» стоят в ряд — разделитель снизу не нужен. */
 :root[data-design="new"] .account-links .drawer-link { width: auto; border-bottom: 0; }
 :root[data-design="new"] .drawer-link .icon { color: var(--primary); }

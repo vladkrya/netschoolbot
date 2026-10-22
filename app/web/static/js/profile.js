@@ -145,13 +145,13 @@ function tabRows() {
   return on.map((tab, index) => row(tab, true, index)).join('') + off.map((tab) => row(tab, false)).join('');
 }
 
-function tabsSection() {
-  return `<section class="drawer-section">
-      <div class="drawer-heading">Нижняя панель</div>
-      ${more('tabs', 'Какие вкладки и в каком порядке', `
+/** «Нижняя панель» — свёрнутой строкой в «Оформлении», только в новом дизайне. */
+function tabsMore() {
+  if (!isNewDesign()) return '';
+  return more('tabs', 'Нижняя панель', `
+      <div class="muted small">Какие вкладки и в каком порядке. Первая открывается при входе.</div>
       <div class="tab-list" id="tabList">${tabRows()}</div>
-      <div class="muted small">Первая открывается при входе. <button class="link" id="tabsReset">Как было</button></div>`)}
-    </section>`;
+      <button class="link" id="tabsReset">Как было</button>`);
 }
 
 // Редкие настройки свёрнуты, чтобы экран не был стеной переключателей.
@@ -249,26 +249,32 @@ const NOTIFY_NOTES = {
 // Отметки посещаемости есть только в мобильном API.
 const MOBILE_ONLY = new Set(['absences']);
 
-/** «Сохранять файлы заданий»: включено у всех, здесь можно выключить. */
-function keepFilesSection(keep) {
-  if (!keep?.available) return '';
+/** «Вход и данные»: файлы заданий и вход через Госуслуги — по одному
+ *  переключателю, поэтому в одном разделе. */
+function keepSection(files, signedIn) {
+  const rows = keepFilesRow(files) + keepSignedInRow(signedIn);
+  if (!rows) return '';
   return `<section class="drawer-section" id="keepFilesSection">
-      <div class="drawer-heading">Файлы заданий</div>
-      <label class="switch-row"><span>Сохранять файлы заданий<span class="muted small switch-note">файлы к Д/З за 2 недели назад и вперёд скачиваются заранее и открываются, даже когда «Сетевой город» не работает</span></span>
-        <input type="checkbox" switch class="switch" id="keepFiles" ${keep.on ? 'checked' : ''}></label>
+      <div class="drawer-heading">Вход и данные</div>${rows}
     </section>`;
 }
 
+/** «Сохранять файлы заданий»: включено у всех, здесь можно выключить. */
+function keepFilesRow(keep) {
+  if (!keep?.available) return '';
+  return `
+      <label class="switch-row"><span>Сохранять файлы заданий<span class="muted small switch-note">файлы к Д/З за 2 недели назад и вперёд скачиваются заранее и открываются, даже когда «Сетевой город» не работает</span></span>
+        <input type="checkbox" switch class="switch" id="keepFiles" ${keep.on ? 'checked' : ''}></label>`;
+}
+
 /** «Не выходить из аккаунта» — вход через Госуслуги держится на мобильном токене. */
-function keepSignedInSection(keep) {
+function keepSignedInRow(keep) {
   if (!keep?.available) return '';
   const note = keep.mobile ? 'вход уже мобильный и продлевается сам'
     : 'бот переведёт вход на мобильный — он продлевается сам, без нового входа через Госуслуги';
-  return `<section class="drawer-section">
-      <div class="drawer-heading">Госуслуги</div>
+  return `
       <label class="switch-row"><span>Не выходить из аккаунта<span class="muted small switch-note">${note}</span></span>
-        <input type="checkbox" switch class="switch" id="keepSignedIn" ${keep.on ? 'checked' : ''}></label>
-    </section>`;
+        <input type="checkbox" switch class="switch" id="keepSignedIn" ${keep.on ? 'checked' : ''}></label>`;
 }
 
 /** «Администрирование» — только у владельца (TG_ADMIN_ID), экран admin.js. */
@@ -439,38 +445,42 @@ function render() {
       </div>
       ${spooky ? '' : customAccent ? '<button class="link accent-action" id="accentRemember">Сохранить этот цвет</button>'
         : saved.includes(accent) ? '<button class="link accent-action" id="accentForget">Убрать из сохранённых</button>' : ''}
-      ${more('look', 'Ещё настройки вида', `
-      <label class="switch-row design-row"><span>Старый дизайн</span>
-        <input type="checkbox" switch class="switch" id="designOld" ${isNewDesign() ? '' : 'checked'}></label>
-      <label class="switch-row retro-row"><span>📟 Ретро-сайт<span class="muted small switch-note">дневник страничкой из 90-х: звёзды, котики, окна Windows 98</span></span>
-        <input type="checkbox" switch class="switch" id="retroSite"></label>
-      <div class="muted small retro-credit">Разработано: <a href="${RETRO_AUTHOR_URL}" target="_blank" rel="noopener">faustyu1</a> (netschool-retro). Спасибо!</div>
+      ${tabsMore()}
+      ${more('home', 'Главная и расписание', `
       <label class="switch-row"><span>Подсвечивать Д/З на главной<span class="muted small switch-note">красным — не сделано, зелёным — сделано</span></span>
         <input type="checkbox" switch class="switch" id="hwStatusShow" ${showHomeworkStatus() ? 'checked' : ''}></label>
-      ${data.api_mode === 'mobile' ? `<label class="switch-row"><span>Отправка ответа на задание<span class="muted small switch-note">блок «Мой ответ» на экране задания</span></span>
-        <input type="checkbox" switch class="switch" id="answersShow" ${showAnswers() ? 'checked' : ''}></label>` : ''}
-      ${motionRow()}
-      <label class="switch-row"><span>Конфетти за пятёрку<span class="muted small switch-note">когда приходит новая 5</span></span>
-        <input type="checkbox" switch class="switch" id="confettiShow" ${showConfetti() ? 'checked' : ''}></label>
+      <label class="switch-row"><span>Отсчёт до каникул и экзаменов<span class="muted small switch-note">карточка на «Дне»</span></span>
+        <input type="checkbox" switch class="switch" id="countdownShow" ${countdownShown() ? 'checked' : ''}></label>
+      <label class="switch-row"><span>Показывать выходные без уроков</span>
+        <input type="checkbox" switch class="switch" id="weekendsShow" ${showWeekends() ? 'checked' : ''}></label>
+      ${isNewDesign() ? '' : `<label class="switch-row"><span>Звонки вместо расписания недели</span>
+        <input type="checkbox" switch class="switch" id="bellsTab" ${showBells() ? 'checked' : ''}></label>`}
       <label class="switch-row"><span>Сдвиг звонка<span class="muted small switch-note">таймер урока: если звонок звенит позже или раньше ровной минуты</span></span>
         <select class="field reminder-hour" id="bellShift">${BELL_SHIFTS.map((value) =>
           `<option value="${value}" ${value === bellShift() ? 'selected' : ''}>${value ? `${value > 0 ? '+' : '−'}${Math.abs(value)} с` : 'точно'}</option>`).join('')}</select></label>
-      <label class="switch-row"><span>Отсчёт до каникул и экзаменов<span class="muted small switch-note">карточка на «Дне»</span></span>
-        <input type="checkbox" switch class="switch" id="countdownShow" ${countdownShown() ? 'checked' : ''}></label>
+      ${data.api_mode === 'mobile' ? `<label class="switch-row"><span>Отправка ответа на задание<span class="muted small switch-note">блок «Мой ответ» на экране задания</span></span>
+        <input type="checkbox" switch class="switch" id="answersShow" ${showAnswers() ? 'checked' : ''}></label>` : ''}
+      `)}
+      ${more('motion', 'Жесты и анимации', `
+      ${motionRow()}
+      <label class="switch-row"><span>Конфетти за пятёрку<span class="muted small switch-note">когда приходит новая 5</span></span>
+        <input type="checkbox" switch class="switch" id="confettiShow" ${showConfetti() ? 'checked' : ''}></label>
       <label class="switch-row"><span>Свайп назад<span class="muted small switch-note">${SWIPE_NOTES[swipeBackMode()]}</span></span>
         <select class="field reminder-hour" id="swipeBack">${Object.entries(SWIPE_MODES).map(([value, label]) =>
           `<option value="${value}" ${value === swipeBackMode() ? 'selected' : ''}>${label}</option>`).join('')}</select></label>
       <label class="switch-row" id="swipeRightRow" ${swipeBackMode() === 'off' ? 'hidden' : ''}><span>Свайп назад от правого края<span class="muted small switch-note">влево, удобно правой рукой</span></span>
         <input type="checkbox" switch class="switch" id="swipeRight" ${swipeFromRight() ? 'checked' : ''}></label>
-      <label class="switch-row"><span>Показывать выходные без уроков</span>
-        <input type="checkbox" switch class="switch" id="weekendsShow" ${showWeekends() ? 'checked' : ''}></label>
-      ${isNewDesign() ? '' : `<label class="switch-row"><span>Звонки вместо расписания недели</span>
-        <input type="checkbox" switch class="switch" id="bellsTab" ${showBells() ? 'checked' : ''}></label>`}`)}
+      `)}
+      ${more('look', 'Другой вид', `
+      <label class="switch-row design-row"><span>Старый дизайн</span>
+        <input type="checkbox" switch class="switch" id="designOld" ${isNewDesign() ? '' : 'checked'}></label>
+      <label class="switch-row retro-row"><span>📟 Ретро-сайт<span class="muted small switch-note">дневник страничкой из 90-х: звёзды, котики, окна Windows 98</span></span>
+        <input type="checkbox" switch class="switch" id="retroSite"></label>
+      <div class="muted small retro-credit">Разработано: <a href="${RETRO_AUTHOR_URL}" target="_blank" rel="noopener">faustyu1</a> (netschool-retro). Спасибо!</div>
+      `)}
     </section>
-    ${isNewDesign() ? tabsSection() : ''}
-    ${readonly ? '' : keepFilesSection(data.keep_attachments)}
+    ${readonly ? '' : keepSection(data.keep_attachments, data.keep_signed_in)}
     ${readonly ? '' : adminSection(data.admin)}
-    ${readonly ? '' : keepSignedInSection(data.keep_signed_in)}
     ${readonly ? `<section class="drawer-section">
       <div class="drawer-heading">Уведомления</div>
       <div class="muted small">Уведомления об этом ученике приходят, если он разрешил их в приглашении. Отказаться — «Родные».</div>
