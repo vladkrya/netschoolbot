@@ -3,7 +3,7 @@
 // вкладка «Настройки» с ещё одним разделом: какие вкладки в нижней панели.
 'use strict';
 
-import { $, api, banner, demo, esc, initData, state } from './core.js';
+import { $, api, banner, demo, esc, initData, motionAtLeast, state } from './core.js';
 import {
   ACCENTS, applyMotion, currentAccent, forgetAccent, HALLOWEEN_ACCENTS, halloweenAccent, halloweenCountdown, isHalloween, isNewDesign, motionChosen, motionLevel, rememberAccent, saveAccent, saveAnswers, saveBells, saveConfetti, savedAccents, saveDesign, saveHalloween, saveHalloweenAccent, saveHomeworkStatus, saveMotion, saveWeekends, showAnswers, showBells, showConfetti, showHomeworkStatus, showWeekends, syncChromeColor, weakDevice,
 } from './appearance.js';
@@ -160,7 +160,46 @@ const openMore = new Set();
 
 function more(key, title, body) {
   return `<details class="drawer-more" data-more="${key}"${openMore.has(key) ? ' open' : ''}>
-      <summary>${title}</summary>${body}</details>`;
+      <summary>${title}</summary><div class="more-body">${body}</div></details>`;
+}
+
+/** Подменю выезжает и сворачивается плавно, строки вылетают по очереди.
+ *  На 0% «Анимаций» — сразу, как обычный <details>; лесенка строк — от 75%. */
+function animateMore(details) {
+  const summary = details.querySelector(':scope > summary');
+  const box = details.querySelector(':scope > .more-body');
+  let running = null;
+  summary.addEventListener('click', (event) => {
+    if (!motionAtLeast(25)) return;
+    event.preventDefault();
+    tap();
+    // Нажали посреди анимации — разворачиваемся с того места, где она сейчас.
+    const opening = running ? running.closing : !details.open;
+    const from = details.open ? box.getBoundingClientRect().height : 0;
+    const fade = details.open ? Number(getComputedStyle(box).opacity) : 0;
+    running?.cancel();
+    details.open = true;
+    // Стрелка поворачивается сразу, а не когда подменю уже свернулось.
+    details.classList.toggle('closing', !opening);
+    const to = opening ? box.scrollHeight : 0;
+    box.style.overflow = 'hidden';
+    const animation = box.animate(
+      [{ height: `${from}px`, opacity: fade }, { height: `${to}px`, opacity: opening ? 1 : 0 }],
+      { duration: Math.min(380, 180 + Math.abs(to - from) / 4), easing: 'cubic-bezier(.2, .8, .3, 1)' });
+    animation.closing = !opening;
+    running = animation;
+    if (opening && !from && motionAtLeast(75)) {
+      [...box.children].slice(0, 12).forEach((row, index) => row.animate(
+        [{ opacity: 0, transform: 'translateY(-10px)' }, { opacity: 1, transform: 'none' }],
+        { duration: 260, delay: 30 + index * 28, easing: 'cubic-bezier(.2, .8, .3, 1)', fill: 'backwards' }));
+    }
+    animation.onfinish = () => {
+      running = null;
+      box.style.overflow = '';
+      details.classList.remove('closing');
+      if (!opening) details.open = false;
+    };
+  });
 }
 
 function bindTabs() {
@@ -585,10 +624,13 @@ function checkReferences() {
 
 function bindDrawer() {
   const body = settingsRoot();
-  body.querySelectorAll('[data-more]').forEach((details) => details.addEventListener('toggle', () => {
-    if (details.open) openMore.add(details.dataset.more);
-    else openMore.delete(details.dataset.more);
-  }));
+  body.querySelectorAll('[data-more]').forEach((details) => {
+    details.addEventListener('toggle', () => {
+      if (details.open) openMore.add(details.dataset.more);
+      else openMore.delete(details.dataset.more);
+    });
+    animateMore(details);
+  });
   body.querySelectorAll('input[name="theme"]').forEach((input) =>
     input.addEventListener('change', () => {
       select();
