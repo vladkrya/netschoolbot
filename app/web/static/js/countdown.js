@@ -4,7 +4,7 @@
 // сегодняшнего дня: ответ хранится полдня и после полуночи не отстаёт.
 'use strict';
 
-import { api, banner, dayMonth, esc, isoToday, isReadOnly, parseIso, plural, state } from './core.js';
+import { addDays, api, banner, dayMonth, esc, isoToday, isReadOnly, parseIso, plural, state } from './core.js';
 import { tap } from './haptics.js';
 import { getPref, setPref } from './prefs.js';
 
@@ -51,10 +51,13 @@ export function countdownHtml() {
   if (vacation) {
     const icon = ICON[vacation.label] || '🎒';
     if (vacation.now) {
+      // Сегодня тоже считается: в последний день каникул — «1 день».
       const left = daysBetween(today, vacation.end) + 1;
+      const title = left === 1 ? '<b>Последний день каникул</b>'
+        : `До конца ${esc(TO_LABEL[vacation.label] || 'каникул')} <b>${days(left)}</b>`;
       rows.push(`<div class="cd-row"><span class="cd-ico">${icon}</span><span class="cd-text">
-        <b>${esc(vacation.label)}</b> — ещё ${days(left)}
-        <span class="cd-note">до ${esc(dayMonth(vacation.end))} включительно${data.vacation_exact ? '' : ' · примерно'}</span></span></div>`);
+        ${title}
+        <span class="cd-note">в школу — ${esc(dayMonth(addDays(vacation.end, 1)))}${data.vacation_exact ? '' : ' · примерно'}</span></span></div>`);
     } else {
       const left = daysBetween(today, vacation.start);
       rows.push(`<div class="cd-row"><span class="cd-ico">${icon}</span><span class="cd-text">
