@@ -652,6 +652,24 @@ class MarkStateRepository:
             (telegram_id, kind, period),
         )
 
+    async def save_term_marks(self, telegram_id: int, snapshot: str, outbox: list[tuple[str, str]]) -> None:
+        """Снимок четвертных оценок и уведомления о новых — одной транзакцией.
+
+        Снимок — одна строка JSON, поэтому живёт в `digests_sent` под своим
+        видом, а не в отдельной таблице.
+        """
+        async with self._db.transaction() as db:
+            await db.execute(
+                """INSERT INTO digests_sent (telegram_id, kind, period) VALUES (?, 'term-marks', ?)
+                   ON CONFLICT(telegram_id, kind) DO UPDATE SET period = excluded.period""",
+                (telegram_id, snapshot),
+            )
+            if outbox:
+                await db.executemany(
+                    "INSERT INTO outbox (telegram_id, kind, payload) VALUES (?, ?, ?)",
+                    [(telegram_id, kind, payload) for kind, payload in outbox],
+                )
+
     async def claim_error_notice(self, telegram_id: int, reason: str) -> bool:
         """Один отправитель для каждой причины до следующей успешной проверки."""
         async with self._db.transaction() as db:

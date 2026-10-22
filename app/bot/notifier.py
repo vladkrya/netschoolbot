@@ -26,13 +26,6 @@ from ..netschool.errors import NetSchoolError, Reason
 logger = logging.getLogger("netschoolbot.notifier")
 
 
-def _events_preview(events: list[MarkEvent]) -> str:
-    """Короткая строка для всплывающего уведомления в браузере."""
-    parts = [f"{e.record.subject}: {e.record.mark}" for e in events[:3]]
-    if len(events) > 3:
-        parts.append(f"и ещё {len(events) - 3}")
-    return ", ".join(parts)
-
 def _many_children(user: User) -> bool:
     """Следят за несколькими детьми — уведомление нужно подписать именем."""
     return user.notifications.all_children and len(user.available_students) > 1
@@ -64,7 +57,7 @@ class TelegramNotifier:
     async def send_mark_events(self, user: User, events: list[MarkEvent]) -> None:
         if not events:
             return
-        await self._push_notify(user, "Новые оценки", _events_preview(events), kind="marks")
+        await self._push_notify(user, "Новые оценки", formatting.mark_events_push(events), kind="marks")
         if len(events) > DIGEST_THRESHOLD:
             await self._notify(user, formatting.mark_events_digest(events))
         else:

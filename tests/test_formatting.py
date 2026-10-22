@@ -269,3 +269,18 @@ class TestSplitMessage:
 def test_class_label(raw, label):
     from app.domain.formatting import class_label
     assert class_label(raw) == label
+
+
+def test_mark_push_lines_like_netschool_app():
+    from app.domain.formatting import mark_events_push, term_marks_push
+
+    event = MarkEvent(kind=MarkKind.NEW, record=MarkRecord(
+        subject="Вероятность и статистика", date=dt.date(2026, 9, 25),
+        assignment_type="Ответ на уроке", content="", mark="5"))
+    assert mark_events_push([event]) == "Вероятность и статистика - 5 (дата задания 25.09)"
+    assert term_marks_push([
+        {"subject": "Алгебра", "period": "q1", "mark": "5"},
+        {"subject": "Физика", "period": "year", "mark": "4"},
+    ]) == "1 четверть Алгебра - 5\nГодовая Физика - 4"
+    many = mark_events_push([event] * 8)
+    assert many.splitlines()[-1] == "и ещё 3"

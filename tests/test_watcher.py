@@ -1120,3 +1120,44 @@ async def test_vacation_quiet_mode_holds_notifications(users, watcher, diary, no
     diary.marks = [record(0), record(1), record(2)]
     await watcher.run_once()
     assert len(notifier.mark_events) == 1
+
+
+class TestTermMarks:
+    """Четвертные и годовые — пушами «1 четверть Алгебра - 5», как у «Сетевого города»."""
+
+    def make_watcher(self, users, marks, diary, notifier, clock):
+        return UserWatcher(1, users=users, state=marks, diary=diary, notifier=notifier, clock=lambda: clock[0])
+
+    async def test_new_term_mark_is_reported_after_silent_baseline(self, users, marks, diary, notifier):
+        from app.domain.models import ApiMode
+
+        await users.save(make_user(api_mode=ApiMode.MOBILE))
+        clock = [0.0]
+        watcher = self.make_watcher(users, marks, diary, notifier, clock)
+        diary.totals = {"Алгебра": {"terms": {"q1": {"mark": "", "average": 4.7}}, "year": "", "final": ""}}
+        await watcher.run_once()
+        assert notifier.texts == []
+
+        diary.totals = {
+            "Алгебра": {"terms": {"q1": {"mark": "5", "average": 4.7}}, "year": "", "final": ""},
+            "История": {"terms": {"q1": {"mark": "5", "average": 4.8}}, "year": "", "final": ""},
+        }
+        await watcher.run_once()
+        assert notifier.texts == [], "реже обычной проверки"
+
+        clock[0] += 3600
+        await watcher.run_once()
+        assert len(notifier.texts) == 1
+        assert "1 четверть Алгебра" in notifier.texts[0]
+        assert "1 четверть История" in notifier.texts[0]
+
+        clock[0] += 3600
+        await watcher.run_once()
+        assert len(notifier.texts) == 1, "уже виденное не повторяется"
+
+    async def test_web_mode_does_not_ask_for_totals(self, users, marks, diary, notifier):
+        await users.save(make_user())
+        watcher = self.make_watcher(users, marks, diary, notifier, [0.0])
+        diary.totals = {"Алгебра": {"terms": {"q1": {"mark": "5"}}, "year": "", "final": ""}}
+        await watcher.run_once()
+        assert await marks.digest_period(1, "term-marks") == ""

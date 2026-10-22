@@ -72,6 +72,9 @@ FULL_SYNC_INTERVAL = 3600.0
 # пропусками за прошлые недели.
 ABSENCE_NOTIFY_DAYS = 7
 
+# Четвертные и годовые оценки выставляют раз в период — сверяем их реже оценок.
+TERM_MARKS_INTERVAL = 1800.0
+
 # Срок мобильного токена меряется в днях — проверять его каждый проход незачем.
 TOKEN_CHECK_INTERVAL = 6 * 3600.0
 
@@ -180,6 +183,7 @@ class UserWatcher:
         self._event_keys: frozenset[str] | None = None
         self._last_full_sync: float | None = None
         self._last_token_check: float | None = None
+        self._last_term_marks: float | None = None
 
     async def run(self) -> None:
         """Бесконечный цикл проверки. Останавливается отменой задачи."""
@@ -229,6 +233,7 @@ class UserWatcher:
             await self._flush_outbox(user)
             return self._backoff
 
+        await self._check_term_marks(user)
         # Очередь разбирается после проверки, а не только при новых событиях:
         # так после тихих часов или сбоя Telegram отложенное уходит само.
         await self._flush_outbox(user)
@@ -403,6 +408,13 @@ class UserWatcher:
                 formatting.schedule_changes(items),
                 push=("Изменения в расписании", formatting.schedule_preview(items)),
                 kind="schedule",
+            )
+        elif kind is OutboxKind.TERMS:
+            await self._notifier.send_text(
+                user,
+                formatting.term_marks(items),
+                push=("Новые оценки", formatting.term_marks_push(items)),
+                kind="marks",
             )
         elif kind is OutboxKind.RISK:
             await self._notifier.send_text(
@@ -743,6 +755,57 @@ class UserWatcher:
             raise
         except Exception as exc:  # noqa: BLE001 — статус вторичен по отношению к проверке
             logger.debug("Статус проверки %s не записан: %s", self._user_id, exc)
+
+    async def _check_term_marks(self, user: User) -> None:
+        """Новые четвертные, годовые и итоговые оценки — как пуши «1 четверть Алгебра - 5».
+
+        Только мобильный режим: в веб-дневнике официальных итоговых нет.
+        Первый снимок (и снимок другого ученика) запоминается молча.
+        """
+        if user.effective_api_mode is not ApiMode.MOBILE:
+            return
+        now = self._clock()
+        if self._last_term_marks is not None and now - self._last_term_marks < TERM_MARKS_INTERVAL:
+            return
+        self._last_term_marks = now
+        try:
+            totals = await self._diary.fetch_totals(user)
+            if not totals:
+                return
+            current = {
+                f"{subject}\x1f{period}": mark
+                for subject, item in totals.items()
+                for period, mark in [
+                    *((key, (term or {}).get("mark") or "") for key, term in (item.get("terms") or {}).items()),
+                    ("year", item.get("year") or ""),
+                    ("final", item.get("final") or ""),
+                ]
+                if mark
+            }
+            student = str(user.selected_student_id or user.student_name or "")
+            try:
+                saved = json.loads(await self._state.digest_period(user.telegram_id, "term-marks") or "{}")
+            except ValueError:
+                saved = {}
+            known = saved.get("marks") if saved.get("student") == student else None
+            fresh = []
+            if isinstance(known, dict):
+                for key, mark in current.items():
+                    if known.get(key) != mark and user.notifications.wants_mark(mark):
+                        subject, period = key.split("\x1f", 1)
+                        fresh.append({"subject": subject, "period": period, "mark": mark})
+            outbox = []
+            if fresh and user.notifications.grades and not await self._on_vacation(user, _local_now(user).date()):
+                outbox.append((OutboxKind.TERMS.value, encode(OutboxKind.TERMS, fresh)))
+            await self._state.save_term_marks(
+                user.telegram_id,
+                json.dumps({"student": student, "marks": current}, ensure_ascii=False),
+                outbox,
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001 — итоговые вторичны, проверку не роняют
+            logger.info("Итоговые оценки %s не проверены: %s", user.telegram_id, exc)
 
     async def _check_token(self, user: User) -> None:
         """Продлить мобильный токен или заранее предупредить, что он истекает.
