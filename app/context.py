@@ -200,6 +200,8 @@ class AppContext:
         )
         context.watchers.keep_signed_in = context.keep_signed_in
         context.watchers.weekly_review = context.weekly_review
+        if await context.accounts.give_owner_first_number(settings.telegram.admin_id):
+            logger.info("Владельцу бота выдан номер аккаунта %s", 10001)
         return context
 
     async def keep_attachments_wanted(self, user: User) -> bool:

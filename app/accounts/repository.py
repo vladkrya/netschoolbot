@@ -15,6 +15,7 @@ CODE_TTL_S = 15 * 60
 CODE_ATTEMPTS = 5
 LINK_CODE_TTL_S = 15 * 60
 RESET_LINK_TTL_S = 30 * 60
+FIRST_ACCOUNT_NO = 10001
 # Колонки с id пользователя, кроме telegram_id: перенос при привязке Telegram.
 # owner_id, follower_id, viewer_id — родные (followers, follow_invites, follow_views).
 USER_COLUMNS = ("telegram_id", "author_id", "reporter_id", "actor_id", "deleted_by",
@@ -125,6 +126,28 @@ class AccountRepository:
         row = await self._db.fetch_one("SELECT account_no FROM users WHERE telegram_id = ?", (telegram_id,))
         return row["account_no"] if row else None
 
+    async def give_owner_first_number(self, owner_id: int) -> bool:
+        """Владельцу бота — номер 10001 (решение владельца 2026-10-22).
+
+        Номера раздавались по дате записи, и владелец получил не первый.
+        Один раз меняемся номерами с тем, у кого 10001. Логины CalDAV
+        хранятся отдельно, ключи входа сервер ищет по credential_id —
+        у обоих ничего не ломается.
+        """
+        if not owner_id or await self._db.fetch_one(
+                "SELECT 1 FROM app_metadata WHERE key = 'owner_number_given'"):
+            return False
+        current = await self.number(owner_id)
+        if current is None:
+            return False  # владелец ещё не заходил — попробуем при следующем запуске
+        async with self._db.transaction() as db:
+            if current != FIRST_ACCOUNT_NO:
+                await db.execute("UPDATE users SET account_no = NULL WHERE telegram_id = ?", (owner_id,))
+                await db.execute("UPDATE users SET account_no = ? WHERE account_no = ?", (current, FIRST_ACCOUNT_NO))
+                await db.execute("UPDATE users SET account_no = ? WHERE telegram_id = ?", (FIRST_ACCOUNT_NO, owner_id))
+            await db.execute("INSERT OR REPLACE INTO app_metadata (key, value) VALUES ('owner_number_given', '1')")
+        return current != FIRST_ACCOUNT_NO
+
     async def issue_reset_link(self, email: str) -> str:
         """Секрет для ссылки сброса пароля. Хранится только хэш, новая ссылка
         отменяет прежнюю; живёт RESET_LINK_TTL_S и гасится при использовании."""
@@ -192,6 +215,9 @@ class AccountRepository:
         удаляется. Внешние ключи проверяются в конце транзакции: сначала
         меняется сам пользователь, потом всё, что на него ссылается.
         """
+        # Запись Telegram могла появиться раньше аккаунта с почтой: дата
+        # первого прихода и меньший номер аккаунта остаются за человеком.
+        earlier = await self._db.fetch_one("SELECT created_at, account_no FROM users WHERE telegram_id = ?", (new_id,))
         async with self._db.transaction() as db:
             await db.execute("PRAGMA defer_foreign_keys = ON")
             await db.execute("DELETE FROM users WHERE telegram_id = ?", (new_id,))
@@ -209,6 +235,11 @@ class AccountRepository:
                     await db.execute(f'UPDATE "{table}" SET "{column}" = ? WHERE "{column}" = ?', (new_id, old_id))
             for table in ("chat_messages", "chat_reads"):
                 await db.execute(f"UPDATE {table} SET room = ? WHERE room = ?", (f"support:{new_id}", f"support:{old_id}"))
+        if earlier:
+            await self._db.execute(
+                "UPDATE users SET created_at = MIN(created_at, ?), "
+                "account_no = MIN(COALESCE(account_no, ?), COALESCE(?, account_no)) WHERE telegram_id = ?",
+                (earlier[0], earlier[1], earlier[1], new_id))
 
     async def merge_into(self, old_id: int, new_id: int) -> bool:
         """Join a verified email account to Telegram, retaining Telegram's diary.

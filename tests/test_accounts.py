@@ -631,3 +631,31 @@ async def test_merge_retains_custom_lessons_from_both_accounts(client, app_conte
     assert (await link_telegram(app_context, data["data"]["code"], 93)).startswith("✅")
     prefs = await app_context.miniapp.prefs(93)
     assert {edit["id"] for edit in prefs["lessonEdits"]} == {"web-lesson", "tg-lesson"}
+
+
+async def test_linking_keeps_earliest_date_and_smaller_account_number(app_context, users):
+    await users.save(make_user(5))  # бот завёл запись первым
+    await app_context.db.execute("UPDATE users SET created_at = '2026-01-01 00:00:00' WHERE telegram_id = 5")
+    telegram_no = await app_context.accounts.number(5)
+    from app.web.account import hash_password
+    web_id = await app_context.accounts.create_web_user("late@example.com", hash_password("длинный-пароль"))
+    assert await app_context.accounts.number(web_id) > telegram_no
+    await app_context.accounts.move_user(web_id, 5)
+    row = await app_context.db.fetch_one("SELECT created_at, account_no FROM users WHERE telegram_id = 5")
+    assert row["created_at"] == "2026-01-01 00:00:00" and row["account_no"] == telegram_no
+
+
+async def test_owner_gets_first_number_once(app_context, users):
+    for telegram_id in (3, 4, 1):
+        await users.save(make_user(telegram_id))
+    first, owner = await app_context.accounts.number(3), await app_context.accounts.number(1)
+    await app_context.db.execute("UPDATE app_metadata SET value = '10003' WHERE key = 'account_no_last'")
+    await app_context.db.execute("UPDATE users SET account_no = account_no - ? + 10001", (first,))
+    assert await app_context.accounts.number(3) == 10001
+    owner = await app_context.accounts.number(1)
+    assert await app_context.accounts.give_owner_first_number(1) is True
+    assert await app_context.accounts.number(1) == 10001
+    assert await app_context.accounts.number(3) == owner
+    # Один раз: дальше номера не трогаем.
+    assert await app_context.accounts.give_owner_first_number(4) is False
+    assert await app_context.accounts.number(4) != 10001
