@@ -10,7 +10,7 @@
 'use strict';
 
 import { $, esc } from './core.js';
-import { pushScreen } from './screens.js';
+import { markScreen, pushScreen } from './screens.js';
 import { tap } from './haptics.js';
 import { best, chips, clock, isMuted, setMuted, sfx } from './games/kit.js';
 
@@ -72,6 +72,7 @@ export async function openGame(id) {
   if (!game) return;
   tap();
   const body = pushScreen(game.name);
+  markScreen(body, 'game', [id]);
   const screen = body.closest('.screen');
   screen.classList.add('game-screen');
   screen.dataset.game = id;

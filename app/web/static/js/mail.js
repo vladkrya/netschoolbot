@@ -6,7 +6,7 @@ import {
 } from './core.js';
 import { notify, select } from './haptics.js';
 import { ICONS } from './icons.js';
-import { popScreen, pushScreen } from './screens.js';
+import { markScreen, popScreen, pushScreen } from './screens.js';
 import { closeSheet, openSheet } from './sheet.js';
 import { setMailBadge } from './tabs.js';
 
@@ -301,6 +301,7 @@ async function moveMessage(id, restore, button) {
 export async function openMessage(id) {
   const inDeleted = folder === 'Deleted';
   const body = pushScreen('Письмо');
+  markScreen(body, 'message', [id]);
   body.innerHTML = skeleton(4);
   try {
     const { data } = await api(`/api/mail/${encodeURIComponent(id)}`);
@@ -325,7 +326,9 @@ export async function openMessage(id) {
 }
 
 export async function openAnnouncements() {
-  await renderAnnouncements(pushScreen('Объявления'));
+  const body = pushScreen('Объявления');
+  markScreen(body, 'announcements');
+  await renderAnnouncements(body);
 }
 
 async function renderAnnouncements(body, force = false) {
@@ -477,6 +480,13 @@ export async function openCompose(draft = {}) {
   const files = [];
   const attach = await canAttach();
   const body = pushScreen('Новое письмо');
+  // Начатое письмо — с получателями, темой и текстом.
+  markScreen(body, 'compose', [draft], () => [{
+    ...draft,
+    to: [...chosen.values()],
+    subject: body.querySelector('#composeSubject')?.value || '',
+    text: body.querySelector('#composeText')?.value || '',
+  }]);
   body.innerHTML = `
     <div class="card compose">
       <div class="detail-label">Кому</div>

@@ -5,7 +5,7 @@ import {
   $, api, assistantEnabled, forgetRevalidated, banner, base, demo, isOffline, isReadOnly, keepTouch, loadAttachmentTicket, noConnectionText, school, state, student, studentFirstName, syncFinished, syncStarted, tg, token,
 } from './core.js';
 import { initDay, loadDay, restoreDay } from './day.js';
-import { initUpdates, takeResume } from './update.js';
+import { initUpdates, reopenScreens, takeResume } from './update.js';
 import { initSchedule, loadSchedule } from './schedule.js';
 import { initHomework, loadHomework } from './homework.js';
 import { loadTotals } from './totals.js';
@@ -963,7 +963,12 @@ async function start() {
   if (Number.isInteger(resume?.scheduleWeek)) state.scheduleWeek = resume.scheduleWeek;
   const resumeTab = resume && TABS[resume.tab] && (navTabs().includes(resume.tab) || (resume.tab === 'settings' && isNewDesign())) ? resume.tab : null;
   const firstTab = switchTab(requestedSettings && isNewDesign() ? 'settings' : resumeTab || navTabs()[0]);
-  if (resume?.scroll) firstTab.then(() => requestAnimationFrame(() => window.scrollTo(0, resume.scroll))).catch(() => {});
+  if (resume) {
+    firstTab.catch(() => {}).then(() => new Promise((resolve) => requestAnimationFrame(resolve))).then(() => {
+      if (resume.scroll) window.scrollTo(0, resume.scroll);
+      return reopenScreens(resume.screens);
+    });
+  }
   initUpdates();
   if (requestedSettings && !isNewDesign()) openDrawer();
   firstTab.then(() => setTimeout(prefetch, 600)).catch(() => {});

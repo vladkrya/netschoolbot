@@ -6,12 +6,13 @@
 import { api, dayMonth, esc, errorCard, observedTime, shortDate, skeleton } from './core.js';
 import { openHomework } from './details.js';
 import { openMessage } from './mail.js';
-import { pushScreen } from './screens.js';
+import { markScreen, pushScreen } from './screens.js';
 import { tap } from './haptics.js';
 
 export function openSearch(initial = '') {
   tap();
   const body = pushScreen('Поиск за год');
+  markScreen(body, 'search', [initial], () => [body.querySelector('#yearSearch')?.value || '']);
   body.innerHTML = `<label class="search search-year"><input id="yearSearch" type="search" placeholder="Задание, тема, письмо или учитель"
       autocomplete="off" enterkeyhint="search" value="${esc(initial)}"></label>
     <div class="muted small search-note">Ищет задания и письма с 1 сентября. Первый поиск может занять до минуты.</div>

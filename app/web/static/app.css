@@ -1497,6 +1497,8 @@ html.repin body::after, html.repin .bottom-nav, html.repin .fab, html.repin .hw-
 
 /* Свайп «назад» от левого края (swipeback.js). */
 .screen.swiping { animation: none; transition: none; }
+/* Возврат после перезапуска (update.js): экраны встают на место сразу, без выезда. */
+html.resuming .screen, html.resuming .screen * { animation: none !important; }
 .screen.leaving { animation: none; transition: transform .22s var(--ease); }
 /* Вкладка за пальцем: тень слева, как у экрана поверх. */
 main.swiping { transition: none; box-shadow: -8px 0 24px rgba(0, 0, 0, .25); background: var(--bg); }

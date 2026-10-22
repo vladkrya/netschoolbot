@@ -8,7 +8,7 @@
 
 import { addDays, api, DUTY_MARK, dayMonth, errorCard, esc, isoToday, markValue, plural, skeleton, state } from './core.js';
 import { isAutoDone, isDoneItem, loadDone, markBox, openHomework, openMark } from './details.js';
-import { pushScreen } from './screens.js';
+import { markScreen, pushScreen } from './screens.js';
 import { tap } from './haptics.js';
 
 // Задания старше этого уже никто не сдаёт — в списке только свежие.
@@ -82,6 +82,7 @@ export function dueButtonHtml(found = state.due) {
 export async function openDue() {
   tap();
   const body = pushScreen('Должен сдать');
+  markScreen(body, 'due');
   body.innerHTML = skeleton(4);
   let found;
   try {
