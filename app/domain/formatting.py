@@ -114,6 +114,64 @@ def mark_events_digest(events: list[MarkEvent]) -> str:
     return "\n".join(lines)
 
 
+# Строк в push больше этого — остальное одной строкой «и ещё N»: шторка
+# телефона длинный текст всё равно обрежет.
+PUSH_LINES = 6
+
+
+def _push_lines(lines: list[str]) -> str:
+    if len(lines) > PUSH_LINES:
+        lines = [*lines[:PUSH_LINES - 1], f"и ещё {len(lines) - PUSH_LINES + 1}"]
+    return "\n".join(lines)
+
+
+def _push_mark(mark: str) -> str:
+    return "точка" if mark == DUTY_MARK else mark
+
+
+def mark_events_push(events: list[MarkEvent]) -> str:
+    """Push об оценках, как у приложения «Сетевого города»: строка на оценку,
+    «Алгебра - 5 (дата задания 25.09)». Без HTML."""
+    lines = []
+    for event in events:
+        record = event.record
+        if event.kind is MarkKind.CHANGED:
+            value = f"{_push_mark(event.old_mark)} → {_push_mark(event.new_mark)}"
+        elif event.kind is MarkKind.DELETED:
+            value = f"{_push_mark(record.mark)} удалена"
+        else:
+            value = _push_mark(record.mark)
+        lines.append(f"{record.subject} - {value} (дата задания {record.date:%d.%m})")
+    return _push_lines(lines)
+
+
+def term_period_label(key: str) -> str:
+    """`q1` → «1 четверть», `h2` → «2 полугодие», `year` → «Годовая»."""
+    if key == "year":
+        return "Годовая"
+    if key == "final":
+        return "Итоговая"
+    kind = {"q": "четверть", "h": "полугодие", "t": "триместр"}.get(key[:1])
+    return f"{key[1:]} {kind}" if kind and key[1:].isdigit() else key
+
+
+def term_marks_push(items: list[dict]) -> str:
+    """Push о четвертных и годовых: «1 четверть Алгебра - 5». Без HTML."""
+    return _push_lines(
+        [f"{term_period_label(item['period'])} {item['subject']} - {_push_mark(item['mark'])}" for item in items]
+    )
+
+
+def term_marks(items: list[dict]) -> str:
+    """Выставленные четвертные, годовые и итоговые оценки."""
+    lines = ["🏁 <b>Итоговые оценки</b>", ""]
+    for item in items:
+        lines.append(
+            f"• {esc(term_period_label(item['period']))} {esc(item['subject'])} — <b>{mark_text(item['mark'])}</b>"
+        )
+    return "\n".join(lines)
+
+
 def homework_digest(items: list[HomeworkRecord], *, tz: dt.tzinfo = MSK) -> str:
     lines = [f"📚 <b>Новые домашние задания</b> ({len(items)})", ""]
     for item in sorted(items, key=lambda h: (h.due_date, h.subject)):

@@ -34,6 +34,8 @@ class OutboxKind(str, Enum):
     SCHEDULE = "schedule"
     MAIL = "mail"
     RISK = "risk"
+    # Четвертные и годовые: {subject, period, mark}.
+    TERMS = "terms"
 
 
 @dataclass(frozen=True, slots=True)
@@ -184,6 +186,7 @@ _ENCODERS = {
     OutboxKind.SCHEDULE: _schedule_to_dict,
     OutboxKind.MAIL: dict,
     OutboxKind.RISK: _risk_to_dict,
+    OutboxKind.TERMS: dict,
 }
 _DECODERS = {
     OutboxKind.MARKS: _event_from_dict,
@@ -192,6 +195,7 @@ _DECODERS = {
     OutboxKind.SCHEDULE: _schedule_from_dict,
     OutboxKind.MAIL: dict,
     OutboxKind.RISK: _risk_from_dict,
+    OutboxKind.TERMS: dict,
 }
 
 
