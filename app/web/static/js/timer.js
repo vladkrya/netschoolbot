@@ -201,8 +201,10 @@ function paint(box, phase, now = clock()) {
   paintClock(box, clockText(left));
   const total = phase.until - phase.from;
   const percent = total > 0 ? Math.min(100, Math.max(0, (now - phase.from) / total * 100)) : 0;
+  // До десятой доли процента: полоска сдвигается раз в несколько секунд,
+  // а не перестраивает страницу на каждом тике.
   const bar = box.querySelector('.lt-bar span');
-  if (bar) bar.style.width = `${percent}%`;
+  if (bar) bar.style.width = `${percent.toFixed(1)}%`;
 }
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
