@@ -7,6 +7,10 @@
 // жест — серия событий без пауз, включая инерцию после того, как пальцы
 // сняли; срабатывает он один раз, когда пройден порог. Вертикальная прокрутка
 // остаётся обычной прокруткой.
+//
+// Мышь листает вбок наклоном колеса или колесом с Shift. Firefox шлёт такую
+// прокрутку строками, а не пикселями, Chrome в Linux — по вертикали с
+// shiftKey; каждый щелчок колеса — свой шаг, даже если крутить без пауз.
 'use strict';
 
 import { $, state, stillMotion } from './core.js';
@@ -21,6 +25,21 @@ const QUIET_MS = 160;
 const COMMIT_PX = 80;
 // Столько вертикали в начале — и жест считается прокруткой.
 const VERTICAL_PX = 24;
+// Строка прокрутки в пикселях — Firefox считает колесо мыши строками.
+const LINE_PX = 40;
+// Щелчки колеса без пауз — шаг не чаще, чем раз в столько.
+const NOTCH_MS = 220;
+
+/** Сдвиг события в пикселях: dx, dy и notch — щелчок колеса мыши, а не
+ *  плавная прокрутка трекпада. */
+export function wheelDelta(event) {
+  const unit = event.deltaMode === 1 ? LINE_PX : event.deltaMode === 2 ? innerWidth : 1;
+  let dx = event.deltaX * unit;
+  let dy = event.deltaY * unit;
+  // Колесо с Shift — прокрутка вбок, если браузер не повернул её сам.
+  if (event.shiftKey && !dx && dy) [dx, dy] = [dy, 0];
+  return { dx, dy, notch: event.deltaMode !== 0 || event.shiftKey };
+}
 
 /** Может ли элемент сам прокрутиться вбок в эту сторону — тогда жест его. */
 function scrollsSideways(target, dx) {
@@ -71,8 +90,11 @@ function release(el) {
  *  а пальцы снова на трекпаде — рывок вверх или движение в другую сторону.
  *  Без этого после одного свайпа следующий, сделанный сразу, сливался с
  *  хвостом и не срабатывал. */
-export function startsAnew(gesture, dx, now) {
-  if (!gesture.done || now - gesture.firedAt < 120) return false;
+export function startsAnew(gesture, dx, now, notch = false) {
+  if (!gesture.done) return false;
+  // Колесо мыши: каждый щелчок — новый шаг, но не чаще NOTCH_MS.
+  if (notch) return now - gesture.firedAt >= NOTCH_MS;
+  if (now - gesture.firedAt < 120) return false;
   const size = Math.abs(dx);
   if (Math.sign(dx) && Math.sign(dx) !== Math.sign(gesture.x) && size > 4) return true;
   // В ту же сторону — только когда инерция уже пошла на спад: иначе пальцы,
@@ -86,7 +108,8 @@ export function initTrackpad() {
   let quiet = 0;
   window.addEventListener('wheel', (event) => {
     // Щипок трекпадом приходит как wheel с ctrlKey — это масштаб.
-    if (event.ctrlKey || event.deltaMode !== 0) return;
+    if (event.ctrlKey) return;
+    const { dx, dy, notch } = wheelDelta(event);
     const now = performance.now();
     // Пальцы сняли, не дотянув, — сдвинутое возвращается на место.
     clearTimeout(quiet);
@@ -95,17 +118,17 @@ export function initTrackpad() {
       moved = null;
       hideBackHint();
     }, QUIET_MS);
-    if (!gesture || now - gesture.last > QUIET_MS || startsAnew(gesture, event.deltaX, now)) {
+    if (!gesture || now - gesture.last > QUIET_MS || startsAnew(gesture, dx, now, notch)) {
       gesture = { x: 0, y: 0, last: now, done: false, vertical: false, prev: 0, peak: 0, decayed: false, firedAt: 0 };
     }
-    const size = Math.abs(event.deltaX);
+    const size = Math.abs(dx);
     gesture.last = now;
     gesture.prev = size;
     gesture.peak = Math.max(gesture.peak, size);
     if (gesture.done && size < gesture.peak * 0.35) gesture.decayed = true;
     if (gesture.vertical) return;
-    gesture.x += event.deltaX;
-    gesture.y += event.deltaY;
+    gesture.x += dx;
+    gesture.y += dy;
     const { x, y } = gesture;
     if (Math.abs(y) > VERTICAL_PX && Math.abs(y) > Math.abs(x)) {
       gesture.vertical = true;
