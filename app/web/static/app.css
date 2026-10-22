@@ -1045,7 +1045,7 @@ html.offline .switch-row:has(#pushToggle, #keepFiles, #sgoUpdates) {
 }
 .drawer-more > summary::-webkit-details-marker { display: none; }
 .drawer-more > summary::after { content: '›'; font-size: 20px; line-height: 1; transition: transform .2s ease; }
-.drawer-more[open] > summary::after { transform: rotate(90deg); }
+.drawer-more[open]:not(.closing) > summary::after { transform: rotate(90deg); }
 .drawer-foot .link { margin-left: 6px; }
 .drawer-option { display: flex; align-items: center; gap: 10px; padding: 7px 0; color: var(--primary); }
 .drawer-option input { width: 20px; height: 20px; accent-color: var(--primary); }
