@@ -298,40 +298,31 @@ const markWeight = (mark) => (Number(mark.weight) > 0 ? Number(mark.weight) : 1)
  *  не говорит, его здесь больше нет. */
 function heroHtml(rows, quarter) {
   const counts = { 5: 0, 4: 0, 3: 0, 2: 0 };
-  // Сумма весов: оценка с весом 3 тянет средний, как три с весом 1, и полоса
-  // показывает доли по весу, как «доли оценок» на экране предмета.
-  const weights = { 5: 0, 4: 0, 3: 0, 2: 0 };
   if (countMode === 'subjects') {
     for (const row of rows) {
       const grade = expectedGrade(row);
       if (grade) counts[grade] += 1;
     }
   } else {
+    // Здесь — просто штуки: с весом выходили тысячи, которые ничего не говорят.
+    // Сколько это с учётом веса, видно по нажатию на плашку.
     for (const row of rows) {
       for (const mark of row.marks) {
         const value = markValue(mark.mark);
-        if (!(value in counts)) continue;
-        counts[value] += 1;
-        weights[value] += markWeight(mark);
+        if (value in counts) counts[value] += 1;
       }
     }
   }
   const total = counts[5] + counts[4] + counts[3] + counts[2];
-  const weightTotal = weights[5] + weights[4] + weights[3] + weights[2];
-  const share = countMode === 'subjects' ? counts : weights;
   const caption = countMode === 'subjects'
     ? (total ? `${allOfficial(rows) ? 'Вышли' : 'Выходит'} по ${total} ${plural(total, 'предмету', 'предметам', 'предметам')}` : 'Оценок за период пока нет')
-    : weightTotal !== total ? `${weightTotal} с\u00a0весом` : `${total} ${plural(total, 'оценка', 'оценки', 'оценок')}`;
-  // Сколько штук без учёта веса — второй строкой помельче, а не в заголовке:
-  // «83 оценки · с весом 102» не влезал в строку рядом с переключателем.
-  const plain = countMode === 'marks' && weightTotal !== total
-    ? `<div class="th-plain">без учёта веса: ${total}</div>` : '';
+    : `${total} ${plural(total, 'оценка', 'оценки', 'оценок')}`;
   const unit = (value) => (countMode === 'subjects' ? plural(value, 'предмет', 'предмета', 'предметов') : plural(value, 'оценка', 'оценки', 'оценок'));
   return `<div class="totals-hero glass">
       <div class="th-head">
         <div>
           <div class="th-label">${esc(quarter?.label || shortLabel(quarter || { key: period }))}</div>
-          <div class="th-caption">${esc(caption)}</div>${plain}
+          <div class="th-caption">${esc(caption)}</div>
         </div>
         <div class="seg-glass th-mode" style="--n:2;--i:${countMode === 'subjects' ? 0 : 1}">
           <span class="seg-lens" aria-hidden="true"></span>
@@ -339,16 +330,10 @@ function heroHtml(rows, quarter) {
           <button class="${countMode === 'marks' ? 'on' : ''}" data-count="marks">Все</button>
         </div>
       </div>
-      ${total ? `<div class="th-bar">${[5, 4, 3, 2].filter((v) => share[v])
-        .map((v) => `<span class="d${v}" style="flex:${share[v]}"></span>`).join('')}</div>` : ''}
-      <div class="th-counts">${[5, 4, 3, 2].map((v) => {
-        // «Все» — сразу с весом: оценка с весом 3 считается за три.
-        const weighted = countMode === 'marks' && weights[v] !== counts[v];
-        const shown = countMode === 'marks' ? weights[v] : counts[v];
-        return `<button class="c${v}" data-grade="${v}" ${counts[v] ? '' : 'disabled'}
-          aria-label="${v}: ${counts[v]} ${unit(counts[v])}${weighted ? `, с весом ${weights[v]}` : ''}"><b>${v}</b><span>${shown} <small>${
-          weighted ? 'с весом' : unit(shown)}</small>${weighted ? `<small class="th-weight">без веса: ${counts[v]}</small>` : ''}</span></button>`;
-      }).join('')}</div>
+      ${total ? `<div class="th-bar">${[5, 4, 3, 2].filter((v) => counts[v])
+        .map((v) => `<span class="d${v}" style="flex:${counts[v]}"></span>`).join('')}</div>` : ''}
+      <div class="th-counts">${[5, 4, 3, 2].map((v) => `<button class="c${v}" data-grade="${v}" ${counts[v] ? '' : 'disabled'}
+          aria-label="${v}: ${counts[v]} ${unit(counts[v])}"><b>${v}</b><span>${counts[v]} <small>${unit(counts[v])}</small></span></button>`).join('')}</div>
     </div>`;
 }
 
@@ -579,7 +564,7 @@ function openGrade(data, quarter, value) {
   const shown = period;
   const draw = () => {
     body.innerHTML = rows.length
-      ? `<div class="totals-cards">${byMarks ? gradeCardsHtml(rows, value) : cardsHtml(rows)}</div>`
+      ? `${byMarks ? gradeSummaryHtml(rows, value) : ''}<div class="totals-cards">${byMarks ? gradeCardsHtml(rows, value) : cardsHtml(rows)}</div>`
       : '<div class="empty">Таких оценок за период нет.</div>';
   };
   draw();
@@ -595,6 +580,15 @@ function openGrade(data, quarter, value) {
     tap();
     openSubject(data.subjects[Number(card.dataset.subject)], shown);
   });
+}
+
+/** Итог над карточками: сколько всего таких оценок и сколько с учётом веса —
+ *  в сводке «Итогов» только штуки. */
+function gradeSummaryHtml(rows, value) {
+  const marks = rows.flatMap((row) => row.marks.filter((mark) => markValue(mark.mark) === value));
+  const weight = marks.reduce((sum, mark) => sum + markWeight(mark), 0);
+  return `<div class="grade-sum glass"><b>${marks.length}</b> ${plural(marks.length, 'оценка', 'оценки', 'оценок')}${
+    weight !== marks.length ? `<span>с учётом веса <b>${weight}</b></span>` : ''}</div>`;
 }
 
 /** Карточки предметов с оценками одного значения: сколько их, общий вес, даты. */
