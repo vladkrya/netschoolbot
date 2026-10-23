@@ -505,6 +505,33 @@ class TestData:
         assert algebra["lessons"]["q1"]["total"] == 1
         assert [q["key"] for q in data["quarters"]] == ["q1", "q2", "q3", "q4"]
 
+    async def test_break_loads_next_period_and_hides_partial_counts(self, client, app_context, token, monkeypatch):
+        from app.domain.models import User
+        from app.domain.records import DiaryDay, Lesson
+
+        # Осенние каникулы: первая четверть кончилась, вторая ещё не началась.
+        now = dt.datetime(2026, 10, 28, 12, 0, tzinfo=dt.timezone(dt.timedelta(hours=3)))
+        monkeypatch.setattr(User, "now", lambda self: now)
+        app_context.diary.terms = [
+            {"name": f"{n} четверть", "startDate": start, "endDate": end}
+            for n, start, end in (
+                (1, "2026-09-01", "2026-10-24"), (2, "2026-11-05", "2026-12-28"),
+                (3, "2027-01-12", "2027-03-20"), (4, "2027-03-30", "2027-05-26"),
+            )
+        ]
+        asked = []
+
+        async def fetch_period(user, start, end, **kwargs):
+            asked.append(end)
+            return [DiaryDay(day=day, lessons=[Lesson(number=1, subject="Алгебра")])
+                    for day in (dt.date(2026, 9, 7), dt.date(2026, 11, 9), dt.date(2026, 11, 10), dt.date(2027, 1, 12))]
+
+        app_context.diary.fetch_period = fetch_period
+        data = (await (await client.get(f"{BASE}/api/marks", params={"token": token})).json())["data"]
+        # Вторая четверть загружена целиком, третья — нет и без числа уроков.
+        assert asked == [dt.date(2027, 1, 11)]
+        assert data["subjects"][0]["lessons"] == {"q1": {"total": 1, "done": 1}, "q2": {"total": 2, "done": 0}}
+
     async def test_marks_use_chosen_scheme(self, client, app_context, token):
         bad = await client.post(
             f"{BASE}/api/prefs", params={"token": token},
