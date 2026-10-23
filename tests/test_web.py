@@ -542,6 +542,43 @@ class TestData:
         data = (await (await client.get(f"{BASE}/api/marks", params=params)).json())["data"]
         assert data["subjects"][0]["lessons"] == {"q1": {"total": 1, "done": 1}}
 
+    async def test_upcoming_period_lessons_are_loaded_on_demand(self, client, app_context, token, monkeypatch):
+        from app.domain.models import User
+        from app.domain.records import DiaryDay, Lesson
+
+        # Первая четверть ещё идёт — «Итоги» вторую не загружают.
+        now = dt.datetime(2026, 10, 23, 12, 0, tzinfo=dt.timezone(dt.timedelta(hours=3)))
+        monkeypatch.setattr(User, "now", lambda self: now)
+        app_context.diary.terms = [
+            {"name": f"{n} четверть", "startDate": start, "endDate": end}
+            for n, start, end in (
+                (1, "2026-09-01", "2026-10-24"), (2, "2026-11-05", "2026-12-28"),
+                (3, "2027-01-12", "2027-03-20"), (4, "2027-03-30", "2027-05-26"),
+            )
+        ]
+        asked = []
+        weeks = [dt.date(2026, 11, 9), dt.date(2026, 11, 10), dt.date(2026, 12, 28)]
+
+        async def fetch_period(user, start, end, **kwargs):
+            asked.append((start, end))
+            return [DiaryDay(day=day, lessons=[Lesson(number=1, subject="Алгебра"),
+                                               Lesson(number=2, subject="Кружок", is_elective=True)])
+                    for day in weeks]
+
+        app_context.diary.fetch_period = fetch_period
+        response = await client.get(f"{BASE}/api/marks/lessons", params={"token": token, "quarter": "q2"})
+        data = (await response.json())["data"]
+        assert asked == [(dt.date(2026, 11, 5), dt.date(2027, 1, 11))]
+        assert data["lessons"] == {"Алгебра": {"total": 3, "done": 0}}
+
+        # Школа не отдала последние недели — числа нет, а не заниженное.
+        weeks[:] = weeks[:2]
+        params = {"token": token, "quarter": "q2", "refresh": "1"}
+        data = (await (await client.get(f"{BASE}/api/marks/lessons", params=params)).json())["data"]
+        assert data["lessons"] is None
+        bad = await client.get(f"{BASE}/api/marks/lessons", params={"token": token, "quarter": "x"})
+        assert (await bad.json())["ok"] is False
+
     async def test_marks_use_chosen_scheme(self, client, app_context, token):
         bad = await client.post(
             f"{BASE}/api/prefs", params={"token": token},

@@ -115,13 +115,8 @@ async def marks(request: web.Request) -> web.Response:
         known = {normalize(name) for name in set(by_subject) | set(lessons)}
         extra = {name for key, (name, _) in totals_by_name.items() if key not in known}
 
-        # Будущие недели школа может не отдать (409 — см. _collect_weeks):
-        # не начавшийся период полон, только если дневник дошёл до его
-        # последнего учебного дня. Загрузка идёт неделями — считаем по концу недели.
-        last = max((day.day for day in days), default=year[0].start)
-        reached = last + dt.timedelta(days=6 - last.weekday())
         complete = {q.key for q in year if q.end <= fetched_end
-                    and (q.start <= today or (q.lessons_end or q.end) <= reached)}
+                    and (q.start <= today or _reached_end(q, days))}
         subjects = []
         for subject in sorted(set(by_subject) | set(lessons) | extra):
             items = by_subject.get(subject, [])
@@ -321,6 +316,58 @@ async def archived_period_marks(request: web.Request) -> web.Response:
         return {"quarter": key, "marks": marks}
 
     return await _cached(request, f"marks:period:{year_id}:{key}", produce)
+
+
+@routes.get("/api/marks/lessons")
+async def period_lessons(request: web.Request) -> web.Response:
+    """Сколько уроков в ещё не начавшемся периоде, по предметам.
+
+    «Итоги» загружают дневник только до конца текущего периода — следующий
+    стоил бы ещё десятка недельных запросов при каждом обновлении. Экран
+    предмета просит его отдельно, когда открывают будущую четверть.
+    """
+    key = request.query.get("quarter") or ""
+    if key not in PERIOD_KEYS:
+        return json_error("Не указан период")
+
+    async def produce(app: AppContext, user: User):
+        now = user.now()
+        today = now.date()
+        year, _ = await _user_periods(app, user, today)
+        period = next((q for q in year if q.key == key), None)
+        if period is None:
+            raise NetSchoolError(Reason.UNKNOWN, "Такого периода в этом учебном году нет")
+        days = await app.diary.fetch_period(user, period.start, period.end, today=today)
+        if not _reached_end(period, days):
+            return {"quarter": key, "lessons": None}
+        lessons: dict[str, dict[str, int]] = {}
+        for day in days:
+            if not period.covers(day.day):
+                continue
+            for lesson in day.lessons:
+                if lesson.is_elective:
+                    continue
+                counts = lessons.setdefault(lesson.subject, {"total": 0, "done": 0})
+                counts["total"] += 1
+                if _lesson_over(day.day, lesson, now):
+                    counts["done"] += 1
+        return {"quarter": key, "lessons": lessons}
+
+    return await _cached(request, f"marks:lessons:{key}", produce,
+                         cacheable=lambda payload: payload["lessons"] is not None)
+
+
+def _reached_end(period: Quarter, days: list) -> bool:
+    """Дошёл ли дневник до последнего учебного дня периода.
+
+    Будущие недели школа может не отдать (409 — см. _collect_weeks), и
+    тогда число уроков вышло бы неполным. Загрузка идёт неделями — считаем
+    по концу последней полученной недели.
+    """
+    if not days:
+        return False
+    last = max(day.day for day in days)
+    return (period.lessons_end or period.end) <= last + dt.timedelta(days=6 - last.weekday())
 
 
 def _attendance_to_json(lesson, day, key):

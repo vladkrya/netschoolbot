@@ -287,6 +287,10 @@ function expectedGrade(row) {
   return digit >= 2 && digit <= 5 ? digit : null;
 }
 
+/** Все предметы с оценками за период уже получили выставленную оценку. */
+const allOfficial = (rows) => rows.some((row) => row.official)
+  && rows.every((row) => row.official || row.avg == null);
+
 const markWeight = (mark) => (Number(mark.weight) > 0 ? Number(mark.weight) : 1);
 
 /** Сводка периода: сколько предметов выходит на «5», «4»… или сколько всего
@@ -313,10 +317,11 @@ function heroHtml(rows, quarter) {
     }
   }
   const total = counts[5] + counts[4] + counts[3] + counts[2];
+  const weightTotal = weights[5] + weights[4] + weights[3] + weights[2];
   const share = countMode === 'subjects' ? counts : weights;
   const caption = countMode === 'subjects'
-    ? (total ? `Выходит по ${total} ${plural(total, 'предмету', 'предметам', 'предметам')}` : 'Оценок за период пока нет')
-    : `${total} ${plural(total, 'оценка', 'оценки', 'оценок')} за период`;
+    ? (total ? `${allOfficial(rows) ? 'Вышли' : 'Выходит'} по ${total} ${plural(total, 'предмету', 'предметам', 'предметам')}` : 'Оценок за период пока нет')
+    : `${total} ${plural(total, 'оценка', 'оценки', 'оценок')}${weightTotal !== total ? ` · с\u00a0весом ${weightTotal}` : ''}`;
   const unit = (value) => (countMode === 'subjects' ? plural(value, 'предмет', 'предмета', 'предметов') : plural(value, 'оценка', 'оценки', 'оценок'));
   return `<div class="totals-hero glass">
       <div class="th-head">
@@ -332,9 +337,14 @@ function heroHtml(rows, quarter) {
       </div>
       ${total ? `<div class="th-bar">${[5, 4, 3, 2].filter((v) => share[v])
         .map((v) => `<span class="d${v}" style="flex:${share[v]}"></span>`).join('')}</div>` : ''}
-      <div class="th-counts">${[5, 4, 3, 2].map((v) => `<button class="c${v}" data-grade="${v}" ${counts[v] ? '' : 'disabled'}
-          aria-label="${v}: ${counts[v]} ${unit(counts[v])}"><b>${v}</b><span>${counts[v]} <small>${unit(counts[v])}</small>${
-          countMode === 'marks' && weights[v] !== counts[v] ? `<small class="th-weight">вес ${weights[v]}</small>` : ''}</span></button>`).join('')}</div>
+      <div class="th-counts">${[5, 4, 3, 2].map((v) => {
+        // «Все» — сразу с весом: оценка с весом 3 считается за три.
+        const weighted = countMode === 'marks' && weights[v] !== counts[v];
+        const shown = countMode === 'marks' ? weights[v] : counts[v];
+        return `<button class="c${v}" data-grade="${v}" ${counts[v] ? '' : 'disabled'}
+          aria-label="${v}: ${counts[v]} ${unit(counts[v])}${weighted ? `, с весом ${weights[v]}` : ''}"><b>${v}</b><span>${shown} <small>${
+          weighted ? 'с весом' : unit(shown)}</small>${weighted ? `<small class="th-weight">${counts[v]} ${unit(counts[v])}</small>` : ''}</span></button>`;
+      }).join('')}</div>
     </div>`;
 }
 
@@ -557,7 +567,9 @@ function openGrade(data, quarter, value) {
   const rows = periodRows(data).filter((row) => (byMarks
     ? row.marks.some((mark) => markValue(mark.mark) === value)
     : expectedGrade(row) === value));
-  const body = pushScreen(byMarks ? `Оценки «${value}»` : `Выходит «${value}»`, quarter?.label || '');
+  const title = byMarks ? `Оценки «${value}»`
+    : `${rows.length && rows.every((row) => row.official) ? 'Вышла' : 'Выходит'} «${value}»`;
+  const body = pushScreen(title, quarter?.label || '');
   body.closest('.screen')?.classList.add('glassy');
   const shown = period;
   const draw = () => {
@@ -733,9 +745,9 @@ function averageChart(marks, thresholds) {
       <text class="ac-axis" x="${L - 4}" y="${(y(thresholds[g]) + 3).toFixed(1)}" text-anchor="end">${formatAverage(thresholds[g])}</text>`).join('');
   const last = points[points.length - 1];
   const delta = last.avg - points[0].avg;
-  return `<div class="card avg-chart">
-      <div class="ac-head"><div class="card-title">Как менялся средний</div>
-        <span class="ac-delta ${delta > 0.005 ? 'up' : delta < -0.005 ? 'down' : ''}">${Math.abs(delta) < 0.005 ? 'без изменений' : `${delta > 0 ? '↑' : '↓'} ${formatAverage(Math.abs(delta))} за период`}</span></div>
+  return `<details class="card avg-chart"${readLocal(CHART_KEY, '') === 'open' ? ' open' : ''}>
+      <summary class="ac-head"><div class="card-title">Как менялся средний</div>
+        <span class="ac-delta ${delta > 0.005 ? 'up' : delta < -0.005 ? 'down' : ''}">${Math.abs(delta) < 0.005 ? 'без изменений' : `${delta > 0 ? '↑' : '↓'} ${formatAverage(Math.abs(delta))} за период`}</span></summary>
       <div class="ac-wrap">
         <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="График среднего балла: от ${formatAverage(points[0].avg)} до ${formatAverage(last.avg)}">
           ${lines}
@@ -748,12 +760,26 @@ function averageChart(marks, thresholds) {
         </svg>
         <div class="ac-tip" hidden></div>
       </div>
-    </div>`;
+    </details>`;
 }
+
+// График среднего свёрнут, пока его не раскроют; выбор запоминается.
+const CHART_KEY = 'ns-avg-chart';
 
 function bindAverageChart(body, marks) {
   const wrap = body.querySelector('.ac-wrap');
   if (!wrap) return;
+  const details = wrap.closest('details');
+  details.addEventListener('toggle', () => {
+    writeLocal(CHART_KEY, details.open ? 'open' : '');
+    if (!details.open) return;
+    select();
+    // Линия и точки рисуются заново, как при открытии экрана.
+    wrap.querySelectorAll('.ac-line, .ac-dot').forEach((el) => el.getAnimations().forEach((a) => {
+      a.cancel();
+      a.play();
+    }));
+  });
   const points = averagePoints(marks);
   const tip = wrap.querySelector('.ac-tip');
   const dots = wrap.querySelectorAll('.ac-dot');
@@ -798,6 +824,35 @@ function distribution(marks) {
     .join('')}</div>`;
 }
 
+/** Полоса уроков периода: сколько прошло и сколько осталось. */
+function lessonsHtml(lessons, quarter, key, archived) {
+  if (!lessons?.total) return `<div class="muted small">${esc(quarter?.label || '')}</div>`;
+  const left = Math.max(0, lessons.total - lessons.done);
+  return `<div class="progress">${Array.from({ length: lessons.total }, (_, i) =>
+      `<span class="seg ${i < lessons.done ? 'done' : ''}" style="--i:${i}"></span>`).join('')}</div>
+     <div class="progress-caption"><span>${esc(quarter?.label || SHORT[key] || '')} ${lessons.done}/${lessons.total}</span>
+     <span>${archived ? 'Закончилась' : `Осталось ${left} ${plural(left, 'урок', 'урока', 'уроков')}`}</span></div>`;
+}
+
+// Уроки будущих периодов: «год|период» → обещание { предмет: { total, done } }.
+const upcomingLessons = new Map();
+
+function loadUpcomingLessons(data, key) {
+  const id = `${data.year_id}|${key}`;
+  if (!upcomingLessons.has(id)) {
+    const request = api(`/api/marks/lessons?quarter=${encodeURIComponent(key)}`)
+      .then(({ data: payload }) => {
+        // Расписание ещё не опубликовано до конца — спросим снова в следующий раз.
+        if (!payload?.lessons) upcomingLessons.delete(id);
+        return payload?.lessons || null;
+      });
+    // Сбой тоже не запоминаем.
+    request.catch(() => upcomingLessons.delete(id));
+    upcomingLessons.set(id, request);
+  }
+  return upcomingLessons.get(id);
+}
+
 function openSubject(subject, key, existingBody = null, data = state.totals) {
   const quarter = (data.quarters || []).find((q) => q.key === key);
   if (data.archived && !existingBody) {
@@ -809,20 +864,16 @@ function openSubject(subject, key, existingBody = null, data = state.totals) {
   // Экран предмета — в том же стекле, что и вкладка (new.css).
   body.closest('.screen')?.classList.add('glassy');
   const marks = quarterMarks(subject, key);
-  const lessons = subject.lessons?.[key] || { total: 0, done: 0 };
-  const left = Math.max(0, lessons.total - lessons.done);
+  // Будущий период «Итоги» не загружают — уроки спрашиваются отдельно.
+  const upcoming = !data.archived && quarter?.start > isoToday();
+  const lessons = (!upcoming && subject.lessons?.[key]) || { total: 0, done: 0 };
   // Тот же средний, что на карточке в списке: школьный, а без него — свой.
   const avg = subject.totals?.terms?.[key]?.average ?? weightedAverage(marks);
   const official = subject.totals?.terms?.[key]?.mark;
   const yearMark = subject.totals?.year;
   const finalMark = subject.totals?.final;
 
-  const segments = lessons.total
-    ? `<div class="progress">${Array.from({ length: lessons.total }, (_, i) =>
-        `<span class="seg ${i < lessons.done ? 'done' : ''}" style="--i:${i}"></span>`).join('')}</div>
-       <div class="progress-caption"><span>${esc(quarter?.label || SHORT[key] || '')} ${lessons.done}/${lessons.total}</span>
-       <span>${data.archived ? 'Закончилась' : `Осталось ${left} ${left === 1 ? 'урок' : [2, 3, 4].includes(left % 10) && ![12, 13, 14].includes(left % 100) ? 'урока' : 'уроков'}`}</span></div>`
-    : `<div class="muted small">${esc(quarter?.label || '')}</div>`;
+  const segments = `<div data-lessons>${lessonsHtml(lessons, quarter, key, data.archived)}</div>`;
 
   const renderTiles = (attendance) => marks
     .map(
@@ -916,6 +967,15 @@ function openSubject(subject, key, existingBody = null, data = state.totals) {
     tile.addEventListener('click', () => openMark(marks[Number(tile.dataset.mark)], subject.subject))
   );
   bindAverageChart(body, marks.filter((mark) => !isAttendance(mark)));
+  if (upcoming) {
+    loadUpcomingLessons(data, key).then((found) => {
+      // Имя в расписании может отличаться регистром или пробелами.
+      const name = normName(subject.subject);
+      const counts = Object.entries(found || {}).find(([other]) => normName(other) === name)?.[1];
+      const box = body.querySelector('[data-lessons]');
+      if (counts?.total && box?.isConnected) box.innerHTML = lessonsHtml(counts, quarter, key, false);
+    }, () => { /* строка необязательная */ });
+  }
   let markFilter = null;
   let filterAnimation = null;
   const filterButtons = body.querySelectorAll('[data-mark-filter]');
