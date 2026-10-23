@@ -7,7 +7,8 @@ import {
   isoToday, lessonNo, markClass, refuseReadOnly, state,
 } from './core.js';
 import { notify, tap } from './haptics.js';
-import { markScreen, popScreen, pushScreen } from './screens.js';
+import { markScreen, popScreen, pushScreen, reopenOnRefresh } from './screens.js';
+import { dayData, ensureWeek } from './day.js';
 import { openLessonEditor } from './edits.js';
 import { ICONS } from './icons.js';
 import { isNewDesign } from './appearance.js';
@@ -185,9 +186,31 @@ function compactTime(value) {
   }).format(date).replace(',', '');
 }
 
+/* Обновление свайпом: тот же урок, задание или оценка из только что
+ * загруженной недели. Не нашлось (урок убрали) — показываем прежнее. */
+const lessonsOf = (iso) => dayData(iso)?.lessons || [];
+
+function freshLesson(lesson, iso) {
+  return lessonsOf(iso).find((item) => lessonNo(item) === lessonNo(lesson) && item.subject === lesson.subject) || lesson;
+}
+
+function freshHomework(item) {
+  if (!item.key && !item.id) return item;
+  return lessonsOf(item.date).flatMap((lesson) => lesson.homework || [])
+    .find((other) => (item.key ? other.key === item.key : other.id === item.id)) || item;
+}
+
+function freshMark(mark) {
+  const day = dayData(mark.date);
+  return [...(day?.marks || []), ...lessonsOf(mark.date).flatMap((lesson) => lesson.marks || [])]
+    .find((other) => other.subject === mark.subject && other.type === mark.type && other.title === mark.title
+      && other.lesson_number === mark.lesson_number) || mark;
+}
+
 export function openLesson(lesson, iso) {
   const body = pushScreen(`Урок ${lessonNo(lesson)}`.trim(), fullDate(iso));
   markScreen(body, 'lesson', [lesson, iso]);
+  reopenOnRefresh(body, () => openLesson(freshLesson(lesson, iso), iso), () => ensureWeek(iso, true));
   const status = lessonStatus(lesson, iso);
 
   // Горизонтальная лента, как в приложении: кабинет, учитель, тема —
@@ -357,6 +380,7 @@ export function openHomework(item, topic = '') {
   topic = topic || item.topic || '';
   const body = pushScreen(homeworkKind(item), forDate(item.date));
   markScreen(body, 'homework', [item, topic]);
+  reopenOnRefresh(body, () => openHomework(freshHomework(item), topic), () => ensureWeek(item.date, true));
   const timestamps = homeworkTimes(item);
   body.innerHTML = `
     <div class="detail">
@@ -390,6 +414,7 @@ function realTopic(text, mark) {
 export function openMark(mark, subject, lessonTopic = '') {
   const body = pushScreen(mark.type || 'Оценка', forDate(mark.date));
   markScreen(body, 'mark', [mark, subject, lessonTopic]);
+  reopenOnRefresh(body, () => openMark(freshMark(mark), subject, lessonTopic), () => ensureWeek(mark.date, true));
   // Тема — это тема урока; название работы показываем отдельно, если оно
   // есть и не совпадает с ней. Раньше в «Тему» шло что попало, вплоть до
   // самой оценки, когда у работы не было названия.

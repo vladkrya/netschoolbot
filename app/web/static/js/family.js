@@ -1,8 +1,8 @@
 // Родные: приглашения, права доступа и отзыв.
 'use strict';
 
-import { $, api, banner, errorCard, esc, initData, isReadOnly, skeleton, tg } from './core.js';
-import { pushScreen } from './screens.js';
+import { $, api, banner, errorCard, esc, initData, isReadOnly, showFailure, skeleton, tg } from './core.js';
+import { onScreenRefresh, pushScreen } from './screens.js';
 import { notify, select, tap } from './haptics.js';
 
 function rightsLabel(item) {
@@ -109,9 +109,13 @@ export async function openFamily() {
         .then(() => { if (leave && isReadOnly()) location.reload(); });
     }));
   };
-  try {
-    draw((await api('/api/family')).data);
-  } catch (error) {
-    screen.innerHTML = errorCard(error);
-  }
+  const load = async () => {
+    try {
+      draw((await api('/api/family')).data);
+    } catch (error) {
+      showFailure(screen, error, errorCard(error));
+    }
+  };
+  onScreenRefresh(screen, load);
+  await load();
 }

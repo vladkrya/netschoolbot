@@ -3,9 +3,9 @@
 // (solver.py, chat.py, account.py).
 'use strict';
 
-import { api, banner, esc } from './core.js';
+import { api, banner, esc, showFailure } from './core.js';
 import { notify, select } from './haptics.js';
-import { pushScreen } from './screens.js';
+import { onScreenRefresh, pushScreen } from './screens.js';
 
 const post = (path, body) => api(path, { method: 'POST', body: JSON.stringify(body || {}) });
 
@@ -97,7 +97,9 @@ export function openAdmin() {
     });
   };
 
-  api('/api/admin')
+  const load = () => api('/api/admin')
     .then(({ data }) => draw(data))
-    .catch((error) => { body.innerHTML = `<div class="muted small">${esc(error.message)}</div>`; });
+    .catch((error) => showFailure(body, error, `<div class="muted small">${esc(error.message)}</div>`));
+  onScreenRefresh(body, load);
+  load();
 }

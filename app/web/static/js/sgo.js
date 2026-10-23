@@ -5,7 +5,7 @@
 
 import { $, api, banner, base, demo, esc, markSgoDown, openExternal, sgoNoticeShown } from './core.js';
 import { notify as haptic, tap } from './haptics.js';
-import { pushScreen } from './screens.js';
+import { onScreenRefresh, pushScreen } from './screens.js';
 import { watchStatus } from '../status/live.js';
 
 const DISMISSED_KEY = 'ns-sgo-down-dismissed';
@@ -206,6 +206,12 @@ export function openStatus() {
   frame.title = 'Статус серверов «Сетевого города»';
   frame.src = `${base}/status?embed=1${theme ? `&theme=${encodeURIComponent(theme)}` : ''}`;
   body.append(frame);
+  // Свайп вниз — перезагрузить рамку; ждём её, но не дольше 15 с.
+  onScreenRefresh(body, () => new Promise((resolve) => {
+    frame.addEventListener('load', resolve, { once: true });
+    setTimeout(resolve, 15000);
+    try { frame.contentWindow.location.reload(); } catch { frame.src = frame.src; }
+  }));
 }
 
 // Ссылки из рамки статуса (адрес региона): рамка сама открыть их не может.
