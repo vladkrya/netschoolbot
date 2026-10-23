@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import datetime as dt
+import json
 import logging
 import re
 from contextlib import asynccontextmanager
@@ -338,6 +339,13 @@ class SessionPool:
             reason = classify(cause)
             if reason is not Reason.AUTH:
                 raise wrap(cause, context=f"восстановление {telegram_id}") from exc
+            if _client_mode(client) is ApiMode.MOBILE and _mobile_token_valid(payload):
+                # Токен мобильного API выдаётся на 60 дней, и досрочно его не
+                # отзывают: отказ в действующем токене — сбой сервера. Раньше
+                # токен выбрасывали и входили по паролю, а при сломанном входе
+                # «Сетевого города» человек получал «смените пароль».
+                raise NetSchoolError(Reason.SERVER_UNAVAILABLE,
+                                     f"восстановление {telegram_id}: мобильное API не приняло действующий токен") from exc
             logger.info("Сохранённая сессия %s не восстановилась: %s", telegram_id, exc)
             await self._sessions.drop(telegram_id)
             return False
@@ -403,6 +411,20 @@ class SessionPool:
         if status in (401, 403):
             return False
         return None if status >= 500 else True
+
+
+def _mobile_token_valid(payload: str) -> bool:
+    """Сохранённая сессия — мобильный токен, срок которого ещё не вышел."""
+    try:
+        data = json.loads(payload)
+        if data.get("kind") != "mobile" or not data.get("access_token"):
+            return False
+        expires = dt.datetime.fromisoformat(data["expires_at"])
+    except (ValueError, KeyError, TypeError, AttributeError):
+        return False
+    if expires.tzinfo is None:
+        expires = expires.replace(tzinfo=dt.timezone.utc)
+    return expires > dt.datetime.now(dt.timezone.utc)
 
 
 # «Server error '500 …» — httpx, «сервер ответил 500» — netschoolpy. Сервер

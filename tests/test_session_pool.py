@@ -590,3 +590,48 @@ class TestLiveClientAnswering500:
         async with pool.acquire(user) as again:
             pass
         assert again is client
+
+
+def _mobile(factory):
+    """Клиент, которого пул примет за мобильный (см. session._client_mode)."""
+    def make(url, proxy):
+        client = factory(url, proxy)
+        client.classmeetings = None
+        return client
+    return make
+
+
+def _mobile_payload(days: float) -> str:
+    import json
+
+    expires = dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=days)
+    return json.dumps({"kind": "mobile", "access_token": "t", "expires_at": expires.isoformat()})
+
+
+async def test_rejected_valid_mobile_token_is_kept_and_no_password_login(pool, users, sessions):
+    """Токен мобильного API живёт 60 дней: отказ до срока — сбой, не «войдите заново»."""
+    from netschoolpy.exceptions import SessionExpired
+
+    user = make_user()
+    await users.save(user)
+    payload = _mobile_payload(30)
+    await sessions.save(1, payload)
+    pool._client_factory = _mobile(_failing_import(SessionExpired("Токен мобильного API истёк или отозван (401)")))
+    with pytest.raises(NetSchoolError) as info:
+        async with pool.acquire(user):
+            pass
+    assert info.value.reason is Reason.SERVER_UNAVAILABLE
+    assert await sessions.load(1) == payload
+    assert all(client.logins == 0 for client in FakeClient.instances)
+
+
+async def test_expired_mobile_token_is_dropped_and_password_login_follows(pool, users, sessions):
+    from netschoolpy.exceptions import SessionExpired
+
+    user = make_user()
+    await users.save(user)
+    await sessions.save(1, _mobile_payload(-1))
+    pool._client_factory = _mobile(_failing_import(SessionExpired("Токен мобильного API истёк или отозван (401)")))
+    async with pool.acquire(user) as client:
+        assert client.logins == 1
+    assert await sessions.load(1) == '{"cookies": "abc"}'
