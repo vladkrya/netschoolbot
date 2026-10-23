@@ -21,12 +21,32 @@ from __future__ import annotations
 
 import json
 import logging
+from types import FunctionType
 
 logger = logging.getLogger("netschoolbot.netschool")
 
 ESIA_LOGIN_API = "https://esia.gosuslugi.ru/aas/oauth2/api/login"
 
 _applied = False
+
+
+def _patch_qr_poll() -> None:
+    """В 9.6.2 staticmethod SSE ошибочно использует self для SSL-контекста."""
+    from netschoolpy import client as ns_client
+
+    original = ns_client.NetSchool._poll_esia_qr_sse
+    if (getattr(original, "__netschoolbot_patched__", False)
+            or "self" not in original.__code__.co_names):
+        return
+    # Отдельное пространство имён: не добавляем self в модуль библиотеки.
+    # Метод создания SSL-контекста статический, ему достаточно класса.
+    fixed = FunctionType(
+        original.__code__, {**original.__globals__, "self": ns_client.NetSchool},
+        original.__name__, original.__defaults__, original.__closure__,
+    )
+    fixed.__kwdefaults__ = original.__kwdefaults__
+    fixed.__netschoolbot_patched__ = True
+    ns_client.NetSchool._poll_esia_qr_sse = staticmethod(fixed)
 
 
 def _is_next_step(response) -> bool:
@@ -111,6 +131,7 @@ def apply() -> None:
     try:
         _patch_httpx_202()
         _patch_max_quiz()
+        _patch_qr_poll()
     except (ImportError, AttributeError) as exc:
         logger.warning("Не удалось пропатчить ЕСИА-вход netschoolpy: %s", exc)
         return
