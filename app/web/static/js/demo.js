@@ -327,6 +327,20 @@ export async function demoApi(path, options = {}) {
     });
   }
 
+  // Уроки ещё не начавшегося периода — экран предмета спрашивает их отдельно.
+  if (route === '/api/marks/lessons') {
+    const period = quarters().find((q) => q.key === url.searchParams.get('quarter'));
+    if (!period) return ok({ quarter: null, lessons: null });
+    const lessons = {};
+    for (const day of daysBetween(period.start, period.end, cfg)) {
+      for (const lesson of day.lessons) {
+        lessons[lesson.subject] = lessons[lesson.subject] || { total: 0, done: 0 };
+        lessons[lesson.subject].total += 1;
+      }
+    }
+    return ok({ quarter: period.key, lessons });
+  }
+
   // Средний балл класса (в настоящем приложении — мобильное API): чуть ниже
   // ученика-отличника, у каждого предмета свой.
   if (route === '/api/subject') {
