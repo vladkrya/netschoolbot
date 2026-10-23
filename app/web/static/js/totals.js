@@ -287,11 +287,16 @@ function expectedGrade(row) {
   return digit >= 2 && digit <= 5 ? digit : null;
 }
 
+const markWeight = (mark) => (Number(mark.weight) > 0 ? Number(mark.weight) : 1);
+
 /** Сводка периода: сколько предметов выходит на «5», «4»… или сколько всего
  *  таких оценок — переключателем. Общий средний балл по всем предметам ничего
  *  не говорит, его здесь больше нет. */
 function heroHtml(rows, quarter) {
   const counts = { 5: 0, 4: 0, 3: 0, 2: 0 };
+  // Сумма весов: оценка с весом 3 тянет средний, как три с весом 1, и полоса
+  // показывает доли по весу, как «доли оценок» на экране предмета.
+  const weights = { 5: 0, 4: 0, 3: 0, 2: 0 };
   if (countMode === 'subjects') {
     for (const row of rows) {
       const grade = expectedGrade(row);
@@ -299,10 +304,16 @@ function heroHtml(rows, quarter) {
     }
   } else {
     for (const row of rows) {
-      for (const mark of row.marks) if (markValue(mark.mark) in counts) counts[markValue(mark.mark)] += 1;
+      for (const mark of row.marks) {
+        const value = markValue(mark.mark);
+        if (!(value in counts)) continue;
+        counts[value] += 1;
+        weights[value] += markWeight(mark);
+      }
     }
   }
   const total = counts[5] + counts[4] + counts[3] + counts[2];
+  const share = countMode === 'subjects' ? counts : weights;
   const caption = countMode === 'subjects'
     ? (total ? `Выходит по ${total} ${plural(total, 'предмету', 'предметам', 'предметам')}` : 'Оценок за период пока нет')
     : `${total} ${plural(total, 'оценка', 'оценки', 'оценок')} за период`;
@@ -319,9 +330,11 @@ function heroHtml(rows, quarter) {
           <button class="${countMode === 'marks' ? 'on' : ''}" data-count="marks">Все</button>
         </div>
       </div>
-      ${total ? `<div class="th-bar">${[5, 4, 3, 2].filter((v) => counts[v])
-        .map((v) => `<span class="d${v}" style="flex:${counts[v]}"></span>`).join('')}</div>` : ''}
-      <div class="th-counts">${[5, 4, 3, 2].map((v) => `<span class="c${v}"><b>${v}</b><span>${counts[v]} <small>${unit(counts[v])}</small></span></span>`).join('')}</div>
+      ${total ? `<div class="th-bar">${[5, 4, 3, 2].filter((v) => share[v])
+        .map((v) => `<span class="d${v}" style="flex:${share[v]}"></span>`).join('')}</div>` : ''}
+      <div class="th-counts">${[5, 4, 3, 2].map((v) => `<button class="c${v}" data-grade="${v}" ${counts[v] ? '' : 'disabled'}
+          aria-label="${v}: ${counts[v]} ${unit(counts[v])}"><b>${v}</b><span>${counts[v]} <small>${unit(counts[v])}</small>${
+          countMode === 'marks' && weights[v] !== counts[v] ? `<small class="th-weight">вес ${weights[v]}</small>` : ''}</span></button>`).join('')}</div>
     </div>`;
 }
 
@@ -474,12 +487,29 @@ function renderCards(data, quarters) {
   };
   fill(true);
   hero.addEventListener('click', (event) => {
+    const grade = event.target.closest('[data-grade]');
+    if (grade) {
+      openGrade(data, quarters.find((q) => q.key === period), Number(grade.dataset.grade));
+      return;
+    }
     const button = event.target.closest('[data-count]');
     if (!button || button.dataset.count === countMode) return;
     select();
     countMode = button.dataset.count;
     writeLocal(COUNTS_KEY, countMode);
-    hero.innerHTML = heroHtml(periodRows(data), quarters.find((q) => q.key === period));
+    // Переключатель остаётся тем же элементом — линза переезжает, как у
+    // периода; заменяется только остальная сводка.
+    const control = button.closest('.th-mode');
+    control.style.setProperty('--i', countMode === 'subjects' ? 0 : 1);
+    control.querySelectorAll('[data-count]').forEach((b) => b.classList.toggle('on', b === button));
+    const fresh = document.createElement('div');
+    fresh.innerHTML = heroHtml(periodRows(data), quarters.find((q) => q.key === period));
+    const box = hero.querySelector('.totals-hero');
+    box.querySelector('.th-head > div').replaceWith(fresh.querySelector('.th-head > div'));
+    box.querySelector('.th-bar')?.remove();
+    const bar = fresh.querySelector('.th-bar');
+    if (bar) box.querySelector('.th-counts').before(bar);
+    box.querySelector('.th-counts').replaceWith(fresh.querySelector('.th-counts'));
   });
 
   // Период меняется на месте: линза переезжает, карточки перерисовываются.
@@ -518,6 +548,55 @@ function renderCards(data, quarters) {
     tap();
     openSubject(data.subjects[Number(card.dataset.subject)], period);
   });
+}
+
+/** Плашка «5»/«4»… в сводке: предметы, которые на неё выходят, или где
+ *  стоят такие оценки — смотря что считает сводка. */
+function openGrade(data, quarter, value) {
+  const byMarks = countMode === 'marks';
+  const rows = periodRows(data).filter((row) => (byMarks
+    ? row.marks.some((mark) => markValue(mark.mark) === value)
+    : expectedGrade(row) === value));
+  const body = pushScreen(byMarks ? `Оценки «${value}»` : `Выходит «${value}»`, quarter?.label || '');
+  body.closest('.screen')?.classList.add('glassy');
+  const shown = period;
+  const draw = () => {
+    body.innerHTML = rows.length
+      ? `<div class="totals-cards">${byMarks ? gradeCardsHtml(rows, value) : cardsHtml(rows)}</div>`
+      : '<div class="empty">Таких оценок за период нет.</div>';
+  };
+  draw();
+  body.addEventListener('click', (event) => {
+    const card = event.target.closest('[data-subject]');
+    if (!card) return;
+    if (event.target.closest('[data-pin]')) {
+      select();
+      togglePin(data.subjects[Number(card.dataset.subject)].subject);
+      draw();
+      return;
+    }
+    tap();
+    openSubject(data.subjects[Number(card.dataset.subject)], shown);
+  });
+}
+
+/** Карточки предметов с оценками одного значения: сколько их, общий вес, даты. */
+function gradeCardsHtml(rows, value) {
+  return orderRows(rows).map((row) => {
+    const marks = row.marks.filter((mark) => markValue(mark.mark) === value);
+    const weight = marks.reduce((sum, mark) => sum + markWeight(mark), 0);
+    const grade = row.official ? markGrade(row.official)
+      : row.avg == null ? '' : avgClass(row.avg, thresholdsFor(row.subject.subject));
+    return `<button class="card subject-card glass" data-subject="${row.index}">
+        <div class="sc-top">
+          <div class="sc-name">${esc(row.subject.subject)}</div>
+          <div class="sc-avg ${grade}">${row.official ? esc(row.official) : formatAverage(row.avg)}</div>
+        </div>
+        <div class="sc-marks">${marks.map((mark) => markBox(mark.mark, '', markWeight(mark))).join('')}</div>
+        <div class="sc-foot"><span>${marks.length} ${plural(marks.length, 'оценка', 'оценки', 'оценок')}${
+          weight !== marks.length ? ` · вес ${weight}` : ''}</span><span>${esc(marks.map((mark) => shortDate(mark.date)).join(', '))}</span></div>
+      </button>`;
+  }).join('');
 }
 
 function render() {
