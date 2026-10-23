@@ -1,7 +1,7 @@
 """Своя иконка приложения на экране «Домой».
 
-Пользователь загружает картинку в настройках, но работает она только после
-проверки владельцем (TG_ADMIN_ID) на вкладке «Иконки» админ-настроек.
+Пользователь загружает картинку в настройках, и она работает сразу, а
+владелец (TG_ADMIN_ID) проверяет её потом на вкладке «Иконки» админ-настроек.
 У каждой иконки свой токен — часть адреса картинки в манифесте и в
 apple-touch-icon. Отказ, замена или «Стандартная иконка» стирают токен:
 старый адрес отдаёт стандартную иконку, и Android при следующей сверке
@@ -85,14 +85,14 @@ class AppIconRepository:
         self._db = db
 
     async def add(self, telegram_id: int, image: bytes) -> tuple[int, bool]:
-        """Новая иконка на проверку. Прежняя непроверенная заменяется.
+        """Новая иконка: работает сразу и ждёт проверки. Прежняя (и
+        проверенная, и нет) заменяется, прошлый отказ больше не показываем.
         Возвращает id и была ли непроверенная до этого."""
         async with self._db.transaction() as db:
             cursor = await db.execute(
-                "DELETE FROM app_icons WHERE telegram_id = ? AND status = 'pending'", (telegram_id,))
-            replaced = cursor.rowcount > 0
-            # Прошлый отказ больше не показываем — человек прислал новую.
-            await db.execute("DELETE FROM app_icons WHERE telegram_id = ? AND status = 'rejected'", (telegram_id,))
+                "SELECT 1 FROM app_icons WHERE telegram_id = ? AND status = 'pending'", (telegram_id,))
+            replaced = await cursor.fetchone() is not None
+            await db.execute("DELETE FROM app_icons WHERE telegram_id = ?", (telegram_id,))
             cursor = await db.execute(
                 "INSERT INTO app_icons (telegram_id, token, status, image, created_at) VALUES (?, ?, 'pending', ?, ?)",
                 (telegram_id, secrets.token_urlsafe(16), image, time.time()),
@@ -110,25 +110,21 @@ class AppIconRepository:
 
     async def active_token(self, telegram_id: int) -> str:
         row = await self._db.fetch_one(
-            "SELECT token FROM app_icons WHERE telegram_id = ? AND status = 'approved'", (telegram_id,))
+            "SELECT token FROM app_icons WHERE telegram_id = ? AND status IN ('pending', 'approved')",
+            (telegram_id,))
         return row["token"] if row else ""
 
     async def by_token(self, token: str):
         return await self._db.fetch_one(
-            "SELECT image FROM app_icons WHERE token = ? AND status = 'approved'", (token,))
+            "SELECT image FROM app_icons WHERE token = ? AND status IN ('pending', 'approved')", (token,))
 
     async def listing(self, status: str, limit: int = 50):
         return await self._db.fetch_all(
             "SELECT * FROM app_icons WHERE status = ? ORDER BY id DESC LIMIT ?", (status, limit))
 
     async def approve(self, icon_id: int) -> None:
-        row = await self.get(icon_id)
-        async with self._db.transaction() as db:
-            # Одобренная у человека одна: прежняя больше не открывается.
-            await db.execute(
-                "DELETE FROM app_icons WHERE telegram_id = ? AND status = 'approved'", (row["telegram_id"],))
-            await db.execute(
-                "UPDATE app_icons SET status = 'approved', decided_at = ? WHERE id = ?", (time.time(), icon_id))
+        await self._db.execute(
+            "UPDATE app_icons SET status = 'approved', decided_at = ? WHERE id = ?", (time.time(), icon_id))
 
     async def reject(self, icon_id: int) -> None:
         """Отказ или отзыв одобренной: токен стирается, картинка тоже —
@@ -147,7 +143,7 @@ def repo(request: web.Request) -> AppIconRepository:
 
 
 async def icon_url(app, base: str, telegram_id: int, size: int) -> str:
-    """Адрес иконки пользователя: своя одобренная или стандартная."""
+    """Адрес иконки пользователя: своя (если её не отозвали) или стандартная."""
     token = await AppIconRepository(app.db).active_token(telegram_id)
     if token:
         return f"{base}/app-icon/{token}/{size}.png"
@@ -190,10 +186,11 @@ async def _mine(request: web.Request) -> dict:
     app = context(request)
     icons = await repo(request).of_user(current_user(request).telegram_id)
     base = app.settings.web.miniapp_path.rstrip("/")
-    approved, pending = icons.get("approved"), icons.get("pending")
+    current = icons.get("pending") or icons.get("approved")
     return {
-        "active": f"{base}/app-icon/{approved['token']}/512.png" if approved else None,
-        "pending": _data_url(pending["image"]) if pending else None,
+        "active": f"{base}/app-icon/{current['token']}/512.png" if current else None,
+        # Ещё не проверена: если проверка не пройдёт, её отзовут.
+        "checking": "pending" in icons,
         "rejected": "rejected" in icons,
     }
 
@@ -223,7 +220,7 @@ async def upload_icon(request: web.Request) -> web.Response:
     admin = app.settings.telegram.admin_id
     # Замена ещё не проверенной — владелец о ней уже знает.
     if admin and admin != user.telegram_id and not replaced and await push_on(app):
-        _push(app, admin, "Новая иконка на проверку", f"{user.label} — Админ-настройки → Иконки", "app-icon")
+        _push(app, admin, "Новая иконка — уже работает", f"{user.label} — Админ-настройки → Иконки", "app-icon")
     return web.json_response({"ok": True, "data": await _mine(request)})
 
 
@@ -275,14 +272,12 @@ async def admin_decide(request: web.Request) -> web.Response:
         if row["status"] != "pending":
             return json_error("Эту иконку уже проверили", status=409)
         await repo(request).approve(row["id"])
-        _push(app, row["telegram_id"], "Иконка одобрена",
-              "Своя иконка готова. На iPhone удалите приложение с экрана «Домой» и добавьте снова", "app-icon")
     else:
         if row["status"] not in ("pending", "approved"):
             return json_error("Эту иконку уже проверили", status=409)
         await repo(request).reject(row["id"])
-        _push(app, row["telegram_id"], "Иконка не прошла проверку",
-              "Вернулась стандартная иконка. Можно загрузить другую в настройках", "app-icon")
+        _push(app, row["telegram_id"], "Иконку отозвали",
+              "Она не прошла проверку, вернулась стандартная. Можно загрузить другую в настройках", "app-icon")
     return web.json_response({"ok": True, "data": await _admin_state(request)})
 
 

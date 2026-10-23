@@ -51,7 +51,7 @@ function iconRow(item) {
       <div class="admin-icon-who"><b>${esc(item.user)}</b><span class="muted small">${esc(item.school)}${item.school ? ' · ' : ''}${when(item.created_at)}</span></div>
       <div class="admin-icon-actions">
         ${pending ? `<button class="btn" data-icon-id="${item.id}" data-decision="approve">Принять</button>` : ''}
-        <button class="btn outline" data-icon-id="${item.id}" data-decision="reject">${pending ? 'Отказать' : 'Отозвать'}</button>
+        <button class="btn outline" data-icon-id="${item.id}" data-decision="reject">Отозвать</button>
       </div>
     </div>`;
 }
@@ -60,18 +60,18 @@ function iconsTab(data) {
   const pending = data.items.filter((item) => item.status === 'pending');
   const approved = data.items.filter((item) => item.status === 'approved');
   return `<div class="card">
-      <label class="switch-row"><span>Пуши о новых иконках<span class="muted small switch-note">приходят, когда кто-то загрузил иконку на проверку</span></span>
+      <label class="switch-row"><span>Пуши о новых иконках<span class="muted small switch-note">приходят, когда кто-то поставил свою иконку</span></span>
         <input type="checkbox" switch class="switch" data-icon-push ${data.push ? 'checked' : ''}></label>
     </div>
     <div class="card">
-      <div class="card-title">На проверке</div>
+      <div class="card-title">Не проверены <span class="muted small">— уже работают</span></div>
       ${pending.map(iconRow).join('') || '<div class="muted small">Новых иконок нет.</div>'}
     </div>
     ${approved.length ? `<div class="card">
-      <div class="card-title">Работают</div>
+      <div class="card-title">Проверены</div>
       ${approved.map(iconRow).join('')}
     </div>` : ''}
-    <p class="muted small device-note">Отказ или отзыв гасит адрес картинки: вместо неё отдаётся стандартная иконка.
+    <p class="muted small device-note">Иконки работают сразу после загрузки. Отзыв гасит адрес картинки: вместо неё отдаётся стандартная иконка.
       Android вернёт её на экран сам, на iPhone уже добавленная иконка остаётся до переустановки.</p>`;
 }
 
@@ -102,7 +102,7 @@ export function openAdmin() {
     });
     body.querySelectorAll('[data-decision]').forEach((button) => button.addEventListener('click', async () => {
       const reject = button.dataset.decision === 'reject';
-      if (reject && !window.confirm('Отказать? Адрес иконки перестанет работать, человеку придёт уведомление.')) return;
+      if (reject && !window.confirm('Отозвать иконку? Вернётся стандартная, человеку придёт уведомление.')) return;
       select();
       button.classList.add('loading');
       try {

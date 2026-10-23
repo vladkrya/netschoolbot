@@ -1,5 +1,6 @@
 // Настройки → «Иконка приложения»: своя картинка на экране «Домой».
-// Работает только после проверки владельцем (Админ-настройки → Иконки).
+// Работает сразу, владелец проверяет её потом (Админ-настройки → Иконки);
+// не прошла проверку — её отзывают.
 // Сервер — app/web/app_icon.py.
 'use strict';
 
@@ -32,25 +33,25 @@ export function openAppIcon() {
   let chosen = '';
 
   const draw = (data) => {
-    const shown = chosen || data.pending || data.active || DEFAULT();
-    const status = chosen ? 'Так она будет выглядеть. Отправьте на проверку.'
-      : data.pending ? 'На проверке у администратора. Пока работает прежняя иконка.'
-        : data.active ? 'Своя иконка работает.'
+    const shown = chosen || data.active || DEFAULT();
+    const status = chosen ? 'Так она будет выглядеть.'
+      : data.checking ? 'Своя иконка работает. Её ещё проверит администратор — если проверка не пройдёт, иконку отзовут.'
+        : data.active ? 'Своя иконка работает, проверку она прошла.'
           : 'Стандартная иконка.';
     body.innerHTML = `<div class="card app-icon-card">
         <img class="app-icon-preview" src="${esc(shown)}" alt="" width="96" height="96">
         <div class="muted small">${status}</div>
-        ${data.rejected && !chosen && !data.pending ? '<div class="app-icon-rejected small">Прошлая иконка не прошла проверку.</div>' : ''}
+        ${data.rejected && !chosen && !data.active ? '<div class="app-icon-rejected small">Прошлую иконку отозвали: она не прошла проверку.</div>' : ''}
         <input type="file" accept="image/png,image/jpeg,image/webp" hidden data-file>
         <div class="app-icon-actions">
-          ${chosen ? '<button class="btn" data-send>Отправить на проверку</button><button class="btn outline" data-cancel>Отмена</button>'
-            : `<button class="btn" data-pick>${data.pending || data.active ? 'Выбрать другую' : 'Выбрать картинку'}</button>`}
-          ${!chosen && (data.pending || data.active) ? '<button class="btn outline" data-reset>Вернуть стандартную</button>' : ''}
+          ${chosen ? '<button class="btn" data-send>Поставить</button><button class="btn outline" data-cancel>Отмена</button>'
+            : `<button class="btn" data-pick>${data.active ? 'Выбрать другую' : 'Выбрать картинку'}</button>`}
+          ${!chosen && data.active ? '<button class="btn outline" data-reset>Вернуть стандартную</button>' : ''}
         </div>
       </div>
-      <p class="muted small device-note">Каждую иконку сначала проверяет администратор — без этого она не появится.
-        Картинка обрезается до квадрата по центру. После одобрения на Android иконка сменится сама в течение дня,
-        на iPhone — удалите приложение с экрана «Домой» и добавьте снова.</p>`;
+      <p class="muted small device-note">Иконка начинает работать сразу, а потом её проверяет администратор.
+        Если проверка не пройдёт, иконку отзовут и вернётся стандартная. Картинка обрезается до квадрата по центру.
+        На Android иконка сменится сама в течение дня, на iPhone — удалите приложение с экрана «Домой» и добавьте снова.</p>`;
     bind(data);
   };
 
@@ -76,7 +77,7 @@ export function openAppIcon() {
         const { data: fresh } = await api('/api/app-icon', { method: 'POST', body: JSON.stringify({ image: chosen }) });
         chosen = '';
         notify('success');
-        banner('Иконка отправлена на проверку');
+        banner('Иконка поставлена. Если проверка не пройдёт, её отзовут');
         draw(fresh);
       } catch (error) {
         notify('error');

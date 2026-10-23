@@ -1,4 +1,4 @@
-"""Своя иконка приложения (web/app_icon.py): проверка владельцем, отзыв токена, пуши."""
+"""Своя иконка приложения (web/app_icon.py): работает сразу, владелец проверяет и отзывает токен, пуши."""
 
 import base64
 import io
@@ -53,21 +53,29 @@ def test_prepare_crops_to_square():
         app_icon.prepare(base64.b64decode(picture(40, 40).split(",", 1)[1]))
 
 
-async def test_icon_works_only_after_approval(client, app_context, users, pushes):
+async def test_icon_works_at_once_and_reject_revokes(client, app_context, users, pushes):
     admin, user = await tokens(app_context, users)
     get = lambda path, token: client.get(path, params={"token": token})  # noqa: E731
     post = lambda path, token, body: client.post(path, json=body, params={"token": token})  # noqa: E731
 
     response = await post("/mini/api/app-icon", user, {"image": picture()})
     data = (await response.json())["data"]
-    assert response.status == 200 and data["pending"].startswith("data:image/png") and data["active"] is None
-    assert pushes == [(ADMIN, "Новая иконка на проверку")]
+    assert response.status == 200 and data["active"].startswith("/mini/app-icon/") and data["checking"] is True
+    assert pushes == [(ADMIN, "Новая иконка — уже работает")]
     # Замена непроверенной — владельца второй раз не дёргаем.
     await post("/mini/api/app-icon", user, {"image": picture(fmt="JPEG")})
     assert len(pushes) == 1
 
+    # Работает сразу, до проверки.
     manifest = await (await client.get("/mini/manifest.webmanifest", params={"token": user})).json()
-    assert manifest["icons"][0]["src"] == "/mini/static/icon-192.png"
+    src = manifest["icons"][0]["src"]
+    assert src.endswith("/192.png") and "/app-icon/" in src
+    image = await client.get(src)
+    assert image.status == 200 and image.content_type == "image/png"
+    with Image.open(io.BytesIO(await image.read())) as png:
+        assert png.size == (192, 192)
+    page = await (await client.get("/mini/", params={"token": user})).text()
+    assert src.replace("192", "180") in page
 
     # Чужим вкладка закрыта.
     assert (await get("/mini/api/admin/icons", user)).status == 403
@@ -79,31 +87,32 @@ async def test_icon_works_only_after_approval(client, app_context, users, pushes
     icon_id = listing["items"][0]["id"]
 
     response = await post(f"/mini/api/admin/icons/{icon_id}", admin, {"decision": "approve"})
-    assert response.status == 200 and pushes[-1] == (USER, "Иконка одобрена")
-    active = (await (await get("/mini/api/app-icon", user)).json())["data"]["active"]
-    assert active.startswith("/mini/app-icon/")
-
-    manifest = await (await client.get("/mini/manifest.webmanifest", params={"token": user})).json()
-    src = manifest["icons"][0]["src"]
-    assert src.endswith("/192.png") and "/app-icon/" in src
-    image = await client.get(src)
-    assert image.status == 200 and image.content_type == "image/png"
-    with Image.open(io.BytesIO(await image.read())) as png:
-        assert png.size == (192, 192)
-    page = await (await client.get("/mini/", params={"token": user})).text()
-    assert src.replace("192", "180") in page
+    assert response.status == 200 and len(pushes) == 1  # одобрение ничего не меняет — без пуша
+    mine = (await (await get("/mini/api/app-icon", user)).json())["data"]
+    assert mine["checking"] is False and (await client.get(src)).status == 200
+    assert (await post(f"/mini/api/admin/icons/{icon_id}", admin, {"decision": "approve"})).status == 409
 
     # Отзыв: адрес гаснет, вместо картинки — стандартная иконка.
     response = await post(f"/mini/api/admin/icons/{icon_id}", admin, {"decision": "reject"})
-    assert response.status == 200 and pushes[-1] == (USER, "Иконка не прошла проверку")
+    assert response.status == 200 and pushes[-1] == (USER, "Иконку отозвали")
     gone = await client.get(src, allow_redirects=False)
     assert gone.status == 302 and gone.headers["Location"] == "/mini/static/icon-192.png"
     mine = (await (await get("/mini/api/app-icon", user)).json())["data"]
-    assert mine == {"active": None, "pending": None, "rejected": True}
-    assert (await post(f"/mini/api/admin/icons/{icon_id}", admin, {"decision": "approve"})).status == 409
+    assert mine == {"active": None, "checking": False, "rejected": True}
+    manifest = await (await client.get("/mini/manifest.webmanifest", params={"token": user})).json()
+    assert manifest["icons"][0]["src"] == "/mini/static/icon-192.png"
 
 
-async def test_new_approval_replaces_old_and_reset(client, app_context, users, pushes):
+async def test_reject_unchecked_icon(client, app_context, users, pushes):
+    admin, user = await tokens(app_context, users)
+    await client.post("/mini/api/app-icon", json={"image": picture()}, params={"token": user})
+    src = await app_icon.icon_url(app_context, "/mini", USER, 512)
+    (pending,) = await app_icon.AppIconRepository(app_context.db).listing("pending")
+    await client.post(f"/mini/api/admin/icons/{pending['id']}", json={"decision": "reject"}, params={"token": admin})
+    assert (await client.get(src, allow_redirects=False)).status == 302
+
+
+async def test_new_upload_replaces_old_and_reset(client, app_context, users, pushes):
     admin, user = await tokens(app_context, users)
     repo = app_icon.AppIconRepository(app_context.db)
     post = lambda path, token, body: client.post(path, json=body, params={"token": token})  # noqa: E731
