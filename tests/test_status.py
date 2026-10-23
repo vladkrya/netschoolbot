@@ -663,3 +663,40 @@ def test_school_side_failures_break_the_diary_and_account_ones_do_not():
 
     assert Reason.SERVER_UNAVAILABLE.breaks_diary and Reason.UNKNOWN.breaks_diary
     assert not any(r.breaks_diary for r in (Reason.AUTH, Reason.CREDENTIALS, Reason.MFA, Reason.ESIA, Reason.RATE_LIMIT))
+
+
+async def test_diary_bars_show_failures_while_site_answers(db):
+    """Полоска краснеет по дневникам, когда сайт отвечает, а дневники — нет."""
+    async def prober(target):
+        return Probe(True, 100, version="5.59", mobile=True if target.mobile_url else None)
+
+    service, now = make_service(db, prober)
+    await service.probe_all()
+    # Сайт отвечает (веб-полоска зелёная), но дневники у людей не грузятся.
+    for _ in range(4):
+        await service.record_account_check(f"https://{MORDOVIA}", False)
+    await service.record_account_check(f"https://{MORDOVIA}", True)
+
+    data = await service.summary("24h")
+    host = next(h for h in data["hosts"] if h["host"] == MORDOVIA)
+    assert host["bars"][-1] == 1  # веб отвечал
+    assert host["diary_bars"][-1] == round(1 / 5, 3)  # а дневники — нет
+    assert host["diary_issues"] and host["state"] == "unstable"
+    # На сервере без жалоб на дневники столбца дневников нет.
+    other = next(h for h in data["hosts"] if h["host"] == DOWN)
+    assert all(bar is None for bar in other["diary_bars"])
+
+
+async def test_diary_bars_ignore_thin_buckets(db):
+    """Одна-две неудачи в отрезке не красят столбик — мало данных."""
+    async def prober(target):
+        return Probe(True, 100, mobile=True if target.mobile_url else None)
+
+    service, now = make_service(db, prober)
+    await service.probe_all()
+    for _ in range(2):
+        await service.record_account_check(f"https://{MORDOVIA}", False)
+
+    data = await service.summary("24h")
+    host = next(h for h in data["hosts"] if h["host"] == MORDOVIA)
+    assert all(bar is None for bar in host["diary_bars"])

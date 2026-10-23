@@ -57,6 +57,9 @@ KEEP_REPORTS_S = 90 * 86400
 PRUNE_EVERY_S = 6 * 3600
 SUMMARY_TTL_S = 60
 ACCOUNT_WINDOW_S = 30 * 60
+# Столбик полоски краснеет по дневникам, только если в него попало столько
+# загрузок — иначе одна-две неудачи рисовали бы сбой на пустом месте.
+DIARY_BAR_MIN = 3
 # Запросы из приложения: от одного человека — не чаще раза в 5 минут, чтобы
 # один аккаунт, обновляющий экран, не решал за весь регион.
 ACCOUNT_USER_EVERY_S = 300
@@ -588,6 +591,16 @@ class StatusService:
             if share < 0.5:
                 down[index] += 1
 
+        # История дневников по тем же отрезкам: доля удачных загрузок у людей.
+        # Нужна, чтобы полоска краснела, когда дневники не грузились, даже если
+        # сайт отвечал на проверки без входа. Отрезок с парой проверок не в счёт.
+        diary_bars: dict[str, list] = {t.host: [None] * count for t in targets}
+        for row in await self._repo.account_buckets(since, size):
+            index = row["slot"]
+            if row["host"] not in diary_bars or not 0 <= index < count or (row["total"] or 0) < DIARY_BAR_MIN:
+                continue
+            diary_bars[row["host"]][index] = round((row["good"] or 0) / row["total"], 3)
+
         reports = await self._repo.reports(min(since, now - 86400))
         report_bars: dict[str, list[int]] = {t.host: [0] * count for t in targets}
         reports_total = [0] * count
@@ -642,6 +655,7 @@ class StatusService:
                 "reports_24h": reports_day.get(target.host, 0),
                 "bars": bars[target.host],
                 "report_bars": report_bars[target.host],
+                "diary_bars": diary_bars[target.host],
             }, accounts.get(target.host)))
 
         history = await self._repo.version_history(now - 365 * 86400)
