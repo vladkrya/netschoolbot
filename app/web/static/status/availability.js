@@ -12,6 +12,13 @@ export function availability(host, now = Date.now() / 1000) {
   if (web === false && (mobile === false || !host.in_app)) {
     return { state: 'down', label: 'Сервер недоступен', tone: 'critical' };
   }
+  // Сайт и мобильное API отвечают на проверки без входа, но дневники у людей
+  // не грузятся (фоновые проверки и загрузки в приложении упираются в ошибку
+  // сервера). Снаружи регион зелёным быть не должен — иначе «всё хорошо», а
+  // войти нельзя.
+  if (host.diary_issues) {
+    return { state: 'issues', label: 'Проблемы с дневниками', tone: 'warning' };
+  }
   if (web === true) {
     return { state: 'up', label: host.in_app && mobile === false ? 'Веб работает' : 'Работает', tone: 'good' };
   }
