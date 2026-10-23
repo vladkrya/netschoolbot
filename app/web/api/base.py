@@ -44,7 +44,13 @@ def _refresh_cached_section(app, user, section, producer, cacheable):
         return task
 
     async def refresh():
-        payload = await producer(app, user)
+        try:
+            payload = await producer(app, user)
+        except NetSchoolError as exc:
+            if exc.reason.breaks_diary:
+                await _count_check(app, user, False)
+            raise
+        await _count_check(app, user, True)
         current = await app.users.get(user.telegram_id)
         # Переключение ребёнка или выход во время запроса не должны вернуть
         # в очищенный кэш данные прежнего аккаунта.
@@ -63,6 +69,17 @@ def _refresh_cached_section(app, user, section, producer, cacheable):
 
     task.add_done_callback(done)
     return task
+
+
+async def _count_check(app, user, ok: bool) -> None:
+    """Загрузка из приложения — тоже проверка дневника для страницы статуса:
+    фоновые проверки не видят, что вход сломан у всех, пока жива их сессия."""
+    if app.status is None or not user.school.url:
+        return
+    try:
+        await app.status.record_account_check(user.school.url, ok, who=user.telegram_id)
+    except Exception as exc:  # noqa: BLE001 — статус не должен ломать загрузку
+        logger.warning("Не удалось учесть загрузку в статусе: %s", type(exc).__name__)
 
 
 def context(request: web.Request) -> AppContext:

@@ -268,8 +268,8 @@ function hostDetails(host) {
   return el('div', { class: 'host-details' },
     host.account_checks ? el('div', { class: 'notice' },
       el('b', {}, host.diary_issues && host.state !== 'down' ? 'Проблемы с дневниками. ' : 'Проверки дневников. '),
-      `За последние 30 минут: ${host.account_checks.good} успешных, ${host.account_checks.total - host.account_checks.good} с ошибкой сервера. `,
-      'Это обезличенные результаты фоновых проверок. Ошибки входа не учитываются.') : '',
+      `За последние 30 минут: ${host.account_checks.good} успешных, ${host.account_checks.total - host.account_checks.good} с ошибкой. `,
+      'Это обезличенные загрузки дневников ботом и в приложении. Неверный пароль и подтверждение входа не учитываются.') : '',
     host.error === 'maintenance' ? el('div', { class: 'notice' },
       el('b', {}, 'Технические работы. '), 'Сервер показывает объявление о техническом обслуживании. Срок завершения неизвестен.')
       : availability(host).state === 'down' ? el('div', { class: 'notice' },

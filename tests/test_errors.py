@@ -125,3 +125,31 @@ class TestLoginErrorClasses:
 
         assert wrap(ns.LoginRejected("Нет доступа")).user_message.endswith("Нет доступа")
 
+
+
+class TestLoginRefusalWithoutPasswordWords:
+    """409 без слов о пароле — сбой «Сетевого города», а не «смените пароль»."""
+
+    def setup_method(self):
+        from app.netschool.patches import login
+
+        login.apply()
+
+    @pytest.mark.parametrize("message", [None, "", "Произошла ошибка", "Ошибка входа в систему", "Object reference not set to an instance of an object"])
+    def test_unexplained_refusal_is_server_failure(self, message):
+        from netschoolpy import client
+
+        error = wrap(client.conflict_error(message))
+        assert error.reason is Reason.SERVER_UNAVAILABLE and not error.reason.needs_relogin
+
+    @pytest.mark.parametrize("message", ["Неправильный пароль или логин", "Неверное имя пользователя или пароль"])
+    def test_wrong_password_words_still_mean_credentials(self, message):
+        from netschoolpy import client
+
+        assert wrap(client.conflict_error(message)).reason is Reason.CREDENTIALS
+
+    def test_lock_and_mobile_login_use_the_same_rule(self):
+        from netschoolpy import client, mobile
+
+        assert mobile.conflict_error is client.conflict_error
+        assert wrap(client.conflict_error("Вы совершили 3 неудачные попытки входа")).reason is Reason.RATE_LIMIT

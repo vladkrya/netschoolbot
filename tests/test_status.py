@@ -641,3 +641,25 @@ def test_wrapped_dns_error_is_not_reported_as_generic_connection_failure():
     error = httpx.ConnectError("private address")
     error.__cause__ = socket.gaierror("not found")
     assert error_name(error) == "dns"
+
+
+async def test_app_loads_count_once_per_user_per_five_minutes(db):
+    now = [10_000.0]
+    service, _ = make_service(db, now=now)
+    repo = SgoStatusRepository(db)
+    for _ in range(5):
+        await service.record_account_check(f"https://{DOWN}", False, who=1)
+    await service.record_account_check(f"https://{DOWN}", False, who=2)
+    await service.record_account_check(f"https://{DOWN}", True)
+    await service.record_account_check(f"https://{DOWN}", True)
+    assert (await repo.account_checks(0))[DOWN] == {"good": 2, "total": 4}
+    now[0] += 301
+    await service.record_account_check(f"https://{DOWN}", False, who=1)
+    assert (await repo.account_checks(0))[DOWN] == {"good": 2, "total": 5}
+
+
+def test_school_side_failures_break_the_diary_and_account_ones_do_not():
+    from app.netschool.errors import Reason
+
+    assert Reason.SERVER_UNAVAILABLE.breaks_diary and Reason.UNKNOWN.breaks_diary
+    assert not any(r.breaks_diary for r in (Reason.AUTH, Reason.CREDENTIALS, Reason.MFA, Reason.ESIA, Reason.RATE_LIMIT))

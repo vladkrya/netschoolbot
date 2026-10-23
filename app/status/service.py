@@ -57,6 +57,9 @@ KEEP_REPORTS_S = 90 * 86400
 PRUNE_EVERY_S = 6 * 3600
 SUMMARY_TTL_S = 60
 ACCOUNT_WINDOW_S = 30 * 60
+# Запросы из приложения: от одного человека — не чаще раза в 5 минут, чтобы
+# один аккаунт, обновляющий экран, не решал за весь регион.
+ACCOUNT_USER_EVERY_S = 300
 # Для приложения: проверка из круга моложе этого — свежая; своя — помнится.
 LIVE_FRESH_S = 3 * PROBE_EVERY_S
 LIVE_CACHE_S = 120
@@ -300,6 +303,7 @@ class StatusService:
         self._alerted: dict[str, float] = {}
         self._live: dict[str, tuple[float, dict]] = {}
         self._latest_checks: dict[str, dict] = {}
+        self._counted: dict[tuple[int, str], float] = {}
         self._listeners: set[asyncio.Queue] = set()
         self._revision = 0
         # Сообщения в группы Telegram о простоях и обновлениях (status/groups.py).
@@ -337,9 +341,18 @@ class StatusService:
     def region(self, host: str) -> str:
         return next((t.region for t in self._targets if t.host == host), "")
 
-    async def record_account_check(self, url: str, ok: bool) -> None:
-        """Обезличенный итог проверки; ошибки входа отсекает OutageMonitor."""
-        await self._repo.add_account_check(host_of(url), self._clock(), ok)
+    async def record_account_check(self, url: str, ok: bool, *, who: int | None = None) -> None:
+        """Обезличенный итог проверки дневника: фоновой или из приложения
+        (who — чей запрос, только чтобы не считать его чаще раза в 5 минут).
+        Ошибки одного аккаунта (пароль, подтверждение входа) сюда не попадают."""
+        host, now = host_of(url), self._clock()
+        if who is not None:
+            if now - self._counted.get((who, host), -math.inf) < ACCOUNT_USER_EVERY_S:
+                return
+            if len(self._counted) > 10_000:
+                self._counted = {k: at for k, at in self._counted.items() if now - at < ACCOUNT_USER_EVERY_S}
+            self._counted[who, host] = now
+        await self._repo.add_account_check(host, now, ok)
         self._changed(invalidate=False)
 
     async def refresh_catalog(self) -> None:
