@@ -600,6 +600,7 @@
 :root[data-design="new"] .th-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 14px; }
 :root[data-design="new"] .th-label { font-size: 13px; color: var(--text2); }
 :root[data-design="new"] .th-caption { margin-top: 2px; font-size: 17px; font-weight: 700; letter-spacing: -.02em; }
+:root[data-design="new"] .th-plain { margin-top: 1px; font-size: 12px; color: var(--text2); font-variant-numeric: tabular-nums; }
 /* Переключатель «Итоговые / Все» — маленькая капсула с линзой. */
 :root[data-design="new"] .th-head > div:first-child { flex: 1; min-width: 0; }
 :root[data-design="new"] .seg-glass.th-mode { flex: none; width: 164px; padding: 3px; background: color-mix(in srgb, var(--text2) 12%, transparent); }

@@ -2,7 +2,7 @@
 'use strict';
 
 import {
-  $, api, assistantEnabled, forgetRevalidated, banner, base, demo, isOffline, isReadOnly, keepTouch, loadAttachmentTicket, noConnectionText, school, state, student, studentFirstName, syncFinished, syncStarted, tg, token,
+  $, api, assistantEnabled, forgetRevalidated, banner, base, demo, isOffline, isReadOnly, keepTouch, loadAttachmentTicket, noConnectionText, school, sgoSaid, state, student, studentFirstName, syncFinished, syncStarted, tg, token,
 } from './core.js';
 import { initDay, loadDay, restoreDay } from './day.js';
 import { initUpdates, reopenScreens, takeResume } from './update.js';
@@ -588,7 +588,7 @@ async function refreshCurrentTab(event) {
       await api('/api/diary?refresh=1');
     }
   } catch (error) {
-    banner(error.message, true);
+    if (!error.sgoDown && !sgoSaid(error)) banner(error.message, true);
   } finally {
     state.refreshing = false;
     $('refreshBtn').disabled = false;

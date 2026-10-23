@@ -3,7 +3,7 @@
 // заработает — в Telegram и push на все устройства (status/alerts.py).
 // Здесь же — статус серверов внутри приложения.
 
-import { $, api, banner, base, demo, esc, markSgoDown, openExternal } from './core.js';
+import { $, api, banner, base, demo, esc, markSgoDown, openExternal, sgoNoticeShown } from './core.js';
 import { notify as haptic, tap } from './haptics.js';
 import { pushScreen } from './screens.js';
 import { watchStatus } from '../status/live.js';
@@ -118,6 +118,7 @@ function dismiss() {
 function show(data, slow) {
   if ($('sgoDown')) return;
   markSgoDown();
+  sgoNoticeShown();
   const el = document.createElement('div');
   el.id = 'sgoDown';
   el.className = 'sgo-down';

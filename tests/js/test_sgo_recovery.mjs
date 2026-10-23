@@ -141,3 +141,25 @@ test('status socket reconnects, pauses when hidden and stops cleanly', () => {
   assert.equal(h.sockets.length, 3);
   assert.equal(h.timers.size, 0);
 });
+
+test('the school outage notice is shown once, not after every request', async () => {
+  const h = setup();
+  const shown = [];
+  const el = h.elements.get('banner');
+  Object.defineProperty(el, 'textContent', { set(text) { if (text) shown.push(text); }, get: () => '' });
+  h.elements.delete('sgoDown');
+  const stale = { ok: true, data: {}, stale: true, reason: 'server' };
+  h.response(stale);
+  await h.core.api('/api/diary?refresh=1');
+  // Ответ не от школы раньше снимал «закрыто» — и плашка всплывала снова.
+  h.response({ ok: true, data: {} });
+  await h.core.api('/api/profile');
+  h.response(stale);
+  await h.core.api('/api/homework?refresh=1');
+  await h.core.api('/api/diary?refresh=1');
+  assert.equal(shown.length, 1);
+  // Школа ответила и снова пропала — это новый сбой, о нём говорим.
+  h.core.markSgoUp();
+  await h.core.api('/api/diary?refresh=1');
+  assert.equal(shown.length, 2);
+});
