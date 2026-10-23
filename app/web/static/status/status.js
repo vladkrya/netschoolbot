@@ -362,7 +362,14 @@ function hostRow(host) {
         el('span', { class: 'addr' }, sub.join(' · '))),
       el('span', { class: 'state-label' }, state.label),
       strip,
-      el('span', { class: 'num', title: 'Доля успешных проверок за выбранный период' }, blocked ? '—' : pct(host.uptime)),
+      el('span', { class: 'nums' },
+        el('span', { class: 'num', title: 'Доля успешных проверок веб-API за выбранный период' }, blocked ? '—' : pct(host.uptime)),
+        // Отдельно — дневники: сайт может отвечать на 100%, а дневники у людей
+        // не грузиться. Показываем, только когда с ними и правда беда.
+        host.diary_issues && host.account_checks && host.account_checks.total >= 3
+          ? el('span', { class: 'num diary', title: 'Доля удачных загрузок дневников за последние 30 минут' },
+              `дн. ${pct(100 * host.account_checks.good / host.account_checks.total)}`)
+          : ''),
       el('span', { class: 'chevron', 'aria-hidden': 'true' }, isOpen ? '▴' : '▾'),
     ),
     el('a', { class: 'region-url', href: host.url, target: '_blank', rel: 'noopener' }, host.url.replace(/^https?:\/\//, '')),
