@@ -190,6 +190,7 @@ class TestPages:
         assert '<link rel="canonical" href="https://example.ru/mini/">' in text
         assert '<meta name="description"' in text
         assert '"@type": "WebApplication"' in text
+        assert '"NetSchool"' in text
         assert '"url": "https://example.ru/mini/"' in text
 
     async def test_index_with_token_is_hidden_from_search(self, client, token):
