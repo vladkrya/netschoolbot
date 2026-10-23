@@ -2145,6 +2145,9 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
 .account-error[hidden] { display: none; }
 .account-check { display: flex; gap: 8px; align-items: flex-start; margin: 4px 0 10px; font-size: 14px; color: var(--text2); }
 .account-check input { margin-top: 3px; flex: none; }
+.account-consent { margin: 10px 0 0; font-size: 12px; line-height: 1.4; color: var(--text2); text-align: center; }
+.account-consent a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+.account-note { margin: 4px 0 10px; font-size: 14px; color: var(--text2); }
 .account-qr { display: block; width: min(100%, 260px); margin: 6px auto 10px; border-radius: 12px; background: #fff; padding: 8px; image-rendering: pixelated; }
 .account-qr-left { text-align: center; }
 .account-wait { display: flex; justify-content: center; padding: 18px 0; }

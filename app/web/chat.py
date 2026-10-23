@@ -75,6 +75,12 @@ def admin_id(request: web.Request) -> int:
     return context(request).settings.telegram.admin_id or 0
 
 
+# Чаты отключены в коде: у всех, включая владельца, раздела нет, тумблер не
+# действует. Детский чат без модерации и согласия родителей — юридический
+# риск (152-ФЗ, ответственность за контент). Сообщения и профили остаются в
+# базе; вернуть — поставить True.
+ENABLED = False
+
 # Тумблер владельца «Чаты» (app_flags). Записи нет — чаты выключены: вкладка
 # скрыта, запросы к чатам отклоняются. Сообщения и профили остаются в базе.
 CHATS_FLAG = "chats_on"
@@ -85,12 +91,12 @@ _ALWAYS_OPEN = ("/api/chat/ws", "/api/chat/ws-ticket", "/api/chat/unread")
 async def chats_on(app: Any) -> bool:
     from ..db.repositories import AppFlagRepository
 
-    return await AppFlagRepository(app.db).get(CHATS_FLAG)
+    return ENABLED and await AppFlagRepository(app.db).get(CHATS_FLAG)
 
 
 async def available(request: web.Request) -> bool:
     """Видны ли чаты: включены тумблером, а администратору — всегда."""
-    return is_admin(request) or await chats_on(context(request))
+    return ENABLED and (is_admin(request) or await chats_on(context(request)))
 
 
 @web.middleware
@@ -1164,6 +1170,8 @@ async def chats_setting(request: web.Request) -> web.Response:
 
     if not is_admin(request):
         return json_error("Это может только владелец", status=403)
+    if not ENABLED:
+        return json_error("Чаты отключены в коде (app/web/chat.py, ENABLED)", status=410, reason="chats_off")
     body = await _body(request)
     if "on" not in body:
         return json_error("Некорректный запрос")

@@ -48,7 +48,15 @@ async def token(app_context, users):
 
 
 class TestChatLaunchNotice:
-    async def test_existing_user_sees_notice_once_even_with_concurrent_requests(self, client, token, db):
+    async def test_no_notice_while_chats_disabled_in_code(self, client, token, db):
+        await db.execute("INSERT INTO chat_launch_notices VALUES (?)", (1,))
+        response = await client.post(f"{BASE}/api/notices/chats", headers={"X-Netschool-Token": token})
+        assert (await response.json())["data"]["show"] is False
+        # Окно не потрачено: покажется, если чаты вернут.
+        assert await db.fetch_one("SELECT 1 FROM chat_launch_notices WHERE telegram_id=1")
+
+    async def test_existing_user_sees_notice_once_even_with_concurrent_requests(self, client, token, db, monkeypatch):
+        monkeypatch.setattr("app.web.chat.ENABLED", True)
         await db.execute("INSERT INTO chat_launch_notices VALUES (?)", (1,))
         responses = await asyncio.gather(*(
             client.post(f"{BASE}/api/notices/chats", headers={"X-Netschool-Token": token})

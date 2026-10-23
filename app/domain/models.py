@@ -227,6 +227,12 @@ class Credentials:
     remember: bool = True
 
     @property
+    def stored(self) -> bool:
+        """Можно ли хранить логин и пароль. Госуслуги — никогда: их пароль
+        нужен только на один вход, дальше дневник живёт на сессии."""
+        return self.remember and not self.login_type.is_gosuslugi
+
+    @property
     def can_relogin(self) -> bool:
         return self.remember and not self.login_type.is_gosuslugi and bool(self.login and self.password)
 

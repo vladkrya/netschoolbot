@@ -11,6 +11,14 @@ import { ICONS } from './icons.js';
 import { pushScreen } from './screens.js';
 import { setHalloweenAccess } from './appearance.js';
 
+/** Подпись под кнопкой входа: согласие с политикой. Ссылка — в новой
+ * вкладке, чтобы не потерять заполненную форму. */
+function consent(action = 'Нажимая «Войти»') {
+  return `<p class="account-consent">${action}, вы соглашаетесь с
+    <a href="${base}/privacy" target="_blank" rel="noopener">политикой конфиденциальности</a>.
+    Это неофициальное приложение, оно не связано с ИРТех.</p>`;
+}
+
 function screen(html) {
   document.getElementById('bootSplash')?.remove();
   document.getElementById('accountScreen')?.remove();
@@ -208,6 +216,7 @@ function renderLogin(email = '') {
       <input class="field" type="password" name="password" autocomplete="current-password" placeholder="Пароль" required>
       <p class="account-error" hidden></p>
       <button class="btn" type="submit">Войти</button>
+      ${consent()}
     </form>
     <div class="account-links">
       <button class="link" data-go="register">Регистрация</button>
@@ -243,6 +252,7 @@ function renderRegister(email = '') {
       <input class="field" type="password" name="again" autocomplete="new-password" placeholder="Пароль ещё раз" required>
       <p class="account-error" hidden></p>
       <button class="btn" type="submit">Создать аккаунт</button>
+      ${consent('Создавая аккаунт')}
     </form>
     <div class="account-links"><button class="link" data-go="login">Уже есть аккаунт</button></div>`);
   bindLinks(card);
@@ -837,6 +847,7 @@ export function showSgoLogin(info = {}) {
       <p class="muted">Шаг 3 из 3. ${esc(choice.school)}. Как будете входить?</p>
       <div class="account-list">${METHODS.map(([method, label]) =>
         `<button class="btn outline" data-method="${method}">${label}</button>`).join('')}</div>
+      ${consent('Выбирая способ входа')}
       <button class="link" data-act="back">Другая школа</button>${footer()}`);
     bindFooter(card);
     card.querySelector('[data-act="back"]').addEventListener('click', schoolStep);
@@ -855,17 +866,19 @@ export function showSgoLogin(info = {}) {
       <form class="account-form">
         <input class="field" name="login" autocomplete="username" placeholder="${esia ? 'Телефон, СНИЛС или почта' : 'Логин «Сетевого города»'}" required>
         <input class="field" type="password" name="password" autocomplete="current-password" placeholder="Пароль" required>
-        <label class="account-check"><input type="checkbox" name="remember" checked>
-          <span>Запомнить для повторного входа${esia ? '' : ' — дневник сам войдёт, когда сессия истечёт'}</span></label>
+        ${esia ? '<p class="account-note">Логин и пароль Госуслуг нужны только на этот вход и не сохраняются.</p>'
+          : `<label class="account-check"><input type="checkbox" name="remember" checked>
+          <span>Запомнить для повторного входа — дневник сам войдёт, когда сессия истечёт</span></label>`}
         <p class="account-error" hidden></p>
         <button class="btn" type="submit">Войти</button>
+        ${consent()}
       </form>
       <button class="link" data-act="back">Другой способ</button>`);
     card.querySelector('[data-act="back"]').addEventListener('click', methodStep);
     const form = card.querySelector('form');
     form.addEventListener('submit', (event) => {
       event.preventDefault();
-      start({ login: form.login.value, password: form.password.value, remember: form.remember.checked }, card);
+      start({ login: form.login.value, password: form.password.value, remember: !esia && form.remember.checked }, card);
     });
   };
 

@@ -49,11 +49,10 @@ async def test_explicit_storage_and_next_login(app, users, login_state, monkeypa
     assert login.await_args.args[0].credentials.login == 'remembered'
 
 
-async def test_storage_choice_and_login_order(login_state):
-    callback = FakeCallback('login:esia')
-    await auth.ask_save_credentials(callback, login_state)
+async def test_storage_choice_and_login_order(app, login_state):
+    await auth.ask_save_credentials(FakeCallback('login:password'), login_state, app)
     assert await login_state.get_state() == auth.Login.remember.state
-    await auth.choose_save_credentials(FakeCallback('login:remember:no'), login_state)
+    await auth.choose_save_credentials(FakeCallback('login:remember:no'), login_state, app)
     assert (await login_state.get_data())['remember'] is False
     assert await login_state.get_state() == auth.Login.username.state
     rows = keyboards.login_methods().inline_keyboard
@@ -205,3 +204,46 @@ def test_netschool_error_reason_and_cause_are_logged_without_text():
     rendered = SafeFormatter().format(record)
     assert "NetSchoolError(auth) ← ValueError" in rendered
     assert secret not in rendered
+
+
+async def test_esia_skips_storage_question_and_shows_consent(app, login_state):
+    callback = FakeCallback('login:esia')
+    await auth.ask_save_credentials(callback, login_state, app)
+    # Пароль Госуслуг не храним — вопроса «сохранить?» нет, сразу логин.
+    assert await login_state.get_state() == auth.Login.username.state
+    assert (await login_state.get_data())['remember'] is False
+    text = callback.message.answers[-1][0]
+    assert 'не сохраняются' in text
+    assert '/privacy' in text
+
+
+async def test_school_login_prompt_shows_consent(app, login_state):
+    callback = FakeCallback('login:remember:yes')
+    await auth.choose_save_credentials(callback, login_state, app)
+    assert '/privacy' in callback.message.answers[-1][0]
+
+
+async def test_esia_password_never_stored(app, db, users, login_state, monkeypatch):
+    user = await users.get_or_create(1)
+    # Даже если клиент попросил запомнить (старый сайт), пароль Госуслуг не пишется.
+    await login_state.update_data(login_type='esia', login='+79990000000', remember=True)
+    monkeypatch.setattr(auth, '_perform_login', AsyncMock(return_value='{}'))
+    await auth.receive_password(FakeMessage('gosuslugi-secret'), login_state, user, app)
+    loaded = await users.get(1)
+    assert loaded.credentials.login == loaded.credentials.password == ''
+    assert loaded.credentials.remember is False
+    row = await db.fetch_one('SELECT login, password FROM users WHERE telegram_id = 1')
+    assert row['login'] == row['password'] == ''
+
+
+async def test_migration_wipes_saved_esia_passwords(db, users):
+    from app.db.migrations import MIGRATIONS
+
+    await users.save(make_user())
+    await db.execute(
+        "UPDATE users SET login_type = 'esia', login = 'phone', password = 'old-secret', "
+        "remember_credentials = 1 WHERE telegram_id = 1")
+    async with db.transaction() as conn:
+        await conn.executescript(MIGRATIONS[-1])
+    row = await db.fetch_one('SELECT login, password, remember_credentials FROM users WHERE telegram_id = 1')
+    assert (row['login'], row['password'], row['remember_credentials']) == ('', '', 0)

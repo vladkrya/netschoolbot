@@ -105,9 +105,10 @@ async def profile(request: web.Request) -> web.Response:
                 # Строка «Администрирование» в настройках (web/admin.py).
                 "admin": solver.is_owner(app, viewer or user),
                 # Раздел «Чаты» в «Сообщениях» и тумблер владельца (web/chat.py).
-                "chats": solver.is_owner(app, viewer or user) or await chat_module.chats_on(app),
+                "chats": chat_module.ENABLED and (solver.is_owner(app, viewer or user)
+                                                  or await chat_module.chats_on(app)),
                 "chats_toggle": {"on": await chat_module.chats_on(app)}
-                if solver.is_owner(app, viewer or user) else None,
+                if chat_module.ENABLED and solver.is_owner(app, viewer or user) else None,
                 # Хеллоуинское оформление — у всех в праздничный сезон;
                 # выключается тумблером в настройках.
                 "halloween": halloween_season(user.today()),

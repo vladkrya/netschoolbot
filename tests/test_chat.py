@@ -19,6 +19,13 @@ def no_send_interval(monkeypatch):
     monkeypatch.setattr("app.web.chat.SEND_INTERVAL_S", 0)
 
 
+@pytest.fixture(autouse=True)
+def chats_enabled(monkeypatch):
+    # Чаты отключены в коде (chat.ENABLED), но сам код сохранён: проверяем его
+    # включённым, а выключенное состояние — в test_chats_disabled_in_code.
+    monkeypatch.setattr("app.web.chat.ENABLED", True)
+
+
 @pytest.fixture
 async def client(app_context) -> TestClient:
     from app.db.repositories import AppFlagRepository

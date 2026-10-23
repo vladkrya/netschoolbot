@@ -34,7 +34,8 @@ async def test_only_owner(client, app_context, users):
     assert (await (await profile(other)).json())["data"]["admin"] is False
 
     data = (await (await client.get("/mini/api/admin", params={"token": admin})).json())["data"]
-    assert data["chats"] == {"on": False} and data["share_sgo"] == {"on": False}
+    # Чаты отключены в коде — тумблера в админке нет.
+    assert data["chats"] is None and data["share_sgo"] == {"on": False}
     assert data["widget"]["mode"] in ("main", "reserve")
 
     response = await client.post("/mini/api/admin/widget", json={"mode": "off"}, params={"token": admin})
@@ -46,3 +47,20 @@ async def test_only_owner(client, app_context, users):
 
     stats = (await (await client.get("/mini/api/admin/stats", params={"token": admin})).json())["data"]["html"]
     assert "Статистика" in stats and "Пользователи: 2" in stats
+
+
+async def test_chats_disabled_in_code(client, app_context, users):
+    from app.db.repositories import AppFlagRepository
+
+    await users.save(make_user(ADMIN))
+    await users.save(make_user(5))
+    admin, other = [await app_context.miniapp.issue_token(uid) for uid in (ADMIN, 5)]
+    # Даже включённый когда-то тумблер не возвращает чаты.
+    await AppFlagRepository(app_context.db).set("chats_on", True)
+    for token in (admin, other):
+        profile = (await (await client.get("/mini/api/profile", params={"token": token})).json())["data"]
+        assert profile["chats"] is False
+        response = await client.get("/mini/api/chat/rooms", params={"token": token})
+        assert response.status == 403
+    response = await client.post("/mini/api/settings/chats", json={"on": True}, params={"token": admin})
+    assert response.status == 410

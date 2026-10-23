@@ -107,6 +107,14 @@ def _regions_keyboard(regions: list[str], page: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
+def _consent(app: AppContext) -> str:
+    """Согласие перед вводом пароля — как подпись под кнопкой «Войти» на сайте."""
+    url = f"{app.settings.web.miniapp_url}/privacy"
+    return (f"<i>Отправляя логин и пароль, вы соглашаетесь с "
+            f'<a href="{url}">политикой конфиденциальности</a>. '
+            "Это неофициальный бот, он не связан с ИРТех.</i>")
+
+
 def _cancel_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[[InlineKeyboardButton(text="❌ Отмена", callback_data="login:cancel")]]
@@ -345,17 +353,22 @@ async def login_saved(callback: CallbackQuery, state: FSMContext, user: User, ap
 
 
 @router.callback_query(Login.method, F.data.in_({"login:password", "login:esia"}))
-async def ask_save_credentials(callback: CallbackQuery, state: FSMContext) -> None:
+async def ask_save_credentials(callback: CallbackQuery, state: FSMContext, app: AppContext) -> None:
     await callback.answer()
     login_type = LoginType.ESIA if callback.data == "login:esia" else LoginType.PASSWORD
     await state.update_data(login_type=login_type.value)
+    if login_type.is_gosuslugi:
+        # Пароль Госуслуг не храним: спрашивать не о чем.
+        await state.update_data(remember=False)
+        await state.set_state(Login.username)
+        await _step(callback, state,
+            "👤 Пришлите логин Госуслуг (телефон, СНИЛС или почту).\n\n"
+            "Логин и пароль Госуслуг нужны только на этот вход и не сохраняются.\n\n"
+            + _consent(app),
+            reply_markup=_cancel_keyboard(), disable_web_page_preview=True)
+        return
     await state.set_state(Login.remember)
-    explanation = (
-        "При следующем входе можно будет использовать сохранённые данные. "
-        "Подтверждение Госуслуг всё равно может потребоваться."
-        if login_type.is_gosuslugi else
-        "С сохранёнными данными бот сможет войти снова, когда сессия истечёт."
-    )
+    explanation = "С сохранёнными данными бот сможет войти снова, когда сессия истечёт."
     await _step(callback, state,
         "🔒 Сохранить логин и пароль для следующих входов?\n\n"
         + explanation + "\n\nЕсли не сохранять — текущая сессия останется для дневника "
@@ -369,15 +382,12 @@ async def ask_save_credentials(callback: CallbackQuery, state: FSMContext) -> No
 
 
 @router.callback_query(Login.remember, F.data.in_({"login:remember:yes", "login:remember:no"}))
-async def choose_save_credentials(callback: CallbackQuery, state: FSMContext) -> None:
+async def choose_save_credentials(callback: CallbackQuery, state: FSMContext, app: AppContext) -> None:
     await callback.answer()
     await state.update_data(remember=callback.data.endswith(":yes"))
     await state.set_state(Login.username)
-    data = await state.get_data()
-    text = ("👤 Пришлите логин Госуслуг (телефон, СНИЛС или почту)."
-            if LoginType.parse(data.get("login_type")).is_gosuslugi else
-            "👤 Пришлите логин от «Сетевого города».")
-    await _step(callback, state, text, reply_markup=_cancel_keyboard())
+    await _step(callback, state, "👤 Пришлите логин от «Сетевого города».\n\n" + _consent(app),
+                reply_markup=_cancel_keyboard(), disable_web_page_preview=True)
 
 
 @router.message(Login.username)
@@ -557,8 +567,10 @@ async def _qr_attempt(callback: CallbackQuery, state: FSMContext, user: User, ap
             BufferedInputFile(image, filename="gosuslugi.png"),
             caption=(
                 "📱 Отсканируйте код в приложении «Госуслуги».\n\n"
-                f"⏳ Код действует {ttl} секунд."
+                f"⏳ Код действует {ttl} секунд.\n\n"
+                + _consent(app).replace("Отправляя логин и пароль", "Подтверждая вход")
             ),
+            parse_mode="HTML",
         )
 
     try:

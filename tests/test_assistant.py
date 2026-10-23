@@ -46,7 +46,9 @@ class TestContext:
         await app_context.cache.put(1, "marks:year", GRADES)
         text = await assistant.build_context(app_context, user)
         assert "Иванов" not in text and "Школа №1" not in text and "ivan" not in text
-        assert "Алгебра (учитель: Петрова А. А.): 1 четверть: 4 4 3(вес 2)" in text
+        assert "Алгебра: 1 четверть: 4 4 3(вес 2)" in text
+        # ФИО учителей в OpenRouter не уходят.
+        assert "Петрова" not in text
         assert "средний 3,5, сейчас выходит «4»" in text
         assert "до «5» (от 4,5) нужно пятёрок: 8" in text
         assert "выставленные итоговые: 1 четверть: 4" in text

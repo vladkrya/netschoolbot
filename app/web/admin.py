@@ -26,7 +26,7 @@ async def _state(request: web.Request) -> dict:
     app = context(request)
     return {
         "solver_class": {"on": await solver.class_open(app)} if app.settings.assistant.enabled else None,
-        "chats": {"on": await chat.chats_on(app)},
+        "chats": {"on": await chat.chats_on(app)} if chat.ENABLED else None,
         "share_sgo": {"on": await ownership.sharing_allowed(app)},
         "widget": {
             "mode": await widget_mode(app),

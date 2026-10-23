@@ -96,8 +96,18 @@ function letterBlock(letter) {
 
 const words = (text) => String(text).toLowerCase().replace(/ё/g, 'е').match(/[a-zа-я]{2,}/g) || [];
 
+/** Учитель по предмету из «Кому: учителю по алгебре» — из оценок на устройстве:
+ * ФИО учителей помощнику не отправляются. */
+function teacherBySubject(hint) {
+  const said = new Set(words(hint));
+  const subject = (state.grades?.subjects || []).find((item) =>
+    item.teacher && words(item.subject).some((word) => word.length > 3 && said.has(word)));
+  return subject?.teacher || '';
+}
+
 /** Получатель по «Кому» из черновика: совпадение фамилии, учителя — первыми. */
 function guessRecipient(list, hint) {
+  hint = teacherBySubject(hint) || hint;
   const surname = words(hint).find((word) => word.length > 2);
   if (!surname) return null;
   const found = list.filter((r) => words(r.name).includes(surname));

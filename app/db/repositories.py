@@ -166,8 +166,8 @@ class UserRepository:
                     user.school.url,
                     user.school.name,
                     user.credentials.login_type.value,
-                    user.credentials.login if user.credentials.remember else "",
-                    self._cipher.encrypt(user.credentials.password) if user.credentials.remember else "",
+                    user.credentials.login if user.credentials.stored else "",
+                    self._cipher.encrypt(user.credentials.password) if user.credentials.stored else "",
                     user.student_name,
                     user.selected_student_id,
                     clamp_interval(user.check_interval),
@@ -185,7 +185,7 @@ class UserRepository:
                     int(user.notifications.evening_summary),
                     int(user.notifications.schedule),
                     now,
-                    int(user.credentials.remember),
+                    int(user.credentials.stored),
                     int(user.notifications.telegram),
                     int(user.notifications.homework_reminder),
                     clamp_reminder_hour(user.notifications.reminder_hour),
@@ -201,8 +201,8 @@ class UserRepository:
             await self._replace_students(db, user)
             await self._replace_filters(db, user)
         credentials = user.credentials
-        if not credentials.remember:
-            credentials = replace(credentials, login="", password="")
+        if not credentials.stored:
+            credentials = replace(credentials, login="", password="", remember=False)
         return replace(user, credentials=credentials, updated_at=dt.datetime.fromisoformat(now))
 
     async def encrypt_stored_passwords(self) -> int:

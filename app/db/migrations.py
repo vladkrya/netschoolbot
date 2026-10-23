@@ -871,6 +871,12 @@ MIGRATIONS: list[str] = [
     CREATE INDEX idx_class_average_history_key
         ON class_average_history(telegram_id, student, period, subject, id);
     """,
+    # Пароль Госуслуг больше не храним (политика конфиденциальности): он
+    # нужен на один вход, дальше дневник живёт на сессии. Стираем сохранённые.
+    """
+    UPDATE users SET login = '', password = '', remember_credentials = 0
+    WHERE login_type IN ('esia', 'esia_qr') AND (login != '' OR password != '' OR remember_credentials != 0);
+    """,
 ]
 
 
