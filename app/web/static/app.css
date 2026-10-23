@@ -2226,7 +2226,13 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
 /* ───────────────────── График среднего на экране предмета ───────────────────── */
 
 .ac-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
-.ac-delta { font-size: 13px; color: var(--text2); white-space: nowrap; }
+/* График свёрнут под заголовком: стрелка справа, как у подменю настроек. */
+.avg-chart > summary { cursor: pointer; list-style: none; }
+.avg-chart > summary::-webkit-details-marker { display: none; }
+.avg-chart > summary .card-title { margin-bottom: 0; }
+.avg-chart > summary::after { content: '›'; align-self: center; color: var(--text2); font-size: 20px; line-height: 1; transition: transform .2s ease; }
+.avg-chart[open] > summary::after { transform: rotate(90deg); }
+.ac-delta { margin-left: auto; font-size: 13px; color: var(--text2); white-space: nowrap; }
 .ac-delta.up { color: var(--g5); }
 .ac-delta.down { color: var(--g2); }
 .ac-wrap { position: relative; margin-top: 6px; }
