@@ -12,3 +12,11 @@ test('Stale checks do not become an outage', () => assert.equal(availability(reg
 test('Region never reachable from our servers is not an outage', () => assert.equal(availability(region(false,false,{state:'blocked'}),1010).label,'Недоступен с наших серверов'));
 test('Blocked region with working mobile API is up', () => assert.equal(availability(region(false,true,{state:'blocked'}),1010).state,'up'));
 test('Altai web remains available', () => assert.equal(availability(region(true,false),1010).label,'Веб работает'));
+test('Diaries failing while site answers is not green', () => {
+  const state = availability(region(true, true, { diary_issues: true }), 1010);
+  assert.equal(state.state, 'issues');
+  assert.equal(state.tone, 'warning');
+  assert.equal(state.label, 'Проблемы с дневниками');
+});
+test('Full outage outranks diary issues', () => assert.equal(availability(region(false,false,{diary_issues:true}),1010).state,'down'));
+test('Diary issues ignored once checks are stale', () => assert.equal(availability(region(true,true,{diary_issues:true}),1200).state,'unknown'));

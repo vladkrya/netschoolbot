@@ -366,7 +366,7 @@ function hostRow(host) {
 
 function renderHosts() {
   // Недоступные с наших серверов — в самом конце: о самом регионе они ничего не говорят.
-  const order = { down: 0, up: 1, unknown: 2, blocked: 3 };
+  const order = { down: 0, issues: 1, up: 2, unknown: 3, blocked: 4 };
   const hosts = data.hosts.filter(matches)
     .sort((a, b) => (order[availability(a).state] - order[availability(b).state]) || name(a).localeCompare(name(b), 'ru'));
   $('#hosts').replaceChildren(...(hosts.length ? hosts.map(hostRow) : [el('div', { class: 'muted' }, 'Ничего не нашлось')]));
@@ -428,6 +428,7 @@ document.querySelectorAll('#feed-tabs button').forEach((button) => button.addEve
 
 function renderBanner() {
   const down = data.hosts.filter((h) => availability(h).state === 'down');
+  const issues = data.hosts.filter((h) => availability(h).state === 'issues');
   const checked = data.hosts.filter((h) => !['unknown', 'blocked'].includes(availability(h).state));
   const banner = $('#banner');
   let cls = 'good', icon = '✓', title = 'Серверы доступны', sub = '';
@@ -435,6 +436,10 @@ function renderBanner() {
     cls = 'critical'; icon = '!';
     title = `${down.length} ${plural(down.length, 'сервер недоступен', 'сервера недоступны', 'серверов недоступны')}`;
     sub = down.map(name).join(', ');
+  } else if (issues.length) {
+    cls = 'warning'; icon = '!';
+    title = `${issues.length} ${plural(issues.length, 'регион с проблемами', 'региона с проблемами', 'регионов с проблемами')}`;
+    sub = `Сайт открывается, но дневники не загружаются: ${issues.map(name).join(', ')}`;
   } else if (!checked.length) {
     cls = ''; icon = '…'; title = 'Проверяем серверы';
     sub = 'Результаты появятся после проверки.';
