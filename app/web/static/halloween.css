@@ -374,10 +374,14 @@
   text-shadow: 0 0 8px color-mix(in srgb, var(--head) 60%, transparent);
 }
 
-/* Пятёрка — с тыквенным огоньком. */
-:root[data-holiday="halloween"]:not(#_) .mark.m5 {
-  box-shadow: 0 0 10px rgba(95, 220, 126, .35);
+/* Оценки светятся каждая своим цветом, как огоньки в темноте. */
+:root[data-holiday="halloween"]:not(#_) .mark:is(.m2, .m3, .m4, .m5) {
+  box-shadow: 0 0 10px color-mix(in srgb, var(--glow) 40%, transparent);
 }
+:root[data-holiday="halloween"]:not(#_) .mark.m5 { --glow: var(--g5); }
+:root[data-holiday="halloween"]:not(#_) .mark.m4 { --glow: var(--g4); }
+:root[data-holiday="halloween"]:not(#_) .mark.m3 { --glow: var(--g3); }
+:root[data-holiday="halloween"]:not(#_) .mark.m2 { --glow: var(--g2); }
 
 /* Переключатель в меню — с фиолетовой подсветкой. */
 :root[data-holiday="halloween"]:not(#_) .halloween-row {
@@ -480,9 +484,6 @@
   47% { opacity: .3; }
   52% { opacity: 1; }
 }
-
-/* Двойка — кроваво светится. */
-:root[data-holiday="halloween"]:not(#_) .mark.m2 { box-shadow: 0 0 10px rgba(255, 70, 80, .4); }
 
 /* Сегодня в полосе недели — маленькая тыква. */
 :root[data-holiday="halloween"]:not(#_) .week-day.today { position: relative; }
