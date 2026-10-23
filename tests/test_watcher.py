@@ -1161,3 +1161,52 @@ class TestTermMarks:
         diary.totals = {"Алгебра": {"terms": {"q1": {"mark": "5"}}, "year": "", "final": ""}}
         await watcher.run_once()
         assert await marks.digest_period(1, "term-marks") == ""
+
+
+class TestClassAverageSnapshots:
+    """Средний класса снимается сам: «Сетевой город» знает только нынешний."""
+
+    def make_watcher(self, users, marks, diary, notifier, clock):
+        return UserWatcher(1, users=users, state=marks, diary=diary, notifier=notifier, clock=lambda: clock[0])
+
+    async def history(self, marks):
+        from app.domain.periods import class_average_period
+
+        today = dt.date.today()
+        rows = await marks._db.fetch_all("SELECT period, subject, value FROM class_average_history ORDER BY id")
+        assert all(row["period"].startswith(class_average_period("", today)) for row in rows)
+        return [(row["subject"], row["value"]) for row in rows]
+
+    async def test_snapshot_after_new_marks_and_by_interval(self, users, marks, diary, notifier):
+        from app.domain.models import ApiMode
+        from app.notifications.watcher import CLASS_AVERAGES_INTERVAL
+
+        await users.save(make_user(api_mode=ApiMode.MOBILE))
+        clock = [0.0]
+        watcher = self.make_watcher(users, marks, diary, notifier, clock)
+        diary.marks = [record(0, "5", subject="Алгебра")]
+        diary.class_averages = {"Алгебра": 4.1, "История": 4.5}
+        await watcher.run_once()
+        assert await self.history(marks) == [("Алгебра", 4.1), ("История", 4.5)]
+
+        diary.class_averages = {"Алгебра": 3.9, "История": 4.5}
+        clock[0] += 60
+        await watcher.run_once()
+        assert len(await self.history(marks)) == 2, "без новых оценок — не чаще интервала"
+
+        diary.marks = [record(0, "5", subject="Алгебра"), record(1, "3", subject="Алгебра")]
+        clock[0] += 60
+        await watcher.run_once()
+        assert (await self.history(marks))[-1] == ("Алгебра", 3.9), "новая оценка — снимок сразу"
+        assert len(await self.history(marks)) == 3, "неизменный средний не дублируется"
+
+        diary.class_averages = {"Алгебра": 3.95, "История": 4.5}
+        clock[0] += CLASS_AVERAGES_INTERVAL
+        await watcher.run_once()
+        assert (await self.history(marks))[-1] == ("Алгебра", 3.95)
+
+    async def test_web_mode_never_asks(self, users, marks, diary, notifier):
+        await users.save(make_user())
+        diary.class_averages = {"Алгебра": 4.1}
+        await self.make_watcher(users, marks, diary, notifier, [0.0]).run_once()
+        assert ("*", "q1") not in diary.stats_calls and await self.history(marks) == []

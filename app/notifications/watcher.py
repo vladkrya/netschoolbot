@@ -25,7 +25,7 @@ from typing import Any, Protocol
 from ..db.repositories import MarkStateRepository, UserRepository
 from ..domain import formatting, insights, review
 from ..domain.models import ApiMode, MarkKind, NotificationPrefs, Student, User
-from ..domain.periods import Quarter, current_period, periods_from_terms, resolve_periods
+from ..domain.periods import Quarter, class_average_period, current_period, periods_from_terms, resolve_periods
 from ..domain.vacations import on_vacation, vacations
 from ..domain.records import AbsenceRecord, HomeworkRecord, MarkEvent, RecentEvents
 from .outage import OutageMonitor
@@ -74,6 +74,11 @@ ABSENCE_NOTIFY_DAYS = 7
 
 # Четвертные и годовые оценки выставляют раз в период — сверяем их реже оценок.
 TERM_MARKS_INTERVAL = 1800.0
+
+# Как часто снимать средний балл класса (только мобильное API): это запрос
+# на каждый предмет. После новых оценок снимок берётся сразу — так видно,
+# каким средний был до работы и каким стал после.
+CLASS_AVERAGES_INTERVAL = 3 * 3600.0
 
 # Срок мобильного токена меряется в днях — проверять его каждый проход незачем.
 TOKEN_CHECK_INTERVAL = 6 * 3600.0
@@ -184,6 +189,8 @@ class UserWatcher:
         self._last_full_sync: float | None = None
         self._last_token_check: float | None = None
         self._last_term_marks: float | None = None
+        self._last_class_averages: float | None = None
+        self._class_averages_due = False
 
     async def run(self) -> None:
         """Бесконечный цикл проверки. Останавливается отменой задачи."""
@@ -235,6 +242,7 @@ class UserWatcher:
             return self._backoff
 
         await self._check_term_marks(user)
+        await self._snapshot_class_averages(user)
         # Очередь разбирается после проверки, а не только при новых событиях:
         # так после тихих часов или сбоя Telegram отложенное уходит само.
         await self._flush_outbox(user)
@@ -328,6 +336,8 @@ class UserWatcher:
             today=today,
         )
         self._note_full_sync(events)
+        if result.events and not first_run:
+            self._class_averages_due = True
         if self._homework_seen is not None:
             try:
                 self._homework_seen(user, homework)
@@ -807,6 +817,37 @@ class UserWatcher:
             raise
         except Exception as exc:  # noqa: BLE001 — итоговые вторичны, проверку не роняют
             logger.info("Итоговые оценки %s не проверены: %s", user.telegram_id, exc)
+
+    async def _snapshot_class_averages(self, user: User) -> None:
+        """Снимок среднего балла класса по предметам текущего периода.
+
+        «Сетевой город» отдаёт средний только на сейчас; история копится здесь,
+        и экран предмета показывает, как он менялся после работ.
+        """
+        if user.effective_api_mode is not ApiMode.MOBILE:
+            return
+        now = self._clock()
+        recent = self._last_class_averages is not None and now - self._last_class_averages < CLASS_AVERAGES_INTERVAL
+        if recent and not self._class_averages_due:
+            return
+        self._last_class_averages = now
+        self._class_averages_due = False
+        try:
+            today = _local_now(user).date()
+            year, _ = await self._periods(user, today)
+            quarter = current_period(year, today).key
+            averages = await self._diary.fetch_class_averages(user, quarter)
+            if averages:
+                await self._state.record_class_averages(
+                    user.telegram_id,
+                    str(user.selected_student_id or user.student_name or ""),
+                    class_average_period(quarter, today),
+                    averages,
+                )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001 — средние класса вторичны, проверку не роняют
+            logger.info("Средние класса %s не сняты: %s", user.telegram_id, exc)
 
     async def _check_token(self, user: User) -> None:
         """Продлить мобильный токен или заранее предупредить, что он истекает.

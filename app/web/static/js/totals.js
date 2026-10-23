@@ -918,6 +918,7 @@ function openSubject(subject, key, existingBody = null, data = state.totals) {
         <div class="muted small goal-text"></div></div>
     </div>`}
     ${averageChart(marks.filter((mark) => !isAttendance(mark)), thresholdsFor(subject.subject))}
+    <details class="card avg-chart class-history" data-class-history hidden></details>
     <div class="card">
       <div class="mark-results-head"><div class="card-title">Результаты учебного периода</div>
         <button class="mark-filter-reset" data-mark-reset hidden>Все оценки</button></div>
@@ -1060,8 +1061,77 @@ function openSubject(subject, key, existingBody = null, data = state.totals) {
     if ($('totalsContent').querySelector('.totals-table')) render();
   });
 
-  if (state.totals.mobile || demo) loadClassAverage(body, subject.subject, key);
+  if (state.totals.mobile || demo) {
+    loadClassAverage(body, subject.subject, key);
+    loadClassHistory(body, subject.subject, key, marks.filter((mark) => !isAttendance(mark)));
+  }
 }
+
+/** Когда поставлена оценка: время выставления, а без него — день урока. */
+const markedAt = (mark) => mark.marked_at || mark.date;
+
+/** Время снимка (UTC) по часам устройства — «2026-10-21T14:05:00», как у оценок. */
+function localStamp(at) {
+  const d = new Date(at);
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
+/** «+0,12» / «−0,25» — сдвиг среднего класса. */
+const formatShift = (shift) => `${shift > 0 ? '+' : '−'}${formatAverage(Math.abs(shift))}`;
+
+/**
+ * Средний класса до и после работ. «Сетевой город» знает только нынешний,
+ * поэтому бот снимает его сам: после новых оценок и раз в несколько часов.
+ * Между двумя снимками — оценки ученика за это время: какая работа сдвинула средний.
+ */
+async function loadClassHistory(body, subject, key, marks) {
+  let history;
+  try {
+    const { data } = await api(`/api/subject/class-history?subject=${encodeURIComponent(subject)}&quarter=${key}`);
+    history = data?.history || [];
+  } catch {
+    return; // Карточка необязательная.
+  }
+  const card = body.querySelector('[data-class-history]');
+  if (!card || !history.length) return;
+  history = history.map((point) => ({ ...point, at: localStamp(point.at) }));
+  const since = dayMonth(history[0].at.slice(0, 10));
+  const changes = [];
+  for (let i = history.length - 1; i > 0; i -= 1) {
+    const before = history[i - 1];
+    const after = history[i];
+    const between = marks.filter((mark) => markedAt(mark) > before.at && markedAt(mark) <= after.at);
+    changes.push({ before, after, between });
+  }
+  const rows = changes.slice(0, 12).map(({ before, after, between }) => {
+    const shift = after.value - before.value;
+    const works = between.map((mark) =>
+      `<span class="ch-work">${markBox(mark.mark, '', mark.weight || 1)} ${esc(mark.type || 'Оценка')}</span>`).join('');
+    return `<div class="ch-row">
+      <div class="ch-main">
+        <span class="ch-date">${esc(dayMonth(after.at.slice(0, 10)))}</span>
+        <span class="ch-values">${formatAverage(before.value)} → <strong>${formatAverage(after.value)}</strong></span>
+        <span class="ch-shift ${shift > 0 ? 'up' : 'down'}">${formatShift(shift)}</span>
+      </div>
+      ${works ? `<div class="ch-works"><span class="muted small">после</span>${works}</div>` : ''}
+    </div>`;
+  }).join('');
+  const shift = history[history.length - 1].value - history[0].value;
+  card.innerHTML = `<summary class="ac-head"><div class="card-title">Средний балл класса</div>
+      <span class="ac-delta ${shift > 0.005 ? 'up' : shift < -0.005 ? 'down' : ''}">${Math.abs(shift) < 0.005
+        ? formatAverage(history[0].value) : `${shift > 0 ? '↑' : '↓'} ${formatAverage(Math.abs(shift))}`}</span></summary>
+    <div class="ch-body">
+      ${rows || `<div class="muted small">Пока не менялся: ${formatAverage(history[0].value)}.</div>`}
+      <div class="muted small ch-note">Бот запоминает средний класса с ${esc(since)} — так видно, каким он был до работы и каким стал после.</div>
+    </div>`;
+  card.open = readLocal(CLASS_HISTORY_KEY, '') === 'open';
+  card.addEventListener('toggle', () => writeLocal(CLASS_HISTORY_KEY, card.open ? 'open' : ''));
+  card.hidden = false;
+}
+
+// Карточка среднего класса, как и график, свёрнута, пока её не раскроют.
+const CLASS_HISTORY_KEY = 'ns-class-history';
 
 /** Средний балл класса приходит отдельным запросом: только мобильное API, и не всегда. */
 async function loadClassAverage(body, subject, key) {

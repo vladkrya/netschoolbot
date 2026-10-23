@@ -854,6 +854,23 @@ MIGRATIONS: list[str] = [
     UPDATE caldav_accounts SET login = 'ns' || telegram_id;
     CREATE UNIQUE INDEX idx_caldav_accounts_login ON caldav_accounts(login);
     """,
+    # Снимки среднего балла класса по предмету: «Сетевой город» отдаёт его
+    # только на сейчас, а экран предмета показывает, каким он был до работы.
+    # `period` — «учебный год:период», `student` — выбранный ребёнок родителя.
+    # Строка пишется, только когда средний сдвинулся.
+    """
+    CREATE TABLE class_average_history (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        telegram_id INTEGER NOT NULL REFERENCES users(telegram_id) ON DELETE CASCADE,
+        student     TEXT    NOT NULL DEFAULT '',
+        period      TEXT    NOT NULL,
+        subject     TEXT    NOT NULL,
+        value       REAL    NOT NULL,
+        taken_at    TEXT    NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX idx_class_average_history_key
+        ON class_average_history(telegram_id, student, period, subject, id);
+    """,
 ]
 
 

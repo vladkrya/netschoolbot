@@ -327,7 +327,7 @@ async def test_migration_numbers_old_accounts_and_keeps_ns_logins(tmp_path):
     import aiosqlite
     from app.db.migrations import MIGRATIONS, migrate
     async with aiosqlite.connect(tmp_path / 'old.sqlite3') as db:
-        before = len(MIGRATIONS) - 1
+        before = next(i for i, script in enumerate(MIGRATIONS) if 'ADD COLUMN account_no' in script)
         for script in MIGRATIONS[:before]:
             await db.executescript(script)
         await db.execute(f'PRAGMA user_version = {before}')

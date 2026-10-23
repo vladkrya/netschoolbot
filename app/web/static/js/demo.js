@@ -352,6 +352,33 @@ export async function demoApi(path, options = {}) {
     return ok({ available: true, class_average: Math.max(2, Math.round((mine - shift) * 100) / 100) });
   }
 
+  // Снимки среднего класса: перед последними работами и после каждой из них.
+  if (route === '/api/subject/class-history') {
+    const subject = url.searchParams.get('subject') || '';
+    const quarter = url.searchParams.get('quarter') || '';
+    const { data: now } = await demoApi(`/api/subject?subject=${encodeURIComponent(subject)}`);
+    const { data } = await demoApi('/api/marks');
+    const stamps = (data.subjects.find((s) => s.subject === subject)?.marks || [])
+      .filter((mark) => /^[2-5]$/.test(mark.mark) && (!quarter || !mark.quarter || mark.quarter === quarter))
+      .map((mark) => mark.marked_at || `${mark.date}T15:00:00`)
+      .sort().slice(-3);
+    if (!now.available || !stamps.length) return ok({ history: [] });
+    const seed = demoKey(subject).charCodeAt(1);
+    let value = now.class_average;
+    const history = [];
+    [...stamps].reverse().forEach((stamp, i) => {
+      const after = new Date(stamp);
+      after.setHours(after.getHours() + 2);
+      history.unshift({ at: after.toISOString(), value });
+      const step = ((seed + i) % 2 ? 1 : -1) * 0.06 * (i + 1);
+      value = Math.min(5, Math.max(2, Math.round((value + step) * 100) / 100));
+    });
+    const first = new Date(stamps[0]);
+    first.setDate(first.getDate() - 2);
+    history.unshift({ at: first.toISOString(), value });
+    return ok({ history });
+  }
+
   if (route === '/api/class-averages') {
     const { data } = await demoApi('/api/marks');
     const averages = {};

@@ -670,6 +670,53 @@ class MarkStateRepository:
                     [(telegram_id, kind, payload) for kind, payload in outbox],
                 )
 
+    async def record_class_averages(
+        self, telegram_id: int, student: str, period: str, averages: dict[str, float]
+    ) -> int:
+        """Снимок средних класса: пишутся только предметы, где средний сдвинулся.
+
+        Возвращает, сколько строк добавлено.
+        """
+        if not averages:
+            return 0
+        now = _utc_now_text()
+        async with self._db.transaction() as db:
+            cursor = await db.execute(
+                """SELECT subject, value FROM class_average_history
+                   WHERE id IN (SELECT MAX(id) FROM class_average_history
+                                WHERE telegram_id = ? AND student = ? AND period = ?
+                                GROUP BY subject)""",
+                (telegram_id, student, period),
+            )
+            last = {row["subject"]: row["value"] for row in await cursor.fetchall()}
+            fresh = []
+            for subject, value in averages.items():
+                if value is None:
+                    continue
+                value = round(float(value), 2)
+                if subject in last and abs(last[subject] - value) < 0.005:
+                    continue
+                fresh.append((telegram_id, student, period, subject, value, now))
+            if fresh:
+                await db.executemany(
+                    """INSERT INTO class_average_history
+                       (telegram_id, student, period, subject, value, taken_at) VALUES (?, ?, ?, ?, ?, ?)""",
+                    fresh,
+                )
+            return len(fresh)
+
+    async def class_average_history(
+        self, telegram_id: int, student: str, period: str, subject: str
+    ) -> list[tuple[str, float]]:
+        """Как менялся средний класса по предмету: [(когда, UTC), средний], старые сверху."""
+        rows = await self._db.fetch_all(
+            """SELECT taken_at, value FROM class_average_history
+               WHERE telegram_id = ? AND student = ? AND period = ? AND subject = ?
+               ORDER BY id LIMIT 500""",
+            (telegram_id, student, period, subject),
+        )
+        return [(row["taken_at"], row["value"]) for row in rows]
+
     async def claim_error_notice(self, telegram_id: int, reason: str) -> bool:
         """Один отправитель для каждой причины до следующей успешной проверки."""
         async with self._db.transaction() as db:

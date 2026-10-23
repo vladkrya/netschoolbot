@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import logging
 
 from aiohttp import web
 
@@ -14,13 +15,16 @@ from ...domain.periods import (
     PERIOD_KEYS,
     PeriodScheme,
     Quarter,
+    class_average_period,
     period_of,
     periods,
     periods_from_terms,
     term_key,
 )
-from .base import _cached, current_user, json_error, routes
+from .base import _cached, context, current_user, json_error, routes
 from .diary import _mark_to_json, _teachers
+
+logger = logging.getLogger(__name__)
 
 
 @routes.get("/api/marks")
@@ -428,12 +432,47 @@ async def subject_stats(request: web.Request) -> web.Response:
 
     async def produce(app: AppContext, user: User):
         stats = await app.diary.fetch_subject_stats(user, subject, quarter)
+        if stats and stats.get("class_average") is not None:
+            await _record_class_averages(app, user, quarter, {subject: stats["class_average"]})
         return {"available": True, **stats} if stats else {"available": False}
 
     return await _cached(
         request, f"subject:{quarter}:{normalize(subject)}", produce,
         cacheable=lambda payload: payload.get("available", False),
     )
+
+
+def _class_average_scope(user: User, quarter: str) -> tuple[str, str]:
+    """Чьи и за какой период снимки среднего класса — как в вотчере."""
+    return (str(user.selected_student_id or user.student_name or ""),
+            class_average_period(quarter, dt.date.today()))
+
+
+async def _record_class_averages(app: AppContext, user: User, quarter: str, averages: dict[str, float]) -> None:
+    """Свежие средние класса из приложения — тоже снимок для истории."""
+    try:
+        await app.state.record_class_averages(user.telegram_id, *_class_average_scope(user, quarter), averages)
+    except Exception as exc:  # noqa: BLE001 — история вторична, ответ важнее
+        logger.debug("Снимок средних класса %s не записан: %s", user.telegram_id, exc)
+
+
+@routes.get("/api/subject/class-history")
+async def class_average_history(request: web.Request) -> web.Response:
+    """Как менялся средний балл класса по предмету за период.
+
+    Снимки копит фоновая проверка (только мобильное API): `[{at, value}]`,
+    старые сверху, `at` — UTC. Пустой список — снимков пока нет.
+    """
+    subject = (request.query.get("subject") or "").strip()[:120]
+    quarter = (request.query.get("quarter") or "").strip()
+    if not subject or quarter not in PERIOD_KEYS:
+        return json_error("Не указан предмет или четверть")
+    user = current_user(request)
+    rows = await context(request).state.class_average_history(
+        user.telegram_id, *_class_average_scope(user, quarter), subject)
+    return web.json_response({"ok": True, "data": {"history": [
+        {"at": f"{at}Z", "value": value} for at, value in rows
+    ]}})
 
 
 @routes.get("/api/class-averages")
@@ -450,6 +489,8 @@ async def class_averages(request: web.Request) -> web.Response:
 
     async def produce(app: AppContext, user: User):
         averages = await app.diary.fetch_class_averages(user, quarter)
+        if averages:
+            await _record_class_averages(app, user, quarter, averages)
         return {"available": True, "averages": averages} if averages else {"available": False}
 
     return await _cached(

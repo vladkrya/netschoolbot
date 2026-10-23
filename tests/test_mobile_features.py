@@ -560,6 +560,28 @@ class TestClassAverages:
         bad = await client.get(f"{BASE}/api/class-averages", params={"token": token, "quarter": "q9"})
         assert bad.status == 400
 
+    async def test_fresh_averages_feed_history(self, client, app_context, users):
+        from tests.test_web import BASE
+
+        user = await users.save(mobile_user())
+        token = await app_context.miniapp.issue_token(user.telegram_id)
+        history = f"{BASE}/api/subject/class-history"
+        params = {"token": token, "subject": "Алгебра", "quarter": "q2"}
+        assert (await (await client.get(history, params=params)).json())["data"] == {"history": []}
+
+        app_context.diary.class_averages = {"Алгебра": 3.87}
+        await client.get(f"{BASE}/api/class-averages", params={"token": token, "quarter": "q2"})
+        app_context.diary.stats = {"class_average": 3.6}
+        await client.get(f"{BASE}/api/subject", params=params)
+
+        points = (await (await client.get(history, params=params)).json())["data"]["history"]
+        assert [p["value"] for p in points] == [3.87, 3.6]
+        assert points[0]["at"].endswith("Z")
+        other = {**params, "quarter": "q1"}
+        assert (await (await client.get(history, params=other)).json())["data"]["history"] == []
+        bad = await client.get(history, params={"token": token, "subject": "Алгебра", "quarter": "q9"})
+        assert bad.status == 400
+
     async def test_web_mode_never_asks_the_school(self, client, app_context, users):
         from tests.test_web import BASE
 

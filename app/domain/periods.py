@@ -82,6 +82,11 @@ def academic_year_start(today: dt.date) -> int:
     return today.year if today.month >= 9 else today.year - 1
 
 
+def class_average_period(quarter: str, today: dt.date) -> str:
+    """Ключ снимков среднего класса: «учебный год:период» — q1 бывает каждый год."""
+    return f"{academic_year_start(today)}:{quarter}"
+
+
 def _chain(year: int, starts: list[tuple[str, str, dt.date]]) -> list[Quarter]:
     """Периоды подряд: каждый длится до начала следующего, последний — до конца августа."""
     starts = sorted(starts, key=lambda item: item[2])
