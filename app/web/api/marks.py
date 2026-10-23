@@ -57,7 +57,13 @@ async def marks(request: web.Request) -> web.Response:
             # Каникулы между периодами или лето — последний начавшийся.
             started = [q for q in year if q.start <= today]
             now_quarter = started[-1] if started else year[0]
-        days = await app.diary.fetch_period(user, year[0].start, now_quarter.end, today=today)
+        # На каникулах экран уже показывает следующий период: без его недель
+        # полоса уроков получала только край последней недели («0/1»).
+        fetched_end = now_quarter.end
+        upcoming = next((q for q in year if q.start > today), None)
+        if upcoming and now_quarter.lessons_end and today > now_quarter.lessons_end:
+            fetched_end = upcoming.end
+        days = await app.diary.fetch_period(user, year[0].start, fetched_end, today=today)
 
         by_subject: dict[str, list] = {}
         lessons: dict[str, dict[str, dict[str, int]]] = {}
@@ -109,6 +115,13 @@ async def marks(request: web.Request) -> web.Response:
         known = {normalize(name) for name in set(by_subject) | set(lessons)}
         extra = {name for key, (name, _) in totals_by_name.items() if key not in known}
 
+        # Будущие недели школа может не отдать (409 — см. _collect_weeks):
+        # не начавшийся период полон, только если дневник дошёл до его
+        # последнего учебного дня. Загрузка идёт неделями — считаем по концу недели.
+        last = max((day.day for day in days), default=year[0].start)
+        reached = last + dt.timedelta(days=6 - last.weekday())
+        complete = {q.key for q in year if q.end <= fetched_end
+                    and (q.start <= today or (q.lessons_end or q.end) <= reached)}
         subjects = []
         for subject in sorted(set(by_subject) | set(lessons) | extra):
             items = by_subject.get(subject, [])
@@ -128,7 +141,9 @@ async def marks(request: web.Request) -> web.Response:
                         }
                         for r in sorted(items, key=lambda r: r.date)
                     ],
-                    "lessons": lessons.get(subject, {}),
+                    # Период, загруженный не целиком, дал бы неполное число уроков.
+                    "lessons": {key: counts for key, counts in lessons.get(subject, {}).items()
+                                if key in complete},
                     "absences": absences.get(subject, {}),
                     "attendance": attendance.get(subject, []),
                     "totals": totals_by_name.get(normalize(subject), (None, None))[1],
