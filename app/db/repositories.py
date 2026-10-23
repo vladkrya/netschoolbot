@@ -1829,6 +1829,13 @@ class CacheRepository:
             (telegram_id, section, json.dumps(payload, ensure_ascii=False)),
         )
 
+    async def patch(self, telegram_id: int, section: str, payload: Any) -> None:
+        """Поправить сохранённый ответ, не продлевая его свежесть."""
+        await self._db.execute(
+            "UPDATE cache_entries SET payload = ? WHERE telegram_id = ? AND section = ?",
+            (json.dumps(payload, ensure_ascii=False), telegram_id, section),
+        )
+
     async def mark_mail_read(self, telegram_id: int, message_id: int) -> None:
         """Отметить письмо прочитанным в сохранённом списке, не продлевая ему
         свежесть: иначе значок «Почты» до часа показывал прочитанное как новое."""

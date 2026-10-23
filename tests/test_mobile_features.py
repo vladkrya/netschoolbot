@@ -560,6 +560,30 @@ class TestClassAverages:
         bad = await client.get(f"{BASE}/api/class-averages", params={"token": token, "quarter": "q9"})
         assert bad.status == 400
 
+    async def test_list_and_subject_screen_agree(self, client, app_context, users):
+        """Свежий средний с экрана предмета попадает в кэш списка, и наоборот."""
+        from tests.test_web import BASE
+
+        user = await users.save(mobile_user())
+        token = await app_context.miniapp.issue_token(user.telegram_id)
+        averages = {"token": token, "quarter": "q2"}
+        subject = {"token": token, "subject": "Биология", "quarter": "q2"}
+        app_context.diary.class_averages = {"Биология": 4.32, "Алгебра": 3.87}
+        await client.get(f"{BASE}/api/class-averages", params=averages)
+        app_context.diary.stats = {"class_average": 4.32}
+        await client.get(f"{BASE}/api/subject", params=subject)
+
+        app_context.diary.stats = {"class_average": 3.98}
+        fresh = await client.get(f"{BASE}/api/subject", params={**subject, "refresh": "1"})
+        assert (await fresh.json())["data"]["class_average"] == 3.98
+        data = (await (await client.get(f"{BASE}/api/class-averages", params=averages)).json())["data"]
+        assert data["averages"] == {"Биология": 3.98, "Алгебра": 3.87}, "из кэша, но уже свежее"
+
+        app_context.diary.class_averages = {"Биология": 4.1, "Алгебра": 3.87}
+        await client.get(f"{BASE}/api/class-averages", params={**averages, "refresh": "1"})
+        data = (await (await client.get(f"{BASE}/api/subject", params=subject)).json())["data"]
+        assert data["class_average"] == 4.1
+
     async def test_fresh_averages_feed_history(self, client, app_context, users):
         from tests.test_web import BASE
 

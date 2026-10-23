@@ -43,6 +43,7 @@ export async function loadTotals(force = false) {
     return;
   }
   outdated = false;
+  if (force) classAverages.clear();
   const version = ++loadVersion;
   const previous = state.totals || yearContext;
   if (behind) {
@@ -401,24 +402,28 @@ function footHtml(row, classAvg) {
   return goal || right ? `<div class="sc-foot"><span>${esc(goal)}</span>${right ? `<span>${right}</span>` : ''}</div>` : '';
 }
 
-// Средние баллы класса за период (только мобильное API): «год|период» → { предмет: балл }.
+// Средние баллы класса за период (только мобильное API):
+// «год|период» → { averages: { предмет: балл }, at }. Средний класса меняется
+// весь день, поэтому запомненное перепроверяется через несколько минут.
 const classAverages = new Map();
+const CLASS_AVERAGES_TTL = 5 * 60 * 1000;
+const knownAverages = (key) => classAverages.get(key)?.averages;
 
 /** Средние класса приходят одним запросом на период и дописываются в карточки. */
 async function loadClassAverages(data, list, rows) {
   if (!(data.mobile || demo) || data.archived) return;
   const key = `${data.year_id}|${period}`;
-  if (!classAverages.has(key)) {
+  if (!(Date.now() - (classAverages.get(key)?.at ?? 0) < CLASS_AVERAGES_TTL)) {
     const wanted = period;
     try {
       const { data: payload } = await api(`/api/class-averages?quarter=${wanted}`);
-      classAverages.set(key, payload?.available ? payload.averages : null);
+      classAverages.set(key, { averages: payload?.available ? payload.averages : null, at: Date.now() });
     } catch {
       return; // Строка необязательная.
     }
     if (wanted !== period || !list.isConnected) return;
   }
-  const averages = classAverages.get(key);
+  const averages = knownAverages(key);
   if (!averages) return;
   for (const row of rows) {
     const card = list.querySelector(`[data-subject="${row.index}"]`);
@@ -458,7 +463,7 @@ function renderCards(data, quarters) {
   const fill = (animate) => {
     const rows = periodRows(data);
     hero.innerHTML = heroHtml(rows, quarters.find((q) => q.key === period));
-    list.innerHTML = cardsHtml(rows, classAverages.get(`${data.year_id}|${period}`));
+    list.innerHTML = cardsHtml(rows, knownAverages(`${data.year_id}|${period}`));
     loadClassAverages(data, list, rows);
     // Средний сдвинулся с прошлого показа — цифры прокручиваются.
     // При входе во вкладку цифры прокручиваются всегда, при смене периода и
@@ -1141,6 +1146,9 @@ async function loadClassAverage(body, subject, key) {
     if (line && data?.available && data.class_average != null) {
       line.textContent = `у класса ${formatAverage(data.class_average)}`;
       line.hidden = false;
+      // Карточка в списке показывает то же число, что и экран предмета.
+      const known = knownAverages(`${state.totals?.year_id}|${key}`);
+      if (known) known[subject] = data.class_average;
     }
   } catch {
     // Строка необязательная: без неё экран остаётся полным.

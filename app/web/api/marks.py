@@ -449,11 +449,32 @@ def _class_average_scope(user: User, quarter: str) -> tuple[str, str]:
 
 
 async def _record_class_averages(app: AppContext, user: User, quarter: str, averages: dict[str, float]) -> None:
-    """Свежие средние класса из приложения — тоже снимок для истории."""
+    """Свежие средние класса из приложения — снимок для истории и правка кэша.
+
+    Список «Итогов» и экран предмета берут средний класса разными запросами
+    со своим кэшем; без правки они час показывали бы разные числа.
+    """
     try:
         await app.state.record_class_averages(user.telegram_id, *_class_average_scope(user, quarter), averages)
+        await _sync_class_average_cache(app, user.telegram_id, quarter, averages)
     except Exception as exc:  # noqa: BLE001 — история вторична, ответ важнее
         logger.debug("Снимок средних класса %s не записан: %s", user.telegram_id, exc)
+
+
+async def _sync_class_average_cache(app: AppContext, telegram_id: int, quarter: str, averages: dict[str, float]) -> None:
+    """Свежий средний класса — в оба кэша: всех предметов и каждого предмета."""
+    section = f"class-averages:{quarter}"
+    cached = await app.cache.get(telegram_id, section)
+    if cached and isinstance(cached[0].get("averages"), dict):
+        payload = cached[0]
+        merged = {**payload["averages"], **averages}
+        if merged != payload["averages"]:
+            await app.cache.patch(telegram_id, section, {**payload, "averages": merged})
+    for subject, value in averages.items():
+        section = f"subject:{quarter}:{normalize(subject)}"
+        cached = await app.cache.get(telegram_id, section)
+        if cached and cached[0].get("available") and cached[0].get("class_average") != value:
+            await app.cache.patch(telegram_id, section, {**cached[0], "class_average": value})
 
 
 @routes.get("/api/subject/class-history")
