@@ -211,6 +211,11 @@ class TestPages:
         assert await response.text() == "google-site-verification: googled7947c6e3217a546.html"
         assert (await client.get("/google0000.html")).status == 404
 
+    async def test_yandex_verification_file(self, client):
+        response = await client.get("/yandex_08b9430a7e269f67.html")
+        assert "Verification: 08b9430a7e269f67" in await response.text()
+        assert (await client.get("/yandex_0000.html")).status == 404
+
     async def test_sitemap_lists_main_page(self, client):
         response = await client.get("/sitemap.xml")
         assert response.content_type == "application/xml"
