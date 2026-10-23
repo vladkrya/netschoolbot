@@ -35,6 +35,14 @@ class Reason(str, Enum):
         return self in (Reason.SERVER_UNAVAILABLE, Reason.RATE_LIMIT)
 
     @property
+    def breaks_diary(self) -> bool:
+        """Сбой «Сетевого города», а не одного аккаунта: страница статуса
+        считает такую проверку дневника неудачной. Вход, который школа не
+        пустила со своим объяснением, — тоже UNKNOWN: так выглядит сломанный
+        вход у всех сразу, когда сайт при этом открывается."""
+        return self in (Reason.SERVER_UNAVAILABLE, Reason.UNKNOWN)
+
+    @property
     def needs_relogin(self) -> bool:
         return self in (Reason.AUTH, Reason.CREDENTIALS)
 

@@ -82,15 +82,18 @@ class OutageMonitor:
         после простоя — сервер часто возвращается уже обновлённым."""
         self._versions = versions
 
-    async def record(self, school_url: str, *, ok: bool, server_down: bool = False) -> None:
-        """Итог проверки. Ошибки не про сервер (вход, неизвестные) не считаем."""
-        if not ok and not server_down:
-            return
-        if self.check_observer is not None:
+    async def record(self, school_url: str, *, ok: bool, server_down: bool = False,
+                     diary_failed: bool = False) -> None:
+        """Итог проверки. Простой админу — только по недоступности сервера;
+        странице статуса — ещё и дневник, не открывшийся по вине школы
+        (diary_failed): сайт отвечает, а войти и загрузить нельзя."""
+        if self.check_observer is not None and (ok or server_down or diary_failed):
             try:
                 await self.check_observer(school_url, ok)
             except Exception as exc:  # noqa: BLE001 — статус не должен ломать проверку дневника
                 logger.warning("Не удалось учесть проверку в статусе: %s", type(exc).__name__)
+        if not ok and not server_down:
+            return
         host = urlparse(school_url).hostname or school_url
         state = self._hosts.setdefault(host, _Host())
         now = self._clock()
