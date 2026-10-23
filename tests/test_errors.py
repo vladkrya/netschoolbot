@@ -135,7 +135,7 @@ class TestLoginRefusalWithoutPasswordWords:
 
         login.apply()
 
-    @pytest.mark.parametrize("message", [None, "", "Произошла ошибка", "Object reference not set to an instance of an object"])
+    @pytest.mark.parametrize("message", [None, "", "Произошла ошибка", "Ошибка входа в систему", "Object reference not set to an instance of an object"])
     def test_unexplained_refusal_is_server_failure(self, message):
         from netschoolpy import client
 
