@@ -2592,7 +2592,11 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
   margin: 6px 0 0; padding: 12px; background: #2aabee; border-color: #2aabee; color: #fff; text-decoration: none; font-weight: 600; }
 .landing .account-card .btn.ld-tg-login.ld-tg-alt { background: transparent; color: #2aabee; }
 .landing .account-card [data-landing-bot][hidden], .landing .account-card [data-landing-widget][hidden],
-.landing .account-card [data-landing-or][hidden] { display: none; }
+.landing .account-card [data-landing-yandex][hidden], .landing .account-card [data-landing-or][hidden] { display: none; }
+.btn.ld-ya-login { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%;
+  margin: 6px 0 0; padding: 12px; background: #000; border-color: #000; color: #fff; text-decoration: none; font-weight: 600; }
+.btn.ld-ya-login + .account-consent { margin-bottom: 4px; }
+[data-theme="dark"] .btn.ld-ya-login { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .25); }
 .ld-or { display: flex; align-items: center; gap: 10px; margin: 14px 0 8px; color: var(--text2); font-size: 13px; }
 .ld-or::before, .ld-or::after { content: ""; flex: 1; height: 1px; background: var(--border); }
 .ld-demo-link { display: block; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border);

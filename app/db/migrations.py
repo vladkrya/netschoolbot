@@ -877,6 +877,18 @@ MIGRATIONS: list[str] = [
     UPDATE users SET login = '', password = '', remember_credentials = 0
     WHERE login_type IN ('esia', 'esia_qr') AND (login != '' OR password != '' OR remember_credentials != 0);
     """,
+    # Вход через Яндекс ID (и других OAuth-провайдеров): постоянный id
+    # пользователя у провайдера → аккаунт. Токены провайдера не храним.
+    """
+    CREATE TABLE oauth_identities (
+        provider    TEXT    NOT NULL,
+        subject     TEXT    NOT NULL,
+        telegram_id INTEGER NOT NULL REFERENCES users(telegram_id) ON DELETE CASCADE,
+        created_at  REAL    NOT NULL,
+        PRIMARY KEY (provider, subject)
+    );
+    CREATE INDEX idx_oauth_identities_user ON oauth_identities(telegram_id);
+    """,
 ]
 
 

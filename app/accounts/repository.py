@@ -59,6 +59,56 @@ class AccountRepository:
                    VALUES (?, ?, ?, ?, ?)""", (telegram_id, email, password_hash, now, now))
         return telegram_id
 
+    # ─────────────────────── Вход через Яндекс ID и др. ───────────────────────
+
+    async def oauth_user(self, provider: str, subject: str) -> int | None:
+        row = await self._db.fetch_one(
+            "SELECT telegram_id FROM oauth_identities WHERE provider = ? AND subject = ?", (provider, subject))
+        return int(row["telegram_id"]) if row else None
+
+    async def oauth_providers(self, telegram_id: int) -> set[str]:
+        rows = await self._db.fetch_all(
+            "SELECT DISTINCT provider FROM oauth_identities WHERE telegram_id = ?", (telegram_id,))
+        return {row["provider"] for row in rows}
+
+    async def create_oauth_user(self, provider: str, subject: str, display_name: str) -> int:
+        """Новый пользователь без Telegram и почты, который входит через провайдера.
+        Если этот вход уже есть (два возврата сразу) — его пользователь."""
+        async with self._db.transaction() as db:
+            cursor = await db.execute(
+                "SELECT telegram_id FROM oauth_identities WHERE provider = ? AND subject = ?", (provider, subject))
+            if row := await cursor.fetchone():
+                return int(row[0])
+            cursor = await db.execute("SELECT MAX(telegram_id) FROM users WHERE telegram_id >= ?", (WEB_ID_BASE,))
+            row = await cursor.fetchone()
+            telegram_id = max(int(row[0] or 0) + 1, WEB_ID_BASE + 1)
+            await db.execute("INSERT INTO users (telegram_id, display_name, api_mode) VALUES (?, ?, 'mobile')",
+                             (telegram_id, display_name))
+            await db.execute(
+                "INSERT INTO oauth_identities (provider, subject, telegram_id, created_at) VALUES (?, ?, ?, ?)",
+                (provider, subject, telegram_id, time.time()))
+        return telegram_id
+
+    async def link_oauth(self, telegram_id: int, provider: str, subject: str) -> bool:
+        """Привязать вход через провайдера к аккаунту. False — он уже у другого
+        аккаунта. Прежний вход того же провайдера у этого аккаунта заменяется."""
+        async with self._db.transaction() as db:
+            cursor = await db.execute(
+                "SELECT telegram_id FROM oauth_identities WHERE provider = ? AND subject = ?", (provider, subject))
+            owner = await cursor.fetchone()
+            if owner and owner[0] != telegram_id:
+                return False
+            await db.execute("DELETE FROM oauth_identities WHERE telegram_id = ? AND provider = ?",
+                             (telegram_id, provider))
+            await db.execute(
+                "INSERT INTO oauth_identities (provider, subject, telegram_id, created_at) VALUES (?, ?, ?, ?)",
+                (provider, subject, telegram_id, time.time()))
+        return True
+
+    async def unlink_oauth(self, telegram_id: int, provider: str) -> None:
+        await self._db.execute("DELETE FROM oauth_identities WHERE telegram_id = ? AND provider = ?",
+                               (telegram_id, provider))
+
     async def attach(self, telegram_id: int, email: str, password_hash: str) -> bool:
         """Почта и пароль для уже существующего пользователя (из Telegram).
         False — почта занята другим."""
@@ -229,7 +279,7 @@ class AccountRepository:
                 for column in USER_COLUMNS:
                     if column not in columns:
                         continue
-                    if column == "telegram_id" and table != "users":
+                    if column == "telegram_id" and table not in ("users", "oauth_identities"):
                         # Остатки нового id в таблицах без внешнего ключа.
                         await db.execute(f'DELETE FROM "{table}" WHERE telegram_id = ?', (new_id,))
                     await db.execute(f'UPDATE "{table}" SET "{column}" = ? WHERE "{column}" = ?', (new_id, old_id))
@@ -250,11 +300,12 @@ class AccountRepository:
         """
         async with self._db.transaction() as db:
             await db.execute("PRAGMA defer_foreign_keys = ON")
-            cursor = await db.execute("SELECT 1 FROM accounts WHERE telegram_id = ?", (new_id,))
-            if await cursor.fetchone():
-                return False
-            cursor = await db.execute("SELECT 1 FROM accounts WHERE telegram_id = ?", (old_id,))
+            # Аккаунт без почты (вход через Яндекс ID) тоже объединяется.
+            cursor = await db.execute("SELECT 1 FROM users WHERE telegram_id = ?", (old_id,))
             if not await cursor.fetchone():
+                return False
+            cursor = await db.execute("SELECT COUNT(*) FROM accounts WHERE telegram_id IN (?, ?)", (old_id, new_id))
+            if (await cursor.fetchone())[0] > 1:
                 return False
             # Web preferences may contain custom lessons; retain both sets of
             # keys, with the current Telegram settings taking precedence.

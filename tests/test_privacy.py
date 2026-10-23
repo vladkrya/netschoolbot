@@ -244,6 +244,7 @@ async def test_migration_wipes_saved_esia_passwords(db, users):
         "UPDATE users SET login_type = 'esia', login = 'phone', password = 'old-secret', "
         "remember_credentials = 1 WHERE telegram_id = 1")
     async with db.transaction() as conn:
-        await conn.executescript(MIGRATIONS[-1])
+        # Не последняя: после неё могут добавиться новые миграции.
+        await conn.executescript(next(m for m in MIGRATIONS if "login_type IN ('esia', 'esia_qr')" in m))
     row = await db.fetch_one('SELECT login, password, remember_credentials FROM users WHERE telegram_id = 1')
     assert (row['login'], row['password'], row['remember_credentials']) == ('', '', 0)

@@ -148,7 +148,10 @@ function showBotLinks(root) {
     root.querySelectorAll('[data-landing-widget]').forEach((element) => { element.hidden = false; });
     root.querySelectorAll('.ld-tg-login[data-landing-bot]').forEach((element) => element.classList.add('ld-tg-alt'));
   }
-  if (landingConfig?.bot || landingConfig?.widget || landingConfig?.oidc) {
+  if (landingConfig?.yandex) {
+    root.querySelectorAll('[data-landing-yandex]').forEach((element) => { element.hidden = false; });
+  }
+  if (landingConfig?.bot || landingConfig?.widget || landingConfig?.oidc || landingConfig?.yandex) {
     root.querySelectorAll('[data-landing-or]').forEach((element) => { element.hidden = false; });
   }
   if (!landingConfig?.bot) return;
@@ -195,10 +198,13 @@ export function showAuth(view = 'login', email = '') {
   }
   const views = { login: renderLogin, register: renderRegister, reset: renderReset };
   views[view](email);
-  const oidcError = new URLSearchParams(location.hash.slice(1)).get('tgLoginError');
-  if (oidcError) {
+  const hash = new URLSearchParams(location.hash.slice(1));
+  const oidcError = hash.get('tgLoginError');
+  const yandexError = hash.get('yaLoginError');
+  if (oidcError || yandexError) {
     history.replaceState(null, '', location.pathname + location.search);
-    showError(document.querySelector('#accountScreen .account-card'), OIDC_ERRORS[oidcError] || OIDC_ERRORS.failed);
+    const errors = yandexError ? YANDEX_ERRORS : OIDC_ERRORS;
+    showError(document.querySelector('#accountScreen .account-card'), errors[yandexError || oidcError] || errors.failed);
   }
   return new Promise(() => {}); // страница перезагрузится после входа
 }
@@ -210,6 +216,10 @@ function renderLogin(email = '') {
       Войти через Telegram</button>
     <button class="btn ld-tg-login" type="button" data-landing-bot hidden>${TG_ICON}
       Войти через Telegram-бота</button>
+    <div data-landing-yandex hidden>
+      <a class="btn ld-ya-login" href="${base}/api/account/yandex/start">${YA_ICON} Войти через Яндекс ID</a>
+      ${consent('Нажимая «Войти через Яндекс ID»')}
+    </div>
     <p class="ld-or" data-landing-or hidden><span>или по почте</span></p>
     <form class="account-form">
       <input class="field" type="email" name="email" autocomplete="username" placeholder="Почта" required>
@@ -352,6 +362,8 @@ export async function showResetLink(secret) {
   return new Promise(() => {}); // страница перезагрузится после смены
 }
 
+const YA_ICON = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><circle cx="12" cy="12" r="12" fill="#fc3f1d"/><path fill="#fff" d="M13.3 6.2h-1.1c-2 0-3.1 1-3.1 2.6 0 1.8.8 2.6 2.3 3.6l1.3.9-3.6 5.4H6.4l3.3-4.9c-1.9-1.4-3-2.6-3-4.9 0-2.8 2-4.7 5.6-4.7h3.6v14.5h-2.6z"/></svg>';
+
 const TG_ICON = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M9.8 15.2 9.6 19c.4 0 .6-.2.8-.4l1.9-1.8 4 2.9c.7.4 1.3.2 1.5-.7l2.7-12.6c.3-1.1-.4-1.6-1.1-1.3L3.6 10.9c-1 .4-1 1-.2 1.3l4 1.2 9.3-5.9c.4-.3.8-.1.5.2z"/></svg>';
 
 /* ─────────────────────── Вход через Telegram Login ─────────────────────── */
@@ -380,6 +392,14 @@ const OIDC_ERRORS = {
   limit: 'Слишком много попыток входа — подождите 15 минут.',
   off: 'Вход через Telegram сейчас выключен — войдите через бота или по почте.',
   failed: 'Telegram не подтвердил вход — попробуйте ещё раз.',
+};
+
+const YANDEX_ERRORS = {
+  cancel: 'Вход отменён на странице Яндекса.',
+  expired: 'Время на вход вышло — нажмите «Войти через Яндекс ID» ещё раз.',
+  limit: 'Слишком много попыток входа — подождите 15 минут.',
+  off: 'Вход через Яндекс ID сейчас выключен — войдите другим способом.',
+  failed: 'Яндекс не подтвердил вход — попробуйте ещё раз.',
 };
 
 function widgetResult() {
@@ -472,6 +492,25 @@ export async function finishTelegramLink() {
     banner(message || 'Telegram привязан: уведомления теперь приходят и туда', Boolean(message), message ? 0 : 6000);
   }, 800);
   return false;
+}
+
+const YANDEX_LINK_ERRORS = {
+  ...YANDEX_ERRORS,
+  cancel: 'Привязка отменена на странице Яндекса.',
+  expired: 'Время на привязку вышло — нажмите «Привязать Яндекс ID» ещё раз.',
+  off: 'Привязка Яндекс ID сейчас выключена.',
+  taken: 'Этот Яндекс ID уже привязан к другому аккаунту Дневника.',
+};
+
+/** Вернулись с Яндекса после «Привязать Яндекс ID» (#yalink=…): итог и настройки. */
+export function finishYandexLink() {
+  const code = new URLSearchParams(location.hash.slice(1)).get('yalink') || '';
+  history.replaceState(null, '', `${location.pathname}${location.search}#settings`);
+  const message = code === 'ok' ? '' : YANDEX_LINK_ERRORS[code] || YANDEX_LINK_ERRORS.failed;
+  setTimeout(() => {
+    notify(message ? 'error' : 'success');
+    banner(message || 'Яндекс ID привязан: через него можно входить на сайт', Boolean(message), message ? 0 : 6000);
+  }, 800);
 }
 
 /* ─────────────────────── Вход через Telegram-бота ─────────────────────── */
@@ -1032,6 +1071,18 @@ export async function openAccountSettings() {
             <button class="link" data-act="link">Не открывается? Привязать кодом в боте</button>`
             : '<button class="btn outline" data-act="link">Привязать Telegram</button>'}
         </div>`}
+      ${info.yandex?.enabled || info.yandex?.linked ? `
+        <div class="card">
+          <div class="card-title">Яндекс ID</div>
+          ${info.yandex.linked ? `
+            <p>Привязан — через него можно входить на сайт.</p>
+            ${info.email || info.telegram ? '<button class="btn outline" data-act="unlink-yandex">Отвязать Яндекс ID</button>' : ''}`
+            : `<p class="muted">Привяжите Яндекс ID — и на сайт можно будет входить через него. От Яндекса придут только id и имя.</p>
+            <button class="btn ld-ya-login" data-act="link-yandex">${YA_ICON} Привязать Яндекс ID</button>`}
+        </div>` : ''}
+      ${!info.email && !info.telegram ? `<div class="card"><div class="card-title">Удалить аккаунт</div>
+        <p class="muted">Удалятся профиль, записи, сессии, история и серверный календарь. Данные в школе и резервные копии останутся.</p>
+        <button class="btn outline danger" data-act="delete-nopass">Удалить все мои данные</button></div>` : ''}
       ${info.email ? `<div class="card"><div class="card-title">Удалить аккаунт</div>
         <p class="muted">Удалятся профиль, почта, записи, сессии, история и серверный календарь. Данные в школе, сообщения Telegram и резервные копии останутся.</p>
         <form class="account-form" data-form="delete"><input class="field" type="password" name="password" autocomplete="current-password" placeholder="Пароль аккаунта" required>
@@ -1098,6 +1149,24 @@ export async function openAccountSettings() {
       }
     });
     body.querySelector('[data-act="link-telegram"]')?.addEventListener('click', () => startTelegramLink(info.tg_link));
+    body.querySelector('[data-act="link-yandex"]')?.addEventListener('click', () => {
+      location.assign(`${base}/api/account/yandex/link`);
+    });
+    body.querySelector('[data-act="unlink-yandex"]')?.addEventListener('click', (event) => {
+      if (!confirm('Отвязать Яндекс ID? Входить через него больше не получится.')) return;
+      busy(event.currentTarget, async () => {
+        try {
+          await post('/api/account/yandex/unlink', {});
+          draw();
+        } catch (failure) { banner(failure.message, true); }
+      });
+    });
+    body.querySelector('[data-act="delete-nopass"]')?.addEventListener('click', (event) => {
+      if (!confirm('Удалить аккаунт и все данные без возможности отмены?')) return;
+      busy(event.currentTarget, async () => {
+        try { await eraseAccount(''); } catch (failure) { banner(failure.message, true); }
+      });
+    });
     body.querySelector('[data-act="link"]')?.addEventListener('click', async (event) => {
       const button = event.currentTarget;
       busy(button, async () => {

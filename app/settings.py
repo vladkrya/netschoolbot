@@ -49,6 +49,12 @@ def _env(key: str, default: str = "") -> str:
     return (os.getenv(key) or default).strip()
 
 
+def _hosts(key: str, public_url: str) -> tuple[str, ...]:
+    """Домены через запятую; пусто — домен NETSCHOOL_PUBLIC_URL."""
+    raw = _env(key) or public_url.split("//")[-1].split("/")[0]
+    return tuple(host.strip().lower() for host in raw.split(",") if host.strip())
+
+
 def _env_int(key: str, default: int) -> int:
     raw = _env(key)
     if not raw:
@@ -125,10 +131,20 @@ class WebSettings:
     tg_oidc_client_id: str = ""
     tg_oidc_client_secret: str = ""
     tg_oidc_hosts: tuple[str, ...] = ()
+    # Вход через Яндекс ID (app/web/oauth_login.py). ClientID и Client secret —
+    # с oauth.yandex.ru; там же Redirect URI для каждого домена из
+    # yandex_hosts: https://<домен><путь>/api/account/yandex/callback.
+    yandex_client_id: str = ""
+    yandex_client_secret: str = ""
+    yandex_hosts: tuple[str, ...] = ()
 
     @property
     def tg_oidc_enabled(self) -> bool:
         return bool(self.tg_oidc_client_id and self.tg_oidc_client_secret and self.tg_oidc_hosts)
+
+    @property
+    def yandex_enabled(self) -> bool:
+        return bool(self.yandex_client_id and self.yandex_client_secret and self.yandex_hosts)
 
     @property
     def miniapp_url(self) -> str:
@@ -366,11 +382,10 @@ def load_settings(*, require_bot_token: bool = True) -> Settings:
             login_widget_bot_token=_env("NETSCHOOL_TG_LOGIN_BOT_TOKEN"),
             tg_oidc_client_id=_env("NETSCHOOL_TG_OIDC_CLIENT_ID").strip(),
             tg_oidc_client_secret=_env("NETSCHOOL_TG_OIDC_CLIENT_SECRET").strip(),
-            tg_oidc_hosts=tuple(
-                host.strip().lower()
-                for host in (_env("NETSCHOOL_TG_OIDC_HOSTS") or public_url.split("//")[-1].split("/")[0]).split(",")
-                if host.strip()
-            ),
+            tg_oidc_hosts=_hosts("NETSCHOOL_TG_OIDC_HOSTS", public_url),
+            yandex_client_id=_env("NETSCHOOL_YANDEX_CLIENT_ID").strip(),
+            yandex_client_secret=_env("NETSCHOOL_YANDEX_CLIENT_SECRET").strip(),
+            yandex_hosts=_hosts("NETSCHOOL_YANDEX_HOSTS", public_url),
             miniapp_path=miniapp_path,
             token_ttl=_env_int("NETSCHOOL_MINIAPP_TOKEN_TTL", 900),
             login_code_ttl=_env_int("NETSCHOOL_LOGIN_CODE_TTL", 600),

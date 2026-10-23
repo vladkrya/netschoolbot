@@ -26,6 +26,7 @@ const METHODS = {
   'telegram-widget': 'через Telegram',
   bot: 'через Telegram-бота',
   email: 'по почте и паролю',
+  yandex: 'через Яндекс ID',
   register: 'при регистрации по почте',
   reset: 'после сброса пароля по почте',
   'device-link': 'по ссылке «Добавить устройство»',

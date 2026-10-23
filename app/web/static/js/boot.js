@@ -134,6 +134,11 @@ async function boot() {
     const { finishTelegramLink } = await import('./account.js');
     if (await finishTelegramLink()) return;
   }
+  // Вернулись с Яндекса после «Привязать Яндекс ID»: аккаунт тот же, дневник уже грузится.
+  if (!demo && location.hash.startsWith('#yalink=')) {
+    const { finishYandexLink } = await import('./account.js');
+    finishYandexLink();
+  }
   // Сначала своё: оформление и настройки с сервера бота — раньше аккаунта и
   // дневника, который ждёт «Сетевой город» (app.js берёт этот же запрос).
   if (!demo) state.prefsSync = import('./prefs.js').then((module) => module.syncPrefs()).catch(() => false);

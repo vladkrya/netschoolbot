@@ -32,6 +32,7 @@ from ..netschool import login as login_flow, ownership
 from ..netschool.errors import NetSchoolError, Reason, login_message, wrap
 from . import viewing
 from .api import BOT, context, current_user, json_error
+from .oauth_login import YANDEX, OAuthLogins
 from .telegram_auth import InitDataError, verify_login_widget
 from .telegram_oidc import OidcLogins
 
@@ -50,7 +51,8 @@ MAX_SCHOOLS = 30
 PUBLIC_PATHS = ("/api/account/register", "/api/account/login", "/api/account/reset/request",
                 "/api/account/reset/confirm", "/api/account/reset/check", "/api/account/config", "/api/family/invite-info",
                 "/api/account/tg-login", "/api/account/tg-widget",
-                "/api/account/tg-oidc/start", "/api/account/tg-oidc/callback")
+                "/api/account/tg-oidc/start", "/api/account/tg-oidc/callback",
+                "/api/account/yandex/start", "/api/account/yandex/callback")
 
 
 def is_public(path: str) -> bool:
@@ -141,6 +143,7 @@ async def account_config(request: web.Request) -> web.Response:
         "bot": f"https://t.me/{username}" if username else "",
         "widget": await login_widget_bot_id(request),
         "oidc": _oidc_redirect_uri(request) is not None,
+        "yandex": _yandex_redirect_uri(request) is not None,
     }})
 
 
@@ -283,6 +286,120 @@ def _link_back(request: web.Request, result: str) -> web.HTTPFound:
     response = web.HTTPFound(f"{base}/?refresh=1#tglink={result}")
     response.del_cookie(OIDC_COOKIE, path=f"{base}/api/account/tg-oidc/")
     return response
+
+
+# ─────────────────────────── Вход через Яндекс ID ───────────────────────────
+
+YANDEX_LOGINS = OAuthLogins(YANDEX)
+YANDEX_COOKIE = "yandex_state"
+YANDEX_PREFIX = "/api/account/yandex/"
+
+
+def _yandex_redirect_uri(request: web.Request) -> str | None:
+    """Адрес возврата для этого домена — если вход через Яндекс здесь включён."""
+    web_settings = context(request).settings.web
+    host = request.host.lower()
+    if not web_settings.yandex_enabled or host.split(":")[0] not in web_settings.yandex_hosts:
+        return None
+    # За nginx запрос приходит по http, а в кабинете Яндекса — https-адрес.
+    scheme = "http" if host.split(":")[0] in ("127.0.0.1", "localhost") else "https"
+    return f"{scheme}://{host}{web_settings.miniapp_path.rstrip('/')}{YANDEX_PREFIX}callback"
+
+
+def _yandex_redirect(request: web.Request, redirect_uri: str, *, link_to: int | None = None) -> web.HTTPFound:
+    state, url = YANDEX_LOGINS.start(context(request).settings.web.yandex_client_id, redirect_uri, link_to=link_to)
+    response = web.HTTPFound(url)
+    # state привязан к этому браузеру: чужую ссылку возврата сюда не подсунуть.
+    base = context(request).settings.web.miniapp_path.rstrip("/")
+    response.set_cookie(YANDEX_COOKIE, state, max_age=600, httponly=True, samesite="Lax",
+                        secure=redirect_uri.startswith("https:"), path=f"{base}{YANDEX_PREFIX}")
+    return response
+
+
+def _yandex_back(request: web.Request, error: str = "", *, link: bool = False) -> web.HTTPFound:
+    """Назад на сайт: после входа — с новым токеном в cookie, после привязки — в настройки."""
+    base = context(request).settings.web.miniapp_path.rstrip("/")
+    if link:
+        url = f"{base}/#yalink={error or 'ok'}"
+    else:
+        url = f"{base}/#yaLoginError={error}" if error else f"{base}/?refresh=1"
+    response = web.HTTPFound(url)
+    response.del_cookie(YANDEX_COOKIE, path=f"{base}{YANDEX_PREFIX}")
+    return response
+
+
+@routes.get("/api/account/yandex/start")
+async def yandex_start(request: web.Request) -> web.Response:
+    """Кнопка «Войти через Яндекс ID»: на страницу входа Яндекса с PKCE."""
+    redirect_uri = _yandex_redirect_uri(request)
+    if redirect_uri is None:
+        raise _yandex_back(request, "off")
+    if SITE_LOGINS.blocked(_ip(request)):
+        raise _yandex_back(request, "limit")
+    SITE_LOGINS.hit(_ip(request))
+    raise _yandex_redirect(request, redirect_uri)
+
+
+@routes.get("/api/account/yandex/link")
+async def yandex_link(request: web.Request) -> web.Response:
+    """«Привязать Яндекс ID» в настройках входа: тот же вход, но в конце
+    Яндекс ID привязывается к открытому аккаунту."""
+    user = current_user(request)
+    redirect_uri = _yandex_redirect_uri(request)
+    if redirect_uri is None:
+        raise _yandex_back(request, "off", link=True)
+    if SITE_LOGINS.blocked(_ip(request)):
+        raise _yandex_back(request, "limit", link=True)
+    SITE_LOGINS.hit(_ip(request))
+    raise _yandex_redirect(request, redirect_uri, link_to=user.telegram_id)
+
+
+@routes.get("/api/account/yandex/callback")
+async def yandex_callback(request: web.Request) -> web.Response:
+    """Яндекс вернул код: узнаём, кто вошёл, и входим (или привязываем)."""
+    app = context(request)
+    state = request.query.get("state", "")
+    item = YANDEX_LOGINS.take(state) if state and request.cookies.get(YANDEX_COOKIE) == state else None
+    link = item is not None and item.link_to is not None
+    if request.query.get("error") or not request.query.get("code"):
+        YANDEX_LOGINS.take(state)
+        raise _yandex_back(request, "cancel", link=link)
+    if item is None:
+        raise _yandex_back(request, "expired")
+    web_settings = app.settings.web
+    try:
+        identity = await YANDEX_LOGINS.finish(item, request.query["code"], web_settings.yandex_client_id,
+                                              web_settings.yandex_client_secret)
+    except (InitDataError, aiohttp.ClientError, asyncio.TimeoutError, ValueError) as exc:
+        logger.warning("Вход через Яндекс ID не удался: %s", exc)
+        raise _yandex_back(request, "failed", link=link)
+    if item.link_to is not None:
+        if await app.users.get(item.link_to) is None:
+            raise _yandex_back(request, "failed", link=True)
+        if not await app.accounts.link_oauth(item.link_to, YANDEX.name, identity.subject):
+            raise _yandex_back(request, "taken", link=True)
+        logger.info("К аккаунту %s привязан Яндекс ID", item.link_to)
+        raise _yandex_back(request, link=True)
+    telegram_id = await app.accounts.oauth_user(YANDEX.name, identity.subject)
+    if telegram_id is None:
+        telegram_id = await app.accounts.create_oauth_user(YANDEX.name, identity.subject, identity.name)
+        logger.info("Новый аккаунт через Яндекс ID: %s", telegram_id)
+    signed = await _signed_in(request, telegram_id, "yandex")
+    response = _yandex_back(request)
+    for name, morsel in signed.cookies.items():
+        response.cookies[name] = morsel
+    logger.info("Вход на сайт через Яндекс ID: %s", telegram_id)
+    raise response
+
+
+@routes.post("/api/account/yandex/unlink")
+async def yandex_unlink(request: web.Request) -> web.Response:
+    """Отвязать Яндекс ID — только если останется другой способ входа."""
+    app, user = context(request), current_user(request)
+    if not has_telegram(user.telegram_id) and not await app.accounts.by_user(user.telegram_id):
+        return json_error("Это единственный способ входа. Сначала задайте почту и пароль или привяжите Telegram")
+    await app.accounts.unlink_oauth(user.telegram_id, YANDEX.name)
+    return await account_info(request)
 
 
 # Почему привязка не вышла: текст из connect_accounts ждёт, пока страница
@@ -522,6 +639,9 @@ async def account_info(request: web.Request) -> web.Response:
         # Только у админа: пускать ли другие аккаунты в его Сетевой город.
         "share_sgo": await ownership.sharing_allowed(app) if _is_admin(app, user.telegram_id) else None,
         "tg_link": await _telegram_link_methods(request) if not has_telegram(user.telegram_id) else None,
+        # Вход через Яندекс ID: можно ли привязать на этом домене и привязан ли.
+        "yandex": {"enabled": _yandex_redirect_uri(request) is not None,
+                   "linked": YANDEX.name in await app.accounts.oauth_providers(user.telegram_id)},
     }})
 
 
@@ -696,7 +816,10 @@ async def delete_account(request: web.Request) -> web.Response:
     if LOGIN_FAILURES.blocked(key):
         return json_error("Слишком много попыток — подождите 15 минут", status=429)
     body = await _body(request)
-    if not account or not verify_password(str(body.get("password") or ""), account["password_hash"]):
+    # Без почты и Telegram (вошёл через Яндекс ID) пароля нет — хватает входа.
+    oauth_only = not account and not has_telegram(user.telegram_id)
+    if not oauth_only and (
+            not account or not verify_password(str(body.get("password") or ""), account["password_hash"])):
         LOGIN_FAILURES.hit(key)
         return json_error("Неверный пароль аккаунта", status=403, reason="account")
     await app.delete_user_data(user.telegram_id)
