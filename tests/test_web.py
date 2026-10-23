@@ -189,6 +189,8 @@ class TestPages:
         assert "X-Robots-Tag" not in response.headers
         assert '<link rel="canonical" href="https://example.ru/mini/">' in text
         assert '<meta name="description"' in text
+        assert '"@type": "WebApplication"' in text
+        assert '"url": "https://example.ru/mini/"' in text
 
     async def test_index_with_token_is_hidden_from_search(self, client, token):
         response = await client.get(f"{BASE}/", params={"token": token})
@@ -219,6 +221,9 @@ class TestPages:
     async def test_status_page_has_canonical(self, client):
         text = await (await client.get(f"{BASE}/status")).text()
         assert '<link rel="canonical" href="https://example.ru/mini/status">' in text
+        # По этим словам страницу и ищут.
+        assert "<title>Сетевой город не работает?" in text
+        assert "Почему не работает «Сетевой город»" in text
 
     async def test_index_with_token_renders_app(self, client, token):
         response = await client.get(f"{BASE}/", params={"token": token})

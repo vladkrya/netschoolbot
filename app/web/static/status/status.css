@@ -237,7 +237,8 @@ footer { font-size: 12px; text-align: center; margin-top: 8px; }
 }
 /* Внутри приложения: заголовок и подвал — у экрана приложения. */
 .embed .page { padding-top: 12px; }
-.embed .top h1, .embed .top p, .embed footer { display: none; }
+.embed .top h1, .embed .top p, .embed footer, .embed .about { display: none; }
+.about p { margin: 8px 0; line-height: 1.5; }
 .embed .top { margin-bottom: 10px; }
 .embed .top .primary { width: 100%; }
 
