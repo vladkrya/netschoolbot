@@ -217,7 +217,8 @@ class UserWatcher:
         except NetSchoolError as exc:
             if self._outages is not None:
                 await self._outages.record(user.school.url, ok=False,
-                                           server_down=exc.reason is Reason.SERVER_UNAVAILABLE)
+                                           server_down=exc.reason is Reason.SERVER_UNAVAILABLE,
+                                           diary_failed=exc.reason.breaks_diary)
             delay = await self._handle_error(user, exc)
             await self._record_status(ok=False, error=exc.user_message, delay=delay)
             await self._flush_outbox(user)

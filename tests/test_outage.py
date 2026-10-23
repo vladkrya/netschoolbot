@@ -195,3 +195,22 @@ async def test_restart_does_not_repeat_outage(db):
     for _ in range(3):
         await again.record(url, ok=True)
     assert len(sent) == 2  # ожил — забыли, второй раз «снова отвечает» не шлём
+
+
+async def test_diary_failures_reach_status_but_not_admin():
+    sent, seen = [], []
+
+    async def send(text):
+        sent.append(text)
+
+    async def observe(url, ok):
+        seen.append(ok)
+
+    monitor = OutageMonitor(send)
+    monitor.check_observer = observe
+    for _ in range(6):
+        # Сайт открывается, а войти не выходит ни у кого.
+        await monitor.record("https://a.example.ru", ok=False, diary_failed=True)
+        # Неверный пароль одного человека — не про сервер.
+        await monitor.record("https://a.example.ru", ok=False)
+    assert seen == [False] * 6 and sent == []
