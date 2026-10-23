@@ -204,6 +204,7 @@ class TestPages:
         response = await client.get("/robots.txt")
         text = await response.text()
         assert "Allow: /mini/$" in text
+        assert "Allow: /mini/privacy$" in text
         assert "Disallow: /" in text
         assert "Sitemap: https://example.ru/sitemap.xml" in text
 
@@ -223,6 +224,23 @@ class TestPages:
         text = await response.text()
         assert "<loc>https://example.ru/mini/</loc>" in text
         assert "<loc>https://example.ru/mini/status</loc>" in text
+        assert "<loc>https://example.ru/mini/privacy</loc>" in text
+
+    async def test_privacy_page(self, client):
+        response = await client.get(f"{BASE}/privacy")
+        assert response.status == 200
+        text = await response.text()
+        assert '<link rel="canonical" href="https://example.ru/mini/privacy">' in text
+        assert "152-ФЗ" in text
+        assert "не связаны с ООО «ИРТех»" in text
+
+    async def test_search_pages_say_unofficial(self, client):
+        index = await (await client.get(f"{BASE}/")).text()
+        # В выдаче по «Сетевому городу» сайт не должен выдавать себя за дневник.
+        assert "неофициальное приложение)</title>" in index
+        status = await (await client.get(f"{BASE}/status")).text()
+        assert "Неофициальный сервис." in status
+        assert f"{BASE}/privacy" in status
 
     async def test_status_page_has_canonical(self, client):
         text = await (await client.get(f"{BASE}/status")).text()

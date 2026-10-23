@@ -62,6 +62,7 @@ function heroHtml() {
       <h1>«Сетевой город» —<br><span class="ld-grad">удобно и быстро</span></h1>
       <p class="ld-lead">Оценки, домашние задания и расписание из вашего электронного дневника
         в одном красивом приложении. Работает в Telegram, в браузере и на домашнем экране телефона.</p>
+      <p class="ld-note">Неофициальное приложение — не сайт «Сетевого города» и не ИРТех.</p>
       <div class="ld-actions">
         <button class="btn ld-demo" type="button" data-landing-route="demo">▶ Демо-режим</button>
         <button class="btn outline ld-status" type="button" data-landing-route="status"><i class="ld-status-dot" aria-hidden="true"></i>Статус серверов</button>
@@ -98,8 +99,9 @@ function landing(html) {
         ${heroHtml()}
         <aside class="ld-auth"><div class="app-lock-card account-card"></div></aside>
       </div>
-      <footer class="ld-foot">Неофициальное приложение: данные берутся из вашего «Сетевого города»,
-        пароль хранится зашифрованным.</footer>`;
+      <footer class="ld-foot">Неофициальный проект, не связан с ИРТех — разработчиком «Сетевого города».
+        Данные берутся из вашего дневника, пароль хранится зашифрованным.
+        <a class="ld-privacy" href="${base}/privacy" data-landing-route="privacy">Политика конфиденциальности</a></footer>`;
     document.body.appendChild(root);
     document.documentElement.classList.add('app-locked');
     bindLanding(root);
@@ -120,7 +122,8 @@ async function bindLanding(root) {
   root.addEventListener('click', (event) => {
     const button = event.target.closest('[data-landing-route]');
     const route = button?.dataset.landingRoute;
-    if (!button || !root.contains(button) || !['demo', 'status'].includes(route)) return;
+    if (!button || !root.contains(button) || !['demo', 'status', 'privacy'].includes(route)) return;
+    event.preventDefault();
     location.assign(`${base}/${route}`);
   });
   try {

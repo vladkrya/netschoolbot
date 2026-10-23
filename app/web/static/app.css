@@ -2575,6 +2575,7 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
   animation: ld-shine 8s linear infinite; }
 @keyframes ld-shine { to { background-position: 300% 0; } }
 .ld-lead { margin: 0; max-width: 560px; font-size: 17px; line-height: 1.5; color: var(--text2); }
+.ld-note { margin: 10px 0 0; max-width: 560px; font-size: 14px; color: var(--text2); opacity: .85; }
 .ld-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; }
 .ld-actions .btn { width: auto; margin: 0; padding: 12px 20px; text-decoration: none; }
 .ld-actions .btn[hidden] { display: none; }
@@ -2653,6 +2654,7 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
 .ld-feature:hover .ld-icon { transform: scale(1.2) rotate(-8deg); }
 .ld-foot { width: min(100%, 1120px); margin: 0 auto; padding: 8px 16px calc(env(safe-area-inset-bottom, 0px) + 24px);
   color: var(--text2); font-size: 13px; text-align: center; }
+.ld-foot a { color: inherit; text-decoration: underline; text-underline-offset: 2px; white-space: nowrap; }
 
 @media (min-width: 960px) {
   .ld-grid { grid-template-columns: minmax(0, 1fr) 400px; column-gap: 48px; row-gap: 32px; padding-top: 56px;

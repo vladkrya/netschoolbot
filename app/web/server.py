@@ -307,7 +307,7 @@ def _site_url(request: web.Request) -> str:
 
 
 async def robots(request: web.Request) -> web.Response:
-    """В поиск попадают только главная, демо и статус серверов.
+    """В поиск попадают только главная, демо, статус серверов и политика.
 
     Остальное — личные страницы и API; адреса с токеном (`/?token=…`)
     правило `/$` не пропускает. Статику и настройки входа поисковик
@@ -319,6 +319,7 @@ async def robots(request: web.Request) -> web.Response:
         f"Allow: {base}/$",
         f"Allow: {base}/demo$",
         f"Allow: {base}/status$",
+        f"Allow: {base}/privacy$",
         f"Allow: {base}/status/data",
         f"Allow: {base}/static/",
         f"Allow: {base}/api/account/config$",
@@ -337,6 +338,7 @@ async def sitemap(request: web.Request) -> web.Response:
         f"  <url><loc>{url}</loc></url>\n"
         f"  <url><loc>{url}demo</loc></url>\n"
         f"  <url><loc>{url}status</loc></url>\n"
+        f"  <url><loc>{url}privacy</loc></url>\n"
         "</urlset>\n"
     )
     return web.Response(text=body, content_type="application/xml")
@@ -514,6 +516,28 @@ async def export_page(request: web.Request) -> web.Response:
             "waiting": "Собираем отчёт — за год это может занять до минуты",
         })
     response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@page_routes.get("/privacy")
+async def privacy(request: web.Request) -> web.Response:
+    """Политика конфиденциальности: ссылка с главной и со статуса, есть в sitemap."""
+    from email.utils import parseaddr
+
+    context: AppContext = request.app[CONTEXT]
+    response = aiohttp_jinja2.render_template(
+        "privacy.html",
+        request,
+        {
+            "base": _base(request),
+            "app_version": __version__,
+            "canonical": f"{_site_url(request)}privacy",
+            "host": context.settings.web.public_url.split("//")[-1],
+            "contact_email": parseaddr(context.settings.mail.sender)[1],
+            "bot_username": await account.bot_username(request),
+        },
+    )
+    response.headers["Cache-Control"] = "no-cache"
     return response
 
 
