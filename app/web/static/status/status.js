@@ -312,15 +312,21 @@ function hostRow(host) {
   if (blocked) {
     strip.append(el('span', {}, 'пока нет истории проверок'));
   } else {
+    const diaryAt = (i) => (host.diary_bars ? host.diary_bars[i] : null);
     const cellTip = (i) => {
-      const share = host.bars[i], reports = host.report_bars[i];
+      const share = host.bars[i], reports = host.report_bars[i], diary = diaryAt(i);
       return `<b>${esc(bucketLabel(i))}</b>`
-        + `<div class="row"><i class="sw ${tone(share)}"></i>${share == null ? 'Нет проверок' : 'Отвечал'}`
+        + `<div class="row"><i class="sw ${tone(share)}"></i>${share == null ? 'Нет проверок' : 'Сайт отвечал'}`
         + `${share == null ? '' : `<span class="num">${Math.round(share * 1000) / 10}%</span>`}</div>`
+        + (diary == null ? '' : `<div class="row"><i class="sw ${tone(diary)}"></i>Дневники грузились<span class="num">${Math.round(diary * 1000) / 10}%</span></div>`)
         + (reports ? `<div class="row">Жалоб<span class="num">${reports}</span></div>` : '');
     };
     host.bars.forEach((share, i) => {
-      const cell = el('div', { class: `cell ${tone(share)}${host.report_bars[i] ? ' has-reports' : ''}` });
+      const diary = diaryAt(i);
+      // Дневники не грузились, хотя сайт отвечал — столбик оранжевый; если и
+      // сайт лежал, он и так красный.
+      const cellTone = diary != null && diary < 0.5 && tone(share) !== 'critical' ? 'serious' : tone(share);
+      const cell = el('div', { class: `cell ${cellTone}${host.report_bars[i] ? ' has-reports' : ''}` });
       cell.addEventListener('pointermove', (event) => { if (event.pointerType === 'mouse') showTip(event, cellTip(i)); });
       cell.addEventListener('pointerleave', (event) => { if (event.pointerType === 'mouse') hideTip(); });
       strip.append(cell);

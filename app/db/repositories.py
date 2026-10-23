@@ -2010,6 +2010,18 @@ class SgoStatusRepository:
         )
         return [dict(row) for row in rows]
 
+    async def account_buckets(self, since: float, size: float) -> list[dict]:
+        """Загрузки дневников по отрезкам времени (из sgo_account_checks): сервер,
+        № отрезка, всего, удачных. Нужно, чтобы на полоске было видно, когда у
+        людей не грузились дневники, даже если сайт отвечал на проверки."""
+        rows = await self._db.fetch_all(
+            "SELECT host, CAST((bucket - ?) / ? AS INTEGER) AS slot, "
+            "SUM(total) AS total, SUM(good) AS good "
+            "FROM sgo_account_checks WHERE bucket >= ? GROUP BY host, slot",
+            (since, size, since),
+        )
+        return [dict(row) for row in rows]
+
     async def failures(self, since: float) -> list[dict]:
         """Неудачные проверки по порядку — из них складываются сбои."""
         rows = await self._db.fetch_all(
