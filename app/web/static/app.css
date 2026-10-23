@@ -849,7 +849,9 @@ html.offline .switch-row:has(#pushToggle, #keepFiles, #sgoUpdates) {
 .dist-part.d2 { background: var(--g2); }
 .empty-dist { align-items: center; justify-content: center; color: var(--text2); background: var(--card-2); font-size: 13px; }
 .tiles { display: flex; flex-wrap: wrap; gap: 12px; }
-.tiles { overflow: hidden; }
+/* overflow нужен для анимации высоты при фильтре; отступ даёт место свечению
+   оценок (хеллоуин), отрицательный margin его компенсирует. */
+.tiles { overflow: hidden; padding: 10px; margin: -10px; }
 .tile { display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 12px; color: var(--text2); }
 .tile .mark-box { border-color: var(--green); background: color-mix(in srgb, var(--green) 25%, var(--card)); }
 .tile .mark-box.m2, .grade-row .mark-box.m2, .whatif .mark-box.m2 { --c: var(--g2); }
@@ -1676,7 +1678,7 @@ main.leaving { transition: transform .22s var(--ease); box-shadow: -8px 0 24px r
 .lesson-edit .btn { width: 100%; }
 .sched-lesson .elective-badge { display: block; width: fit-content; margin-top: 3px; }
 
-.attendance-tiles { margin-top: 20px; }
+.attendance-tiles { margin-top: 10px; } /* с -10px у .tiles выше схлопывается в прежние 20px */
 
 /* Коэффициент в углу оценки — только в новом дизайне. */
 .mark-box .mw { display: none; }
