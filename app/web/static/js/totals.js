@@ -321,13 +321,17 @@ function heroHtml(rows, quarter) {
   const share = countMode === 'subjects' ? counts : weights;
   const caption = countMode === 'subjects'
     ? (total ? `${allOfficial(rows) ? 'Вышли' : 'Выходит'} по ${total} ${plural(total, 'предмету', 'предметам', 'предметам')}` : 'Оценок за период пока нет')
-    : `${total} ${plural(total, 'оценка', 'оценки', 'оценок')}${weightTotal !== total ? ` · с\u00a0весом ${weightTotal}` : ''}`;
+    : weightTotal !== total ? `${weightTotal} с\u00a0весом` : `${total} ${plural(total, 'оценка', 'оценки', 'оценок')}`;
+  // Сколько штук без учёта веса — второй строкой помельче, а не в заголовке:
+  // «83 оценки · с весом 102» не влезал в строку рядом с переключателем.
+  const plain = countMode === 'marks' && weightTotal !== total
+    ? `<div class="th-plain">без учёта веса: ${total}</div>` : '';
   const unit = (value) => (countMode === 'subjects' ? plural(value, 'предмет', 'предмета', 'предметов') : plural(value, 'оценка', 'оценки', 'оценок'));
   return `<div class="totals-hero glass">
       <div class="th-head">
         <div>
           <div class="th-label">${esc(quarter?.label || shortLabel(quarter || { key: period }))}</div>
-          <div class="th-caption">${esc(caption)}</div>
+          <div class="th-caption">${esc(caption)}</div>${plain}
         </div>
         <div class="seg-glass th-mode" style="--n:2;--i:${countMode === 'subjects' ? 0 : 1}">
           <span class="seg-lens" aria-hidden="true"></span>
@@ -343,7 +347,7 @@ function heroHtml(rows, quarter) {
         const shown = countMode === 'marks' ? weights[v] : counts[v];
         return `<button class="c${v}" data-grade="${v}" ${counts[v] ? '' : 'disabled'}
           aria-label="${v}: ${counts[v]} ${unit(counts[v])}${weighted ? `, с весом ${weights[v]}` : ''}"><b>${v}</b><span>${shown} <small>${
-          weighted ? 'с весом' : unit(shown)}</small>${weighted ? `<small class="th-weight">${counts[v]} ${unit(counts[v])}</small>` : ''}</span></button>`;
+          weighted ? 'с весом' : unit(shown)}</small>${weighted ? `<small class="th-weight">без веса: ${counts[v]}</small>` : ''}</span></button>`;
       }).join('')}</div>
     </div>`;
 }
@@ -606,7 +610,7 @@ function gradeCardsHtml(rows, value) {
         </div>
         <div class="sc-marks">${marks.map((mark) => markBox(mark.mark, '', markWeight(mark))).join('')}</div>
         <div class="sc-foot"><span>${marks.length} ${plural(marks.length, 'оценка', 'оценки', 'оценок')}${
-          weight !== marks.length ? ` · вес ${weight}` : ''}</span><span>${esc(marks.map((mark) => shortDate(mark.date)).join(', '))}</span></div>
+          weight !== marks.length ? ` · с учётом веса ${weight}` : ''}</span><span>${esc(marks.map((mark) => shortDate(mark.date)).join(', '))}</span></div>
       </button>`;
   }).join('');
 }

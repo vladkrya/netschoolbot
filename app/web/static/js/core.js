@@ -141,7 +141,8 @@ export function showLoading(container, html) {
 export function showFailure(container, error, html) {
   // «Сетевой город» объявлен недоступным (sgo.js) — карточка уже всё сказала,
   // показанные данные остаются без лишней плашки.
-  if (error.sgoDown && container.childElementCount && !container.querySelector('.skeleton')) return;
+  // То же, если о простое школы уже сказали плашкой: одной хватит.
+  if ((error.sgoDown || sgoSaid(error)) && container.childElementCount && !container.querySelector('.skeleton')) return;
   if (state.refreshing && container.childElementCount && !container.querySelector('.skeleton')) {
     state.refreshFailed = true;
     banner(error.message, true, 5000);
@@ -420,6 +421,22 @@ function showNotice(text) {
   notice = text;
 }
 
+// О том, что «Сетевой город» не отвечает, говорим один раз — плашкой или
+// карточкой (sgo.js). Раньше плашка возвращалась после каждого ответа
+// не от школы (/api/profile и др. снимали «закрыто») и после каждого
+// обновления, а рядом вставала карточка. Снова — только когда школа
+// ответила (markSgoUp) и потом опять пропала.
+let sgoNoticed = false;
+
+/** Об этой ошибке школы человеку уже сказано. */
+export const sgoSaid = (error) => sgoNoticed && error?.source !== 'app' && error?.reason in WAIT_TEXTS;
+
+/** Показали карточку простоя (sgo.js): плашка о том же уже не нужна. */
+export function sgoNoticeShown() {
+  if (notice && notice !== APP_SERVER_TEXT) banner('');
+  sgoNoticed = true;
+}
+
 function clearNotices() {
   dismissedNotice = '';
   if (notice) banner('');
@@ -471,8 +488,12 @@ function staleBanner(show, reason, source) {
     clearNotices();
   }
   else if (LOGIN_TEXTS[reason]) loginFailedNotice(reason);
-  else if ($('sgoDown')) return;  // о простое школы уже сказано карточкой
-  else showNotice(source === 'app' ? APP_SERVER_TEXT : WAIT_TEXTS[reason] || STALE_TEXT);
+  else if (source === 'app') showNotice(APP_SERVER_TEXT);
+  else if ($('sgoDown') || sgoNoticed) return;  // о простое школы уже сказано
+  else {
+    showNotice(WAIT_TEXTS[reason] || STALE_TEXT);
+    sgoNoticed = true;
+  }
   if (show && reason === 'server' && source !== 'app') sgoHint(true);
 }
 
@@ -506,6 +527,7 @@ export const sgoDown = () => Date.now() < sgoDownUntil;
 
 export function markSgoUp() {
   sgoDownUntil = 0;
+  sgoNoticed = false;
   sgoRecoveryGeneration += 1;
   $('sgoDown')?.remove();
   document.dispatchEvent(new CustomEvent('netschool:sgo-up'));
