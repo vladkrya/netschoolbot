@@ -709,6 +709,9 @@
 :root[data-design="new"] .sc-marks { display: flex; gap: 5px; flex-wrap: wrap; }
 :root[data-design="new"] .sc-marks .mark-box { min-width: 28px; height: 28px; padding: 0 5px; border-radius: 9px; font-size: 14px; }
 :root[data-design="new"] .sc-foot { display: flex; justify-content: space-between; gap: 8px; margin-top: 9px; font-size: 12px; color: var(--text2); }
+/* «5 оценок · с учётом веса 8» не рвётся; длинный список дат переносится справа. */
+:root[data-design="new"] .sc-foot > span:first-child { flex: none; white-space: nowrap; }
+:root[data-design="new"] .sc-foot > span:last-child { text-align: right; }
 :root[data-design="new"] .subject-card:active { transform: scale(.98); }
 
 :root[data-design="new"] .totals-cards > * { animation: rise-in .35s var(--ease) both; }

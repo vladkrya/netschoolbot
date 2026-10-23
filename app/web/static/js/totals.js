@@ -610,7 +610,7 @@ function gradeCardsHtml(rows, value) {
         </div>
         <div class="sc-marks">${marks.map((mark) => markBox(mark.mark, '', markWeight(mark))).join('')}</div>
         <div class="sc-foot"><span>${marks.length} ${plural(marks.length, 'оценка', 'оценки', 'оценок')}${
-          weight !== marks.length ? ` · вес ${weight}` : ''}</span><span>${esc(marks.map((mark) => shortDate(mark.date)).join(', '))}</span></div>
+          weight !== marks.length ? ` · с учётом веса ${weight}` : ''}</span><span>${esc(marks.map((mark) => shortDate(mark.date)).join(', '))}</span></div>
       </button>`;
   }).join('');
 }
