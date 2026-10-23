@@ -46,6 +46,10 @@ export const state = {
   // Настройки с сервера бота (prefs.js), запрошенные из boot.js раньше дневника.
   prefsSync: null,
   initialDiaryFresh: null,
+  // Экран обновляют свайпом (screens.js): его запросы идут к школе, мимо
+  // сохранённого сервером бота.
+  freshScreen: false,
+  screenFailed: false,
 };
 
 export const $ = (id) => document.getElementById(id);
@@ -143,6 +147,8 @@ export function showFailure(container, error, html) {
   // показанные данные остаются без лишней плашки.
   // То же, если о простое школы уже сказали плашкой: одной хватит.
   if ((error.sgoDown || sgoSaid(error)) && container.childElementCount && !container.querySelector('.skeleton')) return;
+  // Экран, который строится заново после свайпа: прежний останется (screens.js).
+  if (state.freshScreen) state.screenFailed = true;
   if (state.refreshing && container.childElementCount && !container.querySelector('.skeleton')) {
     state.refreshFailed = true;
     banner(error.message, true, 5000);
@@ -857,6 +863,7 @@ export async function api(path, options = {}) {
     const { demoApi } = await import('./demo.js');
     return demoApi(path, options);
   }
+  if (state.freshScreen && !options.method && touchesSgo(path) && !path.includes('refresh=1')) path = withRefresh(path);
   let payload = await request(path, options);
 
   // offline — копия из service worker: при запуске на iPhone сеть

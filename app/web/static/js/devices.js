@@ -2,10 +2,10 @@
 // Сервер — app/web/devices.py. Telegram — основной сеанс, его не завершить.
 'use strict';
 
-import { api, banner, esc, initData, plural, tg } from './core.js';
+import { api, banner, esc, initData, plural, showFailure, tg } from './core.js';
 import { notify } from './haptics.js';
 import { ICONS } from './icons.js';
-import { popScreen, pushScreen } from './screens.js';
+import { onScreenRefresh, popScreen, pushScreen } from './screens.js';
 
 const post = (path, body) => api(path, { method: 'POST', body: JSON.stringify(body || {}) });
 
@@ -361,8 +361,9 @@ export function openDevices() {
   };
   // После входа нового устройства список обновляется, пока он под экраном ссылки.
   const load = () => api('/api/devices').then(({ data }) => draw(data.items, data.inactive_days))
-    .catch((error) => { body.innerHTML = `<div class="card error-card"><p>${esc(error.message)}</p></div>`; });
+    .catch((error) => showFailure(body, error, `<div class="card error-card"><p>${esc(error.message)}</p></div>`));
   body.innerHTML = '<div class="card"><div class="muted">Загрузка…</div></div>';
+  onScreenRefresh(body, load);
   load();
   // Вход, выход и подписи на других устройствах — сразу здесь (app/web/sync.py).
   const live = ({ detail }) => {

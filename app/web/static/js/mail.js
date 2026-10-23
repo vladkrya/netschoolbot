@@ -6,7 +6,7 @@ import {
 } from './core.js';
 import { notify, select } from './haptics.js';
 import { ICONS } from './icons.js';
-import { markScreen, popScreen, pushScreen } from './screens.js';
+import { markScreen, popScreen, pushScreen, reopenOnRefresh } from './screens.js';
 import { closeSheet, openSheet } from './sheet.js';
 import { setMailBadge } from './tabs.js';
 
@@ -302,6 +302,7 @@ export async function openMessage(id) {
   const inDeleted = folder === 'Deleted';
   const body = pushScreen('Письмо');
   markScreen(body, 'message', [id]);
+  reopenOnRefresh(body, () => openMessage(id));
   body.innerHTML = skeleton(4);
   try {
     const { data } = await api(`/api/mail/${encodeURIComponent(id)}`);
@@ -316,7 +317,7 @@ export async function openMessage(id) {
         ${attachmentsHtml(data.attachments)}
         <button class="btn outline mail-move${inDeleted ? '' : ' danger'}" id="mailMove" data-online>${inDeleted ? '↩ Вернуть во входящие' : '🗑 Удалить'}</button>
       </div>`;
-    $('mailMove').addEventListener('click', (event) => moveMessage(id, inDeleted, event.currentTarget));
+    body.querySelector('#mailMove').addEventListener('click', (event) => moveMessage(id, inDeleted, event.currentTarget));
     // Письмо прочитано — отметка в списке без перезагрузки.
     const message = (current()?.messages || []).find((item) => String(item.id) === String(id));
     if (message && !message.read) markRead(message);
@@ -328,6 +329,7 @@ export async function openMessage(id) {
 export async function openAnnouncements() {
   const body = pushScreen('Объявления');
   markScreen(body, 'announcements');
+  reopenOnRefresh(body, openAnnouncements);
   await renderAnnouncements(body);
 }
 

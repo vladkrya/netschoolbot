@@ -6,7 +6,7 @@ import {
   markValue, plural, shortDate, showFailure, showLoading, skeleton, state, syncFinished, syncStarted, weightedAverage, motionAtLeast, demo,
 } from './core.js';
 import { markBox, openMark } from './details.js';
-import { keepAcrossRestart, markScreen, pushScreen } from './screens.js';
+import { keepAcrossRestart, markScreen, onScreenRefresh, pushScreen, reopenOnRefresh } from './screens.js';
 import { ICONS } from './icons.js';
 import { openSheet, closeSheet } from './sheet.js';
 import { select, tap } from './haptics.js';
@@ -574,6 +574,7 @@ function openGrade(data, quarter, value) {
   const title = byMarks ? `Оценки «${value}»`
     : `${rows.length && rows.every((row) => row.official) ? 'Вышла' : 'Выходит'} «${value}»`;
   const body = pushScreen(title, quarter?.label || '');
+  reopenOnRefresh(body, () => openGrade(state.totals?.year === data.year ? state.totals : data, quarter, value), () => loadTotals(true));
   body.closest('.screen')?.classList.add('glassy');
   const shown = period;
   const draw = () => {
@@ -680,6 +681,7 @@ async function openArchivedSubject(subject, key, data = state.totals, existingBo
       body.querySelector('#archiveMarksRetry')?.addEventListener('click', () => load(true));
     }
   };
+  onScreenRefresh(body, () => load(true));
   load();
 }
 
@@ -687,6 +689,7 @@ async function openArchivedSubject(subject, key, data = state.totals, existingBo
 export async function openSubjectForDate(name, iso) {
   const body = pushScreen('Итоги по предмету', name);
   markScreen(body, 'subject-date', [name, iso]);
+  reopenOnRefresh(body, () => openSubjectForDate(name, iso));
   showLoading(body, skeleton(3));
   try {
     let data = state.grades || (await api('/api/marks')).data;
@@ -864,7 +867,10 @@ function openSubject(subject, key, existingBody = null, data = state.totals) {
     return;
   }
   const body = existingBody || pushScreen('Итоги по предмету', `на ${dayMonth(isoToday())}`);
-  if (!existingBody) markScreen(body, 'subject', [subject.subject, key]);
+  if (!existingBody) {
+    markScreen(body, 'subject', [subject.subject, key]);
+    reopenOnRefresh(body, () => openSubjectNamed(subject.subject, key), () => loadTotals(true));
+  }
   // Экран предмета — в том же стекле, что и вкладка (new.css).
   body.closest('.screen')?.classList.add('glassy');
   const marks = quarterMarks(subject, key);

@@ -5,7 +5,7 @@
 // «Назад» Telegram — она закрывает верхний экран, а не всё приложение.
 'use strict';
 
-import { $, esc, tg, stillMotion } from './core.js';
+import { $, esc, state, tg, stillMotion } from './core.js';
 import { tap } from './haptics.js';
 import { ICONS } from './icons.js';
 
@@ -72,10 +72,104 @@ export function restoreKept(saved = {}) {
   }
 }
 
+/* ───────────── Обновление свайпом вниз ─────────────
+ * Экран говорит, как себя обновить: onScreenRefresh — своим способом,
+ * reopenOnRefresh — открыться заново тем же вызовом. Заново экран строится
+ * невидимым поверх старого и сменяет его, только когда дорисуется: старые
+ * данные остаются на виду, пока идёт запрос, прокрутка — на том же месте. */
+const refreshers = new WeakMap();
+// Экран, который сейчас строится на замену (pushScreen кладёт новый рядом).
+let replacing = null;
+let replacement = null;
+// Дольше запрос с refresh=1 не ждёт и сервер.
+const REPLACE_WAIT_MS = 65000;
+
+export function onScreenRefresh(body, refresh) {
+  const screen = body?.closest?.('.screen');
+  if (screen) refreshers.set(screen, refresh);
+}
+
+/** prepare — что обновить до того, как открыть заново (неделю дневника):
+ *  open тогда берёт свежее. */
+export function reopenOnRefresh(body, open, prepare = null) {
+  const screen = body?.closest?.('.screen');
+  if (!screen) return;
+  refreshers.set(screen, async () => {
+    if (prepare) {
+      try {
+        await prepare();
+      } catch {
+        state.refreshFailed = true;
+      }
+    }
+    if (screen.isConnected) await replaceScreen(screen, open);
+  });
+}
+
+/** Обновить верхний экран. → умеет ли он обновляться. */
+export async function refreshTopScreen() {
+  const screen = topScreen();
+  const refresh = screen && refreshers.get(screen);
+  if (!refresh) return false;
+  await refresh();
+  return true;
+}
+
+const unfinished = (body) => !body.childElementCount || body.querySelector('.skeleton');
+
+async function replaceScreen(old, open) {
+  replacing = old;
+  state.screenFailed = false;
+  let opening;
+  try {
+    opening = open();
+  } finally {
+    replacing = null;
+  }
+  const fresh = replacement;
+  replacement = null;
+  try {
+    await opening;
+  } catch {
+    /* ошибку покажет сам экран */
+  }
+  if (!fresh) return;
+  const body = fresh.querySelector('.screen-body');
+  const until = Date.now() + REPLACE_WAIT_MS;
+  while (old.isConnected && Date.now() < until && unfinished(body)) {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  const index = stack.indexOf(old);
+  // Экран закрыли, пока шёл запрос, или новый так и не дорисовался.
+  if (index < 0 || unfinished(body)) {
+    fresh.remove();
+    if (index >= 0) state.refreshFailed = true;
+    return;
+  }
+  // Не загрузилось — остаются прежние данные, а не карточка ошибки.
+  if (state.screenFailed || (body.querySelector('.error-card') && !old.querySelector('.screen-body > .error-card'))) {
+    fresh.remove();
+    state.refreshFailed = true;
+    return;
+  }
+  stack[index] = fresh;
+  // Без «въезда» экрана и карточек: обновлённое просто встаёт на место.
+  fresh.style.animation = 'none';
+  for (const animation of fresh.getAnimations?.({ subtree: true }) || []) {
+    if (typeof CSSAnimation === 'undefined' || !(animation instanceof CSSAnimation)) continue;
+    if (animation.effect?.getTiming().iterations === Infinity) continue;
+    try { animation.finish(); } catch { /* уже закончилась */ }
+  }
+  fresh.classList.remove('replacing');
+  fresh.scrollTop = old.scrollTop;
+  old.remove();
+}
+
 export function pushScreen(title, subtitle = '') {
-  tap();
+  const swap = replacing;
+  if (!swap) tap();
   const screen = document.createElement('section');
-  screen.className = 'screen';
+  screen.className = swap ? 'screen replacing' : 'screen';
   screen.innerHTML = `
     <header class="screen-head">
       <button class="screen-back" aria-label="Назад">${ICONS.back}</button>
@@ -89,6 +183,11 @@ export function pushScreen(title, subtitle = '') {
     tap('soft');
     popScreen();
   });
+  if (swap) {
+    swap.after(screen);
+    replacement = screen;
+    return screen.querySelector('.screen-body');
+  }
   $('screens').appendChild(screen);
   stack.push(screen);
   syncBackButton();

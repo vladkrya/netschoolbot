@@ -2,9 +2,9 @@
 // за период, свежие оценки, долги, слабые предметы и задания на завтра.
 'use strict';
 
-import { api, banner, dayMonth, errorCard, esc, formatAverage, plural, skeleton } from './core.js';
+import { api, banner, dayMonth, errorCard, esc, formatAverage, plural, showFailure, skeleton } from './core.js';
 import { markBox } from './details.js';
-import { pushScreen } from './screens.js';
+import { onScreenRefresh, pushScreen } from './screens.js';
 import { notify, tap } from './haptics.js';
 
 function childCard(child, index) {
@@ -57,9 +57,10 @@ export async function openChildren() {
         }
       }));
     } catch (error) {
-      body.innerHTML = errorCard(error, 'childrenRetry');
+      showFailure(body, error, errorCard(error, 'childrenRetry'));
       body.querySelector('#childrenRetry')?.addEventListener('click', () => load(true));
     }
   };
+  onScreenRefresh(body, () => load(true));
   await load();
 }
