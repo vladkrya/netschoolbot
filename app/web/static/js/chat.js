@@ -8,7 +8,7 @@
 import { api, banner, errorCard, esc, escRich, skeleton } from './core.js';
 import { notify, select, tap } from './haptics.js';
 import { ICONS } from './icons.js';
-import { pushScreen, topScreen } from './screens.js';
+import { pushScreen, reopenOnRefresh, topScreen } from './screens.js';
 import { closeSheet, openSheet } from './sheet.js';
 
 import { chatConnected, chatEvents, refreshChatUnread, sendTyping, watchRoom } from './chat-live.js';
@@ -792,6 +792,7 @@ function openActions(message, { setReply, setEdit, update, moderator, admin, roo
 
 async function openReports(onClose) {
   const body = pushScreen('Жалобы');
+  reopenOnRefresh(body, () => openReports(onClose));
   const draw = async () => {
     body.innerHTML = skeleton(3);
     let items;

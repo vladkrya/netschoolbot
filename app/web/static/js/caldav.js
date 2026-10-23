@@ -1,8 +1,8 @@
 // Расписание в календаре телефона: доступ CalDAV и подписка .ics.
 'use strict';
 
-import { $, api, banner, esc } from './core.js';
-import { pushScreen } from './screens.js';
+import { $, api, banner, esc, showFailure } from './core.js';
+import { onScreenRefresh, pushScreen } from './screens.js';
 import { notify } from './haptics.js';
 import { closeDrawer } from './profile.js';
 
@@ -98,5 +98,10 @@ export async function openCalendar() {
     try { const { data } = await api('/api/caldav-account'); render(data); }
     catch (error) { screen.innerHTML = `<div class="muted small">${esc(error.message)}</div>`; }
   };
+  // Свайп вниз: на месте, без «Загрузка…»; не вышло — прежнее остаётся.
+  onScreenRefresh(screen, async () => {
+    try { render((await api('/api/caldav-account')).data); }
+    catch (error) { showFailure(screen, error, `<div class="muted small">${esc(error.message)}</div>`); }
+  });
   await load();
 }

@@ -4,7 +4,7 @@
 
 import { api, banner, esc, parseIso, MONTHS, showFailure, skeleton } from './core.js';
 import { notify, tap } from './haptics.js';
-import { pushScreen } from './screens.js';
+import { pushScreen, reopenOnRefresh } from './screens.js';
 
 function dateText(iso) {
   if (!iso) return '';
@@ -20,6 +20,7 @@ function period(event) {
 
 export async function openEvents() {
   const body = pushScreen('Олимпиады и конкурсы');
+  reopenOnRefresh(body, openEvents);
   body.innerHTML = skeleton(3);
   try {
     const { data } = await api('/api/events');
@@ -45,6 +46,7 @@ export async function openEvents() {
 
 export async function openReferences() {
   const body = pushScreen('Заказать справку');
+  reopenOnRefresh(body, openReferences);
   body.innerHTML = skeleton(2);
   let data;
   try {

@@ -27,7 +27,7 @@ import { loadAssistantTab, openAssistant } from './assistant.js';
 import { navTabs, renderNav } from './tabs.js';
 import { closeSheet, initSheet, openSheet, sheetOpen } from './sheet.js';
 import { openBugReport } from './bugreport.js';
-import { clearScreens, handleBack, hasScreens, setFallbackBack } from './screens.js';
+import { clearScreens, handleBack, hasScreens, refreshTopScreen, setFallbackBack, topScreen } from './screens.js';
 import { initSwipeBack } from './swipeback.js';
 import { initTrackpad } from './trackpad.js';
 import { initIosHaptics, notify, tap } from './haptics.js';
@@ -194,10 +194,30 @@ function bindPullToRefresh() {
     ring.style.transform = '';
     indicator.classList.remove('show');
   };
+  // Экран поверх вкладки — кружок под его шапкой и над ним.
+  const place = (screen) => {
+    indicator.classList.toggle('over-screen', Boolean(screen));
+    const head = screen?.querySelector('.screen-head');
+    indicator.style.top = head ? `${head.getBoundingClientRect().bottom - 34}px` : '';
+  };
+  // Палец на прокрученном списке (переписка чата, длинная таблица) тянет
+  // его назад, а не обновляет.
+  const scrolledUnder = (target, screen) => {
+    for (let el = target; el && el !== document.body; el = el.parentElement) {
+      if (el.scrollTop > 0) return true;
+      if (el === screen) break;
+    }
+    return false;
+  };
   document.addEventListener('touchstart', (event) => {
+    if (busy || isDrawerOpen() || event.touches.length !== 1) return;
+    const screen = topScreen();
     // В чате помощника жест вниз — прокрутка переписки, обновлять нечего.
-    if (busy || hasScreens() || isDrawerOpen() || state.tab === 'assistant' || window.scrollY > 0 || event.touches.length !== 1) return;
-    start = { x: event.touches[0].clientX, y: event.touches[0].clientY };
+    // В игре жест вниз — ход.
+    if (screen ? screen.matches('.game-screen') : state.tab === 'assistant' || window.scrollY > 0) return;
+    if (scrolledUnder(event.target, screen)) return;
+    place(screen);
+    start = { x: event.touches[0].clientX, y: event.touches[0].clientY, screen };
     pulled = 0;
     keepTouch(event.target, { move: onPullMove, end: onPullEnd, cancel: onPullCancel });
   }, { passive: true });
@@ -231,6 +251,7 @@ function bindPullToRefresh() {
   document.addEventListener('touchmove', onPullMove, { passive: true });
   const onPullEnd = async () => {
     if (!start) return;
+    const pulledOn = start;
     start = null;
     if (pulled <= PULL_ARM) {
       hide();
@@ -258,6 +279,7 @@ function bindPullToRefresh() {
     text.textContent = 'Обновляю…';
     state.refreshing = true;
     state.refreshFailed = false;
+    const { screen } = pulledOn;
     const merged = new Promise((resolve) => setTimeout(() => {
       ring.style.transition = 'opacity .1s';
       ring.style.opacity = '0';
@@ -266,14 +288,19 @@ function bindPullToRefresh() {
       resolve();
     }, MERGE_MS));
     try {
-      await quietly(() => TABS[state.tab](true));
+      // Экран поверх вкладки обновляется сам; вкладка под ним — тоже, чтобы
+      // после «назад» не оказаться в старых данных.
+      await Promise.all([
+        quietly(() => TABS[state.tab](true)),
+        screen?.isConnected ? refreshScreen() : null,
+      ]);
     } finally {
       state.refreshing = false;
       await merged;
       syncFinished();
       setTimeout(() => root.classList.remove('sync-grow'), 350);
     }
-    const failed = state.refreshFailed || document.querySelector('.panel.active .error-card');
+    const failed = state.refreshFailed || (!hasScreens() && document.querySelector('.panel.active .error-card'));
     notify(failed ? 'error' : 'success');
     text.textContent = failed ? 'Не удалось обновить' : 'Обновлено';
     arc.style.transition = '';
@@ -594,6 +621,16 @@ async function refreshCurrentTab(event) {
     $('refreshBtn').disabled = false;
     syncFinished();
     done();
+  }
+}
+
+/** Обновить экран поверх вкладки: его запросы идут к школе мимо сохранённого. */
+async function refreshScreen() {
+  state.freshScreen = true;
+  try {
+    await refreshTopScreen();
+  } finally {
+    state.freshScreen = false;
   }
 }
 
