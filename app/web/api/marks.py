@@ -115,7 +115,13 @@ async def marks(request: web.Request) -> web.Response:
         known = {normalize(name) for name in set(by_subject) | set(lessons)}
         extra = {name for key, (name, _) in totals_by_name.items() if key not in known}
 
-        complete = {q.key for q in year if q.end <= fetched_end}
+        # Будущие недели школа может не отдать (409 — см. _collect_weeks):
+        # не начавшийся период полон, только если дневник дошёл до его
+        # последнего учебного дня. Загрузка идёт неделями — считаем по концу недели.
+        last = max((day.day for day in days), default=year[0].start)
+        reached = last + dt.timedelta(days=6 - last.weekday())
+        complete = {q.key for q in year if q.end <= fetched_end
+                    and (q.start <= today or (q.lessons_end or q.end) <= reached)}
         subjects = []
         for subject in sorted(set(by_subject) | set(lessons) | extra):
             items = by_subject.get(subject, [])

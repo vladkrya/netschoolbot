@@ -532,6 +532,16 @@ class TestData:
         assert asked == [dt.date(2027, 1, 11)]
         assert data["subjects"][0]["lessons"] == {"q1": {"total": 1, "done": 1}, "q2": {"total": 2, "done": 0}}
 
+        # Школа не отдала недели до конца второй четверти — числа уроков нет.
+        async def truncated(user, start, end, **kwargs):
+            return [DiaryDay(day=day, lessons=[Lesson(number=1, subject="Алгебра")])
+                    for day in (dt.date(2026, 9, 7), dt.date(2026, 11, 9))]
+
+        app_context.diary.fetch_period = truncated
+        params = {"token": token, "refresh": "1"}
+        data = (await (await client.get(f"{BASE}/api/marks", params=params)).json())["data"]
+        assert data["subjects"][0]["lessons"] == {"q1": {"total": 1, "done": 1}}
+
     async def test_marks_use_chosen_scheme(self, client, app_context, token):
         bad = await client.post(
             f"{BASE}/api/prefs", params={"token": token},
