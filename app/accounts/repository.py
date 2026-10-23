@@ -71,6 +71,17 @@ class AccountRepository:
             "SELECT DISTINCT provider FROM oauth_identities WHERE telegram_id = ?", (telegram_id,))
         return {row["provider"] for row in rows}
 
+    async def oauth_email(self, telegram_id: int) -> str:
+        row = await self._db.fetch_one(
+            "SELECT email FROM oauth_identities WHERE telegram_id = ? AND provider = 'yandex'",
+            (telegram_id,))
+        return row["email"] if row else ""
+
+    async def update_oauth_email(self, telegram_id: int, provider: str, subject: str, email: str) -> None:
+        await self._db.execute(
+            "UPDATE oauth_identities SET email = ? WHERE telegram_id = ? AND provider = ? AND subject = ?",
+            (email, telegram_id, provider, subject))
+
     async def create_oauth_user(self, provider: str, subject: str, display_name: str) -> int:
         """Новый пользователь без Telegram и почты, который входит через провайдера.
         Если этот вход уже есть (два возврата сразу) — его пользователь."""

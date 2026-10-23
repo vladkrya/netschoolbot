@@ -3,8 +3,8 @@
 Кнопка ведёт на наш /api/account/yandex/start, оттуда — на страницу входа
 Яндекса, а Яндекс возвращает на /api/account/yandex/callback с кодом. Код
 сервер меняет на токен и по нему один раз спрашивает id пользователя и имя.
-Токен нигде не хранится. Почту и телефон не запрашиваем: только доступ
-login:info. https://yandex.ru/dev/id/doc/ru/
+Токен нигде не хранится. Почта нужна для подстановки при настройке входа
+по почте: login:info и login:email. https://yandex.ru/dev/id/doc/ru/
 """
 
 from __future__ import annotations
@@ -40,7 +40,7 @@ YANDEX = Provider(
     auth_url="https://oauth.yandex.ru/authorize",
     token_url="https://oauth.yandex.ru/token",
     info_url="https://login.yandex.ru/info?format=json",
-    scope="login:info",
+    scope="login:info login:email",
 )
 
 
@@ -50,6 +50,7 @@ class Identity:
 
     subject: str
     name: str = ""
+    email: str = ""
 
 
 @dataclass(slots=True)
@@ -122,4 +123,8 @@ def yandex_identity(info: dict, client_id: str) -> Identity:
         raise InitDataError("В ответе Яндекса нет id пользователя")
     name = info.get("display_name") or info.get("real_name") or " ".join(
         part for part in (info.get("first_name"), info.get("last_name")) if part) or info.get("login") or ""
-    return Identity(subject=subject, name=str(name)[:64])
+    email = info.get("default_email")
+    email = email.strip().lower() if isinstance(email, str) else ""
+    if len(email) > 254 or "@" not in email or any(c.isspace() for c in email):
+        email = ""
+    return Identity(subject=subject, name=str(name)[:64], email=email)

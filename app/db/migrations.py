@@ -889,6 +889,10 @@ MIGRATIONS: list[str] = [
     );
     CREATE INDEX idx_oauth_identities_user ON oauth_identities(telegram_id);
     """,
+    # Адрес от OAuth — подсказка для формы, а не готовый способ входа.
+    """
+    ALTER TABLE oauth_identities ADD COLUMN email TEXT NOT NULL DEFAULT '';
+    """,
 ]
 
 

@@ -378,12 +378,14 @@ async def yandex_callback(request: web.Request) -> web.Response:
             raise _yandex_back(request, "failed", link=True)
         if not await app.accounts.link_oauth(item.link_to, YANDEX.name, identity.subject):
             raise _yandex_back(request, "taken", link=True)
+        await app.accounts.update_oauth_email(item.link_to, YANDEX.name, identity.subject, identity.email)
         logger.info("К аккаунту %s привязан Яндекс ID", item.link_to)
         raise _yandex_back(request, link=True)
     telegram_id = await app.accounts.oauth_user(YANDEX.name, identity.subject)
     if telegram_id is None:
         telegram_id = await app.accounts.create_oauth_user(YANDEX.name, identity.subject, identity.name)
         logger.info("Новый аккаунт через Яндекс ID: %s", telegram_id)
+    await app.accounts.update_oauth_email(telegram_id, YANDEX.name, identity.subject, identity.email)
     signed = await _signed_in(request, telegram_id, "yandex")
     response = _yandex_back(request)
     for name, morsel in signed.cookies.items():
@@ -625,6 +627,7 @@ async def account_info(request: web.Request) -> web.Response:
         # Открыт дневник ученика, пригласившего на просмотр: только чтение.
         "viewing": {"id": owner.telegram_id, "name": owner.label} if owner else None,
         "email": account["email"] if account else None,
+        "suggested_email": await app.accounts.oauth_email(user.telegram_id) if not account else None,
         "number": await app.accounts.number(user.telegram_id),
         "verified": bool(account and account["email_verified_at"]),
         "needs_verify": await _needs_verify(app, user.telegram_id, account),

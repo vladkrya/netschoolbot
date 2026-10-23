@@ -1039,7 +1039,7 @@ export async function openAccountSettings() {
     const emailForm = (title, withCurrent) => `
       <form class="account-form" data-form="attach">
         <div class="card-title">${title}</div>
-        <input class="field" type="email" name="email" autocomplete="username" placeholder="Почта" value="${esc(info.email || '')}" required>
+        <input class="field" type="email" name="email" autocomplete="username" placeholder="Почта" value="${esc(info.email || info.suggested_email || '')}" required>
         ${withCurrent ? '<input class="field" type="password" name="current" autocomplete="current-password" placeholder="Текущий пароль" required>' : ''}
         <input class="field" type="password" name="password" autocomplete="new-password" placeholder="${withCurrent ? 'Новый пароль (от 8 символов)' : 'Пароль (от 8 символов)'}" required>
         <p class="account-error" hidden></p>

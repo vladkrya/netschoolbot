@@ -35,14 +35,14 @@ def query_of(response) -> dict[str, str]:
     return {key: value[0] for key, value in parse_qs(urlsplit(response.headers["Location"]).query).items()}
 
 
-async def sign_in(client, monkeypatch, subject="1130000012345678", name="Иван Петров"):
+async def sign_in(client, monkeypatch, subject="1130000012345678", name="Иван Петров", email=""):
     """Полный вход через Яндекс: вернуть ответ callback."""
     response = await client.get(f"{BASE}/api/account/yandex/start", allow_redirects=False)
     state = query_of(response)["state"]
 
     async def finish(item, code, client_id, secret):
         assert (code, client_id, secret) == ("the-code", CLIENT_ID, "secret")
-        return Identity(subject=subject, name=name)
+        return Identity(subject=subject, name=name, email=email)
 
     monkeypatch.setattr(account_web.YANDEX_LOGINS, "finish", finish)
     return await client.get(f"{BASE}/api/account/yandex/callback",
@@ -50,6 +50,16 @@ async def sign_in(client, monkeypatch, subject="1130000012345678", name="Ива�
 
 
 class TestIdentity:
+    def test_email_is_normalized(self):
+        identity = yandex_identity({"id": "123", "client_id": CLIENT_ID,
+                                    "default_email": " Ivan@Yandex.ru "}, CLIENT_ID)
+        assert identity.email == "ivan@yandex.ru"
+
+    @pytest.mark.parametrize("email", [None, [], "broken", "bad email@yandex.ru"])
+    def test_bad_email_does_not_break_login(self, email):
+        assert yandex_identity({"id": "123", "client_id": CLIENT_ID,
+                                "default_email": email}, CLIENT_ID).email == ""
+
     def test_info_to_identity(self):
         identity = yandex_identity({"id": "123", "client_id": CLIENT_ID, "login": "ivan",
                                     "display_name": "Иван"}, CLIENT_ID)
@@ -67,6 +77,21 @@ class TestIdentity:
 
 
 class TestFlow:
+    async def test_email_is_suggested_without_taking_existing_account(self, client, app_context, monkeypatch):
+        owner_id = await app_context.accounts.create_web_user("ivan@yandex.ru", "existing-hash")
+        response = await sign_in(client, monkeypatch, email="ivan@yandex.ru")
+        token = response.cookies["netschool_token"].value
+        user_id = await app_context.miniapp.resolve_token(token)
+        assert user_id != owner_id
+        info = (await (await client.get(f"{BASE}/api/account", params={"token": token})).json())["data"]
+        assert info["suggested_email"] == "ivan@yandex.ru" and info["email"] is None
+        assert await app_context.accounts.by_user(user_id) is None
+        assert (await app_context.accounts.by_email("ivan@yandex.ru"))["telegram_id"] == owner_id
+        await sign_in(client, monkeypatch, email="new@yandex.ru")
+        assert await app_context.accounts.oauth_email(user_id) == "new@yandex.ru"
+        await app_context.accounts.unlink_oauth(user_id, "yandex")
+        assert await app_context.accounts.oauth_email(user_id) == ""
+
     async def test_start_redirects_with_pkce(self, client):
         config = await (await client.get(f"{BASE}/api/account/config")).json()
         assert config["data"]["yandex"] is True
@@ -74,7 +99,7 @@ class TestFlow:
         assert response.status == 302
         url, query = urlsplit(response.headers["Location"]), query_of(response)
         assert url.netloc == "oauth.yandex.ru" and query["client_id"] == CLIENT_ID
-        assert query["code_challenge_method"] == "S256" and query["scope"] == "login:info"
+        assert query["code_challenge_method"] == "S256" and query["scope"] == "login:info login:email"
         assert query["redirect_uri"].endswith(f"{BASE}/api/account/yandex/callback")
         assert response.cookies["yandex_state"].value == query["state"]
 
