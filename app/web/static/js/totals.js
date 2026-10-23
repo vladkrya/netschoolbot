@@ -841,8 +841,12 @@ function loadUpcomingLessons(data, key) {
   const id = `${data.year_id}|${key}`;
   if (!upcomingLessons.has(id)) {
     const request = api(`/api/marks/lessons?quarter=${encodeURIComponent(key)}`)
-      .then(({ data: payload }) => payload?.lessons || null);
-    // Сбой не запоминаем: в следующий раз спросим снова.
+      .then(({ data: payload }) => {
+        // Расписание ещё не опубликовано до конца — спросим снова в следующий раз.
+        if (!payload?.lessons) upcomingLessons.delete(id);
+        return payload?.lessons || null;
+      });
+    // Сбой тоже не запоминаем.
     request.catch(() => upcomingLessons.delete(id));
     upcomingLessons.set(id, request);
   }
@@ -965,7 +969,9 @@ function openSubject(subject, key, existingBody = null, data = state.totals) {
   bindAverageChart(body, marks.filter((mark) => !isAttendance(mark)));
   if (upcoming) {
     loadUpcomingLessons(data, key).then((found) => {
-      const counts = found?.[subject.subject];
+      // Имя в расписании может отличаться регистром или пробелами.
+      const name = normName(subject.subject);
+      const counts = Object.entries(found || {}).find(([other]) => normName(other) === name)?.[1];
       const box = body.querySelector('[data-lessons]');
       if (counts?.total && box?.isConnected) box.innerHTML = lessonsHtml(counts, quarter, key, false);
     }, () => { /* строка необязательная */ });
