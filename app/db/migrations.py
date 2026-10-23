@@ -893,6 +893,22 @@ MIGRATIONS: list[str] = [
     """
     ALTER TABLE oauth_identities ADD COLUMN email TEXT NOT NULL DEFAULT '';
     """,
+    # Своя иконка приложения (web/app_icon.py): работает только после
+    # проверки владельцем. token — адрес картинки; отказ или замена стирают
+    # его, и старый адрес отдаёт стандартную иконку.
+    """
+    CREATE TABLE app_icons (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        telegram_id INTEGER NOT NULL REFERENCES users(telegram_id) ON DELETE CASCADE,
+        token       TEXT    UNIQUE,
+        status      TEXT    NOT NULL,
+        image       BLOB    NOT NULL,
+        created_at  REAL    NOT NULL,
+        decided_at  REAL
+    );
+    CREATE INDEX idx_app_icons_user ON app_icons(telegram_id, status);
+    CREATE INDEX idx_app_icons_status ON app_icons(status, id);
+    """,
 ]
 
 

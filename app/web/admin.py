@@ -3,7 +3,7 @@
 Тумблеры «Решения всему классу», «Чаты» и «Мой Сетевой город другим
 аккаунтам» сохраняются своими запросами (solver.py, chat.py, account.py);
 здесь — общее состояние, вход на сайт через Telegram (как /tgwidget)
-и статистика (как /adminstats).
+и статистика (как /adminstats). Вкладка «Иконки» — app_icon.py.
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ from aiohttp import web
 
 from ..bot.handlers.admin import WIDGET_MODES, set_widget_mode, stats_report, widget_mode
 from ..netschool import ownership
-from . import chat, solver
+from . import app_icon, chat, solver
 from .api import context, current_user, json_error
 
 routes = web.RouteTableDef()
@@ -33,6 +33,7 @@ async def _state(request: web.Request) -> dict:
             "domain": app.settings.web.login_widget_domain,
             "reserve": bool(app.settings.web.login_widget_bot_token),
         },
+        "icons_pending": len(await app_icon.AppIconRepository(app.db).listing("pending")),
     }
 
 

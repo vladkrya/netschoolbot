@@ -2692,6 +2692,18 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
 .device-end-all { width: 100%; margin-top: 4px; }
 .device-note { margin: 12px 4px; }
 .admin-stats { white-space: pre-line; line-height: 1.45; font-size: 14px; }
+.admin-tabs { margin-bottom: 12px; }
+/* Админ-настройки → Иконки и экран «Иконка приложения» (admin.js, app-icon.js).
+   Скругление как у иконки на экране «Домой». */
+.admin-icon { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-top: 1px solid var(--border); }
+.card-title + .admin-icon { border-top: 0; }
+.admin-icon img, .app-icon-preview { border-radius: 22%; object-fit: cover; flex: none; background: rgba(127, 127, 127, .15); }
+.admin-icon-who { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; overflow-wrap: anywhere; }
+.admin-icon-actions { display: flex; flex-direction: column; gap: 6px; }
+.admin-icon-actions .btn { padding: 6px 12px; }
+.app-icon-card { display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; }
+.app-icon-rejected { color: var(--red); }
+.app-icon-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
 .device-intro { margin-top: 0; }
 .device-group { margin: 18px 4px 8px; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--text2); }
 .device-auto { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }

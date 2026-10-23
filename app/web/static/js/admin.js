@@ -1,6 +1,6 @@
 // Настройки → «Админ-настройки»: всё, что может только владелец (TG_ADMIN_ID).
 // Сервер — app/web/admin.py; тумблеры сохраняются своими запросами
-// (solver.py, chat.py, account.py).
+// (solver.py, chat.py, account.py). Вкладка «Иконки» — app/web/app_icon.py.
 'use strict';
 
 import { api, banner, esc, showFailure } from './core.js';
@@ -35,12 +35,98 @@ function widgetCard(widget) {
     </div>`;
 }
 
+function tabs(active, pending) {
+  return `<div class="chips admin-tabs">
+      <button class="chip ${active === 'main' ? 'active' : ''}" data-admin-tab="main" aria-pressed="${active === 'main'}">Настройки</button>
+      <button class="chip ${active === 'icons' ? 'active' : ''}" data-admin-tab="icons" aria-pressed="${active === 'icons'}">Иконки${pending ? ` · ${pending}` : ''}</button>
+    </div>`;
+}
+
+const when = (seconds) => new Date(seconds * 1000).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+
+function iconRow(item) {
+  const pending = item.status === 'pending';
+  return `<div class="admin-icon">
+      <img src="${item.image}" alt="" width="64" height="64">
+      <div class="admin-icon-who"><b>${esc(item.user)}</b><span class="muted small">${esc(item.school)}${item.school ? ' · ' : ''}${when(item.created_at)}</span></div>
+      <div class="admin-icon-actions">
+        ${pending ? `<button class="btn" data-icon-id="${item.id}" data-decision="approve">Принять</button>` : ''}
+        <button class="btn outline" data-icon-id="${item.id}" data-decision="reject">${pending ? 'Отказать' : 'Отозвать'}</button>
+      </div>
+    </div>`;
+}
+
+function iconsTab(data) {
+  const pending = data.items.filter((item) => item.status === 'pending');
+  const approved = data.items.filter((item) => item.status === 'approved');
+  return `<div class="card">
+      <label class="switch-row"><span>Пуши о новых иконках<span class="muted small switch-note">приходят, когда кто-то загрузил иконку на проверку</span></span>
+        <input type="checkbox" switch class="switch" data-icon-push ${data.push ? 'checked' : ''}></label>
+    </div>
+    <div class="card">
+      <div class="card-title">На проверке</div>
+      ${pending.map(iconRow).join('') || '<div class="muted small">Новых иконок нет.</div>'}
+    </div>
+    ${approved.length ? `<div class="card">
+      <div class="card-title">Работают</div>
+      ${approved.map(iconRow).join('')}
+    </div>` : ''}
+    <p class="muted small device-note">Отказ или отзыв гасит адрес картинки: вместо неё отдаётся стандартная иконка.
+      Android вернёт её на экран сам, на iPhone уже добавленная иконка остаётся до переустановки.</p>`;
+}
+
 export function openAdmin() {
   const body = pushScreen('Админ-настройки', 'видно только вам');
   body.innerHTML = '<div class="muted small">Загрузка…</div>';
+  let tab = 'main';
+  let pendingCount = 0;
+
+  const drawIcons = (data) => {
+    pendingCount = data.items.filter((item) => item.status === 'pending').length;
+    body.innerHTML = tabs('icons', pendingCount) + iconsTab(data);
+    bindTabs();
+    body.querySelector('[data-icon-push]').addEventListener('change', async (event) => {
+      const input = event.currentTarget;
+      select();
+      input.disabled = true;
+      try {
+        await post('/api/admin/icons/push', { on: input.checked });
+        notify('success');
+      } catch (error) {
+        notify('error');
+        input.checked = !input.checked;
+        banner(error.message, true);
+      } finally {
+        input.disabled = false;
+      }
+    });
+    body.querySelectorAll('[data-decision]').forEach((button) => button.addEventListener('click', async () => {
+      const reject = button.dataset.decision === 'reject';
+      if (reject && !window.confirm('Отказать? Адрес иконки перестанет работать, человеку придёт уведомление.')) return;
+      select();
+      button.classList.add('loading');
+      try {
+        const { data: fresh } = await post(`/api/admin/icons/${button.dataset.iconId}`, { decision: button.dataset.decision });
+        notify('success');
+        drawIcons(fresh);
+      } catch (error) {
+        notify('error');
+        banner(error.message, true);
+        button.classList.remove('loading');
+      }
+    }));
+  };
+
+  const bindTabs = () => body.querySelectorAll('[data-admin-tab]').forEach((chip) => chip.addEventListener('click', () => {
+    if (chip.dataset.adminTab === tab) return;
+    select();
+    tab = chip.dataset.adminTab;
+    load();
+  }));
 
   const draw = (data) => {
-    body.innerHTML = `<div class="card">
+    pendingCount = data.icons_pending || 0;
+    body.innerHTML = `${tabs('main', pendingCount)}<div class="card">
         ${data.solver_class ? toggle('solver_class', 'Решения заданий всему классу',
           'кнопка «Решение» появится у одноклассников, которые пользуются ботом', data.solver_class.on) : ''}
         ${data.chats ? toggle('chats', 'Чаты в «Сообщениях»',
@@ -58,6 +144,7 @@ export function openAdmin() {
   };
 
   const bind = () => {
+    bindTabs();
     body.querySelectorAll('[data-admin-switch]').forEach((input) => input.addEventListener('change', async () => {
       select();
       input.disabled = true;
@@ -97,8 +184,8 @@ export function openAdmin() {
     });
   };
 
-  const load = () => api('/api/admin')
-    .then(({ data }) => draw(data))
+  const load = () => (tab === 'icons' ? api('/api/admin/icons').then(({ data }) => drawIcons(data))
+    : api('/api/admin').then(({ data }) => draw(data)))
     .catch((error) => showFailure(body, error, `<div class="muted small">${esc(error.message)}</div>`));
   onScreenRefresh(body, load);
   load();

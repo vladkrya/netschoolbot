@@ -322,7 +322,7 @@ function adminSection(admin) {
   return `<section class="drawer-section">
       <div class="drawer-heading">Администрирование</div>
       <button class="drawer-link" id="drawerAdmin">${ICONS.shield} Админ-настройки</button>
-      <div class="muted small">видно только вам: решения классу, чаты, вход через Telegram, статистика</div>
+      <div class="muted small">видно только вам: решения классу, чаты, вход через Telegram, статистика, проверка иконок</div>
     </section>`;
 }
 
@@ -485,6 +485,7 @@ function render() {
       ${spooky ? '' : customAccent ? '<button class="link accent-action" id="accentRemember">Сохранить этот цвет</button>'
         : saved.includes(accent) ? '<button class="link accent-action" id="accentForget">Убрать из сохранённых</button>' : ''}
       ${tabsMore()}
+      ${demo ? '' : `<button class="drawer-link" id="drawerAppIcon">${ICONS.install} Иконка приложения</button>`}
       ${more('home', 'Главная и расписание', `
       <label class="switch-row"><span>Подсвечивать Д/З на главной<span class="muted small switch-note">красным — не сделано, зелёным — сделано</span></span>
         <input type="checkbox" switch class="switch" id="hwStatusShow" ${showHomeworkStatus() ? 'checked' : ''}></label>
@@ -895,6 +896,12 @@ function bindDrawer() {
     closeDrawer();
     const { openDevices } = await import('./devices.js');
     openDevices();
+  });
+  $('drawerAppIcon')?.addEventListener('click', async () => {
+    tap();
+    closeDrawer();
+    const { openAppIcon } = await import('./app-icon.js');
+    openAppIcon();
   });
   $('drawerAdmin')?.addEventListener('click', async () => {
     tap();

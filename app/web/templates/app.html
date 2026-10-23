@@ -100,10 +100,10 @@
 <title>Дневник</title>
 {% endif %}
 {% if not demo %}<link rel="manifest" href="{{ base }}/manifest.webmanifest?token={{ token }}">{% endif %}
-<link rel="icon" type="image/png" href="{{ base }}/static/icon-192.png">
+<link rel="icon" type="image/png" href="{{ icon_192 or base ~ '/static/icon-192.png' }}">
 <!-- PNG, а не SVG: iOS не берёт SVG для иконки на домашнем экране и
      оставляет пустую плитку. -->
-<link rel="apple-touch-icon" href="{{ base }}/static/apple-touch-icon.png">
+<link rel="apple-touch-icon" href="{{ icon_180 or base ~ '/static/apple-touch-icon.png' }}">
 <link rel="stylesheet" href="{{ base }}/static/v{{ version }}/app.css">
 <!-- Новый дизайн — по умолчанию, «Старый дизайн» — тумблер в настройках. Правила нового — под html[data-design="new"]. -->
 <link rel="stylesheet" href="{{ base }}/static/v{{ version }}/new.css">

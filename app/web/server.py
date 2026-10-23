@@ -25,7 +25,7 @@ from aiohttp import web
 
 from .. import __version__
 from ..context import AppContext
-from . import account, admin, api, assistant, bugreport, caldav, captcha_proxy, chat, clock, devices, extras, lock, retro, solver, status, sync
+from . import account, admin, api, app_icon, assistant, bugreport, caldav, captcha_proxy, chat, clock, devices, extras, lock, retro, solver, status, sync
 from .api import BOT, CONTEXT
 
 logger = logging.getLogger("netschoolbot.web")
@@ -176,6 +176,7 @@ def create_app(context: AppContext, bot=None) -> web.Application:
     inner.add_routes(chat.routes)
     inner.add_routes(account.routes)
     inner.add_routes(admin.routes)
+    inner.add_routes(app_icon.routes)
     inner.add_routes(devices.routes)
     inner.add_routes(bugreport.routes)
     inner.add_routes(assistant.routes)
@@ -185,6 +186,7 @@ def create_app(context: AppContext, bot=None) -> web.Application:
     inner.add_routes(status.routes)
     inner.add_routes(retro.routes)
     inner.add_routes(page_routes)
+    inner.add_routes(app_icon.page_routes)
     inner.add_routes(retro.page_routes)
     # Те же файлы под путём с версией. Модули JS импортируют друг друга
     # относительными путями без ?v=, а Cloudflare навязывает браузеру кэш
@@ -459,6 +461,8 @@ async def index(request: web.Request) -> web.Response:
             "assistant": context.settings.assistant.enabled,
             "attachment_hosts": context.settings.web.attachment_hosts,
             "site_url": _site_url(request),
+            "icon_192": await app_icon.icon_url(context, _base(request), user.telegram_id, 192) if user else "",
+            "icon_180": await app_icon.icon_url(context, _base(request), user.telegram_id, 180) if user else "",
         },
     )
     # В поиск — только чистая главная: адрес с токеном или кодом входа
@@ -616,9 +620,10 @@ async def manifest(request: web.Request) -> web.Response:
         "background_color": "#0d1117",
         "theme_color": "#0d1117",
         "lang": "ru",
+        # Своя иконка — только одобренная владельцем (app_icon.py).
         "icons": [
             {
-                "src": f"{base}/static/icon-{size}.png",
+                "src": await app_icon.icon_url(context, base, user.telegram_id, size) if user else f"{base}/static/icon-{size}.png",
                 "sizes": f"{size}x{size}",
                 "type": "image/png",
                 "purpose": "any maskable",
