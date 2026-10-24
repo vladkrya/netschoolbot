@@ -41,7 +41,7 @@ export function openAppIcon() {
     body.innerHTML = `<div class="card app-icon-card">
         <img class="app-icon-preview" src="${esc(shown)}" alt="" width="96" height="96">
         <div class="muted small">${status}</div>
-        ${data.rejected && !chosen && !data.active ? '<div class="app-icon-rejected small">Прошлую иконку отозвали: она не прошла проверку.</div>' : ''}
+        ${data.rejected && !chosen && !data.active ? `<div class="app-icon-rejected small">Прошлую иконку отозвали: ${data.comment ? `${esc(data.comment)}` : 'она не прошла проверку'}.</div>` : ''}
         <input type="file" accept="image/png,image/jpeg,image/webp" hidden data-file>
         <div class="app-icon-actions">
           ${chosen ? '<button class="btn" data-send>Поставить</button><button class="btn outline" data-cancel>Отмена</button>'

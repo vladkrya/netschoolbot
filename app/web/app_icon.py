@@ -36,6 +36,7 @@ SIZES = (180, 192, 512)
 MAX_UPLOAD = 700 * 1024
 MAX_PIXELS = 40_000_000
 FORMATS = ("PNG", "JPEG", "WEBP")
+MAX_COMMENT = 300
 # Пуши владельцу о новых иконках — включены, пока он их не выключит.
 PUSH_OFF_FLAG = "icon_push_off"
 
@@ -126,12 +127,13 @@ class AppIconRepository:
         await self._db.execute(
             "UPDATE app_icons SET status = 'approved', decided_at = ? WHERE id = ?", (time.time(), icon_id))
 
-    async def reject(self, icon_id: int) -> None:
-        """Отказ или отзыв одобренной: токен стирается, картинка тоже —
-        хранить её незачем, человеку достаточно знать, что отказали."""
+    async def reject(self, icon_id: int, comment: str = "") -> None:
+        """Отзыв: токен стирается, картинка тоже — хранить её незачем,
+        человеку достаточно знать, что отозвали и почему."""
         await self._db.execute(
-            "UPDATE app_icons SET status = 'rejected', token = NULL, image = X'', decided_at = ? WHERE id = ?",
-            (time.time(), icon_id),
+            "UPDATE app_icons SET status = 'rejected', token = NULL, image = X'', comment = ?, decided_at = ? "
+            "WHERE id = ?",
+            (comment, time.time(), icon_id),
         )
 
     async def reset(self, telegram_id: int) -> None:
@@ -192,6 +194,7 @@ async def _mine(request: web.Request) -> dict:
         # Ещё не проверена: если проверка не пройдёт, её отзовут.
         "checking": "pending" in icons,
         "rejected": "rejected" in icons,
+        "comment": icons["rejected"]["comment"] if "rejected" in icons else "",
     }
 
 
@@ -263,10 +266,13 @@ async def admin_decide(request: web.Request) -> web.Response:
     """Принять иконку или отказать (одобренную — отозвать)."""
     if not _owner(request):
         return json_error("Это может только владелец", status=403)
-    decision = (await _body(request)).get("decision")
+    body = await _body(request)
+    decision, comment = body.get("decision"), body.get("comment") or ""
     row = await repo(request).get(int(request.match_info["icon_id"]))
-    if decision not in ("approve", "reject") or row is None:
+    if decision not in ("approve", "reject") or row is None or not isinstance(comment, str):
         return json_error("Некорректный запрос")
+    # Точка в конце — своя в пуше и на экране иконки.
+    comment = " ".join(comment.split())[:MAX_COMMENT].rstrip(" .")
     app = context(request)
     if decision == "approve":
         if row["status"] != "pending":
@@ -275,9 +281,10 @@ async def admin_decide(request: web.Request) -> web.Response:
     else:
         if row["status"] not in ("pending", "approved"):
             return json_error("Эту иконку уже проверили", status=409)
-        await repo(request).reject(row["id"])
+        await repo(request).reject(row["id"], comment)
         _push(app, row["telegram_id"], "Иконку отозвали",
-              "Она не прошла проверку, вернулась стандартная. Можно загрузить другую в настройках", "app-icon")
+              (f"Причина: {comment}. " if comment else "Она не прошла проверку. ")
+              + "Вернулась стандартная, можно загрузить другую в настройках", "app-icon")
     return web.json_response({"ok": True, "data": await _admin_state(request)})
 
 

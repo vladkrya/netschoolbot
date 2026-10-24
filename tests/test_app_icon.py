@@ -93,23 +93,35 @@ async def test_icon_works_at_once_and_reject_revokes(client, app_context, users,
     assert (await post(f"/mini/api/admin/icons/{icon_id}", admin, {"decision": "approve"})).status == 409
 
     # Отзыв: адрес гаснет, вместо картинки — стандартная иконка.
+    response = await post(f"/mini/api/admin/icons/{icon_id}", admin, {"decision": "reject", "comment": 5})
+    assert response.status == 400
     response = await post(f"/mini/api/admin/icons/{icon_id}", admin, {"decision": "reject"})
     assert response.status == 200 and pushes[-1] == (USER, "Иконку отозвали")
     gone = await client.get(src, allow_redirects=False)
     assert gone.status == 302 and gone.headers["Location"] == "/mini/static/icon-192.png"
     mine = (await (await get("/mini/api/app-icon", user)).json())["data"]
-    assert mine == {"active": None, "checking": False, "rejected": True}
+    assert mine == {"active": None, "checking": False, "rejected": True, "comment": ""}
     manifest = await (await client.get("/mini/manifest.webmanifest", params={"token": user})).json()
     assert manifest["icons"][0]["src"] == "/mini/static/icon-192.png"
 
 
-async def test_reject_unchecked_icon(client, app_context, users, pushes):
+async def test_reject_with_comment(client, app_context, users, monkeypatch):
     admin, user = await tokens(app_context, users)
+    sent = []
+    monkeypatch.setattr(app_icon, "_push", lambda app, uid, title, body, kind: sent.append((uid, body)))
     await client.post("/mini/api/app-icon", json={"image": picture()}, params={"token": user})
     src = await app_icon.icon_url(app_context, "/mini", USER, 512)
     (pending,) = await app_icon.AppIconRepository(app_context.db).listing("pending")
-    await client.post(f"/mini/api/admin/icons/{pending['id']}", json={"decision": "reject"}, params={"token": admin})
+    await client.post(f"/mini/api/admin/icons/{pending['id']}", params={"token": admin},
+                      json={"decision": "reject", "comment": "  Чужой   логотип. "})
     assert (await client.get(src, allow_redirects=False)).status == 302
+    assert sent[-1] == (USER, "Причина: Чужой логотип. Вернулась стандартная, можно загрузить другую в настройках")
+    mine = (await (await client.get("/mini/api/app-icon", params={"token": user})).json())["data"]
+    assert mine["rejected"] is True and mine["comment"] == "Чужой логотип"
+    # Новая загрузка — прошлый отзыв с причиной больше не показываем.
+    await client.post("/mini/api/app-icon", json={"image": picture()}, params={"token": user})
+    mine = (await (await client.get("/mini/api/app-icon", params={"token": user})).json())["data"]
+    assert mine["rejected"] is False and mine["comment"] == ""
 
 
 async def test_new_upload_replaces_old_and_reset(client, app_context, users, pushes):

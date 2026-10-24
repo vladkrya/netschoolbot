@@ -909,6 +909,11 @@ MIGRATIONS: list[str] = [
     CREATE INDEX idx_app_icons_user ON app_icons(telegram_id, status);
     CREATE INDEX idx_app_icons_status ON app_icons(status, id);
     """,
+    # Почему иконку отозвали — владелец пишет при отзыве, автор видит в
+    # пуше и на экране иконки.
+    """
+    ALTER TABLE app_icons ADD COLUMN comment TEXT NOT NULL DEFAULT '';
+    """,
 ]
 
 

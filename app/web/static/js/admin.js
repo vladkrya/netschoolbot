@@ -6,6 +6,7 @@
 import { api, banner, esc, showFailure } from './core.js';
 import { notify, select } from './haptics.js';
 import { onScreenRefresh, pushScreen } from './screens.js';
+import { closeSheet, openSheet } from './sheet.js';
 
 const post = (path, body) => api(path, { method: 'POST', body: JSON.stringify(body || {}) });
 
@@ -100,20 +101,39 @@ export function openAdmin() {
         input.disabled = false;
       }
     });
-    body.querySelectorAll('[data-decision]').forEach((button) => button.addEventListener('click', async () => {
-      const reject = button.dataset.decision === 'reject';
-      if (reject && !window.confirm('Отозвать иконку? Вернётся стандартная, человеку придёт уведомление.')) return;
-      select();
+    const decide = async (button, payload) => {
       button.classList.add('loading');
       try {
-        const { data: fresh } = await post(`/api/admin/icons/${button.dataset.iconId}`, { decision: button.dataset.decision });
+        const { data: fresh } = await post(`/api/admin/icons/${button.dataset.iconId}`, payload);
         notify('success');
+        closeSheet();
         drawIcons(fresh);
       } catch (error) {
         notify('error');
         banner(error.message, true);
         button.classList.remove('loading');
       }
+    };
+    body.querySelectorAll('[data-decision="approve"]').forEach((button) => button.addEventListener('click', () => {
+      select();
+      decide(button, { decision: 'approve' });
+    }));
+    // Отзыв — с причиной: она уйдёт автору в пуше и появится на его экране иконки.
+    body.querySelectorAll('[data-decision="reject"]').forEach((button) => button.addEventListener('click', () => {
+      select();
+      const item = data.items.find((icon) => String(icon.id) === button.dataset.iconId);
+      const sheet = openSheet('Отозвать иконку', `<div class="admin-icon">
+          <img src="${item.image}" alt="" width="64" height="64">
+          <div class="admin-icon-who"><b>${esc(item.user)}</b><span class="muted small">вернётся стандартная иконка, автору придёт уведомление</span></div>
+        </div>
+        <textarea class="field" data-reject-comment rows="3" maxlength="300" placeholder="Причина — необязательно"></textarea>
+        <div class="app-icon-actions admin-reject-actions">
+          <button class="btn" data-reject-confirm data-icon-id="${item.id}">Отозвать</button>
+          <button class="btn outline" data-reject-cancel>Отмена</button>
+        </div>`);
+      sheet.querySelector('[data-reject-cancel]').addEventListener('click', closeSheet);
+      sheet.querySelector('[data-reject-confirm]').addEventListener('click', (event) => decide(event.currentTarget,
+        { decision: 'reject', comment: sheet.querySelector('[data-reject-comment]').value.trim() }));
     }));
   };
 

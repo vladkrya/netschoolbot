@@ -2704,6 +2704,8 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
 .app-icon-card { display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; }
 .app-icon-rejected { color: var(--red); }
 .app-icon-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+.admin-reject-actions { margin-top: 12px; }
+[data-reject-comment] { width: 100%; margin-top: 8px; }
 .device-intro { margin-top: 0; }
 .device-group { margin: 18px 4px 8px; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--text2); }
 .device-auto { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
