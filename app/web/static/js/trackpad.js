@@ -102,7 +102,44 @@ export function startsAnew(gesture, dx, now, notch = false) {
   return gesture.decayed && size > 6 && size > gesture.prev * 1.6;
 }
 
+// Через столько после щелчка колеса проверяем, сдвинулся ли блок сам.
+const RESCUE_MS = 100;
+
+const canScroll = (el, dy) => (dy > 0 ? el.scrollTop + el.clientHeight < el.scrollHeight - 1 : el.scrollTop > 0);
+
+/** Что должно прокрутиться от колеса: ближайший прокручиваемый блок или
+ *  сама страница. null — крутить нечего или прокрутка запрещена (шторка). */
+function scrollerFor(target, dy) {
+  for (let el = target; el && el !== document.body && el !== document.documentElement; el = el.parentElement) {
+    if (el.scrollHeight <= el.clientHeight + 1) continue;
+    if (!/auto|scroll/.test(getComputedStyle(el).overflowY)) continue;
+    if (canScroll(el, dy)) return el;
+  }
+  for (const el of [document.documentElement, document.body]) {
+    if (getComputedStyle(el).overflowY === 'hidden') return null;
+  }
+  const root = document.scrollingElement;
+  return canScroll(root, dy) ? root : null;
+}
+
+/** В Telegram и Safari на Mac страница иногда перестаёт крутиться: колесо
+ *  приходит, его никто не отменяет, а блок стоит, хотя scrollBy его двигает
+ *  (WebKit, пока стили не пересчитаются целиком). Тогда докручиваем сами. */
+function rescueScroll(event) {
+  if (event.ctrlKey || !document.documentElement.classList.contains('mac-webkit')) return;
+  const { dx, dy } = wheelDelta(event);
+  if (!dy || Math.abs(dx) > Math.abs(dy)) return;
+  const el = scrollerFor(event.target, dy);
+  if (!el) return;
+  const before = el.scrollTop;
+  setTimeout(() => {
+    if (event.defaultPrevented || el.scrollTop !== before || !el.isConnected) return;
+    el.scrollBy(0, dy);
+  }, RESCUE_MS);
+}
+
 export function initTrackpad() {
+  window.addEventListener('wheel', rescueScroll, { passive: true });
   let gesture = null;
   let moved = null;
   let quiet = 0;
