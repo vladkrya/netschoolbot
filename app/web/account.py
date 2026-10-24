@@ -104,7 +104,11 @@ async def _body(request: web.Request) -> dict[str, Any]:
 
 async def _signed_in(request: web.Request, telegram_id: int, method: str) -> web.Response:
     """Ответ с постоянным токеном в cookie — страница перезагрузится уже с ним."""
-    # Свой токен на каждое устройство: «Выйти» отзывает только его.
+    # Свой токен на каждое устройство: «Выйти» отзывает только его. Прежний
+    # токен этого браузера новый перезапишет в cookie — он больше ничей и
+    # только висел бы лишним Safari в «Устройствах».
+    await context(request).miniapp.revoke_device_token(
+        (request.headers.get("X-Netschool-Token") or request.cookies.get(COOKIE) or "").strip())
     token = await context(request).miniapp.issue_token(telegram_id, device=True, method=method)
     # Новый сеанс — в «Устройствах» на остальных; после сброса пароля
     # отозванные устройства выходят сразу.
