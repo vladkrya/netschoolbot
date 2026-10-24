@@ -104,6 +104,12 @@ async function ownToken() {
 async function boot() {
   // В браузере жест вниз — наше обновление дневника, а не перезагрузка страницы.
   if (!tg?.initData) document.documentElement.classList.add('in-browser');
+  // Safari на Mac не крутит колесом мыши блок с overscroll-behavior, пока на
+  // странице есть wheel-обработчик с passive: false (трекпад, trackpad.js) —
+  // WebKit bug 281300. Трекпад крутит, мышь — нет; на Mac этот запрет не нужен.
+  if (navigator.vendor === 'Apple Computer, Inc.' && navigator.maxTouchPoints === 0) {
+    document.documentElement.classList.add('mac-webkit');
+  }
   tg?.ready();
   tg?.expand();
   initIosHaptics();

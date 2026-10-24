@@ -121,6 +121,9 @@ main, .app-header { overflow-x: clip; }
 html { background: var(--bg); overscroll-behavior-x: none; }
 /* Safari сам перезагружал страницу по жесту вниз и перебивал обновление дневника. */
 html.in-browser { overscroll-behavior-y: none; }
+/* Иначе в Safari на Mac колесо мыши не прокручивает ни «День», ни экраны
+   поверх (boot.js, mac-webkit). */
+html.mac-webkit, html.mac-webkit body, html.mac-webkit .screen, html.mac-webkit .calendar-screen, html.mac-webkit .chat-log { overscroll-behavior: auto; }
 
 body {
   background: var(--bg);
