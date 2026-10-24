@@ -6,10 +6,18 @@
 
 import { api, banner, base, esc, showFailure } from './core.js';
 import { notify, tap } from './haptics.js';
+import { openInstall, wantsInstall } from './install.js';
 import { onScreenRefresh, pushScreen } from './screens.js';
 
 const SIDE = 512;
 const DEFAULT = () => `${base}/static/icon-512.png`;
+
+const STEPS = [
+  'Нажмите «Выбрать картинку» и выберите фото или картинку PNG, JPEG или WebP из галереи',
+  'Лучше берите квадратную: у вытянутой останется только середина, края обрежутся. Что получится, видно на картинке сверху',
+  'Нажмите «Поставить». Передумали — «Отмена», и выберите другую',
+  '<b>Android</b> сам заменит иконку на экране «Домой» в течение дня. <b>iPhone</b> так не умеет: удалите дневник с экрана «Домой» (удерживайте палец на иконке → «Удалить») и добавьте его снова через Safari, как в первый раз',
+];
 
 /** Середина картинки квадратом 512×512 — на сервер уходит уже она: так
  * запрос маленький, а телефонные фото по 10 МБ не упираются в лимит. */
@@ -49,15 +57,26 @@ export function openAppIcon() {
           ${!chosen && data.active ? '<button class="btn outline" data-reset>Вернуть стандартную</button>' : ''}
         </div>
       </div>
+      ${wantsInstall() ? `<div class="card app-icon-install">
+          <div class="small">Иконка видна только у дневника, добавленного на экран «Домой». В Telegram и в браузере её не видно.</div>
+          <button class="btn outline" data-install>Как добавить на экран «Домой»</button>
+        </div>` : ''}
+      <div class="card">
+        <div class="app-icon-howto-title">Как поставить свою иконку</div>
+        <ol class="install-steps">
+          ${STEPS.map((step, index) => `<li><span class="install-num">${index + 1}</span><span>${step}</span></li>`).join('')}
+        </ol>
+      </div>
       <p class="muted small device-note">Иконка начинает работать сразу, а потом её проверяет администратор.
-        Если проверка не пройдёт, иконку отзовут и вернётся стандартная. Картинка обрезается до квадрата по центру.
-        На Android иконка сменится сама в течение дня, на iPhone — удалите приложение с экрана «Домой» и добавьте снова.</p>`;
+        Если проверка не пройдёт, иконку отзовут и вернётся стандартная. Чтобы снова поставить стандартную иконку,
+        нажмите «Вернуть стандартную» и обновите иконку на экране, как в шаге 4.</p>`;
     bind(data);
   };
 
   const bind = (data) => {
     const input = body.querySelector('[data-file]');
     body.querySelector('[data-pick]')?.addEventListener('click', () => { tap(); input.click(); });
+    body.querySelector('[data-install]')?.addEventListener('click', () => { tap(); openInstall(); });
     input.addEventListener('change', async () => {
       const file = input.files?.[0];
       if (!file) return;
