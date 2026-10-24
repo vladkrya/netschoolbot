@@ -73,6 +73,15 @@ class TestRegisterAndLogin:
         status, _, _ = await post(client, "/api/account/login", {"email": "kid@example.com", "password": "длинный-пароль"})
         assert status == 429
 
+    async def test_login_again_replaces_this_browser_token(self, client, app_context):
+        _, body, _ = await register(client)
+        old = body["data"]["token"]
+        _, data, _ = await post(client, "/api/account/login", {"email": "kid@example.com", "password": "длинный-пароль"})
+        assert data["data"]["token"] != old
+        assert await app_context.miniapp.resolve_token(old) is None
+        uid = await app_context.miniapp.resolve_token(data["data"]["token"])
+        assert len([row for row in await app_context.miniapp.sessions(uid) if row["device"]]) == 1
+
     async def test_private_api_still_needs_login(self, client):
         response = await client.get(f"{BASE}/api/account")
         assert response.status == 401

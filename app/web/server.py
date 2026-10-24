@@ -431,6 +431,8 @@ async def index(request: web.Request) -> web.Response:
     ):
         response = web.HTTPFound(f"{_base(request)}/" + ("?install=1" if request.query.get("install") == "1" else ""))
         if issued := await context.miniapp.use_device_code(device_code):
+            # Прежний токен этого браузера (уже входили здесь) заменяется новым.
+            await context.miniapp.revoke_device_token(request.cookies.get("netschool_token", ""))
             await devices.touch(request, issued)
             _set_token_cookie(request, response, issued)
         raise response
