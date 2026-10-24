@@ -47,7 +47,8 @@ function safariVersion() {
 
 const chip = (icon) => `<span class="install-chip">${icon}</span>`;
 
-function steps() {
+/** Шаги «На экран „Домой“» для этого браузера (пусто там, где их нет). */
+export function steps() {
   const add = chip(ICONS.addSquare);
   switch (browser()) {
     case 'ios-safari':
@@ -168,6 +169,18 @@ function openInstallPage() {
   window.addEventListener('beforeinstallprompt', () => { if (page.isConnected) draw(); });
   window.addEventListener('appinstalled', () => page.remove(), { once: true });
   document.body.append(page);
+}
+
+/** Где открыт дневник: телефон ('ios', 'android' или 'other') и место —
+ *  'telegram', 'app' (с экрана «Домой»), 'safari' или 'browser'. */
+export function openedIn() {
+  if (initData) {
+    const platform = ['ios', 'android'].includes(tg?.platform) ? tg.platform : 'other';
+    return { platform, place: 'telegram' };
+  }
+  const platform = isIos ? 'ios' : isAndroid ? 'android' : 'other';
+  if (installed()) return { platform, place: 'app' };
+  return { platform, place: browser() === 'ios-safari' ? 'safari' : 'browser' };
 }
 
 /** Приложение с экрана «Домой» уже открывали — на этом или другом устройстве. */
