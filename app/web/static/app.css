@@ -2708,6 +2708,9 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
 .app-icon-card { display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; }
 .app-icon-rejected { color: var(--red); }
 .app-icon-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+.app-icon-howto-title { font-weight: 600; margin-bottom: 10px; }
+.app-icon-install { display: flex; flex-direction: column; gap: 10px; }
+.app-icon-safari { margin-top: 10px; width: 100%; }
 .admin-reject-actions { margin-top: 12px; }
 [data-reject-comment] { width: 100%; margin-top: 8px; }
 .device-intro { margin-top: 0; }
