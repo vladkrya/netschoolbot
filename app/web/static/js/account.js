@@ -151,8 +151,10 @@ function showBotLinks(root) {
   if (landingConfig?.yandex) {
     root.querySelectorAll('[data-landing-yandex]').forEach((element) => { element.hidden = false; });
   }
-  if (landingConfig?.bot || landingConfig?.widget || landingConfig?.oidc || landingConfig?.yandex) {
-    root.querySelectorAll('[data-landing-or]').forEach((element) => { element.hidden = false; });
+  if (landingConfig?.passkey) {
+    import('./passkey.js').then(({ passkeysSupported }) => {
+      if (passkeysSupported()) root.querySelectorAll('[data-passkey-login]').forEach((element) => { element.hidden = false; });
+    });
   }
   if (!landingConfig?.bot) return;
   root.querySelectorAll('[data-landing-bot]').forEach((element) => { element.hidden = false; });
@@ -220,7 +222,11 @@ function renderLogin(email = '') {
       <a class="btn ld-ya-login" href="${base}/api/account/yandex/start">${YA_ICON} Войти через Яндекс ID</a>
       ${consent('Нажимая «Войти через Яндекс ID»')}
     </div>
-    <p class="ld-or" data-landing-or hidden><span>или по почте</span></p>
+    <div class="ld-alt-logins">
+      <button class="btn outline ld-alt-login" type="button" data-qr-login>${ICONS.qr} По QR-коду</button>
+      <button class="btn outline ld-alt-login" type="button" data-passkey-login hidden>${ICONS.key} Ключом входа</button>
+    </div>
+    <p class="ld-or"><span>или по почте</span></p>
     <form class="account-form">
       <input class="field" type="email" name="email" autocomplete="username" placeholder="Почта" required>
       <input class="field" type="password" name="password" autocomplete="current-password" placeholder="Пароль" required>
@@ -237,6 +243,9 @@ function renderLogin(email = '') {
   fillEmail(card, email);
   card.querySelector('[data-landing-bot]').addEventListener('click', (event) => startBotLogin(event.currentTarget));
   card.querySelector('[data-landing-widget]').addEventListener('click', startWidgetLogin);
+  card.querySelector('[data-qr-login]').addEventListener('click', (event) => busy(event.currentTarget, startQrLogin));
+  card.querySelector('[data-passkey-login]').addEventListener('click', (event) =>
+    busy(event.currentTarget, () => passkeyLogin(card)));
   const form = card.querySelector('form');
   form.addEventListener('submit', (event) => {
     event.preventDefault();
@@ -553,7 +562,7 @@ async function startBotLogin(button) {
   if (!popup && tg?.openTelegramLink) tg.openTelegramLink(data.url);
 }
 
-function waitForBot(card, code) {
+function waitForBot(card, code, { declined = 'Вход отменён в боте.', expired = 'Время на подтверждение вышло — попробуйте ещё раз.', onEnd } = {}) {
   clearTimeout(botPoll);
   const marker = card.querySelector('.account-wait');
   let running = false;
@@ -579,7 +588,8 @@ function waitForBot(card, code) {
       } else {
         stop();
         marker.remove();
-        showError(card, data.status === 'declined' ? 'Вход отменён в боте.' : 'Время на подтверждение вышло — попробуйте ещё раз.');
+        showError(card, data.status === 'declined' ? declined : expired);
+        onEnd?.();
       }
     } catch {
       botPoll = setTimeout(tick, BOT_POLL_MS * 2); // сеть моргнула — пробуем дальше
@@ -589,6 +599,78 @@ function waitForBot(card, code) {
   window.addEventListener('pageshow', resume);
   window.addEventListener('focus', resume);
   tick();
+}
+
+/* ─────────────────── По QR-коду и ключом входа ─────────────────── */
+
+/** Вход по QR-коду: его сканируют там, где дневник уже открыт, и
+ * подтверждают там же (app/web/devices.py, qr_login_approve). Ждём, как
+ * вход через бота. */
+async function startQrLogin() {
+  let data;
+  try {
+    ({ data } = await post('/api/account/qr-login', {}));
+  } catch (error) {
+    showError(document.querySelector('#accountScreen .account-card'), error.message);
+    return;
+  }
+  const card = landing(`
+    <h2>Вход по QR-коду</h2>
+    <p class="muted">Отсканируйте код там, где дневник уже открыт, и подтвердите вход:</p>
+    <ul class="ld-qr-steps">
+      <li><b>в Telegram</b> — дневник → меню → «Устройства» → «Сканировать QR-код»;</li>
+      <li><b>в браузере на телефоне</b> — обычной камерой.</li>
+    </ul>
+    ${data.qr ? `<img class="device-qr" src="${data.qr}" alt="QR-код для входа" width="220" height="220">` : ''}
+    <div class="account-wait"><span class="boot-spinner" aria-hidden="true"></span></div>
+    <p class="account-error" hidden></p>
+    <button class="btn" type="button" data-qr-again hidden>Новый QR-код</button>
+    <div class="account-links"><button class="link" data-go="login">Назад</button></div>`);
+  bindLinks(card);
+  const again = card.querySelector('[data-qr-again]');
+  again.addEventListener('click', () => busy(again, startQrLogin));
+  waitForBot(card, data.code, {
+    declined: 'Вход отклонён на другом устройстве.',
+    expired: 'QR-код устарел — он действует 10 минут.',
+    onEnd: () => { card.querySelector('.device-qr')?.remove(); again.hidden = false; },
+  });
+}
+
+async function passkeyLogin(card) {
+  const { usePasskey, cancelled } = await import('./passkey.js');
+  showError(card, '');
+  try {
+    const { data } = await post('/api/account/passkey/options', {});
+    const credential = await usePasskey(data.options);
+    await post('/api/account/passkey/login', { id: data.id, credential });
+    notify('success');
+    signedIn();
+  } catch (error) {
+    if (!cancelled(error)) showError(card, error.message);
+  }
+}
+
+/** Открыли QR-код с экрана входа (/?qr=…) там, где дневник не открыт —
+ * например, камерой iPhone, а дневник только в Telegram. Подтвердить можно
+ * в боте: код тот же, что у входа через бота (app/accounts/site_login.py). */
+export async function showQrWithoutSignIn(code) {
+  history.replaceState(null, '', location.pathname);
+  const card = landing(`
+    <h2>Вход на другом устройстве</h2>
+    <p class="muted">Этот QR-код подтверждает вход в дневник на другом устройстве, но здесь вы ещё не вошли.
+      Отсканируйте его там, где дневник уже открыт: в Telegram — меню → «Устройства» → «Сканировать QR-код».</p>
+    <a class="btn ld-tg-login" data-qr-bot hidden>${TG_ICON} Подтвердить в Telegram</a>
+    <div class="account-links"><button class="link" data-go="login">Войти здесь</button></div>`);
+  bindLinks(card);
+  try {
+    landingConfig ??= (await api('/api/account/config')).data;
+  } catch { /* без бота — только сканировать */ }
+  const bot = card.querySelector('[data-qr-bot]');
+  if (landingConfig?.bot && bot.isConnected) {
+    bot.href = `${landingConfig.bot}?start=web_${encodeURIComponent(code)}`;
+    bot.hidden = false;
+  }
+  return new Promise(() => {});
 }
 
 /** Переходы между входом, регистрацией и сбросом: введённая почта едет дальше. */

@@ -1,9 +1,12 @@
-"""Вход на сайт через бота: страница создаёт запрос, человек подтверждает его в боте.
+"""Вход на сайт через бота или по QR-коду: страница создаёт запрос, человек
+подтверждает его в боте или на устройстве, где уже вошёл.
 
 Страница открывает t.me/<бот>?start=web_<код>, бот показывает, откуда
 просят вход, и спрашивает подтверждение кнопкой. Без кнопки вход не
 происходит: иначе чужую ссылку можно было бы подсунуть, и после /start
-автор ссылки вошёл бы в чужой дневник. Страница опрашивает запрос и после
+автор ссылки вошёл бы в чужой дневник. QR-код с экрана входа ведёт на
+/?qr=<код>: его сканируют там, где дневник уже открыт, и подтверждают так же
+кнопкой (app/web/devices.py). Страница опрашивает запрос и после
 подтверждения получает свой токен устройства. Запросы живут в памяти —
 это минуты, переживать перезапуск им незачем.
 """
@@ -27,6 +30,8 @@ class SiteLogin:
     browser: str
     telegram_id: int | None = None
     declined: bool = False
+    # Как подтвердили: в боте или QR-кодом — для «Устройств».
+    method: str = "bot"
 
     @property
     def expired(self) -> bool:
@@ -57,13 +62,13 @@ class SiteLogins:
             return None
         return item
 
-    def decide(self, code: str, telegram_id: int, approve: bool) -> SiteLogin | None:
-        """Ответ из бота. Решённый запрос второй раз не решается."""
+    def decide(self, code: str, telegram_id: int, approve: bool, method: str = "bot") -> SiteLogin | None:
+        """Ответ из бота или с вошедшего устройства. Решённый запрос второй раз не решается."""
         item = self.get(code)
         if item is None or item.telegram_id is not None or item.declined:
             return None
         if approve:
-            item.telegram_id = telegram_id
+            item.telegram_id, item.method = telegram_id, method
         else:
             item.declined = True
         return item

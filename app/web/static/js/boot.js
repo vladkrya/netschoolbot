@@ -123,10 +123,13 @@ async function boot() {
   }
   // Ни Telegram, ни ссылки с токеном — главный экран со входом. Сюда же —
   // после «Выйти из аккаунта», если адрес иконки на домашнем экране всё ещё
-  // несёт прежний общий токен (signOut в profile.js).
+  // несёт прежний общий токен (signOut в profile.js). QR-код с экрана входа
+  // другого устройства (account.js, startQrLogin) здесь не подтвердить.
+  const qrLogin = demo ? '' : new URLSearchParams(location.search).get('qr') || '';
   if (!demo && !tg?.initData && (!token || signedOut())) {
-    const { showAuth, showInvite } = await import('./account.js');
-    if (pendingInvite()) await showInvite(pendingInvite(), false);
+    const { showAuth, showInvite, showQrWithoutSignIn } = await import('./account.js');
+    if (qrLogin) await showQrWithoutSignIn(qrLogin);
+    else if (pendingInvite()) await showInvite(pendingInvite(), false);
     else await showAuth();
     return;
   }
@@ -188,6 +191,10 @@ async function boot() {
   }
   await import('./app.js');
   document.getElementById('bootSplash')?.remove();
+  if (qrLogin) {
+    history.replaceState(null, '', location.pathname + location.hash);
+    import('./devices.js').then(({ openQrApproval }) => openQrApproval(qrLogin));
+  }
   // Экраны по требованию — заранее, но после дневника: без сети они тоже откроются.
   setTimeout(() => preload(window.NETSCHOOL.modules), 1000);
   try { sessionStorage.removeItem('bootRetries'); } catch { /* приватный режим */ }

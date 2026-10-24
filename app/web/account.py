@@ -25,7 +25,7 @@ from aiohttp import web
 from ..accounts import has_telegram
 from ..accounts.service import connect_accounts, link_account
 from ..accounts.mailer import letter
-from ..accounts.site_login import PREFIX as SITE_LOGIN_PREFIX, describe_browser
+from ..accounts.site_login import PREFIX as SITE_LOGIN_PREFIX, TTL_SECONDS as SITE_LOGIN_TTL, describe_browser
 from ..accounts.passwords import check_password, hash_password, verify_password
 from ..domain.models import Credentials, LoginType, School
 from ..netschool import login as login_flow, ownership
@@ -50,7 +50,8 @@ MAX_SCHOOLS = 30
 # Без входа доступны только эти адреса.
 PUBLIC_PATHS = ("/api/account/register", "/api/account/login", "/api/account/reset/request",
                 "/api/account/reset/confirm", "/api/account/reset/check", "/api/account/config", "/api/family/invite-info",
-                "/api/account/tg-login", "/api/account/tg-widget",
+                "/api/account/tg-login", "/api/account/tg-widget", "/api/account/qr-login",
+                "/api/account/passkey/options", "/api/account/passkey/login",
                 "/api/account/tg-oidc/start", "/api/account/tg-oidc/callback",
                 "/api/account/yandex/start", "/api/account/yandex/callback")
 
@@ -141,6 +142,8 @@ async def bot_username(request: web.Request) -> str:
 @routes.get("/api/account/config")
 async def account_config(request: web.Request) -> web.Response:
     """Что нужно главному экрану без входа: работает ли почта и куда звать в Telegram."""
+    from .passkeys import ready as passkeys_ready
+
     username = await bot_username(request)
     return web.json_response({"ok": True, "data": {
         "mail": context(request).mailer.configured,
@@ -148,6 +151,7 @@ async def account_config(request: web.Request) -> web.Response:
         "widget": await login_widget_bot_id(request),
         "oidc": _oidc_redirect_uri(request) is not None,
         "yandex": _yandex_redirect_uri(request) is not None,
+        "passkey": passkeys_ready(request),
     }})
 
 
@@ -483,8 +487,25 @@ async def tg_login_status(request: web.Request) -> web.Response:
     item = logins.take(code)
     if item is None:
         return web.json_response({"ok": True, "data": {"status": "expired"}})
-    logger.info("Вход на сайт через бота: %s", item.telegram_id)
-    return await _signed_in(request, item.telegram_id, "bot")
+    logger.info("Вход на сайт (%s): %s", item.method, item.telegram_id)
+    return await _signed_in(request, item.telegram_id, item.method)
+
+
+@routes.post("/api/account/qr-login")
+async def qr_login_start(request: web.Request) -> web.Response:
+    """Вход по QR-коду: экран входа показывает код, его сканируют там, где
+    дневник уже открыт, и подтверждают (devices.py, qr_login_approve). Дальше
+    страница ждёт так же, как вход через бота: GET /api/account/tg-login."""
+    ip = _ip(request)
+    if SITE_LOGINS.blocked(ip):
+        return json_error("Слишком много попыток входа — подождите 15 минут", status=429)
+    code = context(request).site_logins.start(ip, describe_browser(request.headers.get("User-Agent", "")))
+    if code is None:
+        return json_error("Сервер занят — попробуйте через минуту", status=503)
+    SITE_LOGINS.hit(ip)
+    url = f"{context(request).settings.web.miniapp_url}/?qr={code}"
+    return web.json_response({"ok": True, "data": {
+        "code": code, "url": url, "qr": _render_qr(url), "expires": time.time() + SITE_LOGIN_TTL}})
 
 
 @routes.post("/api/account/register")

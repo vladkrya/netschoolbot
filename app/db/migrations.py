@@ -914,6 +914,21 @@ MIGRATIONS: list[str] = [
     """
     ALTER TABLE app_icons ADD COLUMN comment TEXT NOT NULL DEFAULT '';
     """,
+    # Ключи входа на сайт (web/passkeys.py) — не ключи блокировки из
+    # app_passkeys: те только снимают PIN на уже вошедшем устройстве.
+    """
+    CREATE TABLE login_passkeys (
+        credential_id BLOB    PRIMARY KEY,
+        telegram_id   INTEGER NOT NULL REFERENCES users(telegram_id) ON DELETE CASCADE,
+        public_key    BLOB    NOT NULL,
+        sign_count    INTEGER NOT NULL,
+        rp_id         TEXT    NOT NULL,
+        name          TEXT    NOT NULL DEFAULT '',
+        created_at    REAL    NOT NULL,
+        last_used     REAL
+    );
+    CREATE INDEX idx_login_passkeys_user ON login_passkeys(telegram_id);
+    """,
 ]
 
 

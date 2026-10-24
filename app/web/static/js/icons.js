@@ -46,6 +46,7 @@ export const ICONS = {
   install: svg('<rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="M12 8v6M9.5 11.5 12 14l2.5-2.5"/>', 18),
   send: svg('<path d="M4 12 20 4l-4 16-4-7z"/><path d="m12 13 8-9"/>'),
   close: svg('<path d="M6 6l12 12M18 6 6 18"/>', 20),
+  key: svg('<circle cx="7.5" cy="15.5" r="4"/><path d="m10.3 12.7 9-9M16.5 6.5l2.5 2.5M14 9l2 2"/>', 20),
   shield: svg('<path d="M12 3 5 6v5c0 4.5 3 8.3 7 10 4-1.7 7-5.5 7-10V6Z"/><rect x="9.5" y="11" width="5" height="4" rx="1"/><path d="M10.5 11V9.8a1.5 1.5 0 0 1 3 0V11"/>', 20),
   // Игры — геймпад.
   game: svg('<path d="M7.5 7.5h9a4.5 4.5 0 0 1 4.4 5.4l-.9 4.4a2.3 2.3 0 0 1-4 1L14.5 16h-5L8 18.3a2.3 2.3 0 0 1-4-1l-.9-4.4a4.5 4.5 0 0 1 4.4-5.4z"/><path d="M8 10.5v3M6.5 12h3"/><circle cx="15.5" cy="11" r=".8" fill="currentColor"/><circle cx="17.5" cy="13" r=".8" fill="currentColor"/>'),
