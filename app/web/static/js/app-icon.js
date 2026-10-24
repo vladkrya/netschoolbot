@@ -6,7 +6,7 @@
 
 import { api, banner, base, esc, showFailure } from './core.js';
 import { notify, tap } from './haptics.js';
-import { openInstall, wantsInstall } from './install.js';
+import { openedIn, openInBrowser, openInstall, steps, wantsInstall } from './install.js';
 import { onScreenRefresh, pushScreen } from './screens.js';
 
 const SIDE = 512;
@@ -16,8 +16,35 @@ const STEPS = [
   'Нажмите «Выбрать картинку» и выберите фото или картинку PNG, JPEG или WebP из галереи',
   'Лучше берите квадратную: у вытянутой останется только середина, края обрежутся. Что получится, видно на картинке сверху',
   'Нажмите «Поставить». Передумали — «Отмена», и выберите другую',
-  '<b>Android</b> сам заменит иконку на экране «Домой» в течение дня. <b>iPhone</b> так не умеет: добавьте дневник на экран «Домой» ещё раз через Safari, как в первый раз, — появится вторая иконка, уже с новой картинкой. Старую пока не удаляйте: если новую отзовут, удалите новую, а старая останется. Если дневник уже был открыт в Safari, сначала обновите там страницу — иначе добавится старая картинка',
 ];
+const KEEP_OLD = 'Появится вторая иконка, уже с новой картинкой. Старую пока не удаляйте: если новую отзовут, удалите новую, а старая останется';
+
+/** Как обновить иконку на экране «Домой» — смотря где открыт дневник. */
+function refreshSteps() {
+  const { platform, place } = openedIn();
+  if (platform === 'android') return ['Android сам заменит иконку на экране «Домой» в течение дня — больше ничего делать не нужно'];
+  if (platform !== 'ios') {
+    return ['<b>Android</b> сам заменит иконку на экране «Домой» в течение дня. <b>iPhone</b> так не умеет: '
+      + 'откройте дневник в Safari и добавьте его на экран «Домой» ещё раз. ' + KEEP_OLD];
+  }
+  if (place === 'telegram') {
+    return [
+      'iPhone сам иконку не заменит. Нажмите «Открыть в Safari» ниже — дневник откроется уже с новой картинкой',
+      'Там нажмите «Поделиться» → «На экран „Домой“». ' + KEEP_OLD,
+    ];
+  }
+  if (place === 'app') {
+    return [
+      'iPhone сам иконку не заменит. Откройте дневник в Safari. Если он там уже открыт — обновите страницу, иначе добавится старая картинка',
+      'Нажмите «Поделиться» → «На экран „Домой“». ' + KEEP_OLD,
+    ];
+  }
+  if (place === 'safari') {
+    return ['iPhone сам иконку не заменит — добавьте дневник на экран «Домой» ещё раз прямо отсюда, обновлять страницу не нужно',
+      ...steps(), KEEP_OLD];
+  }
+  return ['iPhone сам иконку не заменит. Откройте дневник в Safari и нажмите «Поделиться» → «На экран „Домой“». ' + KEEP_OLD];
+}
 
 /** iPhone берёт картинку для экрана «Домой» из apple-touch-icon открытой
  *  страницы — меняем её сразу, чтобы не пришлось перезагружать дневник. */
@@ -71,12 +98,13 @@ export function openAppIcon() {
       <div class="card">
         <div class="app-icon-howto-title">Как поставить свою иконку</div>
         <ol class="install-steps">
-          ${STEPS.map((step, index) => `<li><span class="install-num">${index + 1}</span><span>${step}</span></li>`).join('')}
+          ${[...STEPS, ...refreshSteps()].map((step, index) => `<li><span class="install-num">${index + 1}</span><span>${step}</span></li>`).join('')}
         </ol>
+        ${openedIn().platform === 'ios' && openedIn().place === 'telegram' ? '<button class="btn outline app-icon-safari" data-safari>Открыть в Safari</button>' : ''}
       </div>
       <p class="muted small device-note">Иконка начинает работать сразу, а потом её проверяет администратор.
         Если проверка не пройдёт, иконку отзовут и вернётся стандартная. Чтобы снова поставить стандартную иконку,
-        нажмите «Вернуть стандартную» и обновите иконку на экране, как в шаге 4.</p>`;
+        нажмите «Вернуть стандартную» и обновите иконку на экране так же, как описано выше.</p>`;
     bind(data);
   };
 
@@ -84,6 +112,7 @@ export function openAppIcon() {
     const input = body.querySelector('[data-file]');
     body.querySelector('[data-pick]')?.addEventListener('click', () => { tap(); input.click(); });
     body.querySelector('[data-install]')?.addEventListener('click', () => { tap(); openInstall(); });
+    body.querySelector('[data-safari]')?.addEventListener('click', openInBrowser);
     input.addEventListener('change', async () => {
       const file = input.files?.[0];
       if (!file) return;
