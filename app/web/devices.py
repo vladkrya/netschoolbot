@@ -38,7 +38,10 @@ _touched: dict[str, float] = {}
 def masked_ip(request: web.Request) -> str:
     """Примерный адрес — «95.24.*.*»: узнать чужое устройство хватает, а
     точный адрес не хранится."""
-    ip = request.headers.get("X-Real-IP") or request.remote or ""
+    return mask_ip(request.headers.get("X-Real-IP") or request.remote or "")
+
+
+def mask_ip(ip: str) -> str:
     if ":" in ip:
         return ":".join(ip.split(":")[:2]) + ":…"
     parts = ip.split(".")
@@ -302,3 +305,32 @@ async def new_device_send_qr(request: web.Request) -> web.Response:
                 "не пересылайте его чужим.",
     )
     return web.json_response({"ok": True})
+
+
+# ───────────────────── Вход по QR-коду с экрана входа ─────────────────────
+
+
+@routes.post("/api/devices/qr-login/info")
+async def qr_login_info(request: web.Request) -> web.Response:
+    """Отсканировали QR-код с экрана входа: откуда просят вход."""
+    item = context(request).site_logins.get(await _code(request))
+    if item is None or item.telegram_id is not None or item.declined:
+        return json_error("QR-код устарел — на экране входа появится новый", status=404)
+    return web.json_response({"ok": True, "data": {"browser": item.browser, "ip": mask_ip(item.ip)}})
+
+
+@routes.post("/api/devices/qr-login/approve")
+async def qr_login_approve(request: web.Request) -> web.Response:
+    """Подтвердить или отклонить вход. Входит тот, кто подтвердил, — даже
+    если сейчас он смотрит дневник ученика (viewing.py)."""
+    try:
+        body = await request.json()
+    except ValueError:
+        body = {}
+    body = body if isinstance(body, dict) else {}
+    approve = body.get("approve") is True
+    app, user = context(request), current_user(request)
+    item = app.site_logins.decide(str(body.get("code") or ""), user.telegram_id, approve, method="qr")
+    if item is None:
+        return json_error("QR-код устарел — на экране входа появится новый", status=404)
+    return web.json_response({"ok": True, "data": {"approved": approve}})

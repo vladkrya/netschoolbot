@@ -6,6 +6,7 @@ import { api, banner, esc, initData, plural, showFailure, tg } from './core.js';
 import { notify } from './haptics.js';
 import { ICONS } from './icons.js';
 import { onScreenRefresh, popScreen, pushScreen } from './screens.js';
+import { cancelled, passkeysSupported, usePasskey } from './passkey.js';
 
 const post = (path, body) => api(path, { method: 'POST', body: JSON.stringify(body || {}) });
 
@@ -32,6 +33,8 @@ const METHODS = {
   'device-link': 'по ссылке «Добавить устройство»',
   icon: 'с иконки на экране «Домой»',
   install: 'по ссылке установки из бота',
+  qr: 'по QR-коду',
+  passkey: 'ключом входа',
 };
 
 // «Завершать, если сеанс неактивен»: дни, как в /api/devices/auto-end.
@@ -274,11 +277,104 @@ async function openNewDevice(onConnected) {
   await create();
 }
 
+/** Отсканировали QR-код с экрана входа другого устройства: показать, откуда
+ *  просят вход, и спросить (app/web/devices.py, qr_login_approve). */
+export async function openQrApproval(code) {
+  const body = pushScreen('Вход по QR-коду');
+  const finish = (title, text) => {
+    body.innerHTML = `<div class="card device-new device-finish">
+        <span class="device-finish-icon">${ICONS.check}</span>
+        <b>${esc(title)}</b>
+        <p class="muted">${esc(text)}</p>
+        <button class="btn" data-done>Готово</button>
+      </div>`;
+    body.querySelector('[data-done]').addEventListener('click', () => popScreen());
+  };
+  body.innerHTML = '<div class="card"><div class="muted">Проверяем код…</div></div>';
+  let info;
+  try {
+    info = (await post('/api/devices/qr-login/info', { code })).data;
+  } catch (error) {
+    body.innerHTML = `<div class="card error-card"><p>${esc(error.message)}</p></div>`;
+    return;
+  }
+  body.innerHTML = `<div class="card device-new device-approve">
+      <b>Войти в ваш дневник на другом устройстве?</b>
+      <p class="device-detail">${esc(info.browser)}${info.ip ? ` · адрес ${esc(info.ip)}` : ''}</p>
+      <p class="muted small">Подтверждайте, только если этот QR-код сейчас на экране вашего устройства.
+        Если код прислал кто-то другой — нажмите «Отклонить», иначе он войдёт в ваш дневник.</p>
+      <div class="device-new-actions">
+        <button class="btn" data-decide="1">Войти</button>
+        <button class="btn outline danger" data-decide="0">Отклонить</button>
+      </div>
+    </div>`;
+  body.querySelectorAll('[data-decide]').forEach((button) => button.addEventListener('click', async () => {
+    const approve = button.dataset.decide === '1';
+    body.querySelectorAll('[data-decide]').forEach((other) => { other.disabled = true; });
+    try {
+      await post('/api/devices/qr-login/approve', { code, approve });
+      notify('success');
+      if (approve) finish('Вход подтверждён', `${info.browser}: дневник откроется там сам. Устройство появится в «Устройствах».`);
+      else finish('Вход отклонён', 'На том устройстве никто не вошёл.');
+    } catch (error) {
+      body.querySelectorAll('[data-decide]').forEach((other) => { other.disabled = false; });
+      banner(error.message, true);
+    }
+  }));
+}
+
+/** Сканер Telegram: QR-код с экрана входа ведёт на …/?qr=<код>. */
+function canScan() {
+  return Boolean(initData && tg?.showScanQrPopup && tg.isVersionAtLeast?.('6.4'));
+}
+
+function scanQr() {
+  tg.showScanQrPopup({ text: 'QR-код с экрана входа в дневник' }, (text) => {
+    let code = '';
+    try { code = new URL(text).searchParams.get('qr') || ''; } catch { /* не ссылка */ }
+    if (!code) return false; // чужой код — сканер ждёт дальше
+    openQrApproval(code);
+    return true;
+  });
+}
+
+/** «Создать ключ входа»: Face ID, Touch ID или PIN телефона вместо пароля. */
+function keysCard(keys) {
+  const list = keys.map((key) => `<div class="device-key">
+      <span class="device-icon">${ICONS.key}</span>
+      <div class="device-key-text"><b>${esc(key.name || 'Ключ входа')}</b>
+        <small>Создан ${when(key.created)}${key.last_used ? ` · вход ${when(key.last_used)}` : ''}</small></div>
+      <button class="link danger" data-key-delete="${esc(key.id)}">Удалить</button>
+    </div>`).join('');
+  return `<h3 class="device-group">Ключи входа</h3>
+    <div class="card device-keys">
+      <p class="muted small">Вход без пароля — по Face ID, Touch ID или PIN устройства. Ключ хранится в связке ключей
+        (iCloud, Google, Windows) и сам появляется на других ваших устройствах.</p>
+      ${list}
+      ${passkeysSupported() ? `<button class="btn outline" data-key-add>${ICONS.key} Создать ключ входа</button>`
+        : '<p class="muted small">Создать ключ можно в Safari, Chrome или в приложении на экране «Домой» — в Telegram ключи не работают.</p>'}
+    </div>`;
+}
+
+async function createKey() {
+  const { data } = await post('/api/devices/passkeys/options');
+  try {
+    const credential = await usePasskey(data.options, true);
+    return (await post('/api/devices/passkeys/register', { id: data.id, credential })).data.items;
+  } catch (error) {
+    if (error?.name === 'InvalidStateError') throw new Error('На этом устройстве ключ входа уже есть.');
+    throw error;
+  }
+}
+
 export function openDevices() {
   const body = pushScreen('Устройства');
   let inactiveDays = 0;
+  let keys = [];
+  let shown = [];
   const draw = (items, days = inactiveDays) => {
     inactiveDays = days;
+    shown = items;
     const others = items.some((item) => !item.main && !item.current && item.kind !== 'calendar');
     // Сначала это устройство, потом остальные по свежести, в конце — особые доступы.
     const recent = (a, b) => (b.last_used || b.created || 0) - (a.last_used || a.created || 0);
@@ -291,10 +387,12 @@ export function openDevices() {
     body.innerHTML = `<p class="muted small device-note device-intro">Здесь все места, где открыт ваш дневник: у каждого видно, как и когда вошли, с какого устройства и откуда.
         Не узнаёте сеанс — завершите его.</p>
       <button class="btn device-add" data-add>${ICONS.plus} Добавить устройство</button>
+      ${canScan() ? `<button class="btn outline device-add" data-scan>${ICONS.qr} Сканировать QR-код</button>` : ''}
       ${group('Это устройство', current)}
       ${group(current.length ? 'Другие устройства' : 'Устройства', devices)}
       ${group('Другие доступы', special)}
       ${others ? '<button class="btn outline danger device-end-all" data-end-all>Завершить все другие сеансы</button>' : ''}
+      ${keysCard(keys)}
       <div class="card device-auto">
         <label class="device-auto-row"><span><b>Завершать сеанс, если он неактивен</b></span>
           <select class="field" data-inactive aria-label="Через сколько завершать неактивные сеансы">${options}</select></label>
@@ -336,6 +434,31 @@ export function openDevices() {
       if (item) editName(button.closest('.device-row'), item, draw);
     }));
     body.querySelector('[data-add]').addEventListener('click', () => openNewDevice(load));
+    body.querySelector('[data-scan]')?.addEventListener('click', scanQr);
+    body.querySelector('[data-key-add]')?.addEventListener('click', async (event) => {
+      const button = event.currentTarget;
+      button.disabled = true;
+      try {
+        keys = await createKey();
+        notify('success');
+        draw(shown);
+      } catch (error) {
+        button.disabled = false;
+        if (!cancelled(error)) banner(error.message, true);
+      }
+    });
+    body.querySelectorAll('[data-key-delete]').forEach((button) => button.addEventListener('click', async () => {
+      if (!window.confirm('Удалить ключ входа? Войти им станет нельзя, в том числе на других устройствах. Из связки ключей его можно убрать в настройках паролей.')) return;
+      button.disabled = true;
+      try {
+        keys = (await post('/api/devices/passkeys/delete', { id: button.dataset.keyDelete })).data.items;
+        notify('success');
+        draw(shown);
+      } catch (error) {
+        button.disabled = false;
+        banner(error.message, true);
+      }
+    }));
     body.querySelector('[data-clients]')?.addEventListener('click', () => {
       const links = items.find((entry) => entry.kind === 'links');
       openLinkClients(links, async (screen) => {
@@ -361,7 +484,11 @@ export function openDevices() {
     });
   };
   // После входа нового устройства список обновляется, пока он под экраном ссылки.
-  const load = () => api('/api/devices').then(({ data }) => draw(data.items, data.inactive_days))
+  const load = () => Promise.all([api('/api/devices'), api('/api/devices/passkeys').catch(() => null)])
+    .then(([{ data }, passkeys]) => {
+      if (passkeys) keys = passkeys.data.items;
+      draw(data.items, data.inactive_days);
+    })
     .catch((error) => showFailure(body, error, `<div class="card error-card"><p>${esc(error.message)}</p></div>`));
   body.innerHTML = '<div class="card"><div class="muted">Загрузка…</div></div>';
   onScreenRefresh(body, load);

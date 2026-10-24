@@ -2601,6 +2601,11 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
   margin: 6px 0 0; padding: 12px; background: #000; border-color: #000; color: #fff; text-decoration: none; font-weight: 600; }
 .btn.ld-ya-login + .account-consent { margin-bottom: 4px; }
 [data-theme="dark"] .btn.ld-ya-login { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .25); }
+.landing .account-card .btn[hidden] { display: none; }
+.ld-alt-logins { display: flex; gap: 8px; margin-top: 6px; }
+.ld-alt-logins .btn.ld-alt-login { display: flex; flex: 1; align-items: center; justify-content: center; gap: 6px;
+  margin: 0; padding: 11px 8px; font-weight: 600; }
+.ld-qr-steps { margin: 4px 0 12px; padding-left: 20px; color: var(--text2); font-size: 14px; line-height: 1.45; }
 .ld-or { display: flex; align-items: center; gap: 10px; margin: 14px 0 8px; color: var(--text2); font-size: 13px; }
 .ld-or::before, .ld-or::after { content: ""; flex: 1; height: 1px; background: var(--border); }
 .ld-demo-link { display: block; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border);
@@ -2725,6 +2730,12 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
 .device-name-form { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; width: 100%; }
 .device-name-form .field { flex: 1 1 160px; min-width: 0; margin: 0; }
 .device-name-form .btn { width: auto; margin: 0; padding: 8px 14px; }
+.device-key { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-top: 1px solid var(--border); }
+.device-key-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.device-key-text small { color: var(--text2); font-size: 13px; }
+.device-keys > .btn { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; margin-top: 10px; }
+.device-keys .icon { width: 18px; height: 18px; }
+.device-approve .device-detail { margin: 8px 0; }
 .device-add { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; margin: 0 0 12px; }
 .device-add .icon, .device-new-actions .icon { width: 18px; height: 18px; }
 .device-new { display: flex; flex-direction: column; gap: 10px; }
