@@ -108,12 +108,15 @@ const RESCUE_MS = 100;
 const canScroll = (el, dy) => (dy > 0 ? el.scrollTop + el.clientHeight < el.scrollHeight - 1 : el.scrollTop > 0);
 
 /** Что должно прокрутиться от колеса: ближайший прокручиваемый блок или
- *  сама страница. null — крутить нечего или прокрутка запрещена (шторка). */
+ *  сама страница. null — крутить нечего или прокрутка запрещена (шторка,
+ *  край экрана поверх: его overscroll-behavior не пускает дальше). */
 function scrollerFor(target, dy) {
   for (let el = target; el && el !== document.body && el !== document.documentElement; el = el.parentElement) {
     if (el.scrollHeight <= el.clientHeight + 1) continue;
-    if (!/auto|scroll/.test(getComputedStyle(el).overflowY)) continue;
+    const style = getComputedStyle(el);
+    if (!/auto|scroll/.test(style.overflowY)) continue;
     if (canScroll(el, dy)) return el;
+    if (style.overscrollBehaviorY !== 'auto') return null;
   }
   for (const el of [document.documentElement, document.body]) {
     if (getComputedStyle(el).overflowY === 'hidden') return null;
