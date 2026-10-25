@@ -179,7 +179,9 @@ async function boot() {
   if (!demo) await Promise.race([state.prefsSync, new Promise(resolve => setTimeout(resolve, 1500))]);
   {
     const { openRetro, wantsRetro } = await import('./retro.js');
-    if (wantsRetro()) {
+    // QR-код с экрана входа подтверждается в обычном интерфейсе: в ретро
+    // его некому показать, а другое устройство ждёт.
+    if (wantsRetro() && !qrLogin) {
       openRetro();
       return;
     }
