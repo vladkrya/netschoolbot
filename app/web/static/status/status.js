@@ -18,6 +18,10 @@ const ERRORS = {
 };
 
 let data = null;
+// Часы компьютера могут уходить на минуты — тогда свежие проверки казались
+// старыми и все регионы стояли в «Проверяем». Время считаем по серверу.
+let clockOffset = 0;
+const serverNow = () => Date.now() / 1000 + clockOffset;
 let range = '24h';
 let query = '';
 const expanded = new Set();
@@ -42,7 +46,7 @@ function when(ts) {
 
 function ago(ts) {
   if (!ts) return '—';
-  const s = Math.max(0, Date.now() / 1000 - ts);
+  const s = Math.max(0, serverNow() - ts);
   if (s < 60) return 'только что';
   if (s < 3600) return `${Math.round(s / 60)} мин назад`;
   if (s < 86400) return `${Math.round(s / 3600)} ч назад`;
@@ -272,7 +276,7 @@ function hostDetails(host) {
       'Это обезличенные загрузки дневников ботом и в приложении. Неверный пароль и подтверждение входа не учитываются.') : '',
     host.error === 'maintenance' ? el('div', { class: 'notice' },
       el('b', {}, 'Технические работы. '), 'Сервер показывает объявление о техническом обслуживании. Срок завершения неизвестен.')
-      : availability(host).state === 'down' ? el('div', { class: 'notice' },
+      : availability(host, serverNow()).state === 'down' ? el('div', { class: 'notice' },
         'Сервер временно недоступен. Возможны технические работы или сбой; причина не подтверждена.') : '',
     host.state === 'blocked' ? el('p', { class: 'muted' }, BLOCKED_TEXT) : '',
     host.notice ? el('div', { class: 'notice' },
@@ -305,7 +309,7 @@ function mobileText(host) {
 }
 
 function hostRow(host) {
-  const state = availability(host);
+  const state = availability(host, serverNow());
   const blocked = host.state === 'blocked';
   const strip = el('div', { class: `strip${blocked ? ' blocked' : host.bars.length > 60 ? ' dense' : ''}`, role: 'img',
     'aria-label': blocked ? `${name(host)}: пока нет истории проверок` : `Доступность ${name(host)}: ${pct(host.uptime)}` });
@@ -348,7 +352,7 @@ function hostRow(host) {
   const isOpen = expanded.has(host.host);
   const sub = [];
   if (host.error === 'maintenance') sub.push('технические работы');
-  else if (state.state === 'down' && host.down_since) sub.push(`текущий сбой ~${duration(Date.now() / 1000 - host.down_since)}`);
+  else if (state.state === 'down' && host.down_since) sub.push(`текущий сбой ~${duration(serverNow() - host.down_since)}`);
   else if (host.version) sub.push(host.version);
   if (host.app_disabled) sub.push('отключён в приложении');
   const toggle = () => {
@@ -381,7 +385,7 @@ function renderHosts() {
   // Недоступные с наших серверов — в самом конце: о самом регионе они ничего не говорят.
   const order = { down: 0, issues: 1, up: 2, unknown: 3, blocked: 4 };
   const hosts = data.hosts.filter(matches)
-    .sort((a, b) => (order[availability(a).state] - order[availability(b).state]) || name(a).localeCompare(name(b), 'ru'));
+    .sort((a, b) => (order[availability(a, serverNow()).state] - order[availability(b, serverNow()).state]) || name(a).localeCompare(name(b), 'ru'));
   $('#hosts').replaceChildren(...(hosts.length ? hosts.map(hostRow) : [el('div', { class: 'muted' }, 'Ничего не нашлось')]));
   $('#strip-from').textContent = data.range === '24h' ? '24 ч назад' : data.range === '7d' ? '7 дней назад' : '30 дней назад';
 }
@@ -411,7 +415,7 @@ function renderLists() {
       el('i', { class: `dot ${i.ongoing ? 'critical' : 'none'}`, 'aria-hidden': 'true' }),
       el('div', {},
         el('div', {}, el('b', {}, name(i)), i.ongoing
-          ? ` — недоступен уже ${duration(Date.now() / 1000 - i.start)}`
+          ? ` — недоступен уже ${duration(serverNow() - i.start)}`
           : ` — не отвечал ~${duration(i.end - i.start)}`),
         el('div', { class: 'when' }, `${when(i.start)}${i.error ? ` · ${errorText(i.error)}` : ''}`))),
       'За этот период сбоев не было');
@@ -440,9 +444,9 @@ document.querySelectorAll('#feed-tabs button').forEach((button) => button.addEve
 }));
 
 function renderBanner() {
-  const down = data.hosts.filter((h) => availability(h).state === 'down');
-  const issues = data.hosts.filter((h) => availability(h).state === 'issues');
-  const checked = data.hosts.filter((h) => !['unknown', 'blocked'].includes(availability(h).state));
+  const down = data.hosts.filter((h) => availability(h, serverNow()).state === 'down');
+  const issues = data.hosts.filter((h) => availability(h, serverNow()).state === 'issues');
+  const checked = data.hosts.filter((h) => !['unknown', 'blocked'].includes(availability(h, serverNow()).state));
   const banner = $('#banner');
   let cls = 'good', icon = '✓', title = 'Серверы доступны', sub = '';
   if (down.length) {
@@ -490,6 +494,7 @@ async function load() {
     const result = await response.json();
     if (requestedRange !== range) { loadAgain = true; return; }
     data = result;
+    clockOffset = result.generated_at - Date.now() / 1000;
     render();
   } catch (error) {
     if (!data) {
