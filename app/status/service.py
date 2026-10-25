@@ -55,7 +55,13 @@ SLOW_MS = 5000
 KEEP_PROBES_S = 31 * 86400
 KEEP_REPORTS_S = 90 * 86400
 PRUNE_EVERY_S = 6 * 3600
+# Сводку собирают заранее, после каждого круга проверок, и отдают готовой:
+# собирать её на запрос — секунды, и всё это время база занята.
 SUMMARY_TTL_S = 60
+# За 7 и 30 дней она собирается дольше, а за минуту почти не меняется.
+SUMMARY_LONG_TTL_S = 5 * 60
+# Период, который давно никто не открывал, заранее не собирают.
+SUMMARY_WANTED_S = 30 * 60
 ACCOUNT_WINDOW_S = 30 * 60
 # Столбик полоски краснеет по дневникам, только если в него попало столько
 # загрузок — иначе одна-две неудачи рисовали бы сбой на пустом месте.
@@ -302,7 +308,11 @@ class StatusService:
         self._clock = clock
         self._targets = merge_targets([])
         self._catalog_at: float | None = None
-        self._cache: dict[str, tuple[float, dict]] = {}
+        # Период → (когда собрана, поколение данных, сводка).
+        self._cache: dict[str, tuple[float, int, dict]] = {}
+        self._building: dict[str, asyncio.Task] = {}
+        self._wanted: dict[str, float] = {}
+        self._generation = 0
         self._alerted: dict[str, float] = {}
         self._live: dict[str, tuple[float, dict]] = {}
         self._latest_checks: dict[str, dict] = {}
@@ -335,7 +345,7 @@ class StatusService:
 
     def _changed(self, *, invalidate: bool = True) -> None:
         if invalidate:
-            self._cache.clear()
+            self._generation += 1
         self._revision += 1
         for queue in self._listeners:
             if not queue.full():
@@ -413,7 +423,10 @@ class StatusService:
                     changed[target.host] = (previous, result.version)
                     logger.info("«Сетевой город» %s: версия %s → %s", target.host, previous, result.version,
                                 extra={"public": True})
-        self._changed()
+        # Сначала новая сводка, потом сигнал: по нему страницы получат её готовой.
+        self._generation += 1
+        await self._prepare()
+        self._changed(invalidate=False)
         if self.groups is not None:
             try:
                 await self.groups.observe(list(zip(targets, results)), changed, at)
@@ -426,6 +439,8 @@ class StatusService:
     async def run(self) -> None:
         """Опрашивать серверы ровным шагом, пока задачу не отменят."""
         pruned = 0.0
+        # Сводка из прошлых проверок — к первому посетителю после перезапуска.
+        self._refresh("24h")
         while True:
             started = self._clock()
             try:
@@ -550,17 +565,64 @@ class StatusService:
         if range_key not in RANGES:
             range_key = "24h"
         now = self._clock()
+        self._wanted[range_key] = now
         cached = self._cache.get(range_key)
-        if cached and now - cached[0] < SUMMARY_TTL_S:
-            # Счётчики аккаунтов меняются часто; ради них не пересчитываем
-            # месячную историю всех регионов после каждой фоновой проверки.
-            accounts = await self._repo.account_checks(now - ACCOUNT_WINDOW_S)
-            return {**cached[1], "generated_at": now, "hosts": [
-                _account_view(host, accounts.get(host["host"])) for host in cached[1]["hosts"]
-            ]}
+        if cached is None or range_key == "24h" and cached[1] < self._generation:
+            # Сводки ещё нет, или сутки устарели (пришла жалоба): собирают одну
+            # на всех, сколько бы страниц её ни ждало.
+            data = await asyncio.shield(self._refresh(range_key))
+        else:
+            data = cached[2]
+            if self._expired(range_key, now):
+                self._refresh(range_key)
+        # Счётчики аккаунтов и последний круг проверок меняются часто; ради
+        # них не пересчитываем месячную историю всех регионов.
+        accounts = await self._repo.account_checks(now - ACCOUNT_WINDOW_S)
+        return {**data, "generated_at": now, "hosts": [
+            _account_view({**host, "latest_check": self._latest_checks.get(host["host"])}, accounts.get(host["host"]))
+            for host in data["hosts"]
+        ]}
+
+    def _expired(self, range_key: str, now: float) -> bool:
+        cached = self._cache.get(range_key)
+        ttl = SUMMARY_TTL_S if range_key == "24h" else SUMMARY_LONG_TTL_S
+        return cached is None or now - cached[0] >= ttl
+
+    def _refresh(self, range_key: str) -> asyncio.Task:
+        """Собрать сводку в фоне; уже собираемую — не начинать заново."""
+        task = self._building.get(range_key)
+        if task is None:
+            task = asyncio.create_task(self._store(range_key), name=f"sgo-summary-{range_key}")
+            self._building[range_key] = task
+            task.add_done_callback(lambda done: self._built(range_key, done))
+        return task
+
+    def _built(self, range_key: str, task: asyncio.Task) -> None:
+        if self._building.get(range_key) is task:
+            del self._building[range_key]
+        if not task.cancelled() and task.exception() is not None:
+            logger.warning("Сводка статуса за %s не собрана: %s", range_key, task.exception())
+
+    async def _store(self, range_key: str) -> dict:
+        now, generation = self._clock(), self._generation
         data = await self._build(range_key, now)
-        self._cache[range_key] = (now, data)
+        self._cache[range_key] = (now, generation, data)
         return data
+
+    async def _prepare(self) -> None:
+        """После круга проверок: сутки — сразу, длинные периоды — в фоне и
+        только если их недавно открывали."""
+        now = self._clock()
+        for range_key in RANGES:
+            if range_key != "24h" and now - self._wanted.get(range_key, -math.inf) < SUMMARY_WANTED_S \
+                    and self._expired(range_key, now):
+                self._refresh(range_key)
+        try:
+            await asyncio.shield(self._refresh("24h"))
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # noqa: BLE001 — уже в журнале (_built); страница соберёт по запросу
+            pass
 
     async def _build(self, range_key: str, now: float) -> dict:
         length, size = RANGES[range_key]
@@ -570,7 +632,8 @@ class StatusService:
         # Серверы, которые ни разу не ответили боту: с нашего сервера они не
         # открываются (а людям — может быть, вполне). «Недоступен» о них —
         # неправда, сбоев и полос у них нет — только «нет данных».
-        reachable = await self._repo.reachable_hosts()
+        last_successes = await self._repo.latest_successes([t.host for t in targets])
+        reachable = set(last_successes)
         regions = {t.host: t.region for t in targets if t.host in reachable}
 
         recent: dict[str, list[dict]] = {}
@@ -618,7 +681,6 @@ class StatusService:
         ongoing = {i["host"]: i["start"] for i in incidents if i["ongoing"]}
         versions = await self._repo.versions()
 
-        last_successes = await self._repo.latest_successes()
         accounts = await self._repo.account_checks(now - ACCOUNT_WINDOW_S)
         hosts = []
         for target in targets:

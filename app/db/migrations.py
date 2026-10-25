@@ -929,6 +929,10 @@ MIGRATIONS: list[str] = [
     );
     CREATE INDEX idx_login_passkeys_user ON login_passkeys(telegram_id);
     """,
+    # Сбои на странице статуса: неудачные проверки без перебора всех.
+    """
+    CREATE INDEX idx_sgo_probes_failed ON sgo_probes(host, at) WHERE ok = 0;
+    """,
 ]
 
 

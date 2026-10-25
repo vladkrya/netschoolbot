@@ -2078,13 +2078,17 @@ class SgoStatusRepository:
 
     async def failures(self, since: float) -> list[dict]:
         """Неудачные проверки по порядку — из них складываются сбои."""
+        # Соседей ищем по индексу только у неудачных проверок: оконная функция
+        # перебирала весь месяц проверок и держала базу секунды.
         rows = await self._db.fetch_all(
-            "SELECT host, at, error, previous_ok, next_at, next_ok FROM ("
-            "SELECT host, at, error, ok, "
-            "LAG(ok) OVER (PARTITION BY host ORDER BY at) AS previous_ok, "
-            "LEAD(at) OVER (PARTITION BY host ORDER BY at) AS next_at, "
-            "LEAD(ok) OVER (PARTITION BY host ORDER BY at) AS next_ok "
-            "FROM sgo_probes WHERE at >= ?) WHERE ok = 0 ORDER BY host, at",
+            "SELECT f.host, f.at, f.error, "
+            "(SELECT p.ok FROM sgo_probes p WHERE p.host = f.host AND p.at >= ?1 AND p.at < f.at "
+            "ORDER BY p.at DESC LIMIT 1) AS previous_ok, "
+            "(SELECT p.at FROM sgo_probes p WHERE p.host = f.host AND p.at > f.at "
+            "ORDER BY p.at LIMIT 1) AS next_at, "
+            "(SELECT p.ok FROM sgo_probes p WHERE p.host = f.host AND p.at > f.at "
+            "ORDER BY p.at LIMIT 1) AS next_ok "
+            "FROM sgo_probes f WHERE f.ok = 0 AND f.at >= ?1 ORDER BY f.host, f.at",
             (since,),
         )
         return [dict(row) for row in rows]
@@ -2149,9 +2153,17 @@ class SgoStatusRepository:
         rows = await self._db.fetch_all("SELECT DISTINCT host FROM sgo_probes WHERE ok = 1")
         return {row[0] for row in rows}
 
-    async def latest_successes(self) -> dict[str, float]:
-        rows = await self._db.fetch_all("SELECT host, MAX(at) AS at FROM sgo_probes WHERE ok = 1 GROUP BY host")
-        return {row["host"]: row["at"] for row in rows}
+    async def latest_successes(self, hosts: list[str]) -> dict[str, float]:
+        """Последний удачный ответ каждого сервера; не отвечавших никогда — нет.
+        По серверу за запрос: индекс (host, at) находит ответ с конца сразу,
+        а не перебирает весь месяц проверок."""
+        found = {}
+        for host in hosts:
+            row = await self._db.fetch_one(
+                "SELECT at FROM sgo_probes WHERE host = ? AND ok = 1 ORDER BY at DESC LIMIT 1", (host,))
+            if row is not None:
+                found[host] = row[0]
+        return found
 
     async def add_account_check(self, host: str, at: float, ok: bool) -> None:
         await self._db.execute(

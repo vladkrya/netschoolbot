@@ -676,6 +676,8 @@ async def test_diary_bars_show_failures_while_site_answers(db):
     for _ in range(4):
         await service.record_account_check(f"https://{MORDOVIA}", False)
     await service.record_account_check(f"https://{MORDOVIA}", True)
+    # Полоски пересобираются со следующим кругом проверок.
+    await service.probe_all()
 
     data = await service.summary("24h")
     host = next(h for h in data["hosts"] if h["host"] == MORDOVIA)
@@ -700,3 +702,35 @@ async def test_diary_bars_ignore_thin_buckets(db):
     data = await service.summary("24h")
     host = next(h for h in data["hosts"] if h["host"] == MORDOVIA)
     assert all(bar is None for bar in host["diary_bars"])
+
+
+async def test_summary_is_prepared_with_checks_and_built_once(db):
+    """Сводку собирают после круга проверок, а не на запрос; одновременные
+    запросы ждут одну сборку на всех."""
+    async def prober(target):
+        return Probe(True, 100, mobile=True if target.mobile_url else None)
+
+    service, now = make_service(db, prober)
+    builds = []
+    build = service._build
+
+    async def counted(range_key, at):
+        builds.append(range_key)
+        return await build(range_key, at)
+
+    service._build = counted
+    await asyncio.gather(*(service.summary("7d") for _ in range(5)))
+    assert builds == ["7d"]
+
+    await service.probe_all()
+    assert builds == ["7d", "24h"]  # сутки — заранее; 7 дней ещё не устарели
+    await asyncio.gather(*(service.summary("24h") for _ in range(5)))
+    assert builds == ["7d", "24h"]
+
+    # Устаревшую длинную сводку отдают сразу, а новую собирают в фоне.
+    now[0] += 6 * 60
+    stale = await service.summary("7d")
+    assert stale["range"] == "7d"
+    await asyncio.sleep(0)
+    await asyncio.gather(*service._building.values())
+    assert builds == ["7d", "24h", "7d"]
