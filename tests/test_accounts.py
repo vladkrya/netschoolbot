@@ -4,6 +4,8 @@ import asyncio
 
 import datetime as dt
 from dataclasses import replace
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 from aiohttp.test_utils import TestClient, TestServer
@@ -22,7 +24,7 @@ WIDGET_TOKEN = "777:widget-test-token"
 
 @pytest.fixture(autouse=True)
 def fresh_limits(monkeypatch):
-    for name in ("LOGIN_FAILURES", "IP_FAILURES", "REGISTRATIONS", "CODE_REQUESTS"):
+    for name in ("LOGIN_FAILURES", "IP_FAILURES", "REGISTRATIONS", "CODE_REQUESTS", "MOBILE_CODES"):
         limiter = getattr(account_web, name)
         monkeypatch.setattr(account_web, name, account_web.Limiter(limiter.limit, limiter.window))
 
@@ -262,6 +264,92 @@ class TestSgoLoginFromSite:
         assert (await post(client, "/api/sgo/login", {"url": "http://insecure", "school": "x", "method": "password"}, token))[0] == 400
         assert (await post(client, "/api/sgo/login", {"url": "https://a.ru", "school": "x", "method": "password"}, token))[0] == 400
         assert (await post(client, "/api/sgo/login/otp", {"code": "1234"}, token))[0] == 400
+
+
+SERVER_ID = "689ad2d5-0000-4000-8000-000000000001"
+
+
+@pytest.fixture
+def mobile_code(monkeypatch):
+    """Подмена netschoolpy для входа по коду приложения: каталог, обмен кода, клиент."""
+    import netschoolpy
+    import netschoolpy.mobile as mobile
+
+    calls = {"codes": [], "unavailable": False}
+
+    async def fake_region(server_id, **kwargs):
+        return mobile.MobileRegion(server_id=server_id, name="Мордовия", api_url="https://sgo.example.ru/api/mobile",
+                                   unavailable=calls["unavailable"])
+
+    async def fake_exchange(code, **kwargs):
+        calls["codes"].append(code)
+        return mobile.MobileToken(access_token="access", expires_at=dt.datetime.now(dt.timezone.utc))
+
+    class FakeMobile:
+        def __init__(self, url, **kwargs):
+            self.url = url
+            self._user = {}
+            self._http = SimpleNamespace(aclose=AsyncMock())
+
+        async def login_with_token(self, token):
+            self._user = {"id": 77, "organizations": [
+                {"isActive": False, "organization": {"name": "Старая школа"}},
+                {"isActive": True, "organization": {"name": "Школа №5"}}]}
+
+        async def users(self):
+            return [self._user]
+
+        def export_session(self):
+            return '{"kind": "mobile", "access_token": "access"}'
+
+    monkeypatch.setattr(mobile, "get_region", fake_region)
+    monkeypatch.setattr(mobile, "exchange_code", fake_exchange)
+    monkeypatch.setattr(netschoolpy, "MobileNetSchool", FakeMobile)
+    return calls
+
+
+class TestSgoMobileCode:
+    async def test_code_connects_sgo_to_signed_in_account(self, client, app_context, mobile_code):
+        _, body, _ = await register(client)
+        token = body["data"]["token"]
+        uid = await app_context.miniapp.resolve_token(token)
+        status, data, _ = await post(client, "/api/sgo/mobile-code",
+                                     {"user_code": "123456", "server_id": SERVER_ID.upper()}, token)
+        assert status == 200, data
+        assert data["data"]["school"] == "Школа №5"
+        assert mobile_code["codes"] == ["123456"]
+        user = await app_context.users.get(uid)
+        assert user.school.url == "https://sgo.example.ru" and user.school.name == "Школа №5"
+        assert user.api_mode.value == "mobile" and user.credentials.login_type.value == "esia_qr"
+        assert not user.credentials.password
+        assert await app_context.sessions.load(uid) == '{"kind": "mobile", "access_token": "access"}'
+        assert await app_context.netschool_accounts.get(uid) == ("https://sgo.example.ru", 77)
+
+    async def test_someone_elses_sgo_is_refused(self, client, app_context, mobile_code):
+        await app_context.users.save(make_user(5))
+        await app_context.netschool_accounts.set(5, "https://sgo.example.ru", 77)
+        _, body, _ = await register(client)
+        token = body["data"]["token"]
+        status, data, _ = await post(client, "/api/sgo/mobile-code", {"user_code": "123456", "server_id": SERVER_ID}, token)
+        assert status == 400 and "другому аккаунту" in data["error"]
+        assert await app_context.sessions.load(await app_context.miniapp.resolve_token(token)) is None
+
+    async def test_disabled_region_is_refused(self, client, mobile_code):
+        mobile_code["unavailable"] = True
+        _, body, _ = await register(client)
+        status, data, _ = await post(client, "/api/sgo/mobile-code",
+                                     {"user_code": "123456", "server_id": SERVER_ID}, body["data"]["token"])
+        assert status == 400 and "отключён" in data["error"]
+        assert mobile_code["codes"] == []
+
+    async def test_bad_requests(self, client, mobile_code):
+        assert (await post(client, "/api/sgo/mobile-code", {"user_code": "123456", "server_id": SERVER_ID}))[0] == 401
+        _, body, _ = await register(client)
+        token = body["data"]["token"]
+        for bad in ({"user_code": "123456"}, {"user_code": "12 34", "server_id": SERVER_ID},
+                    {"user_code": "123456", "server_id": "../end-points"}):
+            assert (await post(client, "/api/sgo/mobile-code", bad, token))[0] == 400
+        assert mobile_code["codes"] == []
 
 
 async def test_forgotten_pin_is_reset_with_account_password(client, app_context):

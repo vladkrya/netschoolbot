@@ -27,7 +27,7 @@ from ..accounts.service import connect_accounts, link_account
 from ..accounts.mailer import letter
 from ..accounts.site_login import PREFIX as SITE_LOGIN_PREFIX, TTL_SECONDS as SITE_LOGIN_TTL, describe_browser
 from ..accounts.passwords import check_password, hash_password, verify_password
-from ..domain.models import Credentials, LoginType, School
+from ..domain.models import ApiMode, Credentials, LoginType, School
 from ..netschool import login as login_flow, ownership
 from ..netschool.errors import NetSchoolError, Reason, login_message, wrap
 from . import viewing
@@ -89,6 +89,7 @@ IP_FAILURES = Limiter(30, 15 * 60)  # на адрес
 REGISTRATIONS = Limiter(5, 3600)  # на адрес
 CODE_REQUESTS = Limiter(3, 15 * 60)  # писем с кодом на почту
 SITE_LOGINS = Limiter(10, 15 * 60)  # входов через бота на адрес
+MOBILE_CODES = Limiter(10, 15 * 60)  # кодов из приложения на аккаунт
 
 
 def _ip(request: web.Request) -> str:
@@ -1042,3 +1043,44 @@ async def sgo_login_cancel(request: web.Request) -> web.Response:
     if isinstance(attempt, WebLogin) and attempt.task and not attempt.task.done():
         attempt.task.cancel()
     return web.json_response({"ok": True})
+
+
+USER_CODE = re.compile(r"^[A-Za-z0-9-]{4,64}$")
+SERVER_ID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+
+
+@routes.post("/api/sgo/mobile-code")
+async def sgo_mobile_code(request: web.Request) -> web.Response:
+    """Подключить «Сетевой город» из приложения: тело {user_code, server_id}.
+
+    Сначала человек входит в аккаунт приложения, потом — на сайте региона
+    во встроенном браузере, и приложение присылает одноразовый код оттуда.
+    Пароля нет, поэтому тип входа — как у QR Госуслуг: когда токен истечёт,
+    повторить вход может только сам человек.
+    """
+    app, user = context(request), current_user(request)
+    body = await _body(request)
+    code = str(body.get("user_code") or "").strip()
+    server_id = str(body.get("server_id") or "").strip().lower()
+    if await _needs_verify(app, user.telegram_id):
+        return json_error("Сначала подтвердите почту кодом из письма", status=403, reason="verify")
+    if not USER_CODE.match(code) or not SERVER_ID.match(server_id):
+        return json_error("Нет кода входа или региона — войдите на сайте школы заново")
+    key = str(user.telegram_id)
+    if MOBILE_CODES.blocked(key):
+        return json_error("Слишком много попыток — подождите 15 минут", status=429)
+    MOBILE_CODES.hit(key)
+    try:
+        async with app.login_attempt(user.telegram_id):
+            school, payload = await login_flow.mobile_code_login(app, user.telegram_id, code, server_id)
+            candidate = replace(user, school=school, api_mode=ApiMode.MOBILE,
+                                credentials=Credentials(login_type=LoginType.ESIA_QR, remember=False))
+            # В пуле мог остаться клиент прежнего входа — дальше только новая сессия.
+            await app.pool.invalidate(user.telegram_id)
+            saved, _ = await login_flow.finish_login(app, candidate, payload, mobile_ready=True)
+    except NetSchoolError as exc:
+        return json_error(login_message(exc), reason=exc.reason.value)
+    logger.info("Сетевой город подключён из приложения: %s", user.telegram_id)
+    return web.json_response({"ok": True, "data": {
+        "school": saved.school.name, "student": saved.student_name,
+        "message": "Вход выполнен" + (f": {saved.student_name}" if saved.student_name else "")}})
