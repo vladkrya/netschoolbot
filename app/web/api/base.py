@@ -200,7 +200,8 @@ async def auth_middleware(request: web.Request, handler):
     # Вложение по билету: билет выдан уже опознанному и разблокированному
     # приложению, поэтому ни входа, ни PIN здесь не спрашиваем.
     ticket = request.query.get("ticket", "")
-    if ticket and ("/api/attachment/" in request.path or "/api/export/" in request.path):
+    if ticket and ("/api/attachment/" in request.path or "/api/export/" in request.path
+                   or request.path.endswith("/api/admin/android.apk")):
         telegram_id = verify_attachment_ticket(context(request), ticket)
         user = await context(request).users.get(telegram_id) if telegram_id else None
         if user is None:

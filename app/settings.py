@@ -297,6 +297,11 @@ class Settings:
     def textbooks_dir(self) -> Path:
         return self.data_dir / "textbooks"
 
+    @property
+    def android_apk(self) -> Path:
+        """Сборка Android-клиента для владельца: кладётся на сервер вручную, не в git."""
+        return self.data_dir / "android" / "dnevnik.apk"
+
     def ensure_dirs(self) -> None:
         for path in (self.data_dir, self.logs_dir, self.attachments_dir, self.icons_dir):
             path.mkdir(parents=True, exist_ok=True)

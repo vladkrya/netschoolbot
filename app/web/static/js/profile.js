@@ -3,7 +3,7 @@
 // вкладка «Настройки» с ещё одним разделом: какие вкладки в нижней панели.
 'use strict';
 
-import { $, api, banner, demo, esc, initData, motionAtLeast, state } from './core.js';
+import { $, androidApkUrl, api, banner, demo, ensureAttachmentTicket, esc, initData, motionAtLeast, openExternal, state } from './core.js';
 import {
   ACCENTS, applyMotion, currentAccent, forgetAccent, HALLOWEEN_ACCENTS, halloweenAccent, halloweenCountdown, isHalloween, isNewDesign, motionChosen, motionLevel, rememberAccent, saveAccent, saveAnswers, saveBells, saveConfetti, savedAccents, saveDesign, saveHalloween, saveHalloweenAccent, saveHomeworkStatus, saveMotion, saveWeekends, showAnswers, showBells, showConfetti, showHomeworkStatus, showWeekends, syncChromeColor, weakDevice,
 } from './appearance.js';
@@ -326,6 +326,15 @@ function adminSection(admin) {
     </section>`;
 }
 
+/** «Android-приложение» внизу настроек — только владельцу; файл лежит на сервере (admin.py). */
+function androidRow(apk) {
+  if (!apk || demo) return '';
+  const size = `${(apk.size / 1048576).toFixed(1).replace('.', ',')} МБ`;
+  const date = new Date(apk.updated).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  return `<button class="drawer-link" id="drawerApk">${ICONS.install} Android-приложение (APK)
+      <span class="muted small">${size}, ${esc(date)} · видно только вам</span></button>`;
+}
+
 // Атрибут switch — системный переключатель: в Safari на iPhone он сам
 // тактильно щёлкает от касания (vibrate там нет, см. haptics.js).
 function toggle(key, label, on) {
@@ -552,6 +561,7 @@ function render() {
       ${statusLine(data.status)}
     </section>`}
     ${demoSection()}
+    ${readonly ? '' : androidRow(data.android_apk)}
     ${whatsNewRow()}
     <div class="drawer-foot muted small">Дневник «Сетевого города»${window.NETSCHOOL.appVersion ? ` · v. ${esc(window.NETSCHOOL.appVersion)}` : ''}
       ${demo || !data.bug_report ? '' : `<button class="link small" id="drawerBug">Сообщить об ошибке или идее</button>`}</div>`;
@@ -917,6 +927,15 @@ function bindDrawer() {
   });
   $('drawerLogout')?.addEventListener('click', () => { tap(); chooseSignOut(Boolean(state.profile?.readonly)); });
   $('drawerBug')?.addEventListener('click', () => { tap(); closeDrawer(); openBugReport(); });
+  $('drawerApk')?.addEventListener('click', async () => {
+    tap();
+    // Файл качает внешний браузер: туда не передать ни initData, ни PIN — нужен билет.
+    if (!(await ensureAttachmentTicket())) {
+      banner('Не удалось получить ссылку на APK', true);
+      return;
+    }
+    openExternal(androidApkUrl());
+  });
   bindTabs();
   bindPushToggle();
   $('pwaOpen')?.addEventListener('click', openInBrowser);

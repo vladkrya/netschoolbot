@@ -65,6 +65,7 @@ async def _sgo_updates(app: AppContext, telegram_id: int, url: str) -> bool:
 async def profile(request: web.Request) -> web.Response:
     from .. import chat as chat_module
     from .. import solver, viewing
+    from ..admin import android_apk_info
 
     app, user = context(request), current_user(request)
     status = await app.state.watch_status(user.telegram_id)
@@ -104,6 +105,8 @@ async def profile(request: web.Request) -> web.Response:
                 if app.settings.assistant.enabled and solver.is_owner(app, viewer or user) else None,
                 # Строка «Администрирование» в настройках (web/admin.py).
                 "admin": solver.is_owner(app, viewer or user),
+                # Строка «Android-приложение» внизу настроек — только владельцу (admin.py).
+                "android_apk": android_apk_info(app) if solver.is_owner(app, viewer or user) else None,
                 # Раздел «Чаты» в «Сообщениях» и тумблер владельца (web/chat.py).
                 "chats": chat_module.ENABLED and (solver.is_owner(app, viewer or user)
                                                   or await chat_module.chats_on(app)),

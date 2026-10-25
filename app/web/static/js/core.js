@@ -229,7 +229,7 @@ const ONLINE_ONLY = [
   'a.attach', '[data-online]', '#refreshBtn', '#composeBtn', '#composeSend', '#aiFab',
   '.nav-item[data-tab="assistant"]', '[data-mail-mode="chat"]', '#drawerAccount', '#drawerLock',
   '#drawerDevices', '#drawerAssistant', '#drawerStatus', '#drawerExport', '#drawerFamily',
-  '#drawerCalendar', '#drawerEvents', '#drawerReferences', '#drawerBug', '#drawerLogout',
+  '#drawerCalendar', '#drawerEvents', '#drawerReferences', '#drawerBug', '#drawerLogout', '#drawerApk',
   '.view-switch [data-view]', '[data-student]', '#pushToggle', '#keepFiles', '#sgoUpdates',
   '[data-answer-save]', '[data-answer-edit]', '[data-answer-clear]', '[data-answer-delete]',
   '[data-reference]', '.distance-join',
@@ -929,6 +929,11 @@ export function attachmentUrl(id, name = '') {
   // «attachment-123» без расширения и не открывался как docx или pdf.
   const filename = name ? `&name=${encodeURIComponent(name)}` : '';
   return fileUrl(`attachment/${id}`, filename);
+}
+
+/** Android-клиент для владельца (admin.py): прямая ссылка на файл с билетом вложений. */
+export function androidApkUrl() {
+  return `${base}/api/admin/android.apk?ticket=${encodeURIComponent(attachmentTicket)}`;
 }
 
 /** Отчёты в Excel: та же страница ожидания и тот же билет, что у вложений. */
