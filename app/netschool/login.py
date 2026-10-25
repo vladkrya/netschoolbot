@@ -12,9 +12,9 @@ from collections.abc import Awaitable, Callable
 from dataclasses import replace
 from typing import TYPE_CHECKING
 
-from ..domain.models import ApiMode, LoginType, User
+from ..domain.models import ApiMode, LoginType, School, User
 from . import ownership
-from .errors import NetSchoolError, wrap
+from .errors import NetSchoolError, Reason, wrap
 
 if TYPE_CHECKING:
     from ..context import AppContext
@@ -91,6 +91,47 @@ async def qr_login(app: AppContext, url: str, school: str, show_qr: QrCallback, 
         await _close(client)
 
 
+def _school_name(client) -> str:
+    """Название активной школы из профиля мобильного API."""
+    orgs = (getattr(client, "_user", None) or {}).get("organizations") or []
+    active = next((org for org in orgs if org.get("isActive")), orgs[0] if orgs else {})
+    return str((active.get("organization") or {}).get("name") or "")
+
+
+async def mobile_code_login(app: AppContext, telegram_id: int, user_code: str, server_id: str) -> tuple[School, str]:
+    """Вход по одноразовому коду из приложения. Возвращает школу и сессию.
+
+    Человек входит на сайте региона во встроенном браузере приложения
+    (Госуслуги или логин с паролем), и пароль сюда не попадает. Приложение
+    берёт `userCode` из /webapi/mysettings/mobile/pincode, а сервер меняет
+    его на 60-дневный токен мобильного API: токен нужен слежению за оценками.
+    """
+    from netschoolpy import MobileNetSchool
+    from netschoolpy.mobile import CATALOG_URL, exchange_code, get_region
+
+    settings = app.settings.netschool
+    try:
+        region = await get_region(server_id, proxy=settings.proxy_for(CATALOG_URL), timeout=settings.http_timeout)
+    except Exception as exc:
+        raise wrap(exc, context="регион приложения") from exc
+    if region.unavailable:
+        raise NetSchoolError(Reason.UNKNOWN, f"Регион «{region.name}» отключён в приложении NetSchool.")
+    proxy = settings.proxy_for(region.url)
+    secret = settings.mobile_client_secret or None
+    client = MobileNetSchool(region.url, proxy=proxy, client_secret=secret)
+    try:
+        token = await exchange_code(user_code, client_secret=secret, proxy=proxy, timeout=settings.http_timeout)
+        await client.login_with_token(token)
+        await ownership.claim(app, telegram_id, region.url, await ownership.account_id(client))
+        return School(url=region.url, name=_school_name(client) or region.name), client.export_session()
+    except NetSchoolError:
+        raise
+    except Exception as exc:
+        raise wrap(exc, context="вход по коду приложения") from exc
+    finally:
+        await _close(client)
+
+
 async def settle_api_mode(app: AppContext, user: User) -> tuple[User, str]:
     """Довести новую веб-сессию входа до рабочего мобильного режима.
 
@@ -126,9 +167,13 @@ async def _known_diary(app: AppContext, telegram_id: int) -> tuple[str, int] | N
     return await app.state.last_diary(telegram_id)
 
 
-async def finish_login(app: AppContext, user: User, payload: str | None) -> tuple[User, str]:
+async def finish_login(app: AppContext, user: User, payload: str | None, *,
+                       mobile_ready: bool = False) -> tuple[User, str]:
     """После удачного входа: сохранить сессию и пользователя, найти детей,
-    запустить проверку оценок. Возвращает пользователя и пояснение про API."""
+    запустить проверку оценок. Возвращает пользователя и пояснение про API.
+
+    `mobile_ready` — сессия уже мобильная (вход по коду приложения): менять
+    на токен нечего, а веб-сессии для этого и нет."""
     if payload:
         await app.sessions.save(user.telegram_id, payload)
     known = await _known_diary(app, user.telegram_id)
@@ -137,7 +182,7 @@ async def finish_login(app: AppContext, user: User, payload: str | None) -> tupl
     if known and user.selected_student_id is None and _same_school(known[0], user.school.url):
         user = replace(user, selected_student_id=known[1])
     saved = await app.users.save(replace(user, enabled=True))
-    saved, api_note = await settle_api_mode(app, saved)
+    saved, api_note = (saved, "") if mobile_ready else await settle_api_mode(app, saved)
     try:
         saved = await app.diary.sync_students(saved)
     except NetSchoolError as exc:
