@@ -48,9 +48,19 @@ const marksOf = (day) => JSON.stringify([day.marks, (day.lessons || []).map((les
 function keepDay(day) {
   const known = schoolDays.get(day.date);
   // «Оценки» загружены раньше и держатся в памяти — пусть переспросят школу.
-  if (known && marksOf(known) !== marksOf(day)) window.dispatchEvent(new CustomEvent('netschool:marksoutdated'));
+  if (known && !known.filler && marksOf(known) !== marksOf(day)) window.dispatchEvent(new CustomEvent('netschool:marksoutdated'));
   schoolDays.set(day.date, day);
   days.set(day.date, applyEdits(day));
+}
+
+/** Дней без уроков (каникулы, выходные) в ответе школы нет — заводим их
+ *  пустыми, иначе на них не лягут свои уроки (edits.js). */
+function fillWeek(offset) {
+  const monday = addDays(mondayOf(isoToday()), offset * 7);
+  for (let index = 0; index < 7; index += 1) {
+    const iso = addDays(monday, index);
+    if (!schoolDays.has(iso)) keepDay({ date: iso, weekday: index, lessons: [], marks: [], homework: [], filler: true });
+  }
 }
 
 // Правки расписания поменялись (здесь или пришли с другого устройства).
@@ -84,6 +94,7 @@ export async function ensureWeek(iso, force = false) {
       keep(initial && state.initialDiaryFresh ? state.initialDiaryFresh : payload);
       // Первая загрузка — одна неделя; соседние запрашиваются при переходе.
       loadedWeeks.add(offset);
+      fillWeek(offset);
     })
     .finally(() => pending.delete(offset));
   pending.set(offset, request);
@@ -104,7 +115,7 @@ export async function prefetchAround() {
     try {
       const { data } = await api(`/api/diary?week=${center}`);
       for (const day of data.days || []) keepDay(day);
-      weeks.forEach((offset) => loadedWeeks.add(offset));
+      weeks.forEach((offset) => { loadedWeeks.add(offset); fillWeek(offset); });
     } catch {
       /* не вышло — неделя загрузится, когда до неё долистают */
     }
