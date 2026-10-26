@@ -154,7 +154,7 @@ async def family_accept(callback: CallbackQuery, user: User, app: AppContext) ->
     if invite["notify"]:
         lines.append("Уведомления будут приходить сюда.")
     if invite["view"]:
-        lines.append("Дневник откроется в приложении: /app.")
+        lines.append("СГОшка откроется в приложении: /app.")
     lines.append("Отказаться — /family.")
     if callback.message:
         await callback.message.edit_text("\n".join(lines), parse_mode="HTML")

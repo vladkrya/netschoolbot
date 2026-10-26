@@ -566,7 +566,7 @@ async def reset_request(request: web.Request) -> web.Response:
         link = f"{(site.mirror_miniapp_url if mirror else site.miniapp_url).rstrip('/')}/#reset={token}"
         note = "Ссылка действует 30 минут и сработает один раз. Если вы не запрашивали сброс — ничего не делайте."
         if app.mailer.configured:
-            await _mail(request, email, "Сброс пароля — Дневник", *letter(
+            await _mail(request, email, "Сброс пароля — СГОшка", *letter(
                 "Сброс пароля", "Чтобы задать новый пароль, откройте ссылку:", link=link,
                 button="Задать новый пароль", note=note, site=app.mailer.site))
         elif has_telegram(account["telegram_id"]) and (bot := request.config_dict.get(BOT)):
@@ -624,7 +624,7 @@ async def _send_verification(request: web.Request, email: str) -> None:
         return
     CODE_REQUESTS.hit(email)
     code = await app.accounts.issue_code(email, "verify")
-    await _mail(request, email, "Подтверждение почты — Дневник", *letter(
+    await _mail(request, email, "Подтверждение почты — СГОшка", *letter(
         "Подтверждение почты", "Код подтверждения:", code=code,
         note="Введите его в приложении: Настройки → Вход по почте. Код действует 15 минут.", site=app.mailer.site))
 

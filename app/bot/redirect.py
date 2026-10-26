@@ -22,7 +22,7 @@ from .app import create_bot
 MAIN_BOT_URL = "https://t.me/netschoolbot"
 REDIRECT_TEXT = (
     "Это запасной бот «Сетевого города».\n\n"
-    "Дневник, оценки и уведомления доступны в основном боте @netschoolbot.\n"
+    "СГОшка, оценки и уведомления доступны в основном боте @netschoolbot.\n"
     "Нажмите кнопку ниже, чтобы перейти к нему."
 )
 

@@ -563,7 +563,7 @@ function render() {
     ${demoSection()}
     ${readonly ? '' : androidRow(data.android_apk)}
     ${whatsNewRow()}
-    <div class="drawer-foot muted small">Дневник «Сетевого города»${window.NETSCHOOL.appVersion ? ` · v. ${esc(window.NETSCHOOL.appVersion)}` : ''}
+    <div class="drawer-foot muted small">СГОшка${window.NETSCHOOL.appVersion ? ` · v. ${esc(window.NETSCHOOL.appVersion)}` : ''}
       ${demo || !data.bug_report ? '' : `<button class="link small" id="drawerBug">Сообщить об ошибке или идее</button>`}</div>`;
 
   bindDrawer();

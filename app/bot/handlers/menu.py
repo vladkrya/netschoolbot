@@ -66,7 +66,7 @@ def mirror_url(app: AppContext, url: str) -> str:
 @router.message(CommandStart())
 @router.message(Command("menu"))
 async def show_menu(message: Message, user: User, app: AppContext) -> None:
-    text = GREETING if not user.school.configured else "📱 Дневник открывается кнопкой внизу чата. Команды доступны через /."
+    text = GREETING if not user.school.configured else "📱 СГОшка открывается кнопкой внизу чата. Команды доступны через /."
     await message.answer(
         text,
         parse_mode="HTML",
@@ -318,7 +318,7 @@ async def open_miniapp(message: Message, user: User, app: AppContext) -> None:
         return
     url = await miniapp_url(app, user)
     await message.answer(
-        "📱 <b>Дневник</b>\n\n"
+        "📱 <b>СГОшка</b>\n\n"
         "Открывается прямо в Telegram — оценки, домашние задания и расписание "
         "в одном месте.",
         parse_mode="HTML",

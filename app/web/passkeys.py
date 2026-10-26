@@ -160,7 +160,7 @@ async def register_options(request: web.Request) -> web.Response:
     if len(keys) >= LIMIT:
         return json_error(f"Ключей входа уже {LIMIT} — удалите ненужные")
     number = await app.accounts.number(uid)
-    label = f"Дневник · ID {number}" if number else "Дневник"
+    label = f"СГОшка · ID {number}" if number else "СГОшка"
     options = generate_registration_options(
         rp_id=rp, rp_name="Школьный дневник",
         user_id=f"login-{number}".encode() if number else secrets.token_bytes(16),

@@ -624,7 +624,7 @@ export async function openLockSettings() {
     <div class="ls-body">
       <section class="ls-hero ${on ? 'on' : ''}"><div class="ls-hero-icon">${SHIELD}</div>
         <h3>${on ? 'PIN включён' : 'PIN не задан'}</h3>
-        <p>${on ? 'Дневник открывается только после ввода 4 цифр. PIN общий для всех ваших устройств.'
+        <p>${on ? 'СГОшка открывается только после ввода 4 цифр. PIN общий для всех ваших устройств.'
           : 'Задайте 4 цифры — без них никто не откроет дневник на вашем телефоне.'}</p></section>
       <div class="ls-group"><button type="button" class="ls-row ls-link" data-pin>
         <span class="ls-row-title">${on ? 'Изменить PIN' : 'Задать PIN'}</span>${CHEVRON}</button></div>

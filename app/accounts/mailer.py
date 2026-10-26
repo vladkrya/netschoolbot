@@ -42,7 +42,7 @@ class Mailer:
     async def send(self, to: str, subject: str, text: str, *, html_body: str | None = None) -> None:
         message = EmailMessage()
         name, address = parseaddr(self._settings.sender or "noreply@localhost")
-        message["From"] = formataddr((name or "Дневник", address))
+        message["From"] = formataddr((name or "СГОшка", address))
         message["To"] = to
         message["Subject"] = subject
         # Без даты и Message-ID почтовики охотнее кладут письмо в спам.
@@ -104,11 +104,11 @@ def letter(title: str, lead: str, *, code: str = "", note: str = "", site: str =
     )
     note_html = f'<p style="margin:0;color:#6b7280;font-size:14px;line-height:1.5">{esc(note)}</p>' if note else ""
     logo_html = (
-        f'<img src="{esc(site)}/static/icon-192.png" width="56" height="56" alt="Дневник" '
+        f'<img src="{esc(site)}/static/icon-192.png" width="56" height="56" alt="СГОшка" '
         f'style="display:block;margin:0 auto;border-radius:14px">'
         if site else ""
     )
-    footer = esc(site.split("//")[-1]) if site else "Дневник"
+    footer = esc(site.split("//")[-1]) if site else "СГОшка"
     body = f"""<!doctype html>
 <html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
 <title>{esc(title)}</title></head>
@@ -119,6 +119,6 @@ def letter(title: str, lead: str, *, code: str = "", note: str = "", site: str =
 <p style="margin:0 0 4px;font-size:16px;line-height:1.5">{esc(lead)}</p>
 {code_html}{code_html_link}{note_html}
 </div>
-<p style="text-align:center;color:#9ca3af;font-size:12px;margin:16px 0 0">Дневник · {footer}</p>
+<p style="text-align:center;color:#9ca3af;font-size:12px;margin:16px 0 0">СГОшка · {footer}</p>
 </body></html>"""
     return text, body

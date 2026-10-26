@@ -219,7 +219,7 @@ async function openNewDevice(onConnected) {
       );
     });
     body.querySelector('[data-share]')?.addEventListener('click', () => {
-      navigator.share({ title: 'Дневник', url: data.url }).catch(() => {});
+      navigator.share({ title: 'СГОшка', url: data.url }).catch(() => {});
     });
     // Внешний браузер этого же телефона, а не встроенный в Telegram.
     body.querySelector('[data-open]')?.addEventListener('click', () => {

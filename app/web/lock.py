@@ -248,7 +248,7 @@ async def options(request, kind):
         # видно в списке паролей на телефоне. Уже созданные ключи сервер
         # узнаёт по их credential_id, поэтому они продолжают работать.
         number = await context(request).accounts.number(uid)
-        label = f'Дневник · ID {number}' if number else 'Дневник'
+        label = f'СГОшка · ID {number}' if number else 'СГОшка'
         opts = generate_registration_options(rp_id=rp, rp_name='Школьный дневник',
             user_id=f'account-{number}'.encode() if number else secrets.token_bytes(16),
             user_name=label, user_display_name=label, exclude_credentials=descriptors,

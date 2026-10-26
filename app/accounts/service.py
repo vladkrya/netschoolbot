@@ -49,13 +49,13 @@ async def _notify_linked(app: AppContext, telegram_id: int) -> None:
         return
     text, body = letter(
         "Telegram привязан",
-        "К вашему аккаунту Дневника привязали Telegram: уведомления теперь приходят и туда, "
+        "К вашему аккаунту СГОшки привязали Telegram: уведомления теперь приходят и туда, "
         "а на сайт можно по-прежнему входить по почте.",
         note="Если это были не вы — смените пароль в приложении: Настройки → Вход по почте.",
         site=app.mailer.site,
     )
     try:
-        await app.mailer.send(account["email"], "Telegram привязан — Дневник", text, html_body=body)
+        await app.mailer.send(account["email"], "Telegram привязан — СГОшка", text, html_body=body)
     except Exception as exc:  # noqa: BLE001 — привязка уже прошла, письмо не главное
         logger.warning("Письмо о привязке Telegram не ушло: %s", exc)
 

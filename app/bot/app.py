@@ -93,7 +93,7 @@ async def run_bot(bot: Bot, dispatcher: Dispatcher, miniapp_url: str) -> None:
     await bot.set_my_commands(COMMANDS, scope=BotCommandScopeAllPrivateChats())
     await bot.set_chat_menu_button(
         menu_button=(
-            MenuButtonWebApp(text="Дневник", web_app=WebAppInfo(url=f"{miniapp_url.rstrip('/')}/"))
+            MenuButtonWebApp(text="СГОшка", web_app=WebAppInfo(url=f"{miniapp_url.rstrip('/')}/"))
             if miniapp_url.startswith("https://") else MenuButtonCommands()
         )
     )

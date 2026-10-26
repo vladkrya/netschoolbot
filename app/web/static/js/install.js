@@ -91,7 +91,7 @@ function sheetBody() {
   const kind = browser();
   const head = `<div class="install-head">
       <img class="install-icon" src="${base}/static/apple-touch-icon.png" alt="" width="64" height="64">
-      <p>Дневник откроется с иконки, как обычное приложение: во весь экран, быстрее и с пуш-уведомлениями.</p>
+      <p>СГОшка откроется с иконки, как обычное приложение: во весь экран, быстрее и с пуш-уведомлениями.</p>
     </div>`;
   if (kind === 'ios-inapp' || kind === 'android-inapp') {
     const where = kind === 'ios-inapp' ? 'Safari' : 'Chrome';
@@ -221,7 +221,7 @@ function openTelegramGuide() {
   const body = openSheet('Установить на экран «Домой»', `
     <div class="install-head">
       <img class="install-icon" src="${base}/static/apple-touch-icon.png" alt="" width="64" height="64">
-      <p>Дневник откроется с иконки, как обычное приложение: во весь экран, быстрее и с пуш-уведомлениями.</p>
+      <p>СГОшка откроется с иконки, как обычное приложение: во весь экран, быстрее и с пуш-уведомлениями.</p>
     </div>
     <ol class="install-steps">
       <li><span class="install-num">1</span><span>Нажмите «Открыть в ${iphone ? 'Safari' : 'браузере'}» — откроется ваша личная ссылка. Она работает 15 минут и один раз</span></li>

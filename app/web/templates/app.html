@@ -12,7 +12,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <!-- Подпись под иконкой на iPhone; иначе iOS берёт <title>. -->
-<meta name="apple-mobile-web-app-title" content="Дневник">
+<meta name="apple-mobile-web-app-title" content="СГОшка">
 <script>
   // Системная область получает цвет шапки уже до первой отрисовки.
   try {
@@ -73,14 +73,14 @@
      заголовок прежний: по нему старые iOS называли иконку на экране «Домой». -->
 <!-- «Неофициальное» — в заголовке и описании: в выдаче по запросу «Сетевой
      город» сайт не должен выглядеть как сам дневник, куда вводят пароль. -->
-<title>Дневник для «Сетевого города» — оценки и ДЗ в Telegram (неофициальное приложение)</title>
+<title>СГОшка для «Сетевого города» — оценки и ДЗ в Telegram (неофициальное приложение)</title>
 <meta name="description" content="Неофициальное приложение для электронного дневника «Сетевой город. Образование» (СГО, NetSchool, «Нетскул»): оценки, домашние задания, расписание и уведомления о новых оценках в Telegram, в браузере и на телефоне. Не связано с ИРТех. Бесплатно.">
 <meta name="keywords" content="сетевой город, сетевой город образование, СГО, NetSchool, нетскул, электронный дневник, дневник, оценки, домашнее задание, telegram бот">
 <!-- Описание приложения для поиска: лендинг рисует скрипт, а Яндекс
      выполняет его хуже Google. -->
 <script type="application/ld+json">
 {"@context": "https://schema.org", "@type": "WebApplication",
- "name": "Дневник для «Сетевого города» (неофициальное приложение)",
+ "name": "СГОшка для «Сетевого города» (неофициальное приложение)",
  "alternateName": ["Сетевой город. Образование", "СГО", "NetSchool", "Нетскул"],
  "url": {{ site_url | tojson }},
  "applicationCategory": "EducationalApplication",
@@ -92,12 +92,12 @@
 <link rel="canonical" href="{{ site_url }}">
 <meta property="og:type" content="website">
 <meta property="og:url" content="{{ site_url }}">
-<meta property="og:title" content="Дневник для «Сетевого города» — удобно и быстро">
+<meta property="og:title" content="СГОшка для «Сетевого города» — удобно и быстро">
 <meta property="og:description" content="Неофициальное приложение: оценки, домашние задания и расписание из электронного дневника в одном месте.">
 <meta property="og:image" content="{{ site_url }}static/icon-512.png">
 <meta property="og:locale" content="ru_RU">
 {% else %}
-<title>Дневник</title>
+<title>СГОшка</title>
 {% endif %}
 {% if not demo %}<link rel="manifest" href="{{ base }}/manifest.webmanifest?token={{ token }}">{% endif %}
 <link rel="icon" type="image/png" href="{{ icon_192 or base ~ '/static/icon-192.png' }}">
@@ -150,7 +150,7 @@
     <button class="topbar-btn" id="menuBtn" aria-label="Меню" data-icon="menu"></button>
     <button class="topbar-btn topbar-refresh" id="refreshBtn" type="button" aria-label="Обновить данные" title="Обновить данные">↻</button>
     <!-- Имя ученика; у родителя с несколькими детьми — стрелка и выбор ребёнка. -->
-    <button class="topbar-title" id="topTitle" type="button"><span id="topName">{{ (student.split()[1] if student.split()|length > 1 else student) or "Дневник" }}</span><span class="title-switch" id="titleSwitch" data-icon="down" hidden></span></button>
+    <button class="topbar-title" id="topTitle" type="button"><span id="topName">{{ (student.split()[1] if student.split()|length > 1 else student) or "СГОшка" }}</span><span class="title-switch" id="titleSwitch" data-icon="down" hidden></span></button>
     <!-- С PIN сервер имя в страницу не кладёт, а без сети и при обновлении
          приложение доходит до шапки через секунды — имя прошлого входа сразу. -->
     <script>

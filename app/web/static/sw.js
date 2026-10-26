@@ -90,7 +90,7 @@ const ICON_UPDATING = '<svg class="spin" width="28" height="28" viewBox="0 0 24 
 // error», а при выкладке — «502 Bad Gateway». Сервер ответил — перезагрузка.
 const statusPage = (icon, title, text, button) => `<!doctype html><html lang="ru"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="color-scheme" content="light dark"><title>${title} — Дневник</title>
+<meta name="color-scheme" content="light dark"><title>${title} — СГОшка</title>
 <style>
 :root{--bg:#f5f6f8;--text:#202733;--muted:#6b7280;--accent:#3b82f6}
 @media (prefers-color-scheme:dark){:root{--bg:#000;--text:#f2f3f5;--muted:#9aa0aa;--accent:#5b9cff}}

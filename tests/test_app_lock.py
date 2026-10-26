@@ -68,7 +68,7 @@ async def test_webauthn_options_and_invalid_assertion(client, token):
     # В ключе номер аккаунта, Telegram ID не светится ни в имени, ни в user.id.
     from base64 import urlsafe_b64decode
     user = data['options']['user']
-    assert user['name'].startswith('Дневник · ID 1') and user['displayName'] == user['name']
+    assert user['name'].startswith('СГОшка · ID 1') and user['displayName'] == user['name']
     handle = urlsafe_b64decode(user['id'] + '=' * (-len(user['id']) % 4)).decode()
     assert handle.startswith('account-') and handle != '1'
     response = await client.post(f'{BASE}/api/lock/register/verify', headers=headers, json={'id': data['id'], 'credential': {}})
