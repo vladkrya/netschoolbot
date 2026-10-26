@@ -387,7 +387,7 @@ export async function unlockApp() {
   if (pending) return pending;
   pending = (async () => {
     const root = panel('Вход в дневник');
-    root.querySelector('.lock-error').textContent = 'Проверяем защиту…';
+    root.querySelector('.lock-error').textContent = '';
     // Проверка PIN не должна ждать ответ Telegram о биометрии (до 5 с).
     const nativeReady = nativeManager();
     const known = rememberedRequired();
@@ -396,18 +396,34 @@ export async function unlockApp() {
     // Чем открыть без сети: хешем PIN или ключом доступа этого устройства.
     const offlineReady = () => !!savedVerifier() || savedPasskeys().length > 0;
     const canOffline = known === true && offlineReady();
+    if (known !== true) {
+      root.querySelector('.lock-fields').innerHTML = '<p role="status">Открываем дневник…</p>';
+    }
+    // Collect PIN while the authoritative status request runs; never unlock from the hint alone.
+    let earlyPad, earlyPin;
+    if (known === true) earlyPad = mountPinpad(root, async (pin, controls) => {
+      await new Promise(resolve => { earlyPin = {pin, resolve}; });
+    });
+    const clearEarly = () => {
+      earlyPad?.destroy(); earlyPin?.resolve();
+      const message = root.querySelector('.lock-error');
+      if (message) root.querySelector('form').append(message);
+      root.querySelector('.pin-emblem')?.remove();
+      root.classList.remove('pin-screen');
+      root.querySelector('.lock-fields').innerHTML = '';
+    };
     let status;
     while (!status) {
       // Без сети сервер не спросить. Если защиты не было, сразу открываем
       // сохранённые данные, а не крутим «Проверяем защиту…».
       const offline = navigator.onLine === false;
-      if (offline && known === false) { root.close(); return; }
+      if (offline && known === false) { clearEarly(); root.close(); return; }
       try {
         if (offline) throw serverDown();
         // Без защиты долго ждать тоже незачем: сохранённое откроется и так.
         status = (await within(api(statusPath(null)), canOffline || known === false ? 4000 : 0)).data;
       } catch (failure) {
-        if (failure.reason === 'server' && known === false) { root.close(); return; }
+        if (failure.reason === 'server' && known === false) { clearEarly(); root.close(); return; }
         if (failure.reason === 'server' && canOffline && offlineReady()) {
           status = { required: true, pin: true, offline: true };
           break;
@@ -416,13 +432,15 @@ export async function unlockApp() {
           : offlineWiped() ? WIPED_MESSAGE : 'Нет связи с сервером. Вход по PIN продолжится, когда появится интернет.';
         root.querySelector('.lock-actions').innerHTML = '<button type="button">Повторить</button>';
         await new Promise(resolve => {
-          root.querySelector('button').onclick = resolve;
+          root.querySelector('.lock-actions button').onclick = resolve;
           window.addEventListener('online', resolve, { once: true });
         });
-        root.querySelector('.lock-error').textContent = 'Проверяем защиту…';
+        root.querySelector('.lock-error').textContent = '';
         root.querySelector('.lock-actions').innerHTML = '';
       }
     }
+    const submittedEarly = earlyPin?.pin || root.getPinValue?.();
+    clearEarly();
     setActive(status.required);
     if (!active) { forgetPin(); root.close(); return; }
     // Список ключей с сервера: вход без сети по ключу доступа не зависит от
@@ -481,6 +499,7 @@ export async function unlockApp() {
           await controls.success(); await finish();
           if (offlinePin && navigator.onLine !== false) resync();
         }, { forgot: status.password_reset && !tg?.initData ? FORGOT_PASSWORD : FORGOT_TELEGRAM });
+        if (submittedEarly) root.submitNativePin(submittedEarly);
         addSignOut(root);
         biometricReady.then(config => {
           if (!config || !root.isConnected) return;

@@ -33,6 +33,14 @@ export function mountPinpad(root, complete, { hint = 'Введите 4 цифр�
     field.querySelector('.pin-progress').textContent = busy ? 'Проверяем код' : `Введено ${value.length} из 4 цифр`;
     field.querySelectorAll('button').forEach(button => { button.disabled = busy; });
   };
+  let waiting = [];
+  const setWaiting = (enabled) => {
+    waiting.forEach(animation => animation.cancel()); waiting = [];
+    if (enabled && !stillMotion()) waiting = Array.from(dots, (dot, i) => dot.animate([
+      {transform: 'translateY(0)', opacity: .45}, {transform: 'translateY(-7px)', opacity: 1},
+      {transform: 'translateY(0)', opacity: .45},
+    ], {duration: 650, delay: i * 100, iterations: Infinity}));
+  };
   const reset = (message = hint) => {
     value = ''; field.querySelector('.pin-hint').textContent = message; paint();
   };
@@ -62,6 +70,7 @@ export function mountPinpad(root, complete, { hint = 'Введите 4 цифр�
   /** Верный код: точки по очереди вспыхивают зелёным, замок открывается. */
   const success = async () => {
     if (disposed) return;
+    setWaiting(false);
     notify('success');
     const row = field.querySelector('.pin-dots');
     row.classList.remove('wrong'); row.classList.add('ok');
@@ -77,20 +86,20 @@ export function mountPinpad(root, complete, { hint = 'Введите 4 цифр�
       { duration: 380, easing: 'cubic-bezier(.3,.7,.3,1)' });
     await new Promise(resolve => setTimeout(resolve, 430));
   };
-  async function enter(digit) {
+  async function enter(digit, silent = false) {
     if (disposed || busy || value.length >= 4) return;
-    press(field.querySelector(`[data-digit="${digit}"]`));
+    if (!silent) press(field.querySelector(`[data-digit="${digit}"]`));
     root.querySelector('.lock-error').textContent = '';
-    value += digit; tap('light'); paint();
+    value += digit; if (!silent) tap('light'); paint();
     if (value.length !== 4) return;
-    busy = true; paint();
+    busy = true; paint(); setWaiting(true);
     const submitted = value;
     try { await complete(submitted, {reset, failure, success}); }
     catch (error) {
       root.querySelector('.lock-error').textContent = error.message;
       failure(); value = '';
     } finally {
-      value = ''; busy = false;
+      setWaiting(false); value = ''; busy = false;
       if (!disposed) paint();
     }
   }
@@ -134,12 +143,19 @@ export function mountPinpad(root, complete, { hint = 'Введите 4 цифр�
   };
   root.addEventListener('keydown', keydown); root.addEventListener('paste', paste);
   root.tabIndex = -1; root.focus(); reset();
+  // Native Face ID submits directly, without revealing digits through key animations.
+  root.getPinValue = () => value;
+  root.submitNativePin = async pin => {
+    if (!/^[0-9]{1,4}$/.test(pin) || busy || disposed) return;
+    value = '';
+    for (const digit of pin) await enter(digit, true);
+  };
   // Появление: клавиши поднимаются волной.
-  if (!reduced()) field.querySelectorAll('.pin-key').forEach((key, i) => key.animate([
+  if (!window.webkit?.messageHandlers?.sgoshkaFaceId && !reduced()) field.querySelectorAll('.pin-key').forEach((key, i) => key.animate([
     { opacity: 0, transform: 'translateY(14px) scale(.92)' }, { opacity: 1, transform: 'none' },
   ], { duration: 360, delay: 40 + Math.floor(i / 3) * 45 + (i % 3) * 15, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'backwards' }));
   return { reset, setBiometric, success, destroy() {
-    value = ''; disposed = true;
+    setWaiting(false); delete root.submitNativePin; delete root.getPinValue; value = ''; disposed = true;
     root.removeEventListener('keydown', keydown); root.removeEventListener('paste', paste);
   }};
 }
