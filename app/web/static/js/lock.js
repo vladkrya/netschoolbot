@@ -443,6 +443,13 @@ export async function unlockApp() {
     clearEarly();
     setActive(status.required);
     if (!active) { forgetPin(); root.close(); return; }
+    // Приложение iOS уже разблокировано (его экран PIN/лицо): раздел сайта в нём
+    // не спрашивает PIN второй раз, если сервер принимает переданный токен.
+    if (window.__sgoshkaUnlock && !status.offline) {
+      setUnlock(window.__sgoshkaUnlock);
+      try { await api('/api/prefs'); markUnlocked(); root.close(); return; }
+      catch { setUnlock(''); }
+    }
     // Список ключей с сервера: вход без сети по ключу доступа не зависит от
     // того, входили ли по нему здесь после очистки офлайн-данных.
     if (Array.isArray(status.passkey_ids)) savePasskeys(status.passkey_ids);
