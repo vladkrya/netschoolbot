@@ -247,3 +247,14 @@ async def test_finish_exchanges_code_and_reads_profile(monkeypatch):
         assert seen["client_secret"] == "secret" and seen["auth"] == "OAuth at"
     finally:
         await server.close()
+
+
+class TestRemember:
+    async def test_cookie_lives_long_by_default(self, client, monkeypatch):
+        response = await sign_in(client, monkeypatch)
+        assert response.cookies["netschool_token"]["max-age"] == str(365 * 24 * 3600)
+
+    async def test_session_only_without_remember(self, client, monkeypatch):
+        client.session.cookie_jar.update_cookies({"ns_session_only": "1"})
+        response = await sign_in(client, monkeypatch)
+        assert response.cookies["netschool_token"]["max-age"] == ""

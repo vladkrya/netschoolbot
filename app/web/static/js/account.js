@@ -160,6 +160,15 @@ function showBotLinks(root) {
   root.querySelectorAll('[data-landing-bot]').forEach((element) => { element.hidden = false; });
 }
 
+/** «Запомнить меня» относится к любому способу входа, а токен выдаёт сервер
+ * уже после возврата с Telegram или Яндекса, поэтому выбор едет в cookie:
+ * без галочки сервер ставит cookie входа до закрытия браузера. */
+function rememberChoice(remember) {
+  const path = base || '/';
+  document.cookie = remember ? `ns_session_only=; path=${path}; max-age=0`
+    : `ns_session_only=1; path=${path}; max-age=86400; samesite=lax`;
+}
+
 function reload() {
   location.replace(`${base}/`);
 }
@@ -214,13 +223,14 @@ export function showAuth(view = 'login', email = '') {
 function renderLogin(email = '') {
   const card = landing(`
     <h2>Вход в дневник</h2>
+    <label class="account-check"><input type="checkbox" name="remember" checked>
+      <span>Запомнить меня на этом устройстве</span></label>
     <button class="btn ld-tg-login ld-tg-widget" type="button" data-landing-widget hidden>${TG_ICON}
       Войти через Telegram</button>
     <button class="btn ld-tg-login" type="button" data-landing-bot hidden>${TG_ICON}
       Войти через Telegram-бота</button>
     <div data-landing-yandex hidden>
-      <a class="btn ld-ya-login" href="${base}/api/account/yandex/start">${YA_ICON} Войти через Яндекс ID</a>
-      ${consent('Нажимая «Войти через Яндекс ID»')}
+      <button class="btn ld-ya-login" type="button" data-landing-yandex-go>${YA_ICON} Войти через Яндекс ID</button>
     </div>
     <div class="ld-alt-logins">
       <button class="btn outline ld-alt-login" type="button" data-qr-login>${ICONS.qr} По QR-коду</button>
@@ -232,8 +242,8 @@ function renderLogin(email = '') {
       <input class="field" type="password" name="password" autocomplete="current-password" placeholder="Пароль" required>
       <p class="account-error" hidden></p>
       <button class="btn" type="submit">Войти</button>
-      ${consent()}
     </form>
+    ${consent('Входя любым способом')}
     <div class="account-links">
       <button class="link" data-go="register">Регистрация</button>
       <button class="link" data-go="reset">Забыли пароль?</button>

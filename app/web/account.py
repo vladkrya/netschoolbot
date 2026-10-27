@@ -44,6 +44,8 @@ logger = logging.getLogger("netschoolbot.web")
 
 EMAIL = re.compile(r"^[^@\s]{1,64}@[^@\s]{1,190}\.[^@\s]{2,24}$")
 COOKIE = "netschool_token"
+# Ставит страница входа, если «Запомнить меня» снято: вход тогда живёт до закрытия браузера.
+SESSION_ONLY_COOKIE = "ns_session_only"
 OTP_TIMEOUT_S = 300
 MAX_SCHOOLS = 30
 
@@ -117,8 +119,9 @@ async def _signed_in(request: web.Request, telegram_id: int, method: str) -> web
     from .sync import publish
     await publish(context(request), telegram_id, "devices")
     response = web.json_response({"ok": True, "data": {"token": token}})
-    response.set_cookie(COOKIE, token, max_age=365 * 24 * 3600, httponly=True, samesite="Lax",
-                        secure=request.url.scheme == "https")
+    session_only = request.cookies.get(SESSION_ONLY_COOKIE) == "1"
+    response.set_cookie(COOKIE, token, max_age=None if session_only else 365 * 24 * 3600, httponly=True,
+                        samesite="Lax", secure=request.url.scheme == "https")
     return response
 
 
