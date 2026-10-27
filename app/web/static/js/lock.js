@@ -184,7 +184,10 @@ function resync() {
 window.addEventListener('online', () => { resync(); });
 // Сервер ответил «закрыто»: вошли без сети. По PIN — тихо входим им же;
 // по ключу доступа тихо нельзя — спросим снова, уже с проверкой сервером.
+let injectedUsed = false;
+let injectedRejected = false;
 onLocked(() => {
+  if (injectedUsed) { injectedUsed = false; injectedRejected = true; setUnlock(''); relock(); return Promise.resolve(false); }
   if (offlinePin) return resync();
   if (offlineBiometric) { offlineBiometric = false; relock(); }
   return Promise.resolve(false);
@@ -386,6 +389,14 @@ export async function unlockApp() {
   if (demo) { document.documentElement.classList.remove('app-locked'); return; }
   if (pending) return pending;
   pending = (async () => {
+    // Приложение iOS уже разблокировано своим экраном PIN/лицом и передало токен:
+    // раздел сайта не спрашивает PIN второй раз и не ждёт сеть. Не принял сервер
+    // (токен истёк) — первый же ответ «закрыто» вернёт обычный экран PIN.
+    if (window.__sgoshkaUnlock && !injectedRejected) {
+      setUnlock(window.__sgoshkaUnlock); setActive(true); markUnlocked(); injectedUsed = true;
+      document.documentElement.classList.remove('app-locked');
+      return;
+    }
     const root = panel('Вход в дневник');
     root.querySelector('.lock-error').textContent = '';
     // Проверка PIN не должна ждать ответ Telegram о биометрии (до 5 с).
@@ -443,13 +454,6 @@ export async function unlockApp() {
     clearEarly();
     setActive(status.required);
     if (!active) { forgetPin(); root.close(); return; }
-    // Приложение iOS уже разблокировано (его экран PIN/лицо): раздел сайта в нём
-    // не спрашивает PIN второй раз, если сервер принимает переданный токен.
-    if (window.__sgoshkaUnlock && !status.offline) {
-      setUnlock(window.__sgoshkaUnlock);
-      try { await api('/api/prefs'); markUnlocked(); root.close(); return; }
-      catch { setUnlock(''); }
-    }
     // Список ключей с сервера: вход без сети по ключу доступа не зависит от
     // того, входили ли по нему здесь после очистки офлайн-данных.
     if (Array.isArray(status.passkey_ids)) savePasskeys(status.passkey_ids);
