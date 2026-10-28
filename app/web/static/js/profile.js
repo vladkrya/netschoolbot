@@ -43,7 +43,6 @@ export async function loadProfile(force = false) {
     if (data.notifications) Object.assign(data.notifications, localSettings(path, body));
   }
   state.profile = data;
-  // Раздел «Чаты» в «Сообщениях» прячется, пока их выключил владелец.
   window.dispatchEvent(new CustomEvent('netschool:profile', { detail: data }));
   return data;
 }
@@ -322,7 +321,7 @@ function adminSection(admin) {
   return `<section class="drawer-section">
       <div class="drawer-heading">Администрирование</div>
       <button class="drawer-link" id="drawerAdmin">${ICONS.shield} Админ-настройки</button>
-      <div class="muted small">видно только вам: решения классу, чаты, вход через Telegram, статистика, проверка иконок</div>
+      <div class="muted small">видно только вам: решения классу, вход через Telegram, статистика, проверка иконок</div>
     </section>`;
 }
 

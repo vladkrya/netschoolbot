@@ -122,7 +122,7 @@ install_nginx() {
   # Страница «Обновляем приложение» вместо 502, пока служба перезапускается.
   install -D -m 644 deploy/nginx/netschool-updating.conf /etc/nginx/snippets/netschool-updating.conf
   install -D -m 644 deploy/nginx/netschool-updating.html /var/www/netschool-updating/index.html
-  # Обновляем все установленные адреса: Upgrade нужен каждому прокси чата.
+  # Обновляем все установленные адреса: Upgrade нужен каждому прокси WebSocket.
   for domain in netschool.ikrya.ru ns.ikrya.ru ns2.ikrya.ru yavds.ikrya.ru; do
     enabled="/etc/nginx/sites-enabled/$domain"
     [ -e "$enabled" ] || continue

@@ -1685,14 +1685,6 @@ class MiniappRepository:
             places[period] = counts
         return {"login": login, "email": dict(email), "places": places}
 
-    async def claim_chat_launch_notice(self, telegram_id: int) -> bool:
-        """Выдать объявление один раз на аккаунт, в том числе между устройствами."""
-        async with self._db.transaction() as db:
-            cursor = await db.execute(
-                "DELETE FROM chat_launch_notices WHERE telegram_id = ?", (telegram_id,)
-            )
-            return cursor.rowcount > 0
-
     async def survey_pending(self, telegram_id: int) -> bool:
         """Показать ли опрос: аккаунт был до него и ещё не ответил и не отказался."""
         async with self._db.transaction() as db:

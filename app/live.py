@@ -1,42 +1,30 @@
-"""Живые соединения чатов (WebSocket): кто на связи и какую комнату смотрит.
+"""Живые соединения приложения (WebSocket): кто на связи.
 
-По сокету идут только сигналы «в комнате новое» — сами сообщения клиент
-забирает обычным запросом. Так не нужно собирать сообщение отдельно для
-каждого (модератор видит скрытое, у каждого свои реакции), а при обрыве
+По сокету идут только сигналы — новые оценки, изменения с других устройств
+и завершение сеанса; сами данные клиент забирает обычным запросом. При обрыве
 связи ничего не теряется: следующий запрос заберёт всё пропущенное.
 """
 
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
-from .rules import room_school
-
-logger = logging.getLogger("netschoolbot.chat")
+logger = logging.getLogger("netschoolbot.live")
 
 
 @dataclass(eq=False)
 class Listener:
     telegram_id: int
-    rooms: set[str]
-    every_room: bool = False  # администратор в режиме admin
-    schools: set[str] = field(default_factory=set)  # модератор школы
-    open_room: str | None = None
     socket: Any = None
-    name: str = ""  # подпись для «печатает…»; пусто — писать не может
-    typed_at: float = 0.0
     # Вкладка приложения (X-Netschool-Tab): своё же изменение ей не шлём.
     tab: str = ""
     # Отпечаток токена устройства; пусто — Telegram, его не завершить.
     device: str = ""
 
-    def hears(self, room: str) -> bool:
-        return self.every_room or room in self.rooms or room_school(room) in self.schools
 
-
-class ChatHub:
+class LiveHub:
     def __init__(self) -> None:
         self._listeners: set[Listener] = set()
 
@@ -57,29 +45,16 @@ class ChatHub:
             self.remove(listener)
             await listener.socket.close()
 
-    def watching(self, telegram_id: int, room: str) -> bool:
-        """Человек сейчас смотрит эту комнату — уведомлять незачем."""
-        return any(item.telegram_id == telegram_id and item.open_room == room for item in self._listeners)
-
     def online(self, telegram_id: int) -> bool:
         return any(item.telegram_id == telegram_id for item in self._listeners)
-
-    async def publish(self, room: str, event: dict[str, Any], *, skip: int | None = None) -> None:
-        for listener in list(self._listeners):
-            if listener.telegram_id == skip or not listener.hears(room):
-                continue
-            try:
-                await listener.socket.send_json(event)
-            except Exception as exc:  # noqa: BLE001 — оборванное соединение уберёт его обработчик
-                logger.debug("Сокет чата %s не принял событие: %s", listener.telegram_id, exc)
 
     async def publish_user(self, telegram_id: int, event: dict[str, Any], *, skip_tab: str = "") -> None:
         for listener in list(self._listeners):
             if listener.telegram_id == telegram_id and not (skip_tab and listener.tab == skip_tab):
                 try:
                     await listener.socket.send_json(event)
-                except Exception:  # noqa: BLE001
-                    pass
+                except Exception as exc:  # noqa: BLE001 — оборванное соединение уберёт его обработчик
+                    logger.debug("Сокет %s не принял событие: %s", listener.telegram_id, exc)
 
     async def sign_out_devices(self, telegram_id: int, alive: set[str]) -> None:
         """Сеанс завершили на другом устройстве — открытое приложение там

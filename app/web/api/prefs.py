@@ -208,23 +208,6 @@ async def visit(request: web.Request) -> web.Response:
     return web.json_response({"ok": True})
 
 
-async def _chats(request: web.Request) -> bool:
-    """Можно ли звать «написать админу» в чаты — они могут быть выключены."""
-    from ..chat import available
-
-    return await available(request)
-
-
-@routes.post("/api/notices/chats")
-async def chat_launch_notice(request: web.Request) -> web.Response:
-    from ..chat import available
-
-    app, user = context(request), current_user(request)
-    # Пока чаты выключены, окно не тратим: покажется, когда их включат.
-    show = await available(request) and await app.miniapp.claim_chat_launch_notice(user.telegram_id)
-    return web.json_response({"ok": True, "data": {"show": show}}, headers={"Cache-Control": "no-store"})
-
-
 @routes.post("/api/notices/halloween")
 async def halloween_notice(request: web.Request) -> web.Response:
     """Разовая карточка «включили хеллоуинское оформление» — по одной на
@@ -233,7 +216,7 @@ async def halloween_notice(request: web.Request) -> web.Response:
     show = halloween_season(user.today()) and not (await app.miniapp.prefs(user.telegram_id)).get("halloween_notice")
     if show:
         await app.miniapp.save_prefs(user.telegram_id, {"halloween_notice": True})
-    data = {"show": show, "bug_report": bool(app.settings.web.captcha_url), "chats": await _chats(request)}
+    data = {"show": show, "bug_report": bool(app.settings.web.captcha_url)}
     return web.json_response({"ok": True, "data": data}, headers={"Cache-Control": "no-store"})
 
 
@@ -256,7 +239,7 @@ async def survey_notice(request: web.Request) -> web.Response:
     app, user = context(request), current_user(request)
     show = await app.miniapp.survey_pending(user.telegram_id)
     # Куда звать с идеями и ошибками: форма есть, только если настроена капча.
-    data = {"show": show, "bug_report": bool(app.settings.web.captcha_url), "chats": await _chats(request)}
+    data = {"show": show, "bug_report": bool(app.settings.web.captcha_url)}
     return web.json_response({"ok": True, "data": data}, headers={"Cache-Control": "no-store"})
 
 

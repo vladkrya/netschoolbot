@@ -25,7 +25,7 @@ from aiohttp import web
 
 from .. import __version__
 from ..context import AppContext
-from . import account, admin, api, app_icon, assistant, bugreport, caldav, captcha_proxy, chat, clock, devices, extras, lock, passkeys, retro, solver, status, sync
+from . import account, admin, api, app_icon, assistant, bugreport, caldav, captcha_proxy, clock, devices, extras, live, lock, passkeys, retro, solver, status, sync
 from .api import BOT, CONTEXT
 
 logger = logging.getLogger("netschoolbot.web")
@@ -100,7 +100,7 @@ async def compress_static(request: web.Request, handler):
             response.enable_compression()
     # Ответы API (неделя дневника — десятки килобайт) тоже сжимаем: JSON
     # идёт через туннель зеркала и мобильную сеть, а сжимается в разы.
-    # Потоки (ndjson помощника, WebSocket чатов) уже отправлены — их не трогаем.
+    # Потоки (ndjson помощника, WebSocket) уже отправлены — их не трогаем.
     elif ('/api/' in request.path and type(response) is web.Response and not response.prepared
           and response.content_type == 'application/json'
           and isinstance(response.body, (bytes, bytearray)) and len(response.body) > 1024):
@@ -143,15 +143,15 @@ async def security_headers(request: web.Request, handler):
 
 def create_app(context: AppContext, bot=None) -> web.Application:
     """Собрать сервер: подприложение под префиксом плюс проверка живости."""
-    inner = web.Application(middlewares=[security_headers, caldav.root_discovery, compress_static, api.error_middleware, api.auth_middleware, chat.off_middleware, sync.sync_middleware])
+    inner = web.Application(middlewares=[security_headers, caldav.root_discovery, compress_static, api.error_middleware, api.auth_middleware, sync.sync_middleware])
     inner[CONTEXT] = context
     inner[BOT] = bot
-    inner[chat.HUB] = context.hub
+    inner[live.HUB] = context.hub
     # Проверка оценок сообщает открытому приложению о новом сразу, по сокету.
     context.watchers.live = context.hub.publish_user
     async def stop_refreshes(app):
         context.status.close_listeners()
-        await app[chat.HUB].close()
+        await app[live.HUB].close()
         await context.stop_cache_refreshes()
 
     inner.on_shutdown.append(stop_refreshes)
@@ -173,7 +173,7 @@ def create_app(context: AppContext, bot=None) -> web.Application:
     inner.add_routes(caldav.routes)
     inner.add_routes(api.routes)
     inner.add_routes(lock.routes)
-    inner.add_routes(chat.routes)
+    inner.add_routes(live.routes)
     inner.add_routes(account.routes)
     inner.add_routes(admin.routes)
     inner.add_routes(app_icon.routes)

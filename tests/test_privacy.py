@@ -248,22 +248,3 @@ async def test_migration_wipes_saved_esia_passwords(db, users):
         await conn.executescript(next(m for m in MIGRATIONS if "login_type IN ('esia', 'esia_qr')" in m))
     row = await db.fetch_one('SELECT login, password, remember_credentials FROM users WHERE telegram_id = 1')
     assert (row['login'], row['password'], row['remember_credentials']) == ('', '', 0)
-
-
-async def test_delete_data_erases_chat_messages(app):
-    from app.chat.repository import ChatRepository
-    await app.users.save(make_user(1))
-    await app.users.save(make_user(2))
-    chats = ChatRepository(app.db)
-    await chats.set_nick(1, 'ivan', 'ivan')
-    mine = await chats.add_message('room', author_id=1, author_name='', author_grade=8, is_admin=False, text='secret')
-    other = await chats.add_message('room', author_id=2, author_name='', author_grade=8, is_admin=False, text='keep')
-    await app.db.execute("INSERT INTO chat_reactions VALUES (?, 2, '👍'), (?, 1, '👍')", (mine, other))
-    await app.db.execute("INSERT INTO chat_edits VALUES (?, 'old secret', 1)", (mine,))
-    await app.delete_user_data(1)
-    texts = [r['text'] for r in await app.db.fetch_all('SELECT text FROM chat_messages')]
-    assert texts == ['keep']
-    for table, column in [('chat_reactions', 'telegram_id'), ('chat_nicks', 'telegram_id')]:
-        assert not await app.db.fetch_all(f'SELECT 1 FROM {table} WHERE {column} = 1')
-    assert not await app.db.fetch_all('SELECT 1 FROM chat_reactions WHERE message_id = ?', (mine,))
-    assert not await app.db.fetch_all('SELECT 1 FROM chat_edits')

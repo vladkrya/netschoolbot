@@ -26,7 +26,7 @@ export const TAB_DEFS = {
 /** Названия для списка в настройках — полные, без сокращений. */
 export const TAB_NAMES = {
   day: 'День', schedule: 'Звонки / неделя', assistant: 'ИИ-помощник', homework: 'Задания',
-  totals: 'Оценки', mail: 'Сообщения (почта и чаты)', games: 'Игры', settings: 'Настройки',
+  totals: 'Оценки', mail: 'Сообщения (почта и объявления)', games: 'Игры', settings: 'Настройки',
 };
 
 // Вкладок в новом дизайне пять (звонки и помощник переехали на «День»), и
@@ -37,7 +37,7 @@ export const MAX_TABS = 5;
 // помощник — кнопкой ✨ на «Дне»: отдельные вкладки не помещались в панель.
 const MERGED_IN_NEW = new Set(['schedule', 'assistant']);
 
-// Просмотр дневника родным: почта и чаты — переписка самого ученика.
+// Просмотр дневника родным: почта — переписка самого ученика.
 const HIDDEN_READONLY = new Set(['mail', 'assistant']);
 
 export function availableTabs() {
@@ -74,15 +74,14 @@ export function resetTabs() {
 /** Число у значка вкладки — например, непрочитанные письма у «Почты».
  *  Хранится здесь: панель пересобирается при смене набора вкладок. */
 const badges = {};
-const mailCounts = { mail: 0, chat: 0 };
-export function setMailBadge(source, count) {
-  mailCounts[source] = Math.max(0, Number(count) || 0);
-  setNavBadge('mail', mailCounts.mail + mailCounts.chat);
-  // Тот же счётчик — на самом разделе «Письма» или «Чаты» вкладки.
-  const seg = document.getElementById(source === 'chat' ? 'segChatBadge' : 'segMailBadge');
+export function setMailBadge(count) {
+  const unread = Math.max(0, Number(count) || 0);
+  setNavBadge('mail', unread);
+  // Тот же счётчик — на самом разделе «Письма» вкладки.
+  const seg = document.getElementById('segMailBadge');
   if (seg) {
-    seg.textContent = mailCounts[source] > 99 ? '99+' : String(mailCounts[source]);
-    seg.hidden = !mailCounts[source];
+    seg.textContent = unread > 99 ? '99+' : String(unread);
+    seg.hidden = !unread;
   }
 }
 

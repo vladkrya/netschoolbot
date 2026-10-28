@@ -71,7 +71,6 @@ async def stats_report(app: AppContext) -> str:
     db = app.db
     now = time.time()
     users = await db.fetch_one("SELECT COUNT(*) AS n, SUM(enabled) AS on_ FROM users")
-    chats = await db.fetch_one("SELECT COUNT(*) AS n FROM chat_profiles")
     push = await db.fetch_one("SELECT COUNT(DISTINCT telegram_id) AS n FROM push_subscriptions")
     audience = await app.miniapp.audience_stats(now, WEB_ID_BASE)
     login, email = audience["login"], audience["email"]
@@ -84,7 +83,6 @@ async def stats_report(app: AppContext) -> str:
         f"👥 <b>Пользователи: {_num(total)}</b>",
         f"• новых за 7 дней: +{_num(fresh)}",
         f"• проверяют оценки: {_num(users['on_'] or 0)} ({_pct(users['on_'] or 0, total)})",
-        f"• в чатах: {_num(chats['n'])}",
         f"• с push в браузере: {_num(push['n'])}",
         "",
         "🔑 <b>Как входят</b> <i>(+ новые за 7 дней)</i>",

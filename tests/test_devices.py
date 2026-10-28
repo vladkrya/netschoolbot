@@ -230,10 +230,10 @@ class FakeSocket:
 
 
 def listen(app_context, uid, *, tab="", device=""):
-    from app.chat.hub import Listener
+    from app.live import Listener
 
     socket = FakeSocket()
-    app_context.hub.add(Listener(uid, set(), socket=socket, tab=tab, device=device))
+    app_context.hub.add(Listener(uid, socket=socket, tab=tab, device=device))
     return socket
 
 
@@ -280,7 +280,7 @@ def test_sync_topics():
 def test_ws_ticket_carries_device():
     from types import SimpleNamespace
 
-    from app.web.chat import issue_ws_ticket, verify_ws_ticket, ws_ticket_device
+    from app.web.live import issue_ws_ticket, verify_ws_ticket, ws_ticket_device
 
     app = SimpleNamespace(settings=SimpleNamespace(telegram=SimpleNamespace(bot_token="123:abc")))
     ticket = issue_ws_ticket(app, 7, now=100, device="00ff00ff00ff00ff")
