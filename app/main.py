@@ -119,7 +119,7 @@ async def run_import(settings: Settings, source: str) -> int:
             users=UserRepository(db, cipher),
             state=MarkStateRepository(db),
             sessions=SessionRepository(db, cipher),
-            miniapp=MiniappRepository(db),
+            miniapp=MiniappRepository(db, cipher=cipher),
         )
         report = await importer.run()
     finally:

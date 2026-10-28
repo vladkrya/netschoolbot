@@ -24,7 +24,7 @@ from aiohttp import web
 
 from ..accounts import has_telegram
 from ..accounts.site_login import describe_browser, device_model, system_version
-from ..db.repositories import token_fingerprint as fingerprint
+from ..db.repositories import token_fingerprint as fingerprint, token_key
 from .api import BOT, context, current_user, json_error
 
 routes = web.RouteTableDef()
@@ -96,7 +96,7 @@ def build(rows: list[dict], current: str, in_telegram: bool, clients: list[dict]
     for row in rows:
         if row["device"] and row["scope"] == "":
             items.append({
-                "id": fingerprint(row["token"]), "kind": "device", "label": row["label"] or "Браузер",
+                "id": row["id"], "kind": "device", "label": row["label"] or "Браузер",
                 "name": row.get("name") or "", "method": row.get("method") or "",
                 "details": row.get("model") or "", "ip": row.get("ip") or "",
                 "current": row["token"] == current, "created": _when(row["created_at"]),
@@ -137,7 +137,7 @@ async def devices(request: web.Request) -> web.Response:
     clients = await app.miniapp.link_clients(user.telegram_id)
     in_telegram = bool(request.get("verified_telegram"))
     return web.json_response({"ok": True, "data": {
-        "items": build(rows, "" if in_telegram else request_token(request), in_telegram, clients),
+        "items": build(rows, "" if in_telegram else token_key(request_token(request)), in_telegram, clients),
         "inactive_days": await _inactive_days(app, user.telegram_id),
     }})
 
@@ -175,7 +175,7 @@ async def revoke(request: web.Request) -> web.Response:
         count = await app.miniapp.revoke_where(user.telegram_id, "scope = 'calendar'")
     else:
         tokens = [row["token"] for row in await app.miniapp.sessions(user.telegram_id)
-                  if row["device"] and fingerprint(row["token"]) == target]
+                  if row["device"] and row["id"] == target]
         count = await app.miniapp.revoke_where(user.telegram_id, "token = ?", (tokens[0],)) if tokens else 0
     if not count:
         return json_error("Этот сеанс уже завершён", status=404)
@@ -197,7 +197,7 @@ async def rename(request: web.Request) -> web.Response:
     target = str(body.get("id") or "")
     name = " ".join(str(body.get("name") or "").split())[:NAME_LIMIT]
     tokens = [row["token"] for row in await app.miniapp.sessions(user.telegram_id)
-              if row["device"] and row["scope"] == "" and fingerprint(row["token"]) == target]
+              if row["device"] and row["scope"] == "" and row["id"] == target]
     if not tokens or not await app.miniapp.set_token_name(user.telegram_id, tokens[0], name):
         return json_error("Этот сеанс уже завершён", status=404)
     return await devices(request)
@@ -209,7 +209,7 @@ async def revoke_others(request: web.Request) -> web.Response:
     (она открывает только расписание) остаются."""
     app, user = context(request), current_user(request)
     current = "" if request.get("verified_telegram") else request_token(request)
-    await app.miniapp.revoke_where(user.telegram_id, "scope = '' AND token != ?", (current,))
+    await app.miniapp.revoke_where(user.telegram_id, "scope = '' AND token != ?", (token_key(current),))
     await app.miniapp.drop_install_codes(user.telegram_id)
     return await devices(request)
 
@@ -269,7 +269,7 @@ async def new_device_status(request: web.Request) -> web.Response:
     if row["used_at"]:
         return web.json_response({"ok": True, "data": {
             "state": "used", "label": row["label"] or "Браузер",
-            "id": fingerprint(row["token"]) if row["token"] else None}})
+            "id": row["token"][:16] if row["token"] else None}})
     state = "waiting" if row["expires_at"] > time.time() else "expired"
     return web.json_response({"ok": True, "data": {"state": state, "expires": row["expires_at"]}})
 

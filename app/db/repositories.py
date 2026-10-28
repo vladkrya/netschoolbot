@@ -1214,18 +1214,48 @@ class SessionRepository:
         )
 
 
+def token_key(token: str) -> str:
+    """Как токен лежит в miniapp_tokens: SHA-256. Токены случайные и длинные,
+    поэтому хватает хэша без соли, а по нему можно искать."""
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
 def token_fingerprint(token: str) -> str:
     """Короткий отпечаток токена: по нему экран «Устройства» и сокеты
     различают сеансы, не показывая сам токен."""
-    return hashlib.sha256(token.encode()).hexdigest()[:16]
+    return token_key(token)[:16]
 
 
 class MiniappRepository:
     """Постоянные ссылки на PWA, коды подтверждения и push-подписки."""
 
-    def __init__(self, db: Database, *, login_code_ttl: int = 600) -> None:
+    def __init__(self, db: Database, *, login_code_ttl: int = 600, cipher: PasswordCipher = NO_ENCRYPTION) -> None:
         self._db = db
         self._login_code_ttl = login_code_ttl
+        self._cipher = cipher
+
+    async def protect_tokens(self) -> int:
+        """Переписать токены, сохранённые открытым текстом: хэш в token, а
+        повторно выдаваемые — ещё и шифртекст в token_enc. Идемпотентно."""
+        rows = await self._db.fetch_all("SELECT token, device, scope FROM miniapp_tokens WHERE hashed = 0")
+        if not rows:
+            return 0
+        async with self._db.transaction() as db:
+            for row in rows:
+                token = row["token"]
+                key = token_key(token)
+                reusable = not row["device"] or row["scope"] == "calendar"
+                await db.execute(
+                    "UPDATE miniapp_tokens SET token = ?, token_enc = ?, hashed = 1 WHERE token = ?",
+                    (key, self._cipher.encrypt(token) if reusable else "", token),
+                )
+                await db.execute("UPDATE install_codes SET token = ? WHERE token = ?", (key, token))
+        return len(rows)
+
+    def _issued(self, token: str, device: bool, scope: str = "") -> tuple:
+        """Значения колонок token, token_enc, hashed для новой записи."""
+        reusable = not device or scope == "calendar"
+        return token_key(token), self._cipher.encrypt(token) if reusable else "", 1
 
     async def issue_token(
         self, telegram_id: int, *, revoke_existing: bool = False, device: bool = False, method: str = "",
@@ -1238,23 +1268,24 @@ class MiniappRepository:
             await self.revoke_tokens(telegram_id)
         elif not device:
             row = await self._db.fetch_one(
-                """SELECT token FROM miniapp_tokens
-                   WHERE telegram_id = ? AND revoked_at IS NULL AND device = 0 AND scope = ''
+                """SELECT token_enc FROM miniapp_tokens
+                   WHERE telegram_id = ? AND revoked_at IS NULL AND device = 0 AND scope = '' AND token_enc != ''
                    ORDER BY created_at DESC LIMIT 1""",
                 (telegram_id,),
             )
             if row:
-                return row["token"]
+                return self._cipher.decrypt(row["token_enc"])
 
         token = secrets.token_urlsafe(32)
+        key, enc, hashed = self._issued(token, device)
         await self._db.execute(
-            "INSERT INTO miniapp_tokens (token, telegram_id, device, method) VALUES (?,?,?,?)",
-            (token, telegram_id, int(device), method),
+            "INSERT INTO miniapp_tokens (token, token_enc, hashed, telegram_id, device, method) VALUES (?,?,?,?,?,?)",
+            (key, enc, hashed, telegram_id, int(device), method),
         )
         return token
 
     async def token_method(self, token: str) -> str:
-        row = await self._db.fetch_one("SELECT method FROM miniapp_tokens WHERE token = ?", (token,))
+        row = await self._db.fetch_one("SELECT method FROM miniapp_tokens WHERE token = ?", (token_key(token),))
         return row["method"] if row else ""
 
     async def end_inactive_sessions(self, telegram_id: int | None = None, now: float | None = None) -> int:
@@ -1287,7 +1318,7 @@ class MiniappRepository:
             cursor = await db.execute(
                 """UPDATE miniapp_tokens SET revoked_at = datetime('now')
                    WHERE token = ? AND device = 1 AND revoked_at IS NULL""",
-                (token,),
+                (token_key(token),),
             )
             return cursor.rowcount > 0
 
@@ -1297,9 +1328,10 @@ class MiniappRepository:
         Обычный выпуск токена генерирует новый: если бы перенос делал так же,
         у людей перестали бы открываться уже сохранённые ссылки на PWA.
         """
+        key, enc, hashed = self._issued(token, False)
         await self._db.execute(
-            "INSERT OR IGNORE INTO miniapp_tokens (token, telegram_id) VALUES (?,?)",
-            (token, telegram_id),
+            "INSERT OR IGNORE INTO miniapp_tokens (token, token_enc, hashed, telegram_id) VALUES (?,?,?,?)",
+            (key, enc, hashed, telegram_id),
         )
 
     async def resolve_token(self, token: str) -> int | None:
@@ -1307,7 +1339,7 @@ class MiniappRepository:
             return None
         row = await self._db.fetch_one(
             "SELECT telegram_id FROM miniapp_tokens WHERE token = ? AND revoked_at IS NULL AND scope = ''",
-            (token,),
+            (token_key(token),),
         )
         return int(row["telegram_id"]) if row else None
 
@@ -1315,17 +1347,18 @@ class MiniappRepository:
         """Токен подписки на календарь: годится только для calendar.ics.
         Повторный запрос ссылки отдаёт тот же — подписка не ломается."""
         row = await self._db.fetch_one(
-            """SELECT token FROM miniapp_tokens
-               WHERE telegram_id = ? AND revoked_at IS NULL AND scope = 'calendar'
+            """SELECT token_enc FROM miniapp_tokens
+               WHERE telegram_id = ? AND revoked_at IS NULL AND scope = 'calendar' AND token_enc != ''
                ORDER BY created_at DESC LIMIT 1""",
             (telegram_id,),
         )
         if row:
-            return row["token"]
+            return self._cipher.decrypt(row["token_enc"])
         token = secrets.token_urlsafe(32)
+        key, enc, hashed = self._issued(token, False, "calendar")
         await self._db.execute(
-            "INSERT INTO miniapp_tokens (token, telegram_id, scope) VALUES (?,?,'calendar')",
-            (token, telegram_id),
+            "INSERT INTO miniapp_tokens (token, token_enc, hashed, telegram_id, scope) VALUES (?,?,?,?,'calendar')",
+            (key, enc, hashed, telegram_id),
         )
         return token
 
@@ -1334,7 +1367,7 @@ class MiniappRepository:
             return None
         row = await self._db.fetch_one(
             "SELECT telegram_id FROM miniapp_tokens WHERE token = ? AND revoked_at IS NULL AND scope = 'calendar'",
-            (token,),
+            (token_key(token),),
         )
         return int(row["telegram_id"]) if row else None
 
@@ -1351,7 +1384,7 @@ class MiniappRepository:
     async def is_device_token(self, token: str) -> bool:
         row = await self._db.fetch_one(
             "SELECT 1 FROM miniapp_tokens WHERE token = ? AND device = 1 AND revoked_at IS NULL AND scope = ''",
-            (token,),
+            (token_key(token),),
         )
         return row is not None
 
@@ -1360,15 +1393,16 @@ class MiniappRepository:
         устройства запоминается при первом использовании. По общему токену
         («Ссылки из бота») ходит несколько устройств — каждое пишется отдельно."""
         now = time.time()
+        key = token_key(token)
         async with self._db.transaction() as db:
             await db.execute(
                 """UPDATE miniapp_tokens SET last_used = ?, label = ?, model = ?, ip = ?
                    WHERE token = ? AND revoked_at IS NULL""",
-                (now, label, model, ip, token),
+                (now, label, model, ip, key),
             )
             cursor = await db.execute(
                 "SELECT telegram_id, device, scope FROM miniapp_tokens WHERE token = ? AND revoked_at IS NULL",
-                (token,),
+                (key,),
             )
             row = await cursor.fetchone()
             if row is None:
@@ -1379,7 +1413,7 @@ class MiniappRepository:
                 """INSERT INTO token_clients (telegram_id, token_hash, client, model, ip, first_seen, last_seen)
                    VALUES (?,?,?,?,?,?,?)
                    ON CONFLICT (token_hash, client, model) DO UPDATE SET last_seen = excluded.last_seen, ip = excluded.ip""",
-                (row[0], hashlib.sha256(token.encode()).hexdigest(), label, model, ip, now, now),
+                (row[0], key, label, model, ip, now, now),
             )
         return int(row[0])
 
@@ -1390,7 +1424,7 @@ class MiniappRepository:
                WHERE telegram_id = ? AND revoked_at IS NULL AND device = 0 AND scope = ''""",
             (telegram_id,),
         )
-        hashes = [hashlib.sha256(row["token"].encode()).hexdigest() for row in tokens]
+        hashes = [row["token"] for row in tokens]
         if not hashes:
             return []
         marks = ",".join("?" * len(hashes))
@@ -1407,15 +1441,15 @@ class MiniappRepository:
             "SELECT token FROM miniapp_tokens WHERE telegram_id = ? AND revoked_at IS NULL AND scope = ''",
             (telegram_id,),
         )
-        return {token_fingerprint(row["token"]) for row in rows}
+        return {row["token"][:16] for row in rows}
 
-    async def set_token_name(self, telegram_id: int, token: str, name: str) -> bool:
+    async def set_token_name(self, telegram_id: int, key: str, name: str) -> bool:
         """Своя подпись сеанса на экране «Устройства» («Планшет на кухне»)."""
         async with self._db.transaction() as db:
             cursor = await db.execute(
                 """UPDATE miniapp_tokens SET name = ?
                    WHERE telegram_id = ? AND token = ? AND revoked_at IS NULL""",
-                (name, telegram_id, token),
+                (name, telegram_id, key),
             )
             return cursor.rowcount > 0
 
@@ -1426,7 +1460,8 @@ class MiniappRepository:
                WHERE telegram_id = ? AND revoked_at IS NULL ORDER BY created_at""",
             (telegram_id,),
         )
-        return [dict(row) for row in rows]
+        # token здесь — хэш из базы; id по нему же различает сеансы на экране.
+        return [{**dict(row), "id": row["token"][:16]} for row in rows]
 
     async def revoke_where(self, telegram_id: int, condition: str, params: tuple = ()) -> int:
         """Отозвать токены пользователя по условию (только из кода экрана «Устройства»)."""
@@ -1489,7 +1524,7 @@ class MiniappRepository:
             cursor = await db.execute("SELECT telegram_id FROM install_codes WHERE code = ?", (code,))
             telegram_id = int((await cursor.fetchone())[0])
         token = await self.issue_token(telegram_id, device=True, method="device-link")
-        await self._db.execute("UPDATE install_codes SET token = ? WHERE code = ?", (token, code))
+        await self._db.execute("UPDATE install_codes SET token = ? WHERE code = ?", (token_key(token), code))
         return token
 
     async def device_code(self, telegram_id: int, code: str) -> dict | None:

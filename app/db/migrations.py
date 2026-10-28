@@ -948,6 +948,14 @@ MIGRATIONS: list[str] = [
     DROP TABLE IF EXISTS chat_edits;
     DELETE FROM app_flags WHERE key = 'chats_on';
     """,
+    # Токены входа хранятся хэшем (token — SHA-256), а повторно выдаваемые
+    # (ссылки из бота, календарь) ещё и зашифрованными в token_enc: бот отдаёт
+    # их снова, а хэш этого не позволяет. hashed=0 — токен ещё открытым текстом,
+    # его переписывает MiniappRepository.protect_tokens при старте.
+    """
+    ALTER TABLE miniapp_tokens ADD COLUMN token_enc TEXT NOT NULL DEFAULT '';
+    ALTER TABLE miniapp_tokens ADD COLUMN hashed INTEGER NOT NULL DEFAULT 0;
+    """,
 ]
 
 

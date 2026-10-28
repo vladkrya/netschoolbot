@@ -1,5 +1,6 @@
 """Настройки → «Устройства»: список сеансов и их завершение."""
 
+from app.db.repositories import token_key
 from tests.test_web import BASE, app_context, client, token  # noqa: F401 — фикстуры
 
 
@@ -318,7 +319,7 @@ async def test_inactive_sessions_end_by_choice(client, token, app_context):
     calendar = await app_context.miniapp.issue_calendar_token(1)
     long_ago = time.time() - 40 * 86400
     await app_context.db.execute("UPDATE miniapp_tokens SET last_used = ? WHERE token IN (?, ?)",
-                                 (long_ago, old, calendar))
+                                 (long_ago, token_key(old), token_key(calendar)))
     listed = await (await client.get(f"{BASE}/api/devices", headers={"X-Netschool-Token": phone})).json()
     assert listed["data"]["inactive_days"] == 0 and await app_context.miniapp.resolve_token(old) == 1
 

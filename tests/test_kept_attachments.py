@@ -233,3 +233,24 @@ async def test_keep_files_on_for_everyone_until_turned_off(app_context, users):
         assert await app_context.keep_attachments_wanted(await users.get(2)) is False
     finally:
         await client.close()
+
+async def test_files_are_encrypted_on_disk_and_old_ones_are_converted(db, users, tmp_path, monkeypatch):
+    from cryptography.fernet import Fernet
+
+    from app.db.crypto import PasswordCipher
+
+    monkeypatch.setattr("app.attachments.keeper.PAUSE_S", 0)
+    diary = Diary()
+    keeper = AttachmentKeeper(KeptAttachmentRepository(db), diary, tmp_path, days=14,
+                              cipher=PasswordCipher(Fernet.generate_key().decode()))
+    user = make_user(1, school=School(url="https://sgo.example.ru/", name="Школа"))
+    await users.save(user)
+    keeper.offer(user, [homework(1)])
+    await settle(keeper)
+    on_disk = next(tmp_path.glob("*-web-1"))
+    assert b"pdf-1" not in on_disk.read_bytes() and await keeper.get(user, 1) == b"pdf-1"
+
+    legacy = tmp_path / "0123456789ab-web-5"
+    legacy.write_bytes(b"plain-old")
+    assert await keeper.protect_files() == 1 and await keeper.protect_files() == 0
+    assert b"plain-old" not in legacy.read_bytes()

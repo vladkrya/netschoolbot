@@ -21,12 +21,14 @@ import asyncio
 import datetime as dt
 import hashlib
 import logging
+import re
 import time
 from collections.abc import Awaitable, Callable, Iterable
 from pathlib import Path
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
+from ..db.crypto import NO_ENCRYPTION, FILE_MAGIC, PasswordCipher
 from ..netschool.errors import NetSchoolError, Reason
 
 if TYPE_CHECKING:
@@ -50,6 +52,10 @@ PRUNE_EVERY_S = 3600
 PREF = "keep_attachments"
 
 
+# Имя файла в _path: отпечаток сервера школы, режим API, номер вложения.
+_KEPT_NAME = re.compile(r"[0-9a-f]{12}-[a-z]+-\d+")
+
+
 def _host(url: str) -> str:
     return urlparse(url).hostname or url
 
@@ -57,8 +63,11 @@ def _host(url: str) -> str:
 class AttachmentKeeper:
     def __init__(self, repo: KeptAttachmentRepository, diary, root: Path | Callable[[], Path], *, days: int = 14,
                  max_bytes: int = 3000 * 1024 * 1024, clock: Callable[[], float] = time.time,
-                 wanted: Callable[[User], Awaitable[bool]] | None = None) -> None:
+                 wanted: Callable[[User], Awaitable[bool]] | None = None,
+                 cipher: PasswordCipher = NO_ENCRYPTION) -> None:
         self._repo = repo
+        # Файлы на диске шифруются тем же ключом, что пароли: копия каталога без ключа ничего не раскрывает.
+        self._cipher = cipher
         # Включено ли сохранение у человека (доступ и тумблер); None — у всех.
         self._wanted = wanted
         self._diary = diary
@@ -99,7 +108,7 @@ class AttachmentKeeper:
         if not await self._repo.allowed(user.telegram_id, *key):
             return None
         try:
-            return self._path(key).read_bytes()
+            return self._cipher.decrypt_bytes(self._path(key).read_bytes())
         except OSError:
             return None
 
@@ -193,9 +202,39 @@ class AttachmentKeeper:
         path = self._path(key)
         path.parent.mkdir(parents=True, exist_ok=True)
         partial = path.with_name(path.name + ".partial")
-        partial.write_bytes(payload)
+        partial.write_bytes(self._cipher.encrypt_bytes(payload))
         partial.replace(path)
         await self._repo.add(*key, len(payload), self._clock())
+
+    # ───────────────────────────── шифрование ─────────────────────────────
+
+    def _protect_files(self) -> int:
+        root = self._root() if callable(self._root) else self._root
+        if not self._cipher.enabled or not root.is_dir():
+            return 0
+        done = 0
+        for path in root.iterdir():
+            if not path.is_file() or not _KEPT_NAME.fullmatch(path.name):
+                continue
+            try:
+                with path.open("rb") as handle:
+                    if handle.read(len(FILE_MAGIC)) == FILE_MAGIC:
+                        continue
+                partial = path.with_name(path.name + ".partial")
+                partial.write_bytes(self._cipher.encrypt_bytes(path.read_bytes()))
+                partial.replace(path)
+                done += 1
+            except OSError as exc:
+                logger.warning("Файл %s не зашифрован: %s", path.name, exc)
+        return done
+
+    async def protect_files(self) -> int:
+        """Зашифровать файлы, сохранённые до включения шифрования. Идемпотентно;
+        работает в потоке — файлов много, а бот в это время отвечает."""
+        done = await asyncio.to_thread(self._protect_files)
+        if done:
+            logger.info("Вложения заданий: зашифровано файлов %s", done)
+        return done
 
     # ───────────────────────────── уборка ─────────────────────────────
 

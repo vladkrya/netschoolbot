@@ -15,6 +15,7 @@ from __future__ import annotations
 from cryptography.fernet import Fernet, InvalidToken, MultiFernet
 
 PREFIX = "enc:v1:"
+FILE_MAGIC = b"NSENC1\n"
 
 
 class PasswordCipherError(RuntimeError):
@@ -68,6 +69,27 @@ class PasswordCipher:
         except InvalidToken as exc:
             raise PasswordCipherError(
                 "Пароль в базе не расшифровывается текущим NETSCHOOL_SECRET_KEY"
+            ) from exc
+
+    def encrypt_bytes(self, data: bytes) -> bytes:
+        """Файл целиком; без ключа — как есть. Метка в начале отличает зашифрованный
+        файл от сохранённого до включения шифрования."""
+        if self._fernet is None or data.startswith(FILE_MAGIC):
+            return data
+        return FILE_MAGIC + self._fernet.encrypt(data)
+
+    def decrypt_bytes(self, data: bytes) -> bytes:
+        if not data.startswith(FILE_MAGIC):
+            return data
+        if self._fernet is None:
+            raise PasswordCipherError(
+                "На диске зашифрованные файлы, а NETSCHOOL_SECRET_KEY не задан"
+            )
+        try:
+            return self._fernet.decrypt(data[len(FILE_MAGIC):])
+        except InvalidToken as exc:
+            raise PasswordCipherError(
+                "Файл не расшифровывается текущим NETSCHOOL_SECRET_KEY"
             ) from exc
 
     def needs_rewrite(self, value: str) -> bool:

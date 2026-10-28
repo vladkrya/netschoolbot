@@ -89,6 +89,7 @@ class AppContext:
     sgo_alerts: SgoAlerts | None = None
     # Вложения заданий, скачанные заранее (attachments/keeper.py).
     attachments: AttachmentKeeper | None = None
+    _protect_task: asyncio.Task | None = None
     # Решения заданий (solver/): готовые решения, учебники, лимит за сутки и
     # решения, которые пишутся прямо сейчас, — второй запрос ждёт первый.
     solutions: SolutionRepository | None = None
@@ -150,6 +151,7 @@ class AppContext:
                 KeptAttachmentRepository(self.db), self.diary, lambda: self.settings.data_dir / "attachments",
                 days=netschool.keep_attachments_days, max_bytes=netschool.keep_attachments_mb * 1024 * 1024,
                 wanted=self.keep_attachments_wanted,
+                cipher=PasswordCipher(self.settings.secret_key),
             )
 
     @classmethod
@@ -179,6 +181,9 @@ class AppContext:
             logger.info("Зашифровано паролей в базе: %s", rewritten)
         sessions = SessionRepository(db, cipher)
         await sessions.encrypt_stored_sessions()
+        miniapp = MiniappRepository(db, login_code_ttl=settings.web.login_code_ttl, cipher=cipher)
+        if protected := await miniapp.protect_tokens():
+            logger.info("Токены входа переписаны хэшем: %s", protected)
         pool = SessionPool(settings.netschool, sessions)
         state = MarkStateRepository(db)
         diary = DiaryService(pool, users)
@@ -189,7 +194,7 @@ class AppContext:
             users=users,
             state=state,
             sessions=sessions,
-            miniapp=MiniappRepository(db, login_code_ttl=settings.web.login_code_ttl),
+            miniapp=miniapp,
             cache=CacheRepository(db),
             pool=pool,
             diary=diary,
@@ -198,6 +203,10 @@ class AppContext:
                 notes=NotesRepository(db),
             ),
         )
+        if context.attachments is not None and context.attachments.enabled:
+            # Старые файлы шифруем в фоне: на старт бота это не должно влиять.
+            context._protect_task = asyncio.create_task(
+                context.attachments.protect_files(), name="protect-attachments")
         context.watchers.keep_signed_in = context.keep_signed_in
         context.watchers.weekly_review = context.weekly_review
         if await context.accounts.give_owner_first_number(settings.telegram.admin_id):
@@ -369,7 +378,7 @@ async def _import_legacy_if_empty(settings: Settings, db: Database, users: UserR
         users=users,
         state=MarkStateRepository(db),
         sessions=SessionRepository(db, password_cipher(settings)),
-        miniapp=MiniappRepository(db, login_code_ttl=settings.web.login_code_ttl),
+        miniapp=MiniappRepository(db, login_code_ttl=settings.web.login_code_ttl, cipher=password_cipher(settings)),
     )
     report = await importer.run()
     if await users.all_ids():
