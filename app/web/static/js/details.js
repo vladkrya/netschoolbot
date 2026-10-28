@@ -25,6 +25,7 @@ export async function loadDone() {
   try {
     const { data } = await api('/api/homework/done');
     state.hwDone = new Set(data.keys);
+    state.hwDoneSince = data.since || '';
   } catch {
     state.hwDone = state.hwDone || new Set();
   }

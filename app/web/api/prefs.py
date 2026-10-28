@@ -127,6 +127,8 @@ def _clean_goals(value: Any) -> dict[str, str] | None:
     return goals
 
 
+_ISO_DAY = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
 MAX_LESSON_EDITS = 100
 _EDIT_ID = re.compile(r"^[0-9a-z]{1,24}$")
 _CLOCK = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
@@ -404,6 +406,12 @@ async def save_prefs(request: web.Request) -> web.Response:
         if not isinstance(body["whatsNew"], str) or not _VERSION.match(body["whatsNew"]):
             return json_error("Некорректная настройка")
         changes["whatsNew"] = body["whatsNew"]
+    if "dueFrom" in body:
+        # С какого дня «Должен сдать» считает несделанные задания; пусто — по отметкам.
+        value = body["dueFrom"]
+        if not isinstance(value, str) or (value and not _ISO_DAY.match(value)):
+            return json_error("Некорректная дата")
+        changes["dueFrom"] = value
     if "countdown" in body:
         if body["countdown"] not in ("show", "hide"):
             return json_error("Некорректная настройка отсчёта")

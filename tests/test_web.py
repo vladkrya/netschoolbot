@@ -704,6 +704,20 @@ class TestNewFeatures:
         keys = (await (await client.get(url, params={"token": token})).json())["data"]["keys"]
         assert keys == []
 
+    async def test_homework_done_reports_first_marking_day(self, client, token):
+        url = f"{BASE}/api/homework/done"
+        assert (await (await client.get(url, params={"token": token})).json())["data"]["since"] is None
+        await client.post(url, params={"token": token}, json={"key": "0123456789abcdef", "done": True})
+        since = (await (await client.get(url, params={"token": token})).json())["data"]["since"]
+        assert since == dt.datetime.now(dt.timezone.utc).date().isoformat()
+
+    async def test_due_from_pref_is_validated(self, client, token):
+        url = f"{BASE}/api/prefs"
+        ok = await client.post(url, params={"token": token}, json={"dueFrom": "2026-10-28"})
+        assert (await ok.json())["ok"] is True
+        bad = await client.post(url, params={"token": token}, json={"dueFrom": "вчера"})
+        assert (await bad.json())["ok"] is False
+
     async def test_calendar_feed(self, client, app_context, token):
         from app.domain.records import DiaryDay, Lesson
 

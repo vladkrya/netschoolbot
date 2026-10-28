@@ -10,9 +10,17 @@ import { addDays, api, DUTY_MARK, dayMonth, errorCard, esc, isoToday, markValue,
 import { isAutoDone, isDoneItem, loadDone, markBox, openHomework, openMark } from './details.js';
 import { markScreen, pushScreen, reopenOnRefresh } from './screens.js';
 import { tap } from './haptics.js';
+import { getPref, setPref } from './prefs.js';
 
 // Задания старше этого уже никто не сдаёт — в списке только свежие.
 const HOMEWORK_DAYS = 14;
+
+/** С какого дня считаем несделанные задания: позже из двух — «Очистить» или день
+ *  первой отметки. Раньше этого дня человек ещё не вёл отметки, и всё прошлое
+ *  висело бы долгом. */
+export function dueCutoff() {
+  return [getPref('dueFrom') || '', state.hwDoneSince || ''].reduce((a, b) => (a > b ? a : b), '');
+}
 
 function sections(marksData, past, done) {
   const today = isoToday();
@@ -28,7 +36,8 @@ function sections(marksData, past, done) {
   const since = addDays(today, -HOMEWORK_DAYS);
   // Галочки «сделано» ставят не все: без единой отметки неотмеченное — не долг,
   // иначе кнопка висела бы у всех всегда.
-  const homework = done?.size ? (past?.items || []).filter((item) => item.date >= since && item.date < today
+  const from = dueCutoff();
+  const homework = done?.size ? (past?.items || []).filter((item) => item.date >= since && item.date >= from && item.date < today
     && !item.classwork && !isAutoDone(item) && item.key && !isDoneItem(item)) : [];
   const byDate = (a, b) => (b.mark?.date || b.date).localeCompare(a.mark?.date || a.date);
   return { debts: debts.sort(byDate), twos: twos.sort(byDate), homework: homework.sort(byDate) };
@@ -92,34 +101,46 @@ export async function openDue() {
     body.innerHTML = errorCard(error);
     return;
   }
-  const total = dueTotal(found);
-  if (!total) {
-    body.innerHTML = '<div class="empty big">Долгов нет 🎉</div>';
-    return;
-  }
-  body.innerHTML = `
-    ${found.debts.length ? `<div class="card due-card"><div class="card-title">Точки — не сдано в срок
-      <span class="due-count">${found.debts.length}</span></div>
-      <div class="muted small due-hint">Пока работа не сдана, точка считается в среднем как «2».</div>
-      ${found.debts.map((entry, i) => markRow(entry, i, 'debt')).join('')}</div>` : ''}
-    ${found.twos.length ? `<div class="card due-card"><div class="card-title">Двойки этой четверти
-      <span class="due-count">${found.twos.length}</span></div>
-      <div class="muted small due-hint">Их обычно можно исправить — спросите учителя.</div>
-      ${found.twos.map((entry, i) => markRow(entry, i, 'two')).join('')}</div>` : ''}
-    ${found.homework.length ? `<div class="card due-card"><div class="card-title">Не отмечено сделанным
-      <span class="due-count">${found.homework.length}</span></div>
-      <div class="muted small due-hint">Задания за ${HOMEWORK_DAYS} ${plural(HOMEWORK_DAYS, 'день', 'дня', 'дней')}. Сделали — отметьте в задании.</div>
-      ${found.homework.map(homeworkRow).join('')}</div>` : ''}`;
-  body.querySelectorAll('[data-debt]').forEach((row) => row.addEventListener('click', () => {
-    const { subject, mark } = found.debts[Number(row.dataset.debt)];
-    openMark(mark, subject);
-  }));
-  body.querySelectorAll('[data-two]').forEach((row) => row.addEventListener('click', () => {
-    const { subject, mark } = found.twos[Number(row.dataset.two)];
-    openMark(mark, subject);
-  }));
-  body.querySelectorAll('[data-hw]').forEach((row) => row.addEventListener('click', () => {
-    openHomework(found.homework[Number(row.dataset.hw)]);
-  }));
+  const paint = (found) => {
+    const total = dueTotal(found);
+    if (!total) {
+      body.innerHTML = '<div class="empty big">Долгов нет 🎉</div>';
+      return;
+    }
+    body.innerHTML = `
+      ${found.debts.length ? `<div class="card due-card"><div class="card-title">Точки — не сдано в срок
+        <span class="due-count">${found.debts.length}</span></div>
+        <div class="muted small due-hint">Пока работа не сдана, точка считается в среднем как «2».</div>
+        ${found.debts.map((entry, i) => markRow(entry, i, 'debt')).join('')}</div>` : ''}
+      ${found.twos.length ? `<div class="card due-card"><div class="card-title">Двойки этой четверти
+        <span class="due-count">${found.twos.length}</span></div>
+        <div class="muted small due-hint">Их обычно можно исправить — спросите учителя.</div>
+        ${found.twos.map((entry, i) => markRow(entry, i, 'two')).join('')}</div>` : ''}
+      ${found.homework.length ? `<div class="card due-card"><div class="card-title">Не отмечено сделанным
+        <span class="due-count">${found.homework.length}</span></div>
+        <div class="muted small due-hint">Задания за ${HOMEWORK_DAYS} ${plural(HOMEWORK_DAYS, 'день', 'дня', 'дней')}${dueCutoff() ? `, не раньше ${esc(dayMonth(dueCutoff()))}` : ''}. Сделали — отметьте в задании.</div>
+        ${found.homework.map(homeworkRow).join('')}
+        <button class="btn outline due-clear" id="dueClear">Очистить список</button>
+        <div class="muted small due-hint">Старые задания перестанут считаться долгом: учёт пойдёт с сегодняшнего дня.</div></div>` : ''}`;
+    body.querySelectorAll('[data-debt]').forEach((row) => row.addEventListener('click', () => {
+      const { subject, mark } = found.debts[Number(row.dataset.debt)];
+      openMark(mark, subject);
+    }));
+    body.querySelectorAll('[data-two]').forEach((row) => row.addEventListener('click', () => {
+      const { subject, mark } = found.twos[Number(row.dataset.two)];
+      openMark(mark, subject);
+    }));
+    body.querySelector('#dueClear')?.addEventListener('click', async () => {
+      tap();
+      setPref('dueFrom', isoToday());
+      paint(await loadDue());
+      // Кнопка «Должен сдать» над списком заданий считает то же — обновим её.
+      window.dispatchEvent(new CustomEvent('netschool:hwdone', { detail: { source: 'list' } }));
+    });
+    body.querySelectorAll('[data-hw]').forEach((row) => row.addEventListener('click', () => {
+      openHomework(found.homework[Number(row.dataset.hw)]);
+    }));
+  };
+  paint(found);
 }
 

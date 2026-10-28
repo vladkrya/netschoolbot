@@ -2773,3 +2773,6 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
 .due-button .db-main { display: flex; flex-direction: column; flex: 1; min-width: 0; }
 .due-button .db-main b { color: var(--g2); }
 .due-button .db-arrow { flex: none; color: var(--text2); font-size: 20px; }
+
+/* «Должен сдать»: очистка списка заданий. */
+.due-clear { width: 100%; margin-top: 10px; }

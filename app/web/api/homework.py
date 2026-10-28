@@ -103,7 +103,8 @@ async def homework_done(request: web.Request) -> web.Response:
     """Отметки «выполнено» — отдельно от кэша заданий: меняются чаще."""
     app, user = context(request), current_user(request)
     keys = sorted(await app.state.done_homework(user.telegram_id))
-    return web.json_response({"ok": True, "data": {"keys": keys}})
+    since = await app.state.first_homework_done(user.telegram_id)
+    return web.json_response({"ok": True, "data": {"keys": keys, "since": since}})
 
 
 @routes.post("/api/homework/done")

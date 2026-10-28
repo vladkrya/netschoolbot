@@ -802,6 +802,13 @@ class MarkStateRepository:
         )
         return {row["homework_key"] for row in rows}
 
+    async def first_homework_done(self, telegram_id: int) -> str | None:
+        """Дата первой отметки «сделано» (ГГГГ-ММ-ДД) — с неё «Должен сдать» считает долги."""
+        row = await self._db.fetch_one(
+            "SELECT MIN(date(done_at)) AS first FROM homework_done WHERE telegram_id = ?", (telegram_id,)
+        )
+        return row["first"] if row and row["first"] else None
+
     async def set_homework_done(self, telegram_id: int, key: str, done: bool) -> None:
         if done:
             await self._db.execute(

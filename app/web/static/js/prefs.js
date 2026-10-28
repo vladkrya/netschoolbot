@@ -19,6 +19,8 @@ const KEYS = {
   countdown: 'ns-countdown',
   // Цели на четверть: {предмет: '5' | '4' | '3'} (totals.js).
   goals: 'ns-goals',
+  // С какого дня «Должен сдать» считает несделанные задания (ГГГГ-ММ-ДД), due.js.
+  dueFrom: 'ns-due-from',
   // Какую версию «Что нового» уже открывали (whatsnew.js).
   whatsNew: 'ns-whats-new',
   // «Не выходить из аккаунта» для входа через Госуслуги (true/false).
