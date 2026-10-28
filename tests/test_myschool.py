@@ -235,3 +235,11 @@ class TestMaterials:
                             lambda **kw: real(transport=httpx.MockTransport(handler), **kw))
         assert await myschool.download_material(None, None, file_id) == b"data"
         assert seen == [self.LINK]
+
+
+def test_duplicate_homework_rows_collapse():
+    row = {"homeworks_id": "h", "subject_name": "Физика", "description": "§1",
+           "plan_ready_date": "2026-10-23 00:00:00.0"}
+    items = [ms.Homework.model_validate(dict(row, homeworks_id=i)) for i in ("a", "b")]
+    (day,) = build_days([], [], items)
+    assert len(day.homework) == 1

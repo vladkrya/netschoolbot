@@ -155,6 +155,7 @@ def build_days(lessons: list[Any], marks: list[Any], homeworks: list[Any]) -> li
         day_of(mark.date).marks.append(record)
 
     homework_records: list[HomeworkRecord] = []
+    seen_homework: set[str] = set()
     for item in sorted(homeworks, key=lambda h: (h.plan_ready_date or dt.date.min, h.id)):
         if not item.plan_ready_date:
             continue
@@ -168,6 +169,10 @@ def build_days(lessons: list[Any], marks: list[Any], homeworks: list[Any]) -> li
             # Пустой комментарий: карточки задания в «Моей школе» нет, спрашивать нечего.
             comment="",
         )
+        # Datamart отдаёт одно задание несколькими строками (по числу выдач).
+        if record.identity in seen_homework:
+            continue
+        seen_homework.add(record.identity)
         homework_records.append(record)
         day_of(item.plan_ready_date).homework.append(record)
 
