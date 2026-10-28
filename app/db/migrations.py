@@ -305,7 +305,7 @@ MIGRATIONS: list[str] = [
     ALTER TABLE app_locks ADD COLUMN require_telegram INTEGER NOT NULL DEFAULT 1;
     """,
     # 18 — школьные чаты. Сообщения не удаляются вместе с пользователем
-    # (нет внешнего ключа): переписку нужно хранить для разбора жалоб.
+    # (нет внешнего ключа): их стирает ChatRepository.erase_user.
     """
     CREATE TABLE chat_profiles (
         telegram_id INTEGER PRIMARY KEY REFERENCES users(telegram_id) ON DELETE CASCADE,
@@ -932,6 +932,21 @@ MIGRATIONS: list[str] = [
     # Сбои на странице статуса: неудачные проверки без перебора всех.
     """
     CREATE INDEX idx_sgo_probes_failed ON sgo_probes(host, at) WHERE ok = 0;
+    """,
+    # Школьные чаты убраны из проекта вместе с перепиской, профилями и ником.
+    """
+    DROP TABLE IF EXISTS chat_messages;
+    DROP TABLE IF EXISTS chat_profiles;
+    DROP TABLE IF EXISTS chat_reactions;
+    DROP TABLE IF EXISTS chat_reports;
+    DROP TABLE IF EXISTS chat_reads;
+    DROP TABLE IF EXISTS chat_moderators;
+    DROP TABLE IF EXISTS chat_poll_votes;
+    DROP TABLE IF EXISTS chat_mod_log;
+    DROP TABLE IF EXISTS chat_nicks;
+    DROP TABLE IF EXISTS chat_launch_notices;
+    DROP TABLE IF EXISTS chat_edits;
+    DELETE FROM app_flags WHERE key = 'chats_on';
     """,
 ]
 

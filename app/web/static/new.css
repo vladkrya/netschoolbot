@@ -876,10 +876,8 @@
 :root[data-design="new"] .lc-hw.hw-done,
 :root[data-design="new"] .lc-hw.hw-done .icon { color: var(--g5); }
 
-/* Чаты в новом дизайне: разделы — стеклянная капсула (как раньше), пузыри без рамок. */
+/* Разделы «Сообщений» в новом дизайне — стеклянная капсула. */
 :root[data-design="new"] .mail-seg { margin-top: 0; gap: 0; }
 :root[data-design="new"] .mail-seg .seg-lens { display: block; }
 :root[data-design="new"] .mail-seg button { border: 0; border-radius: 999px; color: var(--text2); }
 :root[data-design="new"] .mail-seg button.on { background: none; color: var(--primary); }
-:root[data-design="new"] .chat-msg.mine .chat-bubble { background: var(--head); }
-:root[data-design="new"] .chat-send { background: var(--head); }

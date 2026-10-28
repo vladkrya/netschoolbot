@@ -11,7 +11,7 @@
 const CACHE = 'ns-offline-v2';
 // Вложения и служебные запросы не храним: большие и бессмысленные без сети.
 // Страницу ожидания вложения тоже: в её адресе билет, а без сети она не нужна.
-const SKIP = [/\/api\/chat(?:\/|$)/, /\/api\/account(?:\/|$)/, /\/api\/sgo\//, /\/api\/lock\//, /\/(?:api\/)?attachment/, /\/api\/push\//, /\/api\/pwa-link/, /\/api\/caldav-/, /\/api\/export/, /\/api\/family/];
+const SKIP = [/\/api\/live(?:\/|$)/, /\/api\/account(?:\/|$)/, /\/api\/sgo\//, /\/api\/lock\//, /\/(?:api\/)?attachment/, /\/api\/push\//, /\/api\/pwa-link/, /\/api\/caldav-/, /\/api\/export/, /\/api\/family/];
 
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', (event) => event.waitUntil((async () => {

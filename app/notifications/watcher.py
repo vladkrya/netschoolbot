@@ -1064,7 +1064,7 @@ class WatcherRegistry:
 
     @property
     def notifier(self) -> Notifier | None:
-        """Тот же канал уведомлений, что у проверок, — для чатов."""
+        """Тот же канал уведомлений, что у проверок, — для напоминаний."""
         return self._notifier
 
     def attach_notifier(self, notifier: Notifier) -> None:

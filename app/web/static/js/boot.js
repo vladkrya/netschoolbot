@@ -160,7 +160,7 @@ async function boot() {
   // Ещё не вошли в «Сетевой город» — сначала вход, потом дневник.
   if (!demo) {
     const info = await accountInfo();
-    // Дневник ученика, пригласившего на просмотр: только чтение, без почты и чатов.
+    // Дневник ученика, пригласившего на просмотр: только чтение, без почты.
     document.documentElement.classList.toggle('view-mode', Boolean(info?.viewing));
     // Зарегистрировались по почте — сначала код из письма, потом всё остальное.
     if (info?.needs_verify) {

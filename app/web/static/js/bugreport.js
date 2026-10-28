@@ -73,7 +73,7 @@ export async function openBugReport(kind = 'bug') {
     return;
   }
   if (!config.enabled) {
-    screen.innerHTML = '<div class="card"><p>Форма сейчас выключена. Напишите админу во вкладке «Сообщения → Чаты».</p></div>';
+    screen.innerHTML = '<div class="card"><p>Форма сейчас выключена. Попробуйте позже.</p></div>';
     return;
   }
 

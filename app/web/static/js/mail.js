@@ -50,17 +50,11 @@ function folderUrl(page, force = false) {
 
 export async function loadMail(force = false) {
   const container = $('mailContent');
-  if (mode !== 'chat') delete container.dataset.chatView;
   // Новое письмо, поиск и фильтры — только в разделе писем.
   $('composeBtn').hidden = mode !== 'mail';
   $('mailTools').hidden = mode !== 'mail';
   if (mode === 'ann') {
     await renderAnnouncements(container, force);
-    return;
-  }
-  if (mode === 'chat') {
-    const { renderChats } = await import('./chat.js');
-    await renderChats(container, force);
     return;
   }
   if (!current() || force) {
@@ -138,9 +132,8 @@ function render() {
   const messages = list.messages || [];
   const inbox = folder === 'Inbox';
   // Непрочитанные — числом у значка «Почты» в нижней панели.
-  if (inbox) setMailBadge('mail', messages.filter((message) => message.read === false).length);
+  if (inbox) setMailBadge(messages.filter((message) => message.read === false).length);
   const container = $('mailContent');
-  // Чаты рисуются в этом же списке и могли оставить «тихий» режим.
   container.classList.remove('quiet');
   $('mailFilters').querySelectorAll('[data-filter]').forEach((chip) =>
     chip.classList.toggle('active', inbox ? chip.dataset.filter === filter : chip.dataset.filter === 'deleted'));
@@ -199,7 +192,7 @@ function markRead(message) {
     render();
     return;
   }
-  setMailBadge('mail', (state.mail.messages || []).filter((item) => item.read === false).length);
+  setMailBadge((state.mail.messages || []).filter((item) => item.read === false).length);
   $('mailReadAll').hidden = !(state.mail.messages || []).some((item) => item.read === false);
   element.classList.remove('unread');
   const dot = element.querySelector('.unread-dot');
@@ -372,7 +365,7 @@ function setMode(next) {
   placeLens();
 }
 
-/** Линза — под выбранным разделом среди видимых: «Чаты» могут быть скрыты. */
+/** Линза — под выбранным разделом. */
 function placeLens() {
   const seg = $('mailSeg');
   const modes = [...seg.querySelectorAll('[data-mail-mode]')].filter((item) => !item.hidden)
@@ -381,34 +374,13 @@ function placeLens() {
   seg.style.setProperty('--i', Math.max(0, modes.indexOf(mode)));
 }
 
-/** Владелец выключил или включил чаты — раздел прячется вместе со счётчиком. */
-function setChatsAvailable(on) {
-  const button = $('mailSeg').querySelector('[data-mail-mode="chat"]');
-  if (button.hidden === !on) return;
-  button.hidden = !on;
-  if (!on) setMailBadge('chat', 0);
-  if (!on && mode === 'chat') {
-    setMode('mail');
-    if (state.tab === 'mail') loadMail();
-  } else {
-    placeLens();
-  }
-}
-
-export function selectChats() {
-  setMode('chat');
-}
-
 export function initMail() {
   const seg = $('mailSeg');
-  if (state.profile) setChatsAvailable(Boolean(state.profile.chats));
-  window.addEventListener('netschool:profile', ({ detail }) => setChatsAvailable(Boolean(detail?.chats)));
-  import('./chat-live.js').then(({ initChatLive }) => initChatLive());
   const refreshMailBadge = async () => {
     if (document.hidden) return;
     try {
       const { data } = await api('/api/mail');
-      setMailBadge('mail', (data.messages || []).filter(message => message.read === false).length);
+      setMailBadge((data.messages || []).filter(message => message.read === false).length);
     } catch { /* сеть вернётся — обновим */ }
   };
   refreshMailBadge();

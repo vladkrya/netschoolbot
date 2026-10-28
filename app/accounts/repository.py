@@ -294,8 +294,6 @@ class AccountRepository:
                         # Остатки нового id в таблицах без внешнего ключа.
                         await db.execute(f'DELETE FROM "{table}" WHERE telegram_id = ?', (new_id,))
                     await db.execute(f'UPDATE "{table}" SET "{column}" = ? WHERE "{column}" = ?', (new_id, old_id))
-            for table in ("chat_messages", "chat_reads"):
-                await db.execute(f"UPDATE {table} SET room = ? WHERE room = ?", (f"support:{new_id}", f"support:{old_id}"))
         if earlier:
             await self._db.execute(
                 "UPDATE users SET created_at = MIN(created_at, ?), "
@@ -347,8 +345,5 @@ class AccountRepository:
                         # Conflicting composite keys are duplicates of the
                         # destination record; remove only those left behind.
                         await db.execute(f'DELETE FROM "{table}" WHERE "{column}" = ?', (old_id,))
-            for table in ("chat_messages", "chat_reads"):
-                await db.execute(f"UPDATE OR IGNORE {table} SET room = ? WHERE room = ?",
-                                 (f"support:{new_id}", f"support:{old_id}"))
             await db.execute("DELETE FROM users WHERE telegram_id = ?", (old_id,))
         return True

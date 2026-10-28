@@ -189,15 +189,17 @@ async def run(settings: Settings, args: argparse.Namespace) -> int:
     if not push.configured:
         logger.info("VAPID-ключи не заданы — push в браузер отключён")
     context.watchers.attach_notifier(TelegramNotifier(bot, context.users, push, context.family))
-    if settings.telegram.admin_id:
-        async def tell_admin(text: str) -> None:
-            await bot.send_message(settings.telegram.admin_id, text)
-        context.watchers.outages.attach(tell_admin)
+    # Простои и новые версии админу в личку не шлём: они уходят в группы и тем,
+    # кто подписан на регион (status/alerts.py), монитор только копит состояние.
+    # tell_admin остаётся для жалоб на серверы (StatusService).
+    async def tell_admin(text: str) -> None:
+        await bot.send_message(settings.telegram.admin_id, text)
+
     try:
         await context.watchers.outages.persist(context.db)
     except Exception as exc:  # noqa: BLE001 — без этого бот работает, только может повторить «не отвечает»
         logger.warning("Простои «Сетевого города» не загружены: %s", exc)
-    # Версии «Сетевого города» — в лог и админу о смене; пишутся и без админа.
+    # Версии «Сетевого города» — в лог и в историю смен.
     from .db.repositories import SgoVersionRepository
     from .notifications.sgo_version import VersionTracker, logindata_fetcher
 

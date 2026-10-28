@@ -219,7 +219,7 @@ export function banner(text, isError, hideAfter = 0) {
 
 /* ─────────────────────────── Без сети ─────────────────────────── */
 // Одна плашка на всё приложение вместо разных сообщений на каждом экране.
-// То, что без сети не работает (вложения, чаты, почта, вход), бледнеет, а
+// То, что без сети не работает (вложения, почта, вход), бледнеет, а
 // касание объясняет почему. Отметки, свои задачи и настройки работают и так:
 // они копятся в очереди (outbox.js) и уходят на сервер, когда сеть вернётся.
 
@@ -227,7 +227,7 @@ export const NO_INTERNET = 'Нет подключения к интернету'
 // Что без сети не работает. Тот же список — в app.css (html.offline).
 const ONLINE_ONLY = [
   'a.attach', '[data-online]', '#refreshBtn', '#composeBtn', '#composeSend', '#aiFab',
-  '.nav-item[data-tab="assistant"]', '[data-mail-mode="chat"]', '#drawerAccount', '#drawerLock',
+  '.nav-item[data-tab="assistant"]', '#drawerAccount', '#drawerLock',
   '#drawerDevices', '#drawerAssistant', '#drawerStatus', '#drawerExport', '#drawerFamily',
   '#drawerCalendar', '#drawerEvents', '#drawerReferences', '#drawerBug', '#drawerLogout', '#drawerApk',
   '.view-switch [data-view]', '[data-student]', '#pushToggle', '#keepFiles', '#sgoUpdates',
@@ -514,7 +514,7 @@ const SGO_STUCK_MS = 20000;
 // простой школьного сервера не касается — ни подсказок, ни обрыва.
 const OWN_PATHS = [
   '/api/lock/', '/api/sgo/', '/api/account', '/api/profile', '/api/prefs', '/api/visit', '/api/notices/',
-  '/api/push/', '/api/family', '/api/devices', '/api/chat', '/api/notes', '/api/history',
+  '/api/push/', '/api/family', '/api/devices', '/api/live', '/api/notes', '/api/history',
   '/api/attachment-ticket', '/api/settings/', '/api/bug-report', '/api/assistant', '/api/view',
 ];
 const touchesSgo = (path) => !OWN_PATHS.some((prefix) => path.startsWith(prefix));

@@ -1,7 +1,7 @@
 """Экран «Администрирование»: всё, что может только владелец (TG_ADMIN_ID).
 
-Тумблеры «Решения всему классу», «Чаты» и «Мой Сетевой город другим
-аккаунтам» сохраняются своими запросами (solver.py, chat.py, account.py);
+Тумблеры «Решения всему классу» и «Мой Сетевой город другим
+аккаунтам» сохраняются своими запросами (solver.py, account.py);
 здесь — общее состояние, вход на сайт через Telegram (как /tgwidget)
 и статистика (как /adminstats). Вкладка «Иконки» — app_icon.py.
 """
@@ -14,7 +14,7 @@ from aiohttp import web
 
 from ..bot.handlers.admin import WIDGET_MODES, set_widget_mode, stats_report, widget_mode
 from ..netschool import ownership
-from . import app_icon, chat, solver
+from . import app_icon, solver
 from .api import context, current_user, json_error
 
 routes = web.RouteTableDef()
@@ -28,7 +28,6 @@ async def _state(request: web.Request) -> dict:
     app = context(request)
     return {
         "solver_class": {"on": await solver.class_open(app)} if app.settings.assistant.enabled else None,
-        "chats": {"on": await chat.chats_on(app)} if chat.ENABLED else None,
         "share_sgo": {"on": await ownership.sharing_allowed(app)},
         "widget": {
             "mode": await widget_mode(app),

@@ -169,23 +169,6 @@ caption('Назад — и справа', 'от правого края');
 await swipe(356, 430, 200, 434, 240);
 await wait(600);
 
-caption('Чаты класса', 'только ученики, по нику');
-await tap('.nav-item[data-tab="mail"]');
-await wait(500);
-await tap('[data-mail-mode="chat"]');
-await wait(500);
-await page.fill('#chatNick', 'Otlichnik');
-await tap('#chatAgree');
-await tap('#chatJoin');
-await wait(700);
-await tap('[data-room="0"]');
-await wait(700);
-await page.fill('.screen textarea', 'Всем привет!');
-await tap('.screen .chat-send');
-await wait(900);
-await swipe(190, 430, 340, 434, 240);
-await wait(400);
-
 caption('ИИ-помощник', 'знает ваши оценки');
 await tap('.nav-item[data-tab="day"]');
 await wait(450);

@@ -63,7 +63,6 @@ async def _sgo_updates(app: AppContext, telegram_id: int, url: str) -> bool:
 
 @routes.get("/api/profile")
 async def profile(request: web.Request) -> web.Response:
-    from .. import chat as chat_module
     from .. import solver, viewing
     from ..admin import android_apk_info
 
@@ -107,11 +106,6 @@ async def profile(request: web.Request) -> web.Response:
                 "admin": solver.is_owner(app, viewer or user),
                 # Строка «Android-приложение» внизу настроек — только владельцу (admin.py).
                 "android_apk": android_apk_info(app) if solver.is_owner(app, viewer or user) else None,
-                # Раздел «Чаты» в «Сообщениях» и тумблер владельца (web/chat.py).
-                "chats": chat_module.ENABLED and (solver.is_owner(app, viewer or user)
-                                                  or await chat_module.chats_on(app)),
-                "chats_toggle": {"on": await chat_module.chats_on(app)}
-                if chat_module.ENABLED and solver.is_owner(app, viewer or user) else None,
                 # Хеллоуинское оформление — у всех в праздничный сезон;
                 # выключается тумблером в настройках.
                 "halloween": halloween_season(user.today()),

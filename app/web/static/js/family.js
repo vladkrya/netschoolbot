@@ -36,7 +36,7 @@ export async function openFamily() {
           <label><input type="radio" name="familyRights" value="view"> Только просмотр дневника</label>
         </div>
         <p class="muted small">Просмотр — оценки, расписание и задания в приложении. Менять ничего нельзя,
-        почта и чаты не видны, пароль от «Сетевого города» не нужен. Доступ можно изменить или отозвать в любой момент.</p>
+        почта не видна, пароль от «Сетевого города» не нужен. Доступ можно изменить или отозвать в любой момент.</p>
         <button class="btn" id="familyInvite">Пригласить по ссылке</button>
         <div class="family-link" id="familyLink" hidden></div>
       </div>

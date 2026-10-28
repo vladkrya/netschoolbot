@@ -1,6 +1,6 @@
 // Настройки → «Админ-настройки»: всё, что может только владелец (TG_ADMIN_ID).
 // Сервер — app/web/admin.py; тумблеры сохраняются своими запросами
-// (solver.py, chat.py, account.py). Вкладка «Иконки» — app/web/app_icon.py.
+// (solver.py, account.py). Вкладка «Иконки» — app/web/app_icon.py.
 'use strict';
 
 import { api, banner, esc, showFailure } from './core.js';
@@ -13,7 +13,6 @@ const post = (path, body) => api(path, { method: 'POST', body: JSON.stringify(bo
 // Куда пишет каждый тумблер.
 const SWITCHES = {
   solver_class: '/api/settings/solver-class',
-  chats: '/api/settings/chats',
   share_sgo: '/api/account/share-sgo',
 };
 
@@ -149,8 +148,6 @@ export function openAdmin() {
     body.innerHTML = `${tabs('main', pendingCount)}<div class="card">
         ${data.solver_class ? toggle('solver_class', 'Решения заданий всему классу',
           'кнопка «Решение» появится у одноклассников, которые пользуются ботом', data.solver_class.on) : ''}
-        ${data.chats ? toggle('chats', 'Чаты в «Сообщениях»',
-          'выключенные чаты скрыты у всех, кроме вас; переписка сохраняется', data.chats.on) : ''}
         ${toggle('share_sgo', 'Разрешить другим аккаунтам использовать мой Сетевой город',
           'обычно один аккаунт «Сетевого города» подключается только к одному аккаунту приложения; кто уже подключился, останется и после выключения', data.share_sgo.on)}
       </div>

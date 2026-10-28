@@ -9,8 +9,8 @@ import { initUpdates, reopenScreens, takeResume } from './update.js';
 import { initSchedule, loadSchedule } from './schedule.js';
 import { initHomework, loadHomework } from './homework.js';
 import { loadTotals } from './totals.js';
-import { chatEvents } from './chat-live.js';
-import { initMail, loadMail, openAnnouncements, openCompose, selectChats } from './mail.js';
+import { initLive, liveEvents } from './live.js';
+import { initMail, loadMail, openAnnouncements, openCompose } from './mail.js';
 import {
   applyAccent, applyDesign, applyHalloween, applyScheduleTab, halloweenAvailable, initFullscreen, isHalloween,
   isNewDesign, navIcon, setHalloweenAccess,
@@ -200,7 +200,7 @@ function bindPullToRefresh() {
     const head = screen?.querySelector('.screen-head');
     indicator.style.top = head ? `${head.getBoundingClientRect().bottom - 34}px` : '';
   };
-  // Палец на прокрученном списке (переписка чата, длинная таблица) тянет
+  // Палец на прокрученном списке (длинная таблица) тянет
   // его назад, а не обновляет.
   const scrolledUnder = (target, screen) => {
     for (let el = target; el && el !== document.body; el = el.parentElement) {
@@ -476,7 +476,7 @@ const DIARY_TABS = {
 };
 
 function initLiveDiary() {
-  chatEvents.addEventListener('change', ({ detail }) => {
+  liveEvents.addEventListener('change', ({ detail }) => {
     if (detail.t !== 'diary') return;
     forgetRevalidated();
     const tabs = new Set((detail.kinds || []).flatMap((kind) => DIARY_TABS[kind] || []));
@@ -532,7 +532,7 @@ const RESYNC_MS = 15000;
 function initLiveSync() {
   let connectedOnce = false;
   let resyncedAt = 0;
-  chatEvents.addEventListener('change', ({ detail }) => {
+  liveEvents.addEventListener('change', ({ detail }) => {
     if (detail.t === 'sync') applySync(detail.topic).catch(() => {});
     if (detail.t !== 'connected') return;
     if (!connectedOnce) { connectedOnce = true; return; }
@@ -698,8 +698,11 @@ function initChrome() {
   });
   $('bellBtn').addEventListener('click', openAnnouncements);
   $('composeBtn').addEventListener('click', () => openCompose());
-  // При просмотре дневника родным почты и чатов нет — и опрашивать их незачем.
-  if (!isReadOnly()) initMail();
+  // При просмотре дневника родным почты нет — и опрашивать её незачем.
+  if (!isReadOnly()) {
+    initMail();
+    initLive();
+  }
   // Помощник — кнопкой на «Дне»: вкладкой он не помещался в панель.
   $('aiFab').hidden = !assistantEnabled;
   $('aiFab').addEventListener('click', () => openAssistant());
@@ -746,34 +749,6 @@ function reportVisit() {
   }).catch(() => {});
 }
 
-async function showChatLaunchNotice() {
-  if (demo) return;
-  // Не заменяем уже открытую панель (например, объявление о дизайне).
-  while (!$('sheet').hidden) {
-    await new Promise(resolve => window.addEventListener('netschool:sheetclosed', resolve, { once: true }));
-  }
-  try {
-    const { data } = await api('/api/notices/chats', { method: 'POST' });
-    if (!data.show) return;
-    while (!$('sheet').hidden) {
-      await new Promise(resolve => window.addEventListener('netschool:sheetclosed', resolve, { once: true }));
-    }
-    const body = openSheet('Появились чаты', `
-      <p>Теперь в приложении можно общаться с другими участниками и написать админу.</p>
-      <p>Откройте вкладку <b>Сообщения → Чаты</b>.</p>
-      <div class="chat-actions">
-        <button class="btn" id="chatLaunchOpen">Перейти в чаты</button>
-        <button class="btn outline" id="chatLaunchClose">Понятно</button>
-      </div>`);
-    body.querySelector('#chatLaunchClose').addEventListener('click', closeSheet);
-    body.querySelector('#chatLaunchOpen').addEventListener('click', () => {
-      closeSheet();
-      selectChats();
-      switchTab('mail');
-    });
-  } catch { /* Без связи окно дождётся следующего открытия приложения. */ }
-}
-
 /** Разовое окно: всем включили хеллоуинское оформление — что появилось,
  *  где выключить и куда писать об ошибках. */
 async function showHalloweenNotice() {
@@ -787,10 +762,7 @@ async function showHalloweenNotice() {
   if (!data.show) return;
   await sheetFree();
   const settings = isNewDesign() ? 'вкладке <b>Настройки</b>' : 'меню <b>☰</b>';
-  const kind = feedbackKind(data);
-  const feedback = kind === 'bug'
-    ? 'в настройках, внизу — <b>«Сообщить об ошибке или идее»</b>'
-    : 'во вкладке <b>Сообщения → Чаты</b> — там можно написать админу';
+  const reportable = Boolean(data.bug_report);
   const body = openSheet('🎃 Хеллоуин в дневнике', `
     <p>До 8 ноября приложение оделось к Хеллоуину. Что появилось:</p>
     <ul class="halloween-news">
@@ -801,10 +773,10 @@ async function showHalloweenNotice() {
       <li>🎨 свои цвета: тыквенный, ведьмин, зелье, кровавая луна, призрачный, костяной.</li>
     </ul>
     <p>Не нравится? Выключить можно в ${settings} → <b>Оформление</b> → <b>🎃 Хеллоуин</b>. Ваша тема и цвет вернутся.</p>
-    ${kind ? `<p class="muted small">Нашли ошибку или есть идея — напишите ${feedback}.</p>` : ''}
-    <div class="chat-actions">
+    ${reportable ? '<p class="muted small">Нашли ошибку или есть идея — напишите в настройках, внизу: <b>«Сообщить об ошибке или идее»</b>.</p>' : ''}
+    <div class="notice-actions">
       <button class="btn" id="halloweenOk">Класс 🎃</button>
-      ${kind ? `<button class="btn outline" id="halloweenFeedback">${kind === 'bug' ? 'Сообщить об ошибке или идее' : 'Написать админу'}</button>` : ''}
+      ${reportable ? '<button class="btn outline" id="halloweenFeedback">Сообщить об ошибке или идее</button>' : ''}
     </div>`);
   body.querySelector('#halloweenOk').addEventListener('click', () => {
     tap('light');
@@ -812,12 +784,7 @@ async function showHalloweenNotice() {
   });
   body.querySelector('#halloweenFeedback')?.addEventListener('click', () => {
     closeSheet();
-    if (kind === 'bug') {
-      openBugReport('bug');
-    } else {
-      selectChats();
-      switchTab('mail');
-    }
+    openBugReport('bug');
   });
 }
 
@@ -836,7 +803,7 @@ async function showKeepFilesNotice() {
     <p>Теперь все файлы к домашним заданиям сохраняются заранее — за две недели назад и вперёд.</p>
     <p>Они открываются сразу и даже тогда, когда «Сетевой город» не работает: например, вечером накануне, когда сервер школы чаще всего лежит.</p>
     <p class="muted small">Выключить можно в ${settings} → <b>Вход и данные</b>. Уже сохранённое останется доступным.</p>
-    <div class="chat-actions">
+    <div class="notice-actions">
       <button class="btn" id="keepFilesOk">Понятно</button>
       <button class="btn outline" id="keepFilesSettings">Открыть настройки</button>
     </div>`);
@@ -871,7 +838,7 @@ async function showSurvey() {
   await sheetFree();
   const body = openSheet('Нравится приложение?', `
     <p>Ответьте на один вопрос — это займёт пару секунд и поможет сделать приложение лучше.</p>
-    <div class="chat-actions">
+    <div class="notice-actions">
       <button class="btn" id="surveyStart">Пройти сейчас</button>
       <button class="btn outline" id="surveyLater">Не сейчас</button>
       <button class="btn outline survey-decline" id="surveyDecline">Не хочу</button>
@@ -883,7 +850,7 @@ async function showSurvey() {
   });
   body.querySelector('#surveyStart').addEventListener('click', () => {
     tap('light');
-    surveyScores(body, feedbackKind(data));
+    surveyScores(body, Boolean(data.bug_report));
   });
 }
 
@@ -894,7 +861,7 @@ function surveyScores(body, feedback) {
     <p>Насколько вам нравится приложение — от 1 до 10?</p>
     <div class="survey-scores">${scores}</div>
     <div class="survey-ends"><span>совсем нет</span><span>очень</span></div>
-    <div class="chat-actions"><button class="btn" id="surveySend" disabled>Отправить</button></div>`;
+    <div class="notice-actions"><button class="btn" id="surveySend" disabled>Отправить</button></div>`;
   let score = 0;
   const send = body.querySelector('#surveySend');
   body.querySelectorAll('.survey-score').forEach(button => button.addEventListener('click', () => {
@@ -918,31 +885,18 @@ function surveyScores(body, feedback) {
   });
 }
 
-/** Куда звать с идеями и ошибками: форма, чаты или некуда (чаты выключены). */
-function feedbackKind(data) {
-  return data.bug_report ? 'bug' : data.chats ? 'chat' : '';
-}
-
 function surveyThanks(body, feedback) {
-  const where = feedback === 'bug'
-    ? 'в меню настроек, внизу — «Сообщить об ошибке или идее»'
-    : 'во вкладке <b>Сообщения → Чаты</b> — там можно написать админу';
   body.innerHTML = `
     <p><b>Спасибо за оценку!</b></p>
-    ${feedback ? `<p>Есть идея, что добавить, или заметили ошибку? Напишите нам — ${where}.</p>` : ''}
-    <div class="chat-actions">
-      ${feedback ? `<button class="btn" id="surveyFeedback">${feedback === 'bug' ? 'Написать об идее или ошибке' : 'Перейти в чаты'}</button>` : ''}
+    ${feedback ? `<p>Есть идея, что добавить, или заметили ошибку? Напишите нам — в меню настроек, внизу: «Сообщить об ошибке или идее».</p>` : ''}
+    <div class="notice-actions">
+      ${feedback ? '<button class="btn" id="surveyFeedback">Написать об идее или ошибке</button>' : ''}
       <button class="btn outline" id="surveyDone">Закрыть</button>
     </div>`;
   body.querySelector('#surveyDone').addEventListener('click', closeSheet);
   body.querySelector('#surveyFeedback')?.addEventListener('click', () => {
     closeSheet();
-    if (feedback === 'bug') {
-      openBugReport('idea');
-    } else {
-      selectChats();
-      switchTab('mail');
-    }
+    openBugReport('idea');
   });
 }
 
@@ -962,7 +916,7 @@ async function start() {
     if (changed) applySyncedPrefs();
     // Флаг «видел» уже пришёл с сервера — окошко не повторится на другом устройстве.
     dropInstallHints();
-    if (!isReadOnly()) showChatLaunchNotice().then(showHalloweenNotice).then(showKeepFilesNotice).then(showSurvey);
+    if (!isReadOnly()) showHalloweenNotice().then(showKeepFilesNotice).then(showSurvey);
     reportVisit();
   });
   offerPushOnFirstLaunch();
