@@ -55,6 +55,8 @@ class Event:
     host: str
     kind: str  # outages | updates
     line: str
+    url: str = ""  # сайт «Сетевого Города» региона
+    region: str = ""
 
 
 class GroupBroadcast:
@@ -83,7 +85,8 @@ class GroupBroadcast:
         events = [
             Event(target.host, "updates",
                   f"🆕 <b>{html.escape(target.region or target.host)}</b>: "
-                  f"{html.escape(versions[target.host][0])} → {html.escape(versions[target.host][1])}")
+                  f"{html.escape(versions[target.host][0])} → {html.escape(versions[target.host][1])}",
+                  target.url, target.region or target.host)
             for target, _ in results if target.host in versions
         ]
         events += await self._outages(results, at)
@@ -114,7 +117,8 @@ class GroupBroadcast:
                     state.down_since = None
                     await self._repo.set_down(target.host, None)
                     events.append(Event(target.host, "outages",
-                                        f"🟢 <b>{region}</b> снова работает (не отвечал ~{_duration(minutes)})"))
+                                        f"🟢 <b>{region}</b> снова работает (не отвечал ~{_duration(minutes)})",
+                                        target.url, region))
                 continue
             state.oks, state.first_ok = 0, None
             state.fails += 1
@@ -124,7 +128,8 @@ class GroupBroadcast:
                 state.down_since = state.first_fail
                 await self._repo.set_down(target.host, state.down_since)
                 reason = f" — {html.escape(probe.error)}" if probe.error else ""
-                events.append(Event(target.host, "outages", f"🔴 <b>{region}</b> не отвечает{reason}"))
+                events.append(Event(target.host, "outages", f"🔴 <b>{region}</b> не отвечает{reason}",
+                                    target.url, region))
         return events
 
     async def publish(self, events: list[Event]) -> int:
@@ -133,15 +138,21 @@ class GroupBroadcast:
             return 0
         sent = 0
         for group in await self._repo.all():
-            lines = [event.line for event in events if wants(group, event.kind, event.host)]
-            if not lines:
+            mine = [event for event in events if wants(group, event.kind, event.host)]
+            if not mine:
                 continue
-            if await self._deliver(group["chat_id"], self._text(lines)):
+            if await self._deliver(group["chat_id"], self._text(mine)):
                 sent += 1
         return sent
 
-    def _text(self, lines: list[str]) -> str:
-        text = "\n".join(lines)
+    def _text(self, events: list[Event]) -> str:
+        text = "\n".join(event.line for event in events)
+        sites = {event.url: event.region for event in events if event.url}
+        links = [f'<a href="{html.escape(url)}">'
+                 + (f"Сайт: {html.escape(region)}" if len(sites) > 1 else "Сайт «Сетевого Города»") + "</a>"
+                 for url, region in sites.items()]
+        if links:
+            text += "\n\n" + "\n".join(links)
         if self._status_url:
             text += f'\n\n<a href="{html.escape(self._status_url)}">Статус всех регионов</a>'
         return text
