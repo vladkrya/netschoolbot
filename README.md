@@ -4,7 +4,7 @@ Telegram-бот и PWA для «Сетевого города. Образова�
 оценках, их изменениях и удалениях, домашние задания, расписание, школьная
 почта и статистика.
 
-Домен: **https://ns.ikrya.ru** (на vdsru, без Cloudflare). После инцидента Yandex Cloud 08.10.2026 основной адрес перенесён на сервер бота; `ns2.ikrya.ru` остаётся резервным. Прежний `netschool.ikrya.ru` работает для уже открытых ссылок и установленных PWA.
+Домен: **https://sgoshka.ru** (на vdsru, без Cloudflare); прежние `ns.ikrya.ru`, `ns2.ikrya.ru`, `netschool.ikrya.ru` работают параллельно — на них установленные PWA и ключи входа, привязанные к домену (перенос — в разделе «Перенос на sgoshka.ru»). Ниже, где сказано `ns.ikrya.ru`, это прежний основной адрес. После инцидента Yandex Cloud 08.10.2026 основной адрес перенесён на сервер бота; `ns2.ikrya.ru` остаётся резервным. Прежний `netschool.ikrya.ru` работает для уже открытых ссылок и установленных PWA.
 
 ## Что это за версия
 
@@ -603,3 +603,20 @@ ID писем попадают в очередь при включённой н�
 первого входа: после подтверждения приложение предлагает заменить их на PIN.
 В браузере «Вход по Touch ID / Face ID» — тумблер регистрации/отзыва Passkey
 для текущего домена; окончательный способ проверки выбирает устройство.
+
+## Перенос на sgoshka.ru
+
+Основной адрес — `sgoshka.ru` (A на vdsru `144.31.222.122`, без Cloudflare),
+`www` отдаёт 301 на него. Конфиг — `deploy/nginx/sgoshka.ru.conf`. Служебные
+имена серверов (`vdsru`, `vdsde`, `yavds` на `ikrya.ru`) не меняются.
+
+1. DNS: `A sgoshka.ru` и `A www.sgoshka.ru` → `144.31.222.122`.
+2. На vdsru: положить конфиг в `sites-available`, пока без сертификата оставив
+   только блок `:80`; `certbot certonly --webroot -w /var/www/html -d sgoshka.ru -d www.sgoshka.ru`;
+   вернуть полный конфиг, `ln -s` в `sites-enabled`, `nginx -t && systemctl reload nginx`.
+   Дальше `deploy/remote-deploy.sh` обновляет его вместе с остальными.
+3. `.env`: `NETSCHOOL_PUBLIC_URL=https://sgoshka.ru`, `NETSCHOOL_MIRROR_URL=https://ns.ikrya.ru`
+   (прежний адрес остаётся допустимым для ключей входа и ссылок),
+   `NETSCHOOL_YANDEX_HOSTS` и `NETSCHOOL_TG_OIDC_HOSTS` — `sgoshka.ru` плюс прежние.
+4. Внешние кабинеты: Redirect URI в oauth.yandex.ru, Allowed URLs и `/setdomain`
+   в @BotFather, кнопка меню бота и адрес Web App.

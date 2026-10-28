@@ -19,7 +19,7 @@ def pain2(t, label='«Сетевой город»'):
     img = phone(max(0, t - (3.4 - REC_END)), finger=False)
     # под шторкой: строка с сайтом и подпись — их открывает уезжающая шторка
     over = layer(); d = ImageDraw.Draw(over)
-    text_center(d, WM_Y, 'ns.ikrya.ru   ·   Telegram @netschoolbot', wm_font, (150, 172, 222, 235))
+    text_center(d, WM_Y, 'sgoshka.ru   ·   Telegram @netschoolbot', wm_font, (150, 172, 222, 235))
     img = Image.alpha_composite(img, over)
     if t > 2.15:
         a = min(1, (t - 2.15) / 0.3) * min(1, (3.4 - t) / 0.25)
@@ -50,7 +50,7 @@ def pain2(t, label='«Сетевой город»'):
     d.ellipse((cx - r, cy - r, cx + r, cy + r), outline=(60, 66, 82, 255), width=10)
     s = t * 1.6 * 360
     d.arc((cx - r, cy - r, cx + r, cy + r), s, s + 100, fill=(140, 150, 175, 255), width=10)
-    text_center(d, URL_Y + off, 'ns.ikrya.ru', url_font, WHITE + (200,))
+    text_center(d, URL_Y + off, 'sgoshka.ru', url_font, WHITE + (200,))
     text_center(d, URL_Y + 60 + off, 'Telegram @netschoolbot', url_font, (125, 170, 255, 220))
     return Image.alpha_composite(img, txt)
 

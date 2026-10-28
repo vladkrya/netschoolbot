@@ -304,7 +304,7 @@ async def health(request: web.Request) -> web.Response:
 def _site_url(request: web.Request) -> str:
     """Главная страница на основном домене — её и показываем поисковикам.
 
-    Зеркала (netschool, ns2, yavds) отдают ту же страницу, и без явного
+    Зеркала (ns, ns2, netschool, yavds) отдают ту же страницу, и без явного
     адреса поиск счёл бы их дублями или выбрал бы любое из них.
     """
     return f"{request.app[CONTEXT].settings.web.miniapp_url}/"

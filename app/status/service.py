@@ -48,7 +48,7 @@ CATALOG_EVERY_S = 6 * 3600
 CATALOG_URL = "https://mobile.ir-tech.ru/api/v1/mobile/parent/end-points"
 # Тестовые и демо-серверы ИРТех в каталоге — не регионы.
 SERVICE_HOSTS = ("ir-tech.ru",)
-USER_AGENT = "netschoolbot-status (+https://ns.ikrya.ru/status)"
+USER_AGENT = "netschoolbot-status (+https://sgoshka.ru/status)"
 PROBE_CONCURRENCY = 10
 # Ответ дольше — «медленно»: logindata маленький, обычно это доли секунды.
 SLOW_MS = 5000

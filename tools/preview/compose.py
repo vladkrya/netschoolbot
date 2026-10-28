@@ -154,7 +154,7 @@ import os
 WM = os.environ.get('WM') == '1'
 wm_font = ImageFont.truetype(FONT + 'Inter-SemiBold.otf', 27)
 def draw_wm(d, a=1.0):
-    text_center(d, WM_Y, 'ns.ikrya.ru   ·   Telegram @netschoolbot', wm_font, (150, 172, 222, int(235 * a)))
+    text_center(d, WM_Y, 'sgoshka.ru   ·   Telegram @netschoolbot', wm_font, (150, 172, 222, int(235 * a)))
 
 STILLS = [float(x) for x in os.environ.get('STILLS', '').split(',') if x]
 proc = None if STILLS else subprocess.Popen(['ffmpeg', '-y', '-loglevel', 'error', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-s', f'{W}x{H}', '-r', str(FPS),
@@ -194,7 +194,7 @@ for n in ([int(x * FPS) for x in STILLS] or range(total)):
         d.rectangle((0, 0, W, H), fill=(11, 14, 22, int(225 * k)))
         text_center(d, 700, 'Дневник', end_title, (255, 255, 255, int(255 * k)))
         text_center(d, 840, 'приложение для «Сетевого города»', end_sub, (185, 195, 221, int(255 * k)))
-        text_center(d, 960, 'ns.ikrya.ru', end_url, (255, 255, 255, int(255 * k)))
+        text_center(d, 960, 'sgoshka.ru', end_url, (255, 255, 255, int(255 * k)))
         text_center(d, 1040, 'Telegram: @netschoolbot', end_url, (125, 170, 255, int(255 * k)))
     img = Image.alpha_composite(img.convert('RGBA'), over).convert('RGB')
     if STILLS:

@@ -354,7 +354,7 @@ async def install_miniapp(message: Message, user: User, app: AppContext) -> None
 async def demo(message: Message, app: AppContext) -> None:
     """Демо-версия приложения на выдуманных данных — без входа в школу."""
     url = f"{app.settings.web.miniapp_url}/demo"
-    direct_url = f"https://ns.ikrya.ru{app.settings.web.miniapp_path}/demo"
+    direct_url = f"{app.settings.web.public_url}{app.settings.web.miniapp_path}/demo"
     await message.answer(
         "✨ <b>Демо-версия дневника</b>\n\n"
         "Выдуманный ученик и оценки, всё можно трогать: в меню ☰ есть "

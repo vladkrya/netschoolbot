@@ -313,7 +313,7 @@ async def complete(settings: AssistantSettings, messages: list[dict[str, str]]) 
     headers = {
         "Authorization": f"Bearer {settings.api_key}",
         # Необязательные заголовки OpenRouter: название в статистике ключа.
-        "HTTP-Referer": "https://ns.ikrya.ru",
+        "HTTP-Referer": "https://sgoshka.ru",
         "X-Title": "NetSchool Diary",
     }
     body = {"model": settings.model, "messages": messages, "max_tokens": MAX_TOKENS, "temperature": 0.3}

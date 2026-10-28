@@ -340,7 +340,7 @@ def load_settings(*, require_bot_token: bool = True) -> Settings:
             "NETSCHOOL_BOT_TOKEN не задан — боту нечем подключиться к Telegram"
         )
 
-    public_url = (_env("NETSCHOOL_PUBLIC_URL") or "https://ns.ikrya.ru").rstrip("/")
+    public_url = (_env("NETSCHOOL_PUBLIC_URL") or "https://sgoshka.ru").rstrip("/")
     # Пустой путь — приложение с корня домена. Иначе "/" давал бы "//" в ссылках.
     miniapp_path = _env("NETSCHOOL_MINIAPP_PATH").strip("/")
     miniapp_path = f"/{miniapp_path}" if miniapp_path else ""

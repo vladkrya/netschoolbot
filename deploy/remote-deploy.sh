@@ -123,7 +123,7 @@ install_nginx() {
   install -D -m 644 deploy/nginx/netschool-updating.conf /etc/nginx/snippets/netschool-updating.conf
   install -D -m 644 deploy/nginx/netschool-updating.html /var/www/netschool-updating/index.html
   # Обновляем все установленные адреса: Upgrade нужен каждому прокси WebSocket.
-  for domain in netschool.ikrya.ru ns.ikrya.ru ns2.ikrya.ru yavds.ikrya.ru; do
+  for domain in sgoshka.ru netschool.ikrya.ru ns.ikrya.ru ns2.ikrya.ru yavds.ikrya.ru; do
     enabled="/etc/nginx/sites-enabled/$domain"
     [ -e "$enabled" ] || continue
     config="$(readlink -f "$enabled")"
@@ -199,7 +199,7 @@ for extra in "$APP"/data/backups/*.sqlite3-wal "$APP"/data/backups/*.sqlite3-shm
   if [ -e "$extra" ] && [ ! -e "${extra%-*}" ]; then rm -f "$extra"; fi
 done
 # Копии конфигов nginx: по десять последних на сайт.
-for domain in netschool.ikrya.ru ns.ikrya.ru ns2.ikrya.ru yavds.ikrya.ru; do
+for domain in sgoshka.ru netschool.ikrya.ru ns.ikrya.ru ns2.ikrya.ru yavds.ikrya.ru; do
   # Копий может не быть вовсе: ls тогда завершится ошибкой, а с pipefail это
   # остановило бы выкладку.
   ls -1t /etc/nginx/sites-available/"$domain".bak-* 2>/dev/null | tail -n +11 | xargs -r rm -f || true
