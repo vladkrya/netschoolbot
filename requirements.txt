@@ -12,7 +12,7 @@ aiosqlite>=0.20.0
 # «Сетевой город»
 netschoolpy==9.6.3
 # «Госуслуги Моя школа»: приватный репозиторий, на сервере https→ssh через deploy key
-myschoolpy @ git+https://github.com/vladkrya/myschoolpy.git@v0.2.2
+myschoolpy @ git+https://github.com/vladkrya/myschoolpy.git@v0.2.3
 httpx[socks]
 aiohttp-socks>=0.8.0
 marshmallow
