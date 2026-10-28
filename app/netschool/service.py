@@ -37,6 +37,7 @@ from .mapping import (
     subject_stats_from,
     totals_from_mobile,
 )
+from . import myschool
 from .session import SessionPool
 
 logger = logging.getLogger("netschoolbot.netschool")
@@ -104,6 +105,8 @@ class DiaryService:
     ) -> list[DiaryDay]:
         """Дневник за произвольный период. Запрашивается по неделям."""
         today = today or msk_today()
+        if user.api_mode is ApiMode.MYSCHOOL:
+            return await self._run(user, lambda client: myschool.fetch_days(client, user, start, end))
         raw_days = await self._with_session(
             user, lambda client: _collect_weeks_weighted(client, start, end, today=today)
         )
@@ -446,6 +449,8 @@ class DiaryService:
         которое молча переписывают вглубь стека, было источником сюрпризов
         в старом коде.
         """
+        if user.api_mode is ApiMode.MYSCHOOL:
+            return await self._sync_myschool_students(user)
         payload = await self._with_session(user, _fetch_diary_init)
         raw_students, current_id = students_from_diary_init(payload)
         students = tuple(Student(id=s["id"], name=s["name"]) for s in raw_students)
@@ -463,6 +468,25 @@ class DiaryService:
             available_students=students,
             selected_student_id=selected,
             student_name=name or user.student_name,
+        )
+        if (
+            updated.available_students != user.available_students
+            or updated.selected_student_id != user.selected_student_id
+            or updated.student_name != user.student_name
+        ):
+            updated = await self._users.save(updated)
+        return updated
+
+    async def _sync_myschool_students(self, user: User) -> User:
+        found = await self._run(user, myschool.list_students)
+        students = myschool.to_domain_students(found)
+        current = myschool.pick_student(found, user)
+        selected = students[found.index(current)]
+        updated = replace(
+            user,
+            available_students=students,
+            selected_student_id=selected.id,
+            student_name=selected.name,
         )
         if (
             updated.available_students != user.available_students
@@ -759,6 +783,12 @@ class DiaryService:
         return await self._with_session(user, call)
 
     async def _with_session(self, user: User, call: Callable[[Any], Awaitable[T]]) -> T:
+        """Операция над клиентом netschoolpy; для «Моей школы» таких нет."""
+        if user.api_mode is ApiMode.MYSCHOOL:
+            raise NetSchoolError(Reason.UNKNOWN, "Это пока недоступно для «Моей школы».")
+        return await self._run(user, call)
+
+    async def _run(self, user: User, call: Callable[[Any], Awaitable[T]]) -> T:
         """Выполнить операцию, повторяя её только при временных ошибках.
 
         Единая политика повтора вместо двух разных: бот раньше не повторял

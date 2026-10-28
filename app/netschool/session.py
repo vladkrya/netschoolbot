@@ -55,6 +55,7 @@ class SessionPool:
         *,
         client_factory: Callable[[str, str | None], Any] | None = None,
         mobile_factory: Callable[[str, str | None, str], Any] | None = None,
+        myschool_factory: Callable[[str | None], Any] | None = None,
     ) -> None:
         self._settings = settings
         self._sessions = sessions
@@ -64,6 +65,7 @@ class SessionPool:
         self._registry_lock = asyncio.Lock()
         self._client_factory = client_factory or _default_client_factory
         self._mobile_factory = mobile_factory or _default_mobile_factory
+        self._myschool_factory = myschool_factory or _default_myschool_factory
 
     @asynccontextmanager
     async def acquire(self, user: User) -> AsyncIterator[Any]:
@@ -155,6 +157,8 @@ class SessionPool:
         Обратно в веб — просто забываем токен: следующий запрос войдёт
         заново по паролю (пользователям Госуслуг понадобится /login).
         """
+        if mode is ApiMode.MYSCHOOL or user.api_mode is ApiMode.MYSCHOOL:
+            raise NetSchoolError(Reason.UNKNOWN, "Режим API «Моей школы» не переключается")
         entry = await self._entry_for(user.telegram_id)
         async with entry.lock:
             if mode is ApiMode.MOBILE:
@@ -215,6 +219,8 @@ class SessionPool:
 
     def _new_client(self, user: User, mode: ApiMode) -> Any:
         proxy = self._settings.proxy_for(user.school.url)
+        if mode is ApiMode.MYSCHOOL:
+            return self._myschool_factory(proxy)
         if mode is ApiMode.MOBILE:
             return self._mobile_factory(user.school.url, proxy, self._settings.mobile_client_secret)
         return self._client_factory(user.school.url, proxy)
@@ -308,6 +314,8 @@ class SessionPool:
         payload = await self._sessions.load(telegram_id)
         if not payload:
             return False
+        if _client_mode(client) is ApiMode.MYSCHOOL:
+            return await self._restore_myschool(telegram_id, client, payload)
         try:
             await client.import_session(payload)
             return True
@@ -350,6 +358,25 @@ class SessionPool:
             await self._sessions.drop(telegram_id)
             return False
 
+    async def _restore_myschool(self, telegram_id: int, client: Any, payload: str) -> bool:
+        from myschoolpy import exceptions as ms
+
+        try:
+            await client.import_session(payload)
+            return True
+        except (ValueError, KeyError, TypeError) as exc:
+            logger.warning("Сохранённая сессия %s испорчена: %r", telegram_id, exc)
+            await self._sessions.drop(telegram_id)
+            return False
+        except ms.SessionExpired:
+            # Токен «Моей школы» живёт часы: отказ — это конец срока, а не сбой.
+            logger.info("Токен «Моей школы» %s истёк", telegram_id)
+            await self._sessions.drop(telegram_id)
+            return False
+        except ms.ServerUnavailable as exc:
+            raise NetSchoolError(Reason.SERVER_UNAVAILABLE,
+                                 f"восстановление {telegram_id}: «Моя школа» недоступна") from exc
+
     async def _persist(self, telegram_id: int, client: Any) -> None:
         try:
             payload = client.export_session()
@@ -366,6 +393,11 @@ class SessionPool:
         if user.credentials.login_type.is_gosuslugi:
             # Вход через Госуслуги нельзя повторить без участия человека:
             # он требует кода или подтверждения в приложении.
+            if user.effective_api_mode is ApiMode.MYSCHOOL:
+                raise NetSchoolError(
+                    Reason.AUTH,
+                    "Вход в «Мою школу» истёк. Войдите заново: /login",
+                )
             if user.effective_api_mode is ApiMode.MOBILE:
                 raise NetSchoolError(
                     Reason.AUTH,
@@ -396,7 +428,7 @@ class SessionPool:
         # Веб-клиент netschoolpy.is_alive считает живой и сессию, на которую
         # сервер ответил 500, поэтому веб проверяем сами.
         check = getattr(client, "is_alive", None)
-        if check is not None and _client_mode(client) is ApiMode.MOBILE:
+        if check is not None and _client_mode(client) in (ApiMode.MOBILE, ApiMode.MYSCHOOL):
             try:
                 return bool(await check())
             except Exception as exc:
@@ -452,7 +484,15 @@ def _default_client_factory(url: str, proxy: str | None) -> Any:
     return NetSchool(url, proxy=proxy) if proxy else NetSchool(url)
 
 
+def _default_myschool_factory(proxy: str | None) -> Any:
+    from .myschool import new_client
+
+    return new_client(proxy)
+
+
 def _client_mode(client: Any) -> ApiMode:
+    if type(client).__name__ == "MySchool":
+        return ApiMode.MYSCHOOL
     # У мобильного клиента есть маршруты, которых нет в веб-API.
     return ApiMode.MOBILE if hasattr(client, "classmeetings") else ApiMode.WEB
 

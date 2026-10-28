@@ -38,6 +38,7 @@ from ...domain import formatting
 from ...domain.models import ApiMode, Credentials, LoginType, School, User
 from ...netschool.errors import NetSchoolError, Reason, login_message, wrap
 from ...netschool import login as login_flow
+from ...netschool.myschool import myschool_school
 from ...netschool.ownership import AccountTaken
 from ...netschool.patches import http as http_patch
 from .. import keyboards
@@ -103,6 +104,7 @@ def _regions_keyboard(regions: list[str], page: int) -> InlineKeyboardMarkup:
             InlineKeyboardButton(text="▶️", callback_data=f"region:page:{(page + 1) % pages}"),
         ])
     rows.append([InlineKeyboardButton(text="🔗 Ввести адрес вручную", callback_data="region:manual")])
+    rows.append([InlineKeyboardButton(text="🎓 Госуслуги «Моя школа»", callback_data="region:myschool")])
     rows.append([InlineKeyboardButton(text="❌ Отмена", callback_data="login:cancel")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -178,6 +180,20 @@ async def cancel_login(event: Message | CallbackQuery, state: FSMContext) -> Non
     await _drop_step(getattr(event, "message", event), state)
     await state.clear()
     await reply(event, "Вход отменён. Начать заново: /login")
+
+
+@router.callback_query(Login.region, F.data == "region:myschool")
+async def choose_myschool(callback: CallbackQuery, state: FSMContext, app: AppContext) -> None:
+    """«Госуслуги Моя школа»: региона и школы нет, вход только через Госуслуги."""
+    await callback.answer()
+    await state.update_data(login_type=LoginType.ESIA.value, remember=False, myschool=True)
+    await state.set_state(Login.username)
+    await _step(callback, state,
+        "👤 Пришлите логин Госуслуг (телефон, СНИЛС или почту).\n\n"
+        "Логин и пароль нужны только на этот вход и не сохраняются. "
+        "Вход в «Мою школу» держится несколько часов, потом понадобится /login.\n\n"
+        + _consent(app),
+        reply_markup=_cancel_keyboard(), disable_web_page_preview=True)
 
 
 @router.callback_query(Login.region, F.data.startswith("region:"))
@@ -429,9 +445,13 @@ async def _password_attempt(message, state, user, app, password: str) -> None:
     await _drop_step(message, state)
     notice = await message.answer("⏳ Вхожу…")
 
+    myschool = bool(data.get("myschool"))
     candidate = replace(
         user,
-        school=School(url=data.get("url", ""), name=data.get("school", "")),
+        school=myschool_school() if myschool else School(url=data.get("url", ""), name=data.get("school", "")),
+        api_mode=ApiMode.MYSCHOOL if myschool else (
+            ApiMode.MOBILE if user.api_mode is ApiMode.MYSCHOOL else user.api_mode),
+        selected_student_id=None if myschool or user.api_mode is ApiMode.MYSCHOOL else user.selected_student_id,
         credentials=Credentials(
             login_type=login_type, login=data.get("login", ""), password=password,
             remember=bool(data.get("remember", False))
@@ -464,7 +484,10 @@ async def _perform_login(
     user: User, app: AppContext, message: Message, login_type: LoginType
 ) -> str | None:
     """Выполнить вход и вернуть сессию для сохранения после проверки попытки."""
-    return await login_flow.password_login(app, user, _make_otp_callback(message, user.telegram_id))
+    callback = _make_otp_callback(message, user.telegram_id)
+    if user.api_mode is ApiMode.MYSCHOOL:
+        return await login_flow.myschool_login(app, user, callback)
+    return await login_flow.password_login(app, user, callback)
 
 
 def _make_otp_callback(message: Message, telegram_id: int):

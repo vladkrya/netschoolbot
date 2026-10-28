@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 
 from ..domain.models import ApiMode, LoginType, School, User
 from . import ownership
+from .myschool import MYSCHOOL_URL
 from .errors import NetSchoolError, Reason, wrap
 
 if TYPE_CHECKING:
@@ -68,6 +69,24 @@ async def password_login(app: AppContext, user: User, otp_callback: OtpCallback 
         raise wrap(exc, context="вход") from exc
     finally:
         await _close(client)
+
+
+async def myschool_login(app: AppContext, user: User, otp_callback: OtpCallback | None = None) -> str:
+    """Вход в «Госуслуги Моя школа» логином и паролем Госуслуг. Возвращает сессию."""
+    from .myschool import new_client
+
+    client = new_client(app.settings.netschool.proxy_for(user.school.url))
+    try:
+        await client.login_via_gosuslugi_mobile(
+            user.credentials.login, user.credentials.password, otp_callback=otp_callback
+        )
+        return client.export_session()
+    except NetSchoolError:
+        raise
+    except Exception as exc:
+        raise wrap(exc, context="вход в «Мою школу»") from exc
+    finally:
+        await client.close()
 
 
 async def qr_login(app: AppContext, url: str, school: str, show_qr: QrCallback, *, telegram_id: int) -> str | None:
@@ -174,6 +193,12 @@ async def finish_login(app: AppContext, user: User, payload: str | None, *,
 
     `mobile_ready` — сессия уже мобильная (вход по коду приложения): менять
     на токен нечего, а веб-сессии для этого и нет."""
+    if user.api_mode is ApiMode.MYSCHOOL:
+        if user.school.url != MYSCHOOL_URL:
+            # Вошли в «Сетевой город», а в базе остался режим «Моей школы».
+            user = replace(user, api_mode=ApiMode.MOBILE, selected_student_id=None)
+        else:
+            mobile_ready = True  # веб-сессии, которую надо менять на токен, нет
     if payload:
         await app.sessions.save(user.telegram_id, payload)
     known = await _known_diary(app, user.telegram_id)

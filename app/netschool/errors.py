@@ -129,6 +129,9 @@ def _classify_by_type(exc: BaseException) -> Reason | None:
     """
     from netschoolpy import exceptions as ns
 
+    reason = _classify_myschool(exc)
+    if reason is not None:
+        return reason
     if isinstance(exc, ns.RefreshTokenRejected):
         # Истёк refresh-токен мобильного API: нужен новый вход, как при
         # протухшей сессии, хотя это и LoginRejected.
@@ -148,6 +151,27 @@ def _classify_by_type(exc: BaseException) -> Reason | None:
     if isinstance(exc, ns.ESIAError):
         return Reason.ESIA
     if isinstance(exc, ns.ServerUnavailable):
+        return Reason.SERVER_UNAVAILABLE
+    return None
+
+
+def _classify_myschool(exc: BaseException) -> Reason | None:
+    """Исключения myschoolpy («Госуслуги Моя школа»)."""
+    try:
+        from myschoolpy import exceptions as ms
+    except ImportError:
+        return None
+    if isinstance(exc, ms.MFAError):
+        return Reason.MFA
+    if isinstance(exc, ms.InvalidCredentials):
+        return Reason.CREDENTIALS
+    if isinstance(exc, ms.AccountLocked):
+        return Reason.RATE_LIMIT
+    if isinstance(exc, ms.SessionExpired):
+        return Reason.AUTH
+    if isinstance(exc, ms.ESIAError):
+        return Reason.ESIA
+    if isinstance(exc, (ms.ServerUnavailable, ms.DataNotReady)):
         return Reason.SERVER_UNAVAILABLE
     return None
 

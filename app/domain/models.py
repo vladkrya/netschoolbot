@@ -82,9 +82,13 @@ class ApiMode(str, Enum):
 
     WEB = "web"
     MOBILE = "mobile"
+    # Не «Сетевой город», а «Госуслуги Моя школа» (библиотека myschoolpy).
+    MYSCHOOL = "myschool"
 
     @property
     def title(self) -> str:
+        if self is ApiMode.MYSCHOOL:
+            return "«Моя школа»"
         return "веб-API сайта" if self is ApiMode.WEB else "мобильное API"
 
     @classmethod

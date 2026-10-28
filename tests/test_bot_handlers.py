@@ -667,7 +667,7 @@ class TestLoginSteps:
         last = auth._regions_keyboard(regions, 2).inline_keyboard
         # Номер в callback — индекс во всём списке, а не на странице.
         assert last[0][0].text == "Регион 16" and last[0][0].callback_data == "region:16"
-        assert len(last) == 4 + 3
+        assert len(last) == 4 + 4
 
     async def test_page_button_edits_keyboard(self, login_state):
         await login_state.set_state(auth.Login.region)
