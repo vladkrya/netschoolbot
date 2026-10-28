@@ -190,7 +190,11 @@ async def run(settings: Settings, args: argparse.Namespace) -> int:
         logger.info("VAPID-ключи не заданы — push в браузер отключён")
     context.watchers.attach_notifier(TelegramNotifier(bot, context.users, push, context.family))
     # Простои и новые версии админу в личку не шлём: они уходят в группы и тем,
-    # кто подписан на регион (status/alerts.py). Монитор только копит состояние.
+    # кто подписан на регион (status/alerts.py), монитор только копит состояние.
+    # tell_admin остаётся для жалоб на серверы (StatusService).
+    async def tell_admin(text: str) -> None:
+        await bot.send_message(settings.telegram.admin_id, text)
+
     try:
         await context.watchers.outages.persist(context.db)
     except Exception as exc:  # noqa: BLE001 — без этого бот работает, только может повторить «не отвечает»
