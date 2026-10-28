@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import hashlib
 import re
 from collections import defaultdict
 from typing import Any
@@ -24,8 +25,35 @@ from .errors import NetSchoolError, Reason
 MYSCHOOL_URL = "https://www.gosuslugi.ru/api/myschool"
 MYSCHOOL_NAME = "Госуслуги Моя школа"
 
+MAX_MATERIAL_BYTES = 50 * 1024 * 1024
+MATERIAL_TIMEOUT_S = 90
+# Окно, в котором ищем файл, когда процесс перезапустился и ссылок в памяти нет.
+LOOKUP_DAYS_BACK, LOOKUP_DAYS_FORWARD = 90, 60
+LINKS_LIMIT = 5000
+
 HOMEWORK_TYPE = "Домашнее задание"
 DEFAULT_WORK = "Оценка"
+
+
+# Файлы заданий в «Моей школе» — ссылки, а бот и мини-приложение называют вложение
+# числом. Число считается из ссылки, а ссылки по числу помнятся здесь: качать можно
+# только то, что API отдал самому ученику.
+_LINKS: dict[int, str] = {}
+
+
+def material_id(url: str) -> int:
+    """Стабильное число для ссылки на файл (помещается в безопасное для JS целое)."""
+    digest = hashlib.blake2b(url.encode(), digest_size=7).digest()
+    return int.from_bytes(digest, "big") & (2 ** 53 - 1)
+
+
+def _remember(url: str) -> int:
+    if len(_LINKS) >= LINKS_LIMIT:
+        for key in list(_LINKS)[: LINKS_LIMIT // 2]:
+            del _LINKS[key]
+    file_id = material_id(url)
+    _LINKS[file_id] = url
+    return file_id
 
 
 def myschool_school() -> School:
@@ -169,12 +197,43 @@ def build_days(lessons: list[Any], marks: list[Any], homeworks: list[Any]) -> li
 
 
 def _attachments(materials: list[Any]) -> list[Attachment]:
-    names = []
+    items = []
     for material in materials or []:
         if isinstance(material, dict):
-            name = material.get("title") or material.get("name") or material.get("url")
+            name = material.get("title") or material.get("name") or material.get("link")
+            link = material.get("link") or material.get("url") or ""
         else:
-            name = str(material)
-        if name:
-            names.append(Attachment(id=None, name=str(name)))
-    return names
+            name, link = str(material), ""
+        if not name:
+            continue
+        file_id = _remember(link) if isinstance(link, str) and link.startswith("https://") else None
+        items.append(Attachment(id=file_id, name=str(name)))
+    return items
+
+
+async def download_material(client: Any, user: User, attachment_id: int) -> bytes:
+    """Файл задания по числу из `Attachment.id`."""
+    import httpx
+
+    url = _LINKS.get(attachment_id)
+    if url is None:
+        today = dt.date.today()
+        await fetch_days(client, user, today - dt.timedelta(days=LOOKUP_DAYS_BACK),
+                         today + dt.timedelta(days=LOOKUP_DAYS_FORWARD))
+        url = _LINKS.get(attachment_id)
+    if url is None:
+        raise NetSchoolError(Reason.UNKNOWN, "Файл не найден среди заданий «Моей школы».")
+    try:
+        async with httpx.AsyncClient(timeout=MATERIAL_TIMEOUT_S, follow_redirects=True) as http:
+            async with http.stream("GET", url) as response:
+                if response.status_code != 200:
+                    raise NetSchoolError(Reason.UNKNOWN, "Не удалось скачать файл из «Моей школы».")
+                chunks, size = [], 0
+                async for chunk in response.aiter_bytes():
+                    size += len(chunk)
+                    if size > MAX_MATERIAL_BYTES:
+                        raise NetSchoolError(Reason.UNKNOWN, "Файл слишком большой.")
+                    chunks.append(chunk)
+    except httpx.TransportError as exc:
+        raise NetSchoolError(Reason.SERVER_UNAVAILABLE, "Сервер школы не отдал файл. Попробуйте позже.") from exc
+    return b"".join(chunks)

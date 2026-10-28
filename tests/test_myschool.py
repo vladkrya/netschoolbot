@@ -197,3 +197,41 @@ async def test_netschool_only_features_are_refused(db):
     assert await service.fetch_recent_events(user) is None
     with pytest.raises(NetSchoolError):
         await service.switch_api(user, ApiMode.MOBILE)
+
+
+class TestMaterials:
+    LINK = "https://sgo.example.ru/webapi/attachments/abc"
+
+    def _homework(self, materials):
+        return ms.Homework.model_validate({
+            "homeworks_id": "h", "subject_name": "Физика", "description": "",
+            "plan_ready_date": "2026-10-23 00:00:00.0", "materials": materials})
+
+    def test_material_gets_stable_id_and_link_is_remembered(self):
+        from app.netschool import myschool
+        material = {"name": "Презентация.pptx", "link": self.LINK, "id": "1_2"}
+        (day,) = build_days([], [], [self._homework([material])])
+        (attachment,) = day.homework[0].attachments
+        assert attachment.name == "Презентация.pptx"
+        assert attachment.id == myschool.material_id(self.LINK) < 2 ** 53
+        assert myschool._LINKS[attachment.id] == self.LINK
+
+    def test_material_without_link_has_no_id(self):
+        (day,) = build_days([], [], [self._homework([{"name": "Файл"}])])
+        assert day.homework[0].attachments[0].id is None
+
+    async def test_download_uses_remembered_link(self, monkeypatch):
+        import httpx
+        from app.netschool import myschool
+        file_id = myschool._remember(self.LINK)
+        real = httpx.AsyncClient
+        seen = []
+
+        def handler(request):
+            seen.append(str(request.url))
+            return httpx.Response(200, content=b"data")
+
+        monkeypatch.setattr(httpx, "AsyncClient",
+                            lambda **kw: real(transport=httpx.MockTransport(handler), **kw))
+        assert await myschool.download_material(None, None, file_id) == b"data"
+        assert seen == [self.LINK]

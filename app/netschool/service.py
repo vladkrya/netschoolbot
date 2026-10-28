@@ -720,6 +720,8 @@ class DiaryService:
         return await self._with_session(user, call)
 
     async def download_attachment(self, user: User, attachment_id: int) -> bytes:
+        if user.api_mode is ApiMode.MYSCHOOL:
+            return await self._run(user, lambda client: myschool.download_material(client, user, attachment_id))
         return await self._with_session(
             user, lambda client: client.download_attachment_as_bytes(attachment_id)
         )
