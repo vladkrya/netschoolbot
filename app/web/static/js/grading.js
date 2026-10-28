@@ -37,6 +37,24 @@ export function thresholdsText(subject) {
   return `«5» от ${formatThreshold(t[5])} · «4» от ${formatThreshold(t[4])} · «3» от ${formatThreshold(t[3])}`;
 }
 
+/** Вес, с которым в этом предмете чаще всего ставят оценки (при равенстве — больший).
+ *  Новая оценка в подсказке «до пятёрки» считается с ним: у одних школ веса 1–3,
+ *  у других 10, 20, 30, а то и под 70, и с весом 1 выходило «ещё 61 пятёрка». */
+export function typicalWeight(marks) {
+  const counts = new Map();
+  for (const mark of marks) {
+    if (weightedAverage([mark]) == null) continue;
+    const weight = Number(mark.weight) > 0 ? Number(mark.weight) : 1;
+    counts.set(weight, (counts.get(weight) || 0) + 1);
+  }
+  let best = 1;
+  let bestCount = 0;
+  for (const [weight, count] of counts) {
+    if (count > bestCount || (count === bestCount && weight > best)) { best = weight; bestCount = count; }
+  }
+  return best;
+}
+
 /** Сколько оценок `value` с весом `weight` нужно, чтобы среднее дошло до `target`. */
 export function neededMarks(marks, target, value = 5, weight = 1) {
   const current = weightedAverage(marks);

@@ -538,7 +538,8 @@ async def _take_otp(message: Message) -> bool:
     Состояние FSM в этот момент занято шагом пароля, поэтому код приходит в
     обработчик пароля: без этой проверки он уходил бы туда как новый пароль.
     """
-    future = _PENDING_OTP.get(message.from_user.id if message.from_user else 0)
+    sender = getattr(message, "from_user", None)
+    future = _PENDING_OTP.get(sender.id if sender else 0)
     if future is None or future.done():
         return False
     try:

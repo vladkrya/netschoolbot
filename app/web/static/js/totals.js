@@ -14,7 +14,7 @@ import { getPref, setPref } from './prefs.js';
 import { isNewDesign } from './appearance.js';
 import { playAverages, tweenNumber } from './motion.js';
 import {
-  formatThreshold, neededMarks, thresholdPrefs, thresholdsFor, validThresholds,
+  formatThreshold, neededMarks, thresholdPrefs, thresholdsFor, typicalWeight, validThresholds,
 } from './grading.js';
 
 const SHORT = { q1: '1/4', q2: '2/4', q3: '3/4', q4: '4/4' };
@@ -212,12 +212,14 @@ const GOAL_LIMIT = 20;
 /** Какими оценками добрать средний до порога: «1 пятёрка или 2 четвёрки».
  *  Оценки, которыми порога не достичь, в подсказку не попадают. */
 function neededText(marks, threshold) {
+  const weight = typicalWeight(marks);
   const options = [5, 4, 3]
-    .map((value) => ({ value, needed: neededMarks(marks, threshold, value) }))
+    .map((value) => ({ value, needed: neededMarks(marks, threshold, value, weight) }))
     .filter(({ value, needed }) => needed && (value === 5 || needed <= GOAL_LIMIT))
     .map(({ value, needed }) => `${needed} ${plural(needed, ...MARK_WORDS[value])}`);
   if (!options.length) return '';
-  return options.length > 1 ? `${options.slice(0, -1).join(', ')} или ${options.at(-1)}` : options[0];
+  const text = options.length > 1 ? `${options.slice(0, -1).join(', ')} или ${options.at(-1)}` : options[0];
+  return weight === 1 ? text : `${text} с весом ${formatWeight(weight)}`;
 }
 
 /** Цели на четверть по предметам (prefs.goals): «5», «4» или «3». */
