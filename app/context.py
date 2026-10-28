@@ -41,6 +41,7 @@ from .accounts.mailer import Mailer
 from .accounts.site_login import SiteLogins
 from .accounts.repository import AccountRepository
 from .chat.hub import ChatHub
+from .chat.repository import ChatRepository
 from .notifications.watcher import Notifier, WatcherRegistry
 from .settings import Settings
 
@@ -282,6 +283,7 @@ class AppContext:
         await self.db.execute("DELETE FROM token_clients WHERE telegram_id = ?", (telegram_id,))
         await self.hub.disconnect(telegram_id)
         self.web_logins.pop(telegram_id, None)
+        await ChatRepository(self.db).erase_user(telegram_id)
         await self.users.delete(telegram_id)
 
     async def sign_out_netschool(self, user: "User") -> None:

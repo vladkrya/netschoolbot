@@ -305,7 +305,7 @@ MIGRATIONS: list[str] = [
     ALTER TABLE app_locks ADD COLUMN require_telegram INTEGER NOT NULL DEFAULT 1;
     """,
     # 18 — школьные чаты. Сообщения не удаляются вместе с пользователем
-    # (нет внешнего ключа): переписку нужно хранить для разбора жалоб.
+    # (нет внешнего ключа): их стирает ChatRepository.erase_user.
     """
     CREATE TABLE chat_profiles (
         telegram_id INTEGER PRIMARY KEY REFERENCES users(telegram_id) ON DELETE CASCADE,
