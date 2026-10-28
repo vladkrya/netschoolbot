@@ -14,8 +14,10 @@ from aiohttp import web
 
 from ..bot.handlers.admin import WIDGET_MODES, set_widget_mode, stats_report, widget_mode
 from ..netschool import ownership
-from . import app_icon, solver
+from . import android_updates, app_icon, solver
+from ..db.repositories import AppFlagRepository
 from .api import context, current_user, json_error
+from .api.base import issue_attachment_ticket
 
 routes = web.RouteTableDef()
 
@@ -26,7 +28,10 @@ def _owner(request: web.Request) -> bool:
 
 async def _state(request: web.Request) -> dict:
     app = context(request)
+    release = android_updates.release_manifest(android_updates.directory(request))
     return {
+        "android_updates": {"on": await android_updates.updates_enabled(app), "available": release is not None,
+                            "version": release["versionName"] if release else "", "size": release["size"] if release else 0},
         "solver_class": {"on": await solver.class_open(app)} if app.settings.assistant.enabled else None,
         "share_sgo": {"on": await ownership.sharing_allowed(app)},
         "widget": {
@@ -40,7 +45,9 @@ async def _state(request: web.Request) -> dict:
 
 def android_apk_info(app) -> dict | None:
     """Размер и время сборки APK для строки в настройках владельца; None — файла нет."""
-    path = app.settings.android_apk
+    root = app.settings.data_dir / "android-releases"
+    release = android_updates.release_manifest(root)
+    path = root / release["file"] if release else app.settings.android_apk
     if not path.is_file():
         return None
     stat = path.stat()
@@ -50,18 +57,20 @@ def android_apk_info(app) -> dict | None:
 
 @routes.get("/api/admin/android.apk")
 async def admin_android_apk(request: web.Request) -> web.StreamResponse:
-    """Android-клиент (неофициальный, debug-сборка) — только владельцу.
+    """Актуальный Android-клиент — только владельцу.
 
     Ссылка открывается во внешнем браузере, поэтому доступ — по билету на
     вложения (api/base.py), как у файлов заданий."""
     if not _owner(request):
         return json_error("Это может только владелец", status=403)
-    path = context(request).settings.android_apk
+    root = android_updates.directory(request)
+    release = android_updates.release_manifest(root)
+    path = root / release["file"] if release else context(request).settings.android_apk
     if not path.is_file():
         return json_error("APK ещё не загружен на сервер", status=404)
     return web.FileResponse(path, headers={
         "Content-Type": "application/vnd.android.package-archive",
-        "Content-Disposition": 'attachment; filename="dnevnik.apk"',
+        "Content-Disposition": f'attachment; filename="{path.name}"',
         "Cache-Control": "no-store",
     })
 
@@ -94,3 +103,28 @@ async def admin_stats(request: web.Request) -> web.Response:
     if not _owner(request):
         return json_error("Это может только владелец", status=403)
     return web.json_response({"ok": True, "data": {"html": await stats_report(context(request))}})
+
+
+@routes.post("/api/admin/android-updates")
+async def android_updates_toggle(request: web.Request) -> web.Response:
+    if not _owner(request):
+        return json_error("Это может только владелец", status=403)
+    try:
+        body = await request.json()
+    except ValueError:
+        body = None
+    if not isinstance(body, dict) or not isinstance(body.get("on"), bool):
+        return json_error("Некорректный запрос")
+    await AppFlagRepository(context(request).db).set("android_updates_disabled", not body["on"])
+    return web.json_response({"ok": True, "data": await _state(request)})
+
+
+@routes.post("/api/admin/android-link")
+async def android_link(request: web.Request) -> web.Response:
+    if not _owner(request):
+        return json_error("Это может только владелец", status=403)
+    if android_updates.release_manifest(android_updates.directory(request)) is None:
+        return json_error("Сборка ещё не опубликована", status=404)
+    ticket = issue_attachment_ticket(context(request), current_user(request).telegram_id)
+    url = context(request).settings.web.miniapp_url.rstrip("/") + "/api/admin/android.apk?ticket=" + ticket
+    return web.json_response({"ok": True, "data": {"url": url}})

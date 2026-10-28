@@ -3,7 +3,7 @@
 // (solver.py, account.py). Вкладка «Иконки» — app/web/app_icon.py.
 'use strict';
 
-import { api, banner, esc, showFailure } from './core.js';
+import { api, banner, esc, openExternal, showFailure } from './core.js';
 import { notify, select } from './haptics.js';
 import { onScreenRefresh, pushScreen } from './screens.js';
 import { closeSheet, openSheet } from './sheet.js';
@@ -14,6 +14,7 @@ const post = (path, body) => api(path, { method: 'POST', body: JSON.stringify(bo
 const SWITCHES = {
   solver_class: '/api/settings/solver-class',
   share_sgo: '/api/account/share-sgo',
+  android_updates: '/api/admin/android-updates',
 };
 
 const WIDGET = [['main', 'Основной бот'], ['reserve', 'Резервный'], ['off', 'Выключен']];
@@ -151,6 +152,13 @@ export function openAdmin() {
         ${toggle('share_sgo', 'Разрешить другим аккаунтам использовать мой Сетевой город',
           'обычно один аккаунт «Сетевого города» подключается только к одному аккаунту приложения; кто уже подключился, останется и после выключения', data.share_sgo.on)}
       </div>
+      <div class="card">
+        <div class="card-title">Android-приложение</div>
+        ${toggle('android_updates', 'Разрешить обновления APK', 'новые версии доступны всем, кто установил приложение; выключение скрывает новые версии и запрещает их скачивание', data.android_updates?.on !== false)}
+        ${data.android_updates?.available ? `<p class="muted small">Актуальная сборка: ${esc(data.android_updates.version)} · ${(data.android_updates.size / 1024 / 1024).toFixed(1)} МБ</p>
+          <button class="btn outline" data-android-download>Скачать актуальный APK</button>` : '<p class="muted small">Сборка ещё не опубликована.</p>'}
+        <p class="muted small">Скачать сборку вручную можно и при выключенных обновлениях.</p>
+      </div>
       ${widgetCard(data.widget)}
       <div class="card">
         <div class="card-title">Статистика</div>
@@ -188,6 +196,13 @@ export function openAdmin() {
         banner(error.message, true);
       }
     }));
+    body.querySelector('[data-android-download]')?.addEventListener('click', async (event) => {
+      const button = event.currentTarget;
+      button.disabled = true;
+      try { const { data } = await post('/api/admin/android-link'); openExternal(data.url); }
+      catch (error) { banner(error.message, true); }
+      finally { button.disabled = false; }
+    });
     body.querySelector('[data-stats-load]').addEventListener('click', async (event) => {
       const box = body.querySelector('[data-stats]');
       event.currentTarget.disabled = true;
