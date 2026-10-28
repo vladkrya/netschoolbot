@@ -58,6 +58,7 @@ class TestRegisterAndLogin:
         info = await (await client.get(f"{BASE}/api/account", params={"token": token})).json()
         assert info["data"]["email"] == "kid@example.com"
         assert info["data"]["needs_sgo"] and not info["data"]["telegram"]
+        assert info["data"]["myschool"] is False
         # Второй с той же почтой — нельзя; плохой пароль — нельзя.
         assert (await register(client, email="KID@example.com"))[0] == 400
         assert (await register(client, email="other@example.com", password="123"))[0] == 400

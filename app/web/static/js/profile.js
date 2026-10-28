@@ -540,12 +540,13 @@ function render() {
       ${more('notify', 'О чём сообщать', `
       ${Object.entries(NOTIFY_LABELS)
         .filter(([key]) => !MOBILE_ONLY.has(key) || data.api_mode === 'mobile')
+        .filter(([key]) => key !== 'mail' || data.api_mode !== 'myschool')
         .filter(([key]) => key !== 'all_children' || data.students.length > 1)
         .filter(([key]) => key !== 'weekly_review' || data.assistant)
         .map(([key, label]) => toggle(key, label, data.notifications[key]))
         .join('')}
-      <label class="switch-row"><span>Обновления «Сетевого города»<span class="muted small switch-note">новая версия на сервере вашего региона — в Telegram и push</span></span>
-        <input type="checkbox" switch class="switch" id="sgoUpdates" ${data.sgo_updates ? 'checked' : ''}></label>
+      ${data.api_mode === 'myschool' ? '' : `<label class="switch-row"><span>Обновления «Сетевого города»<span class="muted small switch-note">новая версия на сервере вашего региона — в Telegram и push</span></span>
+        <input type="checkbox" switch class="switch" id="sgoUpdates" ${data.sgo_updates ? 'checked' : ''}></label>`}
       <label class="switch-row"><span>Время напоминания</span>
         <select class="field reminder-hour" id="reminderHour">${[15, 16, 17, 18, 19, 20, 21].map((hour) =>
           `<option value="${hour}" ${hour === (data.notifications.reminder_hour ?? 18) ? 'selected' : ''}>${hour}:00</option>`).join('')}</select></label>

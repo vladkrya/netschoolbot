@@ -23,6 +23,7 @@ function pendingInvite() {
 }
 
 const VIEWING_KEY = 'ns-viewing';
+const MYSCHOOL_KEY = 'ns-myschool';
 // Сколько ждать /api/account на старте. Service worker его не кэширует, а
 // мобильный интернет с белыми списками не обрывает запрос, а держит его —
 // без предела заставка «Открываем дневник…» стояла больше минуты, хотя
@@ -32,7 +33,10 @@ const ACCOUNT_WAIT_MS = 4000;
 /** Аккаунт для старта; сервер медлит — прошлый признак просмотра, без входа в СГО. */
 async function accountInfo() {
   const request = api('/api/account').then(({ data }) => {
-    try { localStorage.setItem(VIEWING_KEY, data?.viewing ? '1' : '0'); } catch { /* приватный режим */ }
+    try {
+      localStorage.setItem(VIEWING_KEY, data?.viewing ? '1' : '0');
+      localStorage.setItem(MYSCHOOL_KEY, data?.myschool ? '1' : '0');
+    } catch { /* приватный режим */ }
     return data;
   }, () => null);
   const late = new Promise(resolve => setTimeout(() => resolve(undefined), ACCOUNT_WAIT_MS));
@@ -41,8 +45,12 @@ async function accountInfo() {
   // Сервер ответил позже и просит войти в «Сетевой город» — заново, со входом.
   request.then(late => { if (late?.needs_sgo) location.reload(); });
   let viewing = false;
-  try { viewing = localStorage.getItem(VIEWING_KEY) === '1'; } catch { /* приватный режим */ }
-  return { viewing };
+  let myschool = false;
+  try {
+    viewing = localStorage.getItem(VIEWING_KEY) === '1';
+    myschool = localStorage.getItem(MYSCHOOL_KEY) === '1';
+  } catch { /* приватный режим */ }
+  return { viewing, myschool };
 }
 
 function signedOut() {
@@ -162,6 +170,7 @@ async function boot() {
     const info = await accountInfo();
     // Дневник ученика, пригласившего на просмотр: только чтение, без почты.
     document.documentElement.classList.toggle('view-mode', Boolean(info?.viewing));
+    document.documentElement.classList.toggle('myschool-mode', Boolean(info?.myschool));
     // Зарегистрировались по почте — сначала код из письма, потом всё остальное.
     if (info?.needs_verify) {
       const { showVerify } = await import('./account.js');

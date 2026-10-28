@@ -898,6 +898,12 @@ export function isReadOnly() {
   return document.documentElement.classList.contains('view-mode');
 }
 
+/** Дневник из «Госуслуги Моя школа»: нет почты и объявлений. Класс ставит boot.js
+ * по /api/account, как и view-mode. */
+export function isMyschool() {
+  return document.documentElement.classList.contains('myschool-mode');
+}
+
 /** Попытка что-то изменить при просмотре: подсказка вместо запроса. */
 export function refuseReadOnly() {
   if (!isReadOnly()) return false;

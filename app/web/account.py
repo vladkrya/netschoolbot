@@ -655,6 +655,8 @@ async def account_info(request: web.Request) -> web.Response:
     return web.json_response({"ok": True, "data": {
         # Открыт дневник ученика, пригласившего на просмотр: только чтение.
         "viewing": {"id": owner.telegram_id, "name": owner.label} if owner else None,
+        # «Госуслуги Моя школа»: почты и объявлений там нет, вкладку «Сообщения» заменяют «Игры».
+        "myschool": user.api_mode is ApiMode.MYSCHOOL,
         "email": account["email"] if account else None,
         "suggested_email": await app.accounts.oauth_email(user.telegram_id) if not account else None,
         "number": await app.accounts.number(user.telegram_id),

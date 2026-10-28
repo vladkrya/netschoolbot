@@ -7,7 +7,7 @@
 // вернуть.
 'use strict';
 
-import { $, isReadOnly } from './core.js';
+import { $, isMyschool, isReadOnly } from './core.js';
 import { getPref, setPref } from './prefs.js';
 import { isNewDesign, navIcon } from './appearance.js';
 
@@ -40,24 +40,36 @@ const MERGED_IN_NEW = new Set(['schedule', 'assistant']);
 // Просмотр дневника родным: почта — переписка самого ученика.
 const HIDDEN_READONLY = new Set(['mail', 'assistant']);
 
+// «Госуслуги Моя школа»: почты и объявлений нет — вместо «Сообщений» «Игры».
+// Включить «Сообщения» нельзя: их нет в списке доступных вкладок.
+const HIDDEN_MYSCHOOL = new Set(['mail']);
+
+const hidden = (tab) => (isReadOnly() && HIDDEN_READONLY.has(tab)) || (isMyschool() && HIDDEN_MYSCHOOL.has(tab));
+
+/** «Сообщения» → «Игры» для «Моей школы»; остальное как есть, без повторов. */
+function swapMail(tabs) {
+  if (!isMyschool()) return tabs;
+  return [...new Set(tabs.map((tab) => (tab === 'mail' ? 'games' : tab)))];
+}
+
 export function availableTabs() {
-  return Object.keys(TAB_DEFS).filter((tab) => !MERGED_IN_NEW.has(tab) && !(isReadOnly() && HIDDEN_READONLY.has(tab)));
+  return Object.keys(TAB_DEFS).filter((tab) => !MERGED_IN_NEW.has(tab) && !hidden(tab));
 }
 
 const CLASSIC_TABS = ['day', 'schedule', 'homework', 'totals', 'mail'];
 
 export function defaultTabs() {
-  return ['day', 'homework', 'totals', 'mail', 'settings'];
+  return swapMail(['day', 'homework', 'totals', 'mail', 'settings']);
 }
 
 /** Вкладки панели: сохранённый выбор без неизвестных и недоступных. */
 export function navTabs() {
-  const allowed = (tabs) => (isReadOnly() ? tabs.filter((tab) => !HIDDEN_READONLY.has(tab)) : tabs);
+  const allowed = (tabs) => swapMail(isReadOnly() ? tabs.filter((tab) => !HIDDEN_READONLY.has(tab)) : tabs);
   if (!isNewDesign()) return allowed(CLASSIC_TABS);
   const saved = getPref('tabs');
   if (!Array.isArray(saved)) return allowed(defaultTabs());
   const available = availableTabs();
-  const tabs = [...new Set(saved)].filter((tab) => available.includes(tab)).slice(0, MAX_TABS);
+  const tabs = swapMail([...new Set(saved)]).filter((tab) => available.includes(tab)).slice(0, MAX_TABS);
   if (!tabs.includes('settings')) tabs.push('settings');
   return tabs.length >= 2 ? tabs : allowed(defaultTabs());
 }

@@ -2,7 +2,7 @@
 'use strict';
 
 import {
-  $, api, assistantEnabled, forgetRevalidated, banner, base, demo, isOffline, isReadOnly, keepTouch, loadAttachmentTicket, noConnectionText, school, sgoSaid, state, student, studentFirstName, syncFinished, syncStarted, tg, token,
+  $, api, assistantEnabled, forgetRevalidated, banner, base, demo, isMyschool, isOffline, isReadOnly, keepTouch, loadAttachmentTicket, noConnectionText, school, sgoSaid, state, student, studentFirstName, syncFinished, syncStarted, tg, token,
 } from './core.js';
 import { initDay, loadDay, restoreDay } from './day.js';
 import { initUpdates, reopenScreens, takeResume } from './update.js';
@@ -668,7 +668,7 @@ async function quietly(render) {
  *  забить школьный сервер пачкой запросов. */
 async function prefetch() {
   for (const name of ['day', 'schedule', 'homework', 'totals', 'mail']) {
-    if (name === state.tab || (name === 'mail' && isReadOnly())) continue;
+    if (name === state.tab || (name === 'mail' && (isReadOnly() || isMyschool()))) continue;
     try {
       await TABS[name]();
     } catch {
