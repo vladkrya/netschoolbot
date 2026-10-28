@@ -190,8 +190,7 @@ async def choose_myschool(callback: CallbackQuery, state: FSMContext, app: AppCo
     await state.set_state(Login.username)
     await _step(callback, state,
         "👤 Пришлите логин Госуслуг (телефон, СНИЛС или почту).\n\n"
-        "Логин и пароль нужны только на этот вход и не сохраняются. "
-        "Вход в «Мою школу» держится несколько часов, потом понадобится /login.\n\n"
+        "Логин и пароль нужны только на этот вход и не сохраняются.\n\n"
         + _consent(app),
         reply_markup=_cancel_keyboard(), disable_web_page_preview=True)
 
@@ -422,6 +421,8 @@ async def receive_username(message: Message, state: FSMContext) -> None:
 async def receive_password(
     message: Message, state: FSMContext, user: User, app: AppContext
 ) -> None:
+    if await _take_otp(message):
+        return
     password = (message.text or "").strip()
     # Пароль не должен оставаться в истории чата.
     try:
@@ -531,21 +532,27 @@ def _make_otp_callback(message: Message, telegram_id: int):
 _PENDING_OTP: dict[int, asyncio.Future[str]] = {}
 
 
-@router.message(F.text.regexp(r"^\s*\d{4,8}\s*$"))
-async def receive_otp(message: Message) -> None:
-    """Код подтверждения Госуслуг.
+async def _take_otp(message: Message) -> bool:
+    """Отдать сообщение входу, который ждёт код подтверждения Госуслуг.
 
-    Отдельного состояния FSM здесь нет намеренно: код запрашивается изнутри
-    выполняющегося входа, и состояние в этот момент занято шагом пароля.
+    Состояние FSM в этот момент занято шагом пароля, поэтому код приходит в
+    обработчик пароля: без этой проверки он уходил бы туда как новый пароль.
     """
     future = _PENDING_OTP.get(message.from_user.id if message.from_user else 0)
     if future is None or future.done():
-        return
+        return False
     try:
         await message.delete()
     except Exception as exc:  # noqa: BLE001
         logger.debug("Не удалось удалить код подтверждения: %s", exc)
     future.set_result((message.text or "").strip())
+    return True
+
+
+@router.message(F.text.regexp(r"^\s*\d{4,8}\s*$"))
+async def receive_otp(message: Message) -> None:
+    """Код подтверждения Госуслуг, если состояние не занято шагом пароля."""
+    await _take_otp(message)
 
 
 @router.callback_query(Login.method, F.data == "login:qr")

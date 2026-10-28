@@ -700,3 +700,24 @@ class TestLoginSteps:
         assert deleted == [(7, 101)]
         await auth._drop_step(message, login_state)
         assert deleted == [(7, 101), (7, 102)]
+
+
+class TestOtpDuringPasswordStep:
+    async def test_code_goes_to_waiting_login_not_password_handler(self, login_state):
+        await login_state.set_state(auth.Login.password)
+        future = asyncio.get_running_loop().create_future()
+        auth._PENDING_OTP[5] = future
+        try:
+            message = FakeMessage("123456")
+            message.from_user = SimpleNamespace(id=5)
+            await auth.receive_password(message, login_state, None, None)
+            assert future.result() == "123456" and message.deleted
+            assert await login_state.get_state() == auth.Login.password.state
+        finally:
+            auth._PENDING_OTP.pop(5, None)
+
+    async def test_myschool_credentials_error_names_gosuslugi(self):
+        from myschoolpy import exceptions as ms
+        from app.netschool.errors import login_message, wrap
+        text = login_message(wrap(ms.ESIAInvalidCredentials("Ошибка ЕСИА: Неверный пароль")))
+        assert "Госуслуг" in text and "Сетевого" not in text

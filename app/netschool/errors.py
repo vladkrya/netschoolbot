@@ -176,10 +176,24 @@ def _classify_myschool(exc: BaseException) -> Reason | None:
     return None
 
 
+def _myschool_exceptions():
+    try:
+        from myschoolpy import exceptions as ms
+    except ImportError:
+        return None
+    return ms
+
+
 def _special_message(exc: BaseException, reason: Reason) -> str | None:
     """Текст для человека, когда общий текст причины неточен."""
     from netschoolpy import exceptions as ns
 
+    ms = _myschool_exceptions()
+    if ms is not None:
+        if isinstance(exc, ms.InvalidCredentials):
+            return "Госуслуги не приняли логин или пароль. Войти заново: /login"
+        if isinstance(exc, ms.AccountLocked):
+            return "Госуслуги временно не пускают: много попыток входа или нужна капча. Попробуем позже."
     if isinstance(exc, ns.ESIAInvalidCredentials):
         return "Госуслуги не приняли логин или пароль — возможно, их сменили. Войти заново: /login"
     if isinstance(exc, ns.SchoolNotFound):
