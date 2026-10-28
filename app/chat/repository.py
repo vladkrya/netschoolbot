@@ -57,6 +57,25 @@ class ChatRepository:
     async def delete_profile(self, telegram_id: int) -> None:
         await self._db.execute("DELETE FROM chat_profiles WHERE telegram_id = ?", (telegram_id,))
 
+    async def erase_user(self, telegram_id: int) -> None:
+        """Стереть всё, что человек оставил в чатах (удаление данных, 152-ФЗ).
+
+        Внешних ключей у таблиц чата нет, CASCADE сюда не доходит. Сообщения
+        удаляются целиком, вместе с реакциями, жалобами и прежними текстами
+        правок, а не помечаются удалёнными: иначе текст остаётся в базе.
+        """
+        mine = "SELECT id FROM chat_messages WHERE author_id = ?"
+        async with self._db.transaction() as db:
+            for table in ("chat_reactions", "chat_poll_votes", "chat_reports", "chat_edits"):
+                await db.execute(f"DELETE FROM {table} WHERE message_id IN ({mine})", (telegram_id,))
+            await db.execute("DELETE FROM chat_reactions WHERE telegram_id = ?", (telegram_id,))
+            await db.execute("DELETE FROM chat_poll_votes WHERE telegram_id = ?", (telegram_id,))
+            await db.execute("DELETE FROM chat_reports WHERE reporter_id = ?", (telegram_id,))
+            await db.execute("DELETE FROM chat_messages WHERE author_id = ?", (telegram_id,))
+            await db.execute("DELETE FROM chat_mod_log WHERE actor_id = ?", (telegram_id,))
+            for table in ("chat_reads", "chat_moderators", "chat_nicks", "chat_profiles"):
+                await db.execute(f"DELETE FROM {table} WHERE telegram_id = ?", (telegram_id,))
+
     async def set_nick(self, telegram_id: int, nick: str, key: str) -> bool:
         """Поставить ник. False — такой уже занят."""
         try:
