@@ -42,7 +42,7 @@ COMMANDS = [
     BotCommand(command="timezone", description="Часовой пояс"),
     BotCommand(command="child", description="Переключить ребёнка"),
     BotCommand(command="changeapi", description="Сменить API: веб или мобильное"),
-    BotCommand(command="login", description="Войти в «Сетевой город»"),
+    BotCommand(command="login", description="Войти: «Сетевой город» или «Моя школа»"),
     BotCommand(command="logout", description="Выйти"),
     BotCommand(command="resetpin", description="Сбросить PIN дневника"),
     BotCommand(command="delete_data", description="Удалить мои данные"),

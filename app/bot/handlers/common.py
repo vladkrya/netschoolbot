@@ -95,6 +95,6 @@ def require_school(user: User) -> str | None:
     if user.school.configured:
         return None
     return (
-        "Вы не вошли в «Сетевой город».\n\n"
+        "Вы ещё не вошли: нужен «Сетевой город» или «Госуслуги Моя школа».\n\n"
         "Войти — /login"
     )

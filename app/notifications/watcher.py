@@ -210,13 +210,15 @@ class UserWatcher:
             return float(MAX_BACKOFF)
 
         # Почта не связана с лентой оценок и проверяется даже при её неизменности.
-        try:
-            messages = await self._diary.fetch_mail(user, limit=50)
-            await self._state.save_mail_check(user.telegram_id, messages, notify=user.notifications.mail)
-        except asyncio.CancelledError:
-            raise
-        except Exception as exc:
-            logger.warning("Проверка почты %s не завершилась: %s", user.telegram_id, exc)
+        # В «Моей школе» почты нет: спрашивать её значит каждый раз получать отказ.
+        if user.api_mode is not ApiMode.MYSCHOOL:
+            try:
+                messages = await self._diary.fetch_mail(user, limit=50)
+                await self._state.save_mail_check(user.telegram_id, messages, notify=user.notifications.mail)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.warning("Проверка почты %s не завершилась: %s", user.telegram_id, exc)
 
         try:
             await self._check(user)

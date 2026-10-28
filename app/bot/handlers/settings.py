@@ -376,11 +376,12 @@ async def child_command(message: Message, user: User) -> None:
 
 
 @router.callback_query(F.data == "settings:logout")
-async def ask_logout(callback: CallbackQuery) -> None:
+async def ask_logout(callback: CallbackQuery, user: User) -> None:
     await callback.answer()
+    where = "«Моей школы»" if user.api_mode is ApiMode.MYSCHOOL else "«Сетевого города»"
     await reply(
         callback,
-        "🚪 Выйти из «Сетевого города»? Настройки уведомлений сохранятся, "
+        f"🚪 Выйти из {where}? Настройки уведомлений сохранятся, "
         "но школу и вход придётся выбрать заново. Отметки о сделанных заданиях "
         "и история оценок вернутся, если войти в тот же дневник. "
         "Удалить всё: /delete_data.",
@@ -433,6 +434,8 @@ async def cancel(callback: CallbackQuery) -> None:
         await callback.message.delete()
 
 
+MYSCHOOL_API_NOTE = "Для «Моей школы» выбирать API не нужно: данные идут из Госуслуг."
+
 API_HELP = (
     "🔌 <b>Откуда бот берёт данные</b>\n\n"
     "Сейчас: <b>{current}</b>.\n\n"
@@ -456,6 +459,9 @@ async def change_api(message: Message, user: User, app: AppContext) -> None:
     if hint := require_school(user):
         await reply(message, hint)
         return
+    if user.api_mode is ApiMode.MYSCHOOL:
+        await message.answer(MYSCHOOL_API_NOTE)
+        return
     await message.answer(
         _api_text(user, app.diary.mobile_available),
         parse_mode="HTML",
@@ -465,6 +471,9 @@ async def change_api(message: Message, user: User, app: AppContext) -> None:
 
 @router.callback_query(F.data == "settings:api")
 async def open_api(callback: CallbackQuery, user: User, app: AppContext) -> None:
+    if user.api_mode is ApiMode.MYSCHOOL:
+        await callback.answer(MYSCHOOL_API_NOTE, show_alert=True)
+        return
     await callback.answer()
     if callback.message:
         await callback.message.edit_text(
@@ -476,6 +485,9 @@ async def open_api(callback: CallbackQuery, user: User, app: AppContext) -> None
 
 @router.callback_query(F.data.startswith("api:"))
 async def set_api(callback: CallbackQuery, user: User, app: AppContext) -> None:
+    if user.api_mode is ApiMode.MYSCHOOL:
+        await callback.answer(MYSCHOOL_API_NOTE, show_alert=True)
+        return
     mode = ApiMode.parse(callback.data.split(":", 1)[1])
     if mode is user.effective_api_mode and mode is user.api_mode:
         await callback.answer("Уже выбрано")

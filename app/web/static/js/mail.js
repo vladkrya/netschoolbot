@@ -48,8 +48,27 @@ function folderUrl(page, force = false) {
   return `/api/mail${query ? `?${query}` : ''}`;
 }
 
+/** «Госуслуги Моя школа»: почты и объявлений школы там нет, спрашивать сервер нечего. */
+async function isMyschool() {
+  try {
+    if (!state.profile) state.profile = (await api('/api/profile')).data;
+    return state.profile.api_mode === 'myschool';
+  } catch {
+    return false;
+  }
+}
+
 export async function loadMail(force = false) {
   const container = $('mailContent');
+  if (await isMyschool()) {
+    $('composeBtn').hidden = true;
+    $('mailTools').hidden = true;
+    container.innerHTML = `<div class="card error-card">
+      <p><b>Сообщения в «Моей школе» пока недоступны</b></p>
+      <p class="muted small">Госуслуги не отдают школьную почту и объявления через это приложение. Оценки, расписание и задания работают как обычно.</p>
+    </div>`;
+    return;
+  }
   // Новое письмо, поиск и фильтры — только в разделе писем.
   $('composeBtn').hidden = mode !== 'mail';
   $('mailTools').hidden = mode !== 'mail';

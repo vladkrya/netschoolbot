@@ -19,7 +19,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeybo
 from ..accounts import has_telegram
 from ..db.repositories import UserRepository
 from ..domain import formatting
-from ..domain.models import User
+from ..domain.models import ApiMode, User
 from ..domain.records import AbsenceRecord, HomeworkRecord, MarkEvent
 from ..netschool.errors import NetSchoolError, Reason
 
@@ -190,7 +190,8 @@ class TelegramNotifier:
         text = f"⚠️ {formatting.esc(error.user_message.removesuffix(' Войти заново: /login'))}"
         if error.reason is Reason.SERVER_UNAVAILABLE:
             # Watcher шлёт это, только если сервер молчит дольше часа.
-            text = ("⚠️ Сервер «Сетевого города» не отвечает уже больше часа. Бот сам "
+            where = "«Моей школы»" if user.api_mode is ApiMode.MYSCHOOL else "«Сетевого города»"
+            text = (f"⚠️ Сервер {where} не отвечает уже больше часа. Бот сам "
                     "подключится, когда он заработает, и пришлёт пропущенное — ничего делать не нужно.")
         if markup is None:
             await self._send(user, text)

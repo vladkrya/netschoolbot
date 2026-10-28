@@ -17,6 +17,7 @@ def settings_menu(user: User) -> InlineKeyboardMarkup:
             text=f"{'✅' if enabled else '🔕'} {label}", callback_data=f"toggle:{action}"
         )
 
+    myschool = user.api_mode is ApiMode.MYSCHOOL
     rows = [
         [toggle("Уведомления", user.enabled, "enabled")],
         # Выключив, можно получать только push из приложения на телефоне.
@@ -24,7 +25,8 @@ def settings_menu(user: User) -> InlineKeyboardMarkup:
         [toggle("Изменения оценок", user.notifications.changes, "changes")],
         [toggle("Удаления оценок", user.notifications.deletes, "deletes")],
         [toggle("Домашние задания", user.notifications.homework, "homework")],
-        [toggle("Школьная почта", user.notifications.mail, "mail")],
+        # В «Моей школе» почты нет.
+        *([] if myschool else [[toggle("Школьная почта", user.notifications.mail, "mail")]]),
         [toggle("Сводка по понедельникам", user.notifications.weekly_summary, "weekly")],
         [toggle("Вечером — сводка на завтра", user.notifications.evening_summary, "evening")],
         [toggle("Замены и отмены уроков", user.notifications.schedule, "schedule")],
@@ -80,10 +82,12 @@ def settings_menu(user: User) -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text="👶 Переключить ребёнка", callback_data="settings:child")]
         )
     rows.append([InlineKeyboardButton(text="👪 Родные", callback_data="family:open")])
-    rows.append(
-        [InlineKeyboardButton(text=f"🔌 API: {user.effective_api_mode.title}", callback_data="settings:api")]
-    )
-    rows.append([InlineKeyboardButton(text="🚪 Выйти из школы", callback_data="settings:logout")])
+    if not myschool:
+        rows.append(
+            [InlineKeyboardButton(text=f"🔌 API: {user.effective_api_mode.title}", callback_data="settings:api")]
+        )
+    rows.append([InlineKeyboardButton(
+        text="🚪 Выйти из «Моей школы»" if myschool else "🚪 Выйти из школы", callback_data="settings:logout")])
     rows.append([InlineKeyboardButton(text="🗑 Удалить мои данные", callback_data="settings:delete")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 

@@ -31,7 +31,7 @@ async def test_login_hint_only_in_private_chat(chat_type, payload, users):
         if chat_type == "private":
             bot.session.make_request.assert_awaited_once()
             request = bot.session.make_request.call_args.args[1]
-            assert "Вы не вошли" in request.text
+            assert "ещё не вошли" in request.text
             assert "/login" in request.text
         else:
             bot.session.make_request.assert_not_awaited()

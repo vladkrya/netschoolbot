@@ -188,12 +188,12 @@ class TestMenu:
         message = FakeMessage()
         await menu.show_menu(message, user, app)
         assert "login" in message.texts
-        assert "Вы не вошли" in message.texts
+        assert "ещё не вошли" in message.texts
 
     async def test_unrecognized_message_before_login(self, users):
         message = FakeMessage("привет")
         await menu.unrecognized_message(message, await users.get_or_create(1))
-        assert "Вы не вошли" in message.texts
+        assert "ещё не вошли" in message.texts
         assert "/login" in message.texts
 
     async def test_unrecognized_message_after_login(self):
@@ -728,3 +728,25 @@ class TestMyschoolMessages:
         from app.netschool.errors import wrap
         assert "Моей школы" in wrap(ValueError("x"), myschool=True).user_message
         assert "Сетевого города" in wrap(ValueError("x")).user_message
+
+
+class TestMyschoolTexts:
+    def test_settings_hide_mail_and_api_for_myschool(self):
+        from app.bot import keyboards
+        from app.domain.models import ApiMode
+        user = make_user()
+        def texts(u):
+            return [b.text for row in keyboards.settings_menu(u).inline_keyboard for b in row]
+        assert any("почта" in t for t in texts(user))
+        ms = replace(user, api_mode=ApiMode.MYSCHOOL)
+        shown = texts(ms)
+        assert not any("почта" in t for t in shown) and not any("API" in t for t in shown)
+        assert any("Моей школы" in t for t in shown)
+
+    async def test_changeapi_is_refused_for_myschool(self):
+        from app.bot.handlers import settings as settings_handlers
+        from app.domain.models import ApiMode
+        user = replace(make_user(), api_mode=ApiMode.MYSCHOOL)
+        message = FakeMessage()
+        await settings_handlers.change_api(message, user, None)
+        assert "Моей школы" in message.texts
