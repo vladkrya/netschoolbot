@@ -721,3 +721,10 @@ class TestOtpDuringPasswordStep:
         from app.netschool.errors import login_message, wrap
         text = login_message(wrap(ms.ESIAInvalidCredentials("Ошибка ЕСИА: Неверный пароль")))
         assert "Госуслуг" in text and "Сетевого" not in text
+
+
+class TestMyschoolMessages:
+    def test_unexpected_error_names_myschool(self):
+        from app.netschool.errors import wrap
+        assert "Моей школы" in wrap(ValueError("x"), myschool=True).user_message
+        assert "Сетевого города" in wrap(ValueError("x")).user_message

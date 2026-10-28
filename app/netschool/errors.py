@@ -95,6 +95,16 @@ _USER_MESSAGES = {
 }
 
 
+_MYSCHOOL_MESSAGES = {
+    Reason.AUTH: "Вход в «Мою школу» истёк, а повторить его без вас нельзя. Войти заново: /login",
+    Reason.SERVER_UNAVAILABLE: (
+        "Сервер «Моей школы» недоступен. Попробуем подключиться позже — ничего делать не нужно."
+    ),
+    Reason.RATE_LIMIT: "Госуслуги ограничили частоту запросов. Попробуйте позже.",
+    Reason.UNKNOWN: "Не удалось получить данные из «Моей школы». Попробуйте позже.",
+}
+
+
 def classify(exc: BaseException) -> Reason:
     """Определить причину ошибки по типу исключения и его тексту."""
     reason = _classify_by_type(exc)
@@ -217,12 +227,13 @@ def login_message(error: NetSchoolError) -> str:
     return error.user_message.removesuffix(" Войти заново: /login")
 
 
-def wrap(exc: Exception, *, context: str = "") -> NetSchoolError:
+def wrap(exc: Exception, *, context: str = "", myschool: bool = False) -> NetSchoolError:
     """Превратить любое исключение в NetSchoolError с внятным текстом."""
     if isinstance(exc, NetSchoolError):
         return exc
     reason = classify(exc)
-    message = _special_message(exc, reason) or _USER_MESSAGES[reason]
+    default = (_MYSCHOOL_MESSAGES if myschool else _USER_MESSAGES).get(reason) or _USER_MESSAGES[reason]
+    message = _special_message(exc, reason) or default
     if reason is Reason.MFA and str(exc):
         # У MFA-ошибок текст библиотеки уже написан для человека.
         message = str(exc)

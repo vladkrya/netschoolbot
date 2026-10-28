@@ -416,7 +416,8 @@ class SessionPool:
                 user.school.name,
             )
         except Exception as exc:
-            raise wrap(exc, context=f"вход {user.telegram_id}") from exc
+            raise wrap(exc, context=f"вход {user.telegram_id}",
+                       myschool=user.api_mode is ApiMode.MYSCHOOL) from exc
 
     async def _check(self, client: Any) -> bool | None:
         """Принимает ли сервер сессию: True — да, False — нет, None — сервер

@@ -772,7 +772,8 @@ class DiaryService:
             except NetSchoolError as exc:
                 last = exc
             except Exception as exc:
-                last = wrap(exc, context=f"пользователь {user.telegram_id}")
+                last = wrap(exc, context=f"пользователь {user.telegram_id}",
+                            myschool=user.api_mode is ApiMode.MYSCHOOL)
 
             if last.reason is Reason.CREDENTIALS:
                 # Школа не приняла пароль. Повтор не поможет, а лишняя
