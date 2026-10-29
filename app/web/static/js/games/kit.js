@@ -140,6 +140,13 @@ function noise(duration, { vol = 0.15, freq = 2400, delay = 0, q = 0.8 } = {}) {
   src.start(at);
 }
 
+/** Колокольчик: основной тон с двумя быстро гаснущими обертонами. */
+function bell(freq, duration, vol, delay = 0) {
+  tone(freq, duration, { vol, delay });
+  tone(freq * 2.01, duration * 0.55, { vol: vol * 0.35, delay });
+  tone(freq * 2.76, duration * 0.3, { vol: vol * 0.15, delay });
+}
+
 const arp = (notes, step, opts) => notes.forEach((f, i) => tone(f, opts.duration || 0.16, { ...opts, delay: i * step }));
 
 const SOUNDS = {
@@ -167,11 +174,22 @@ const SOUNDS = {
   spin: () => { for (let i = 0; i < 12; i += 1) noise(0.02, { vol: 0.18, freq: 3800, q: 3, delay: i * (0.03 + i * 0.006) }); },
   chip: () => { noise(0.03, { vol: 0.35, freq: 5000, q: 4 }); noise(0.03, { vol: 0.25, freq: 4200, q: 4, delay: 0.04 }); },
   level: () => arp([392, 523, 659, 784], 0.07, { type: 'square', vol: 0.05 }),
+  // Block Blast: короткий «пик» при постановке, колокольчики при сгорании.
+  bbPick: () => tone(520, 0.05, { type: 'triangle', vol: 0.06, slide: 120 }),
+  bbPlace: () => { tone(360, 0.1, { vol: 0.24, slide: 190 }); noise(0.03, { vol: 0.16, freq: 1600 }); },
+  bbBack: () => tone(320, 0.1, { vol: 0.12, slide: -140 }),
+  bbClear: ({ lines = 1, combo = 1 } = {}) => {
+    const up = 2 ** ((2 * (Math.min(combo, 8) - 1)) / 12);
+    tone(990 * up, 0.14, { type: 'triangle', vol: 0.08 });
+    [1, 1.26, 1.5, 2, 2.52].slice(0, Math.min(lines, 5)).forEach((ratio, i) => bell(392 * up * ratio, 0.9, 0.13, i * 0.075));
+  },
+  bbClean: () => [262, 392, 523, 659, 784, 1047].forEach((f, i) => bell(f, 1, 0.14, i * 0.09)),
+  bbOver: () => [392, 330, 294, 262].forEach((f, i) => bell(f, 0.7, 0.12, i * 0.22)),
 };
 
-export function sfx(name) {
+export function sfx(name, arg) {
   if (muted) return;
-  try { SOUNDS[name]?.(); } catch { /* без звука */ }
+  try { SOUNDS[name]?.(arg); } catch { /* без звука */ }
 }
 
 export const isMuted = () => muted;

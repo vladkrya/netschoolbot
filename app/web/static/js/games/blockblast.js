@@ -5,19 +5,21 @@
 'use strict';
 
 import {
-  ask, best, bump, fitCanvas, frames, load, overlay, particles, rand, save, saveBest, sfx, shade, shuffle, tap,
+  ask, best, fitCanvas, frames, load, overlay, rand, save, saveBest, sfx, shade, shuffle, tap,
 } from './kit.js';
 
 const N = 8;
 // Темы: фон экрана, поле и цвета фигур. После каждого чистого поля игра
 // переходит к следующей теме (по кругу), как в оригинале. У фигуры один цвет.
 const THEMES = [
-  { bg: ['#4d49aa', '#4147a3'], frame: '#3a3984', cell: '#2b2a68', colors: ['#f2c3c8', '#5a78d4', '#a062e0', '#b9c0f2', '#2f9bf0'] },
-  { bg: ['#4a5a98', '#3a4a86'], frame: '#33406f', cell: '#232846', colors: ['#2f5be0', '#e0362f', '#2fb348', '#f08a24', '#f2c516'] },
-  { bg: ['#7d7774', '#6f6a68'], frame: '#4b4746', cell: '#2a292b', colors: ['#3a55d6', '#c43a2c', '#e0893c', '#8a5a3a', '#e0b84a'] },
-  { bg: ['#b8381e', '#a22f1a'], frame: '#7b2a1a', cell: '#4a211c', colors: ['#f5c11a', '#f08a24', '#ffd84a', '#e8651f'] },
-  { bg: ['#9686d8', '#8070c8'], frame: '#7766bd', cell: '#c3aef7', colors: ['#c92fc0', '#e04ad8', '#a31fb0'] },
+  { bg: ['#4748a5', '#403c9c'], frame: '#332d7c', cell: '#2c2756', line: '#1c1545', colors: ['#eab8c2', '#5367c2', '#8f5fd6', '#b8c2f4', '#3a9af4'] },
+  { bg: ['#35448c', '#314686'], frame: '#35478a', cell: '#1e254a', line: '#1b2245', colors: ['#2f50e0', '#e0382f', '#2fae38', '#e1a52d', '#ecc12a'] },
+  { bg: ['#706968', '#5e5454'], frame: '#3f3a39', cell: '#221f23', line: '#171418', colors: ['#2f4fd8', '#b8392c', '#e08a3c', '#73412d', '#e0b84a'] },
+  { bg: ['#ae301b', '#8c2718'], frame: '#802113', cell: '#442019', line: '#2d130f', colors: ['#f5c11a', '#f08a24', '#ffd84a', '#e8651f'] },
+  { bg: ['#9277cd', '#947cd1'], frame: '#7e66b7', cell: '#bea6f7', line: '#876fc0', colors: ['#c33ac3', '#e15fe1', '#a523a5'] },
 ];
+// Фон между чистым полем и следующим ходом.
+const BONUS_BG = ['#5b42bc', '#2c399f'];
 const PALETTES = THEMES.map((theme) => theme.colors);
 
 // Фигуры в виде строк: «#» — блок. Поворотов нет, как в оригинале, поэтому
@@ -167,6 +169,12 @@ export function start(root, ctx) {
     void flashEl.offsetWidth;
     flashEl.classList.add('on');
   };
+  const pulseDiamond = () => {
+    const el = root.querySelector('[data-diamond]');
+    el.classList.remove('pulse');
+    void el.offsetWidth;
+    el.classList.add('pulse');
+  };
   /** Надпись поверх поля с разметкой (в kit.popText только текст). */
   const pop = (html, cls, x = '50%', y = '40%') => {
     const el = document.createElement('div');
@@ -179,17 +187,18 @@ export function start(root, ctx) {
   };
   const stage = root.querySelector('.game-stage');
   const canvas = root.querySelector('[data-board]');
-  const width = Math.floor(Math.min(root.clientWidth || 360, 460, (innerHeight - 250) * 0.72));
-  const cell = Math.floor(width / N);
+  // Доска — 88% ширины экрана, вокруг неё рамка и поля, слоты лотка — по третям доски.
+  const cell = Math.floor(Math.min((root.clientWidth || 360) * 0.884, 460, (innerHeight - 250) * 0.72) / N);
   const bw = cell * N;
-  const slot = Math.floor(width / 3);
-  // Фигуры в лотке заметно мельче поля, как в оригинале.
-  const trayScale = Math.min(cell * 0.5, (slot - 14) / 5);
+  const pad = 8;
+  const width = bw + pad * 2;
+  const bx = pad;
+  const oy = pad;
+  const slot = bw / 3;
+  const trayScale = Math.min(cell * 0.45, (slot - 14) / 5);
   const trayTop = bw + cell * 0.8;
-  const height = Math.ceil(bw + cell * 4.4);
+  const height = Math.ceil(bw + cell * 4.4 + oy);
   const g = fitCanvas(canvas, width, height);
-  const bx = Math.floor((width - bw) / 2);
-  const fx = particles();
 
   let board;
   let pieces;
@@ -199,14 +208,21 @@ export function start(root, ctx) {
   let over = false;
   // Фигура, летящая обратно в лоток после неудачного броска.
   let returning = null;
+  // Фигура в руке плавно догоняет палец (hold), клетки только что поставленной фигуры «подпрыгивают» (pops),
+  // сгорающие линии (burning) и осколки (bits).
+  let hold = null;
+  let pops = [];
+  let burning = [];
+  let bits = [];
+  const LIFT = 3;
   let drag = null;
   // Сгоревшие клетки, которые ещё гаснут на экране.
   let fading = [];
-  let flash = 0;
   // Счёт на экране догоняет настоящий плавно.
   let shown = 0;
   // После чистого поля вокруг доски светится рамка — до следующего хода.
   let cleanGlow = false;
+  let bonusBg = false;
 
   const showBest = () => {
     root.querySelector('[data-best]').textContent = String(Math.max(best('blockblast'), score) || '—');
@@ -219,6 +235,7 @@ export function start(root, ctx) {
     board = emptyBoard();
     theme = 0;
     cleanGlow = false;
+    bonusBg = false;
     shown = 0;
     paint();
     pieces = dealPieces(board, PALETTES[0]);
@@ -233,11 +250,15 @@ export function start(root, ctx) {
 
   const screen = root.closest('.game-screen');
   const look = () => THEMES[theme % THEMES.length];
-  const paint = () => { showBest(); screen?.style.setProperty('--g-bg', `linear-gradient(180deg, ${look().bg[0]}, ${look().bg[1]})`); };
+  const paint = () => {
+    showBest();
+    const [top, bottom] = bonusBg ? BONUS_BG : look().bg;
+    screen?.style.setProperty('--g-bg', `linear-gradient(180deg, ${top}, ${bottom})`);
+  };
 
   const piece = (i) => (pieces[i] ? SHAPES[pieces[i].shape] : null);
   // Центр слота в лотке.
-  const slotCenter = (i) => [slot * i + slot / 2 + (width - slot * 3) / 2, bw + cell * 2.4];
+  const slotCenter = (i) => [bx + slot * (i + 0.5), bw + cell * 2.4];
 
   /** Клетка поля под перетаскиваемой фигурой или null, если фигура не встаёт. */
   function target() {
@@ -245,7 +266,7 @@ export function start(root, ctx) {
     const cells = piece(drag.i);
     const [w, h] = size(cells);
     const gx = Math.round((drag.x - (w * cell) / 2 - bx) / cell);
-    const gy = Math.round((drag.y - h * cell - cell * 1.4) / cell);
+    const gy = Math.round((drag.y - h * cell - cell * LIFT) / cell);
     return fits(board, cells, gx, gy) ? { gx, gy } : null;
   }
 
@@ -255,6 +276,11 @@ export function start(root, ctx) {
     cells.forEach(([x, y], k) => { board[gy + y][gx + x] = colors[k]; });
     pieces[i] = null;
     cleanGlow = false;
+    if (bonusBg) {
+      bonusBg = false;
+      paint();
+    }
+    pops = cells.map(([x, y]) => ({ r: gy + y, c: gx + x, t: 0 }));
     const { rows, cols } = fullLines(board);
     const lines = rows.length + cols.length;
     const gain = moveScore(cells.length, lines, streak);
@@ -265,27 +291,31 @@ export function start(root, ctx) {
       burn.forEach((k) => {
         const r = Math.floor(k / N);
         const c = k % N;
-        fading.push({ r, c, color: board[r][c], t: 0 });
-        fx.burst(bx + c * cell + cell / 2, r * cell + cell / 2, board[r][c], 4, 3);
+        fading.push({ r, c, color: board[r][c], t: 0, spawned: false });
         board[r][c] = null;
       });
+      rows.forEach((idx) => burning.push({ row: true, idx, t: 0 }));
+      cols.forEach((idx) => burning.push({ row: false, idx, t: 0 }));
       streak += 1;
-      flash = 1;
-      sfx(lines > 1 ? 'win' : 'good');
+      sfx('bbClear', { lines, combo: streak });
       tap('medium');
+      flashEl.style.setProperty('--f', String(Math.min(1, 0.35 + lines * 0.2)));
       bumpFlash();
+      pulseDiamond();
       pop(String(gain), 'bb-total', '50%', '48%');
       if (WORDS[Math.min(lines, 5)]) pop(WORDS[Math.min(lines, 5)], 'bb-word', '50%', '30%');
       if (streak >= 2) pop(`<span>Combo</span> <b>${streak}</b>`, 'bb-combo', '50%', '58%');
     } else {
       streak = 0;
-      sfx('tap');
+      sfx('bbPlace');
       tap('light');
     }
     if (board.every((row) => row.every((v) => !v))) {
       // Чистое поле: бонус и новая палитра, в том числе у фигур в лотке.
       theme = (theme + 1) % THEMES.length;
       cleanGlow = true;
+      bonusBg = true;
+      sfx('bbClean');
       paint();
       pieces = pieces.map((p) => {
         if (!p) return p;
@@ -303,6 +333,7 @@ export function start(root, ctx) {
 
   function finish() {
     over = true;
+    sfx('bbOver');
     const record = saveBest('blockblast', score);
     persist();
     showBest();
@@ -318,18 +349,20 @@ export function start(root, ctx) {
 
   const point = (event) => {
     const rect = canvas.getBoundingClientRect();
-    return [event.clientX - rect.left, event.clientY - rect.top];
+    return [event.clientX - rect.left, event.clientY - rect.top - oy];
   };
   canvas.addEventListener('pointerdown', (event) => {
     if (over || drag) return;
     const [x, y] = point(event);
     if (y < bw + cell * 0.5) return;
-    const i = Math.min(2, Math.max(0, Math.floor((x - (width - slot * 3) / 2) / slot)));
+    const i = Math.min(2, Math.max(0, Math.floor((x - bx) / slot)));
     if (!pieces[i]) return;
     canvas.setPointerCapture(event.pointerId);
+    const [sx, sy] = slotCenter(i);
     drag = { i, x, y, id: event.pointerId };
+    hold = { x: sx, y: sy, s: trayScale };
     tap('light');
-    sfx('tap');
+    sfx('bbPick');
   });
   canvas.addEventListener('pointermove', (event) => {
     if (!drag || event.pointerId !== drag.id) return;
@@ -340,7 +373,10 @@ export function start(root, ctx) {
     const spot = event.type === 'pointerup' ? target() : null;
     const { i } = drag;
     if (spot) place(i, spot.gx, spot.gy);
-    else returning = { i, x: drag.x, y: drag.y, t: 0 };
+    else {
+      returning = { i, x: hold.x, y: hold.y, s: hold.s, t: 0 };
+      sfx('bbBack');
+    }
     drag = null;
   };
   canvas.addEventListener('pointerup', release);
@@ -364,79 +400,129 @@ export function start(root, ctx) {
     cells.forEach(([x, y], k) => block(g, cx - (w * s) / 2 + x * s, cy - (h * s) / 2 + y * s, s, pieces[i].colors[k], alpha));
   }
 
+  const soft = (t) => 1 - (1 - Math.min(1, t)) ** 3;
+  const outline = (x, y, w, h, alpha) => {
+    g.save();
+    g.globalAlpha = alpha;
+    g.strokeStyle = '#ffd36a';
+    g.shadowColor = '#ffa51f';
+    g.shadowBlur = cell * 0.55;
+    g.lineWidth = 2;
+    g.strokeRect(x + 1, y + 1, w - 2, h - 2);
+    g.restore();
+  };
+
   frames(ctx, (dt) => {
     g.clearRect(0, 0, width, height);
+    g.save();
+    g.translate(0, oy);
     if (shown !== score) {
-      shown = shown < score ? Math.min(score, shown + Math.max(1, Math.ceil((score - shown) * dt * 5))) : score;
+      shown = shown < score ? Math.min(score, shown + Math.max(1, Math.ceil((score - shown) * dt * 4))) : score;
       root.querySelector('[data-score]').textContent = String(shown);
-      root.querySelector('[data-diamond]').style.rotate = `${shown * 3}deg`;
+      root.querySelector('[data-diamond]').style.rotate = `${45 + shown * 2}deg`;
       showBest();
     }
     // Доска.
     g.fillStyle = look().frame;
     g.beginPath();
-    g.roundRect(bx - 5, -5, bw + 10, bw + 10, 8);
+    g.roundRect(bx - 6, -6, bw + 12, bw + 12, 9);
     g.fill();
+    g.fillStyle = look().line;
+    g.fillRect(bx, 0, bw, bw);
+    g.fillStyle = look().cell;
     for (let r = 0; r < N; r += 1) {
-      for (let c = 0; c < N; c += 1) {
-        g.fillStyle = look().cell;
-        g.fillRect(bx + c * cell + 0.5, r * cell + 0.5, cell - 1, cell - 1);
-      }
+      for (let c = 0; c < N; c += 1) g.fillRect(bx + c * cell + 0.5, r * cell + 0.5, cell - 1, cell - 1);
     }
-    // Что сгорит, если отпустить сейчас.
+    // Что сгорит, если отпустить сейчас: клетки светлеют, по краям линии — золотая кайма.
     const spot = target();
     let preview = null;
     if (spot) {
-      const cells = piece(drag.i);
       const copy = board.map((row) => [...row]);
-      cells.forEach(([x, y]) => { copy[spot.gy + y][spot.gx + x] = '#fff'; });
+      piece(drag.i).forEach(([x, y]) => { copy[spot.gy + y][spot.gx + x] = '#fff'; });
       preview = fullLines(copy);
-      // Линия, которая сгорит, светится золотом.
-      g.save();
-      g.fillStyle = 'rgba(255, 196, 70, .22)';
-      g.strokeStyle = '#ffd36a';
-      g.shadowColor = '#ffb13a';
-      g.shadowBlur = cell * 0.6;
-      g.lineWidth = 2;
-      preview.rows.forEach((r) => { g.fillRect(bx, r * cell, bw, cell); g.strokeRect(bx + 1, r * cell + 1, bw - 2, cell - 2); });
-      preview.cols.forEach((c) => { g.fillRect(bx + c * cell, 0, cell, bw); g.strokeRect(bx + c * cell + 1, 1, cell - 2, bw - 2); });
-      g.restore();
     }
     const glowing = (r, c) => preview && (preview.rows.includes(r) || preview.cols.includes(c));
+    pops = pops.filter((p) => { p.t += dt / 0.22; return p.t < 1; });
     for (let r = 0; r < N; r += 1) {
       for (let c = 0; c < N; c += 1) {
-        if (board[r][c]) block(g, bx + c * cell, r * cell, cell, glowing(r, c) ? shade(board[r][c], 0.35) : board[r][c]);
+        if (!board[r][c]) continue;
+        const pop = pops.find((p) => p.r === r && p.c === c);
+        const s = pop ? cell * (1 + 0.16 * Math.sin(Math.PI * pop.t)) : cell;
+        const o = (cell - s) / 2;
+        block(g, bx + c * cell + o, r * cell + o, s, glowing(r, c) ? shade(board[r][c], 0.4) : board[r][c]);
       }
     }
-    if (spot) {
-      piece(drag.i).forEach(([x, y], k) => block(g, bx + (spot.gx + x) * cell, (spot.gy + y) * cell, cell, pieces[drag.i].colors[k], 0.45));
+    if (preview) {
+      preview.rows.forEach((r) => outline(bx, r * cell, bw, cell, 1));
+      preview.cols.forEach((c) => outline(bx + c * cell, 0, cell, bw, 1));
     }
-    // Сгорающие клетки уменьшаются и гаснут.
+    // Сгорание линии: золотая кайма → синий неоновый луч.
+    burning = burning.filter((b) => {
+      b.t += dt / 0.8;
+      if (b.t >= 1) return false;
+      const x = b.row ? bx : bx + b.idx * cell;
+      const y = b.row ? b.idx * cell : 0;
+      const w = b.row ? bw : cell;
+      const h = b.row ? cell : bw;
+      if (b.t < 0.3) outline(x, y, w, h, 1 - b.t / 0.3 * 0.5);
+      if (b.t > 0.12 && b.t < 0.75) {
+        const k = Math.sin(Math.PI * (b.t - 0.12) / 0.63);
+        const th = cell * 0.16 * (1 + k);
+        g.save();
+        g.globalAlpha = k;
+        g.shadowColor = '#7da8ff';
+        g.shadowBlur = cell * 0.5;
+        g.fillStyle = '#cfe0ff';
+        if (b.row) g.fillRect(x + cell * 0.2, y + cell / 2 - th / 2, w - cell * 0.4, th);
+        else g.fillRect(x + cell / 2 - th / 2, y + cell * 0.2, th, h - cell * 0.4);
+        g.restore();
+      }
+      return true;
+    });
+    // Сгоревшие клетки: тают, потом «5» и рассыпаются квадратиками.
     fading = fading.filter((f) => {
-      f.t += dt * 1.9;
+      f.t += dt / 0.9;
       if (f.t >= 1) return false;
-      const s = cell * (1 - Math.max(0, f.t - 0.35) * 0.9);
-      g.globalAlpha = Math.min(1, 1.6 - f.t * 1.4);
-      block(g, bx + f.c * cell + (cell - s) / 2, f.r * cell + (cell - s) / 2, s, shade(f.color, 0.3));
-      // Золотая «5» на сгорающей клетке.
-      g.fillStyle = '#ffd24a';
-      g.shadowColor = '#ff7a1a';
-      g.shadowBlur = 8;
-      g.font = `900 ${Math.round(cell * 0.6)}px ui-rounded, system-ui, sans-serif`;
-      g.textAlign = 'center';
-      g.textBaseline = 'middle';
-      g.fillText('5', bx + f.c * cell + cell / 2, f.r * cell + cell / 2 + 1);
-      g.shadowBlur = 0;
+      const cx = bx + f.c * cell + cell / 2;
+      const cy = f.r * cell + cell / 2;
+      if (f.t < 0.22) {
+        g.globalAlpha = 1 - f.t / 0.22;
+        block(g, cx - cell / 2, cy - cell / 2, cell, shade(f.color, 0.35));
+        g.globalAlpha = 1;
+      }
+      if (f.t > 0.18) {
+        if (!f.spawned) {
+          f.spawned = true;
+          for (let k = 0; k < 4; k += 1) {
+            bits.push({ x: cx + (Math.random() - 0.5) * cell * 0.8, y: cy + (Math.random() - 0.5) * cell * 0.8, vy: 10 + Math.random() * 30, size: cell * (0.1 + Math.random() * 0.1), life: 1, color: shade(f.color, 0.3) });
+          }
+        }
+        const k = Math.min(1, (f.t - 0.18) / 0.15) * Math.min(1, (1 - f.t) / 0.25);
+        g.save();
+        g.globalAlpha = k;
+        g.fillStyle = 'rgba(255, 255, 255, .22)';
+        g.fillRect(cx - cell / 2 + 1, cy - cell / 2 + 1, cell - 2, cell - 2);
+        g.fillStyle = '#ffd96a';
+        g.shadowColor = '#ff7a1a';
+        g.shadowBlur = 9;
+        g.font = `${Math.round(cell * 0.64)}px "BB Lilita", ui-rounded, system-ui, sans-serif`;
+        g.textAlign = 'center';
+        g.textBaseline = 'middle';
+        g.fillText('5', cx, cy + 1);
+        g.restore();
+      }
+      return true;
+    });
+    bits = bits.filter((b) => {
+      b.life -= dt / 0.7;
+      if (b.life <= 0) return false;
+      b.y += b.vy * dt;
+      g.globalAlpha = b.life * 0.8;
+      g.fillStyle = b.color;
+      g.fillRect(b.x - b.size / 2, b.y - b.size / 2, b.size, b.size);
       g.globalAlpha = 1;
       return true;
     });
-    if (flash > 0) {
-      g.fillStyle = `rgba(255,255,255,${flash * 0.25})`;
-      g.beginPath();
-      g.roundRect(bx, 0, bw, bw, 10);
-      g.fill();
-      flash = Math.max(0, flash - dt * 4);
-    }
     if (cleanGlow) {
       g.fillStyle = 'rgba(140, 90, 255, .22)';
       g.fillRect(bx, 0, bw, bw);
@@ -452,7 +538,6 @@ export function start(root, ctx) {
       g.strokeRect(bx - 3, -3, bw + 6, bw + 6);
       g.restore();
     }
-    fx.draw(g, dt);
     // Лоток. На месте взятой фигуры остаётся бирюзовая рамка.
     if (drag) {
       const [hx, hy] = slotCenter(drag.i);
@@ -463,24 +548,28 @@ export function start(root, ctx) {
     for (let i = 0; i < 3; i += 1) {
       if (!pieces[i] || (drag && drag.i === i) || (returning && returning.i === i)) continue;
       const [cx, cy] = slotCenter(i);
-      const playable = canPlaceAnywhere(board, piece(i));
-      drawPiece(i, cx, cy, trayScale, playable ? 1 : 0.35);
+      drawPiece(i, cx, cy, trayScale, canPlaceAnywhere(board, piece(i)) ? 1 : 0.35);
     }
     if (returning) {
-      returning.t += dt * 6;
-      const k = Math.min(1, returning.t);
-      const ease = 1 - (1 - k) ** 3;
-      const [h] = [size(piece(returning.i))[1]];
+      returning.t += dt / 0.22;
+      const k = soft(returning.t);
       const [tx, ty] = slotCenter(returning.i);
-      const fromY = returning.y - h * cell * 0.5 - cell * 1.4;
-      drawPiece(returning.i, returning.x + (tx - returning.x) * ease, fromY + (ty - fromY) * ease, cell + (trayScale - cell) * ease);
-      if (k >= 1) returning = null;
+      drawPiece(returning.i, returning.x + (tx - returning.x) * k, returning.y + (ty - returning.y) * k, returning.s + (trayScale - returning.s) * k);
+      if (returning.t >= 1) returning = null;
     }
-    // Фигура в руке: выше пальца, чтобы её было видно.
-    if (drag) {
-      const [, h] = size(piece(drag.i));
-      drawPiece(drag.i, drag.x, drag.y - h * cell * 0.5 - cell * 1.4, cell);
+    // Фигура в руке: растёт из лотка, висит над пальцем и липнет к клеткам.
+    if (drag && hold) {
+      const [w, h] = size(piece(drag.i));
+      const goal = spot
+        ? { x: bx + (spot.gx + w / 2) * cell, y: (spot.gy + h / 2) * cell }
+        : { x: drag.x, y: drag.y - cell * LIFT - (h * cell) / 2 };
+      const follow = 1 - Math.exp(-dt * 20);
+      hold.x += (goal.x - hold.x) * follow;
+      hold.y += (goal.y - hold.y) * follow;
+      hold.s += (cell - hold.s) * (1 - Math.exp(-dt * 14));
+      drawPiece(drag.i, hold.x, hold.y, hold.s);
     }
+    g.restore();
   });
 
   showBest();
