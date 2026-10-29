@@ -531,6 +531,8 @@ html.in-game .game-screen { padding-bottom: max(12px, env(safe-area-inset-bottom
 .bb-stage { align-items: flex-start; }
 .bb-top { position: relative; text-align: center; padding-top: 2px; }
 .bb-best { position: absolute; left: 2px; top: 0; display: flex; align-items: center; gap: 5px; font-size: 16px; font-weight: 700; opacity: .8; }
+.bb-word { color: #ffb347; font-weight: 800; font-size: 26px; text-shadow: 0 2px 0 rgba(0, 0, 0, .3); }
+.bb-combo { color: #fff; font-weight: 900; font-style: italic; font-size: 30px; text-shadow: 0 3px 0 #b8741a, 0 0 12px rgba(255, 190, 40, .6); }
 .bb-score { font-size: 54px; font-weight: 800; line-height: 1.1; letter-spacing: -.01em; font-variant-numeric: tabular-nums; text-shadow: 0 3px 0 rgba(0, 0, 0, .15); }
 
 /* ─────────────────────────── Тетрис ─────────────────────────── */

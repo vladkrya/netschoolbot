@@ -9,14 +9,16 @@ import {
 } from './kit.js';
 
 const N = 8;
-// Палитры: первая снята с оригинала, при каждом чистом поле игра переходит
-// к следующей. У фигуры один цвет на все блоки.
-const PALETTES = [
-  ['#f2c3c8', '#5a78d4', '#a062e0', '#b9c0f2', '#2f9bf0'],
-  ['#ff7a7a', '#ffa94d', '#ffd43b', '#69db7c', '#38d9a9'],
-  ['#4dabf7', '#9775fa', '#f783ac', '#63e6be', '#ffe066'],
-  ['#e599f7', '#74c0fc', '#8ce99a', '#ffc078', '#ff8787'],
+// Темы: фон экрана, поле и цвета фигур. После каждого чистого поля игра
+// переходит к следующей теме (по кругу), как в оригинале. У фигуры один цвет.
+const THEMES = [
+  { bg: '#4a49a8', frame: '#3a3984', cell: '#2b2a68', colors: ['#f2c3c8', '#5a78d4', '#a062e0', '#b9c0f2', '#2f9bf0'] },
+  { bg: '#42528f', frame: '#33406f', cell: '#232846', colors: ['#2f5be0', '#e0362f', '#2fb348', '#f08a24', '#f2c516'] },
+  { bg: '#78726f', frame: '#4b4746', cell: '#2a292b', colors: ['#3a55d6', '#c43a2c', '#e0893c', '#8a5a3a', '#e0b84a'] },
+  { bg: '#b2361d', frame: '#7b2a1a', cell: '#4a211c', colors: ['#f5c11a', '#f08a24', '#ffd84a', '#e8651f'] },
+  { bg: '#8e7fd2', frame: '#7766bd', cell: '#c3aef7', colors: ['#c92fc0', '#e04ad8', '#a31fb0'] },
 ];
+const PALETTES = THEMES.map((theme) => theme.colors);
 
 // Фигуры в виде строк: «#» — блок. Поворотов нет, как в оригинале, поэтому
 // горизонтальные и вертикальные палочки, углы и «зигзаги» перечислены отдельно.
@@ -147,7 +149,7 @@ function block(g, x, y, s, color, alpha = 1) {
   g.globalAlpha = 1;
 }
 
-const WORDS = ['', '', 'Отлично!', 'Супер!', 'Невероятно!', 'Потрясающе!'];
+const WORDS = ['', '', 'Great!', 'Excellent!', 'Unbelievable!', 'Unbelievable!'];
 
 export function start(root, ctx) {
   root.innerHTML = `<div class="game blockblast">
@@ -160,9 +162,10 @@ export function start(root, ctx) {
   const cell = Math.floor(width / N);
   const bw = cell * N;
   const slot = Math.floor(width / 3);
-  const trayScale = Math.min(cell * 0.62, (slot - 14) / 5);
-  const trayTop = bw + 18;
-  const height = Math.ceil(trayTop + trayScale * 5 + 10);
+  // Фигуры в лотке заметно мельче поля, как в оригинале.
+  const trayScale = Math.min(cell * 0.5, (slot - 14) / 5);
+  const trayTop = bw + cell * 0.8;
+  const height = Math.ceil(bw + cell * 4.4);
   const g = fitCanvas(canvas, width, height);
   const bx = Math.floor((width - bw) / 2);
   const fx = particles();
@@ -179,6 +182,10 @@ export function start(root, ctx) {
   // Сгоревшие клетки, которые ещё гаснут на экране.
   let fading = [];
   let flash = 0;
+  // Счёт на экране догоняет настоящий плавно.
+  let shown = 0;
+  // После чистого поля вокруг доски светится рамка — до следующего хода.
+  let cleanGlow = false;
 
   const showBest = () => { root.querySelector('[data-best]').textContent = String(best('blockblast') || '—'); };
   const persist = () => save('blockblast', over ? null : { board, pieces, score, streak, theme });
@@ -187,6 +194,9 @@ export function start(root, ctx) {
     stage.querySelector('.game-over')?.remove();
     board = emptyBoard();
     theme = 0;
+    cleanGlow = false;
+    shown = 0;
+    paint();
     pieces = dealPieces(board, PALETTES[0]);
     score = 0;
     streak = 0;
@@ -197,9 +207,13 @@ export function start(root, ctx) {
     persist();
   }
 
+  const screen = root.closest('.game-screen');
+  const look = () => THEMES[theme % THEMES.length];
+  const paint = () => screen?.style.setProperty('--g-bg', look().bg);
+
   const piece = (i) => (pieces[i] ? SHAPES[pieces[i].shape] : null);
   // Центр слота в лотке.
-  const slotCenter = (i) => [slot * i + slot / 2 + (width - slot * 3) / 2, trayTop + trayScale * 2.5];
+  const slotCenter = (i) => [slot * i + slot / 2 + (width - slot * 3) / 2, bw + cell * 2.4];
 
   /** Клетка поля под перетаскиваемой фигурой или null, если фигура не встаёт. */
   function target() {
@@ -216,6 +230,7 @@ export function start(root, ctx) {
     const { colors } = pieces[i];
     cells.forEach(([x, y], k) => { board[gy + y][gx + x] = colors[k]; });
     pieces[i] = null;
+    cleanGlow = false;
     const { rows, cols } = fullLines(board);
     const lines = rows.length + cols.length;
     const gain = moveScore(cells.length, lines, streak);
@@ -234,7 +249,9 @@ export function start(root, ctx) {
       flash = 1;
       sfx(lines > 1 ? 'win' : 'good');
       tap('medium');
-      popText(stage, `+${gain}${WORDS[Math.min(lines, 5)] ? `<br>${WORDS[Math.min(lines, 5)]}` : ''}`, { x: '50%', y: '30%' });
+      popText(stage, `+${gain}`, { x: '50%', y: '38%' });
+      if (WORDS[Math.min(lines, 5)]) popText(stage, WORDS[Math.min(lines, 5)], { x: '50%', y: '24%', cls: 'bb-word' });
+      if (streak >= 2) popText(stage, `Combo ${streak}`, { x: '50%', y: '56%', cls: 'bb-combo' });
     } else {
       streak = 0;
       sfx('tap');
@@ -242,19 +259,18 @@ export function start(root, ctx) {
     }
     if (board.every((row) => row.every((v) => !v))) {
       // Чистое поле: бонус и новая палитра, в том числе у фигур в лотке.
-      theme = (theme + 1) % PALETTES.length;
+      theme = (theme + 1) % THEMES.length;
+      cleanGlow = true;
+      paint();
       pieces = pieces.map((p) => {
         if (!p) return p;
         const color = PALETTES[theme][rand(PALETTES[theme].length)];
         return { ...p, colors: p.colors.map(() => color) };
       });
       score += 200;
-      popText(stage, 'Чистое поле! +200', { x: '50%', y: '45%' });
+      popText(stage, '+200', { x: '50%', y: '45%' });
     }
     score += gain;
-    const scoreEl = root.querySelector('[data-score]');
-    scoreEl.textContent = String(score);
-    bump(scoreEl, score);
     if (pieces.every((p) => !p)) pieces = dealPieces(board, PALETTES[theme]);
     if (!pieces.some((p, k) => p && canPlaceAnywhere(board, piece(k)))) finish();
     else persist();
@@ -282,7 +298,7 @@ export function start(root, ctx) {
   canvas.addEventListener('pointerdown', (event) => {
     if (over || drag) return;
     const [x, y] = point(event);
-    if (y < trayTop - 12) return;
+    if (y < bw + cell * 0.5) return;
     const i = Math.min(2, Math.max(0, Math.floor((x - (width - slot * 3) / 2) / slot)));
     if (!pieces[i]) return;
     canvas.setPointerCapture(event.pointerId);
@@ -325,14 +341,18 @@ export function start(root, ctx) {
 
   frames(ctx, (dt) => {
     g.clearRect(0, 0, width, height);
+    if (shown !== score) {
+      shown = shown < score ? Math.min(score, shown + Math.max(1, Math.ceil((score - shown) * dt * 5))) : score;
+      root.querySelector('[data-score]').textContent = String(shown);
+    }
     // Доска.
-    g.fillStyle = '#3a3984';
+    g.fillStyle = look().frame;
     g.beginPath();
     g.roundRect(bx - 5, -5, bw + 10, bw + 10, 8);
     g.fill();
     for (let r = 0; r < N; r += 1) {
       for (let c = 0; c < N; c += 1) {
-        g.fillStyle = '#2b2a68';
+        g.fillStyle = look().cell;
         g.fillRect(bx + c * cell + 0.5, r * cell + 0.5, cell - 1, cell - 1);
       }
     }
@@ -380,8 +400,23 @@ export function start(root, ctx) {
       g.fill();
       flash = Math.max(0, flash - dt * 4);
     }
+    if (cleanGlow) {
+      g.save();
+      g.strokeStyle = '#5ee6ff';
+      g.shadowColor = '#5ee6ff';
+      g.shadowBlur = 14;
+      g.lineWidth = 3;
+      g.strokeRect(bx - 4, -4, bw + 8, bw + 8);
+      g.restore();
+    }
     fx.draw(g, dt);
-    // Лоток.
+    // Лоток. На месте взятой фигуры остаётся бирюзовая рамка.
+    if (drag) {
+      const [hx, hy] = slotCenter(drag.i);
+      g.strokeStyle = '#5ee6ff';
+      g.lineWidth = 2;
+      g.strokeRect(hx - trayScale * 0.9, hy - trayScale * 0.9, trayScale * 1.8, trayScale * 1.8);
+    }
     for (let i = 0; i < 3; i += 1) {
       if (!pieces[i] || (drag && drag.i === i) || (returning && returning.i === i)) continue;
       const [cx, cy] = slotCenter(i);
@@ -410,7 +445,9 @@ export function start(root, ctx) {
   if (saved?.board?.length === N && saved.pieces?.length === 3 && saved.pieces.every((p) => !p || p.colors)) {
     ({ board, pieces, score, streak } = saved);
     theme = saved.theme || 0;
+    shown = score;
     root.querySelector('[data-score]').textContent = String(score);
+    paint();
   } else {
     newGame();
   }
