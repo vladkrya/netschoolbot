@@ -328,3 +328,27 @@ async def test_changing_or_disabling_pin_needs_current_pin(client, token, app_co
     assert (await client.post(f'{BASE}/api/lock/disable', headers=headers, json={'pin': '1234'})).status == 403
     assert (await client.post(f'{BASE}/api/lock/disable', headers=headers, json={'pin': '5678'})).status == 200
     assert await app_context.db.fetch_one('SELECT 1 FROM app_locks WHERE telegram_id=1') is None
+
+
+def _key(pin):
+    import hashlib
+    return hashlib.sha256(f'sgoshka-pin-v1:{pin}'.encode()).hexdigest()
+
+
+async def test_pin_works_with_hash_instead_of_digits(client, token):
+    headers = {'X-Netschool-Token': token}
+    response = await client.post(f'{BASE}/api/lock/pin', headers=headers, json={'pin_key': _key('0042')})
+    assert response.status == 200
+    # Прежний клиент с открытыми цифрами и новый с хешем входят в один и тот же PIN.
+    assert (await client.post(f'{BASE}/api/lock/unlock', headers=headers, json={'pin': '0042'})).status == 200
+    unlocked = await client.post(f'{BASE}/api/lock/unlock', headers=headers, json={'pin_key': _key('0042')})
+    assert unlocked.status == 200
+    headers = {**headers, 'X-Netschool-Unlock': (await unlocked.json())['data']['unlock']}
+    assert (await client.post(f'{BASE}/api/lock/unlock', headers=headers, json={'pin_key': _key('0043')})).status == 403
+    for bad in ('x' * 64, 5, ['a']):
+        assert (await client.post(f'{BASE}/api/lock/unlock', headers=headers, json={'pin_key': bad})).status == 403
+    changed = await client.post(f'{BASE}/api/lock/pin', headers=headers,
+                                json={'pin_key': _key('1111'), 'current_key': _key('0042')})
+    assert changed.status == 200
+    headers['X-Netschool-Unlock'] = (await changed.json())['data']['unlock']
+    assert (await client.post(f'{BASE}/api/lock/disable', headers=headers, json={'pin_key': _key('1111')})).status == 200

@@ -26,6 +26,22 @@ routes = web.RouteTableDef()
 PUBLIC = {'status', 'unlock', 'authenticate/options', 'authenticate/verify', 'biometric/unlock', 'password-reset'}
 
 
+# Клиент шлёт не цифры PIN, а их SHA-256 (pin_key): в запросе, логах и инструментах
+# разработчика PIN не виден. Защиты это не добавляет — вариантов всего 10 000, —
+# поэтому настоящая защита по-прежнему в паузах и блокировке после ошибок.
+# Старые клиенты шлют `pin` открытым текстом: сервер принимает оба вида, а
+# хранится по-прежнему scrypt от самих цифр.
+PIN_KEYS = {hashlib.sha256(f'sgoshka-pin-v1:{i:04d}'.encode()).hexdigest(): f'{i:04d}' for i in range(10000)}
+
+
+def secret(data, field='pin', fallback=''):
+    """PIN из `<field>_key` (хеш) или из `<field>` открытым текстом."""
+    if f'{field}_key' in data:
+        key = data[f'{field}_key']
+        return PIN_KEYS.get(key, '') if isinstance(key, str) else ''
+    return data.get(field, fallback)
+
+
 def digest(token):
     return hashlib.sha256(token.encode()).hexdigest()
 
@@ -166,7 +182,7 @@ async def _current(conn, uid):
 @routes.post('/api/lock/password')
 async def password(request):
     data = await request.json()
-    value = data.get('pin', data.get('password', ''))
+    value = secret(data, 'pin', data.get('password', ''))
     if not isinstance(value, str) or not re.fullmatch(r'[0-9]{4}', value):
         return json_error('PIN должен состоять ровно из 4 цифр')
     salt = secrets.token_bytes(16)
@@ -177,7 +193,7 @@ async def password(request):
         # не даёт чужому задать свой PIN. Забытый PIN сбрасывают /resetpin
         # или паролем аккаунта — после сброса защиты старый не нужен.
         row = await _current(conn, uid)
-        if row and (problem := await _check(conn, row, data.get('current', ''), uid)):
+        if row and (problem := await _check(conn, row, secret(data, 'current'), uid)):
             return problem
         await conn.execute('INSERT INTO app_locks (telegram_id, salt, password_hash, is_pin) VALUES (?, ?, ?, 1) '
                            'ON CONFLICT(telegram_id) DO UPDATE SET salt=excluded.salt, password_hash=excluded.password_hash, failures=0, retry_at=0, is_pin=1',
@@ -192,7 +208,7 @@ async def unlock(request):
     if not await enabled(db, uid):
         return json_error('Блокировка не включена')
     data = await request.json()
-    value = data.get('pin', data.get('password', ''))
+    value = secret(data, 'pin', data.get('password', ''))
     # Serialize attempts, including hashing: concurrent requests cannot bypass backoff.
     async with db.transaction() as conn:
         row = await _current(conn, uid)
@@ -210,7 +226,7 @@ async def disable(request):
     async with db.transaction() as conn:
         # Выключить защиту — тоже только с текущим PIN.
         row = await _current(conn, uid)
-        if row and (problem := await _check(conn, row, data.get('pin', ''), uid)):
+        if row and (problem := await _check(conn, row, secret(data, 'pin'), uid)):
             return problem
         for table in ('app_locks', 'app_unlocks', 'app_passkeys', 'app_biometrics', 'app_lock_challenges'):
             await conn.execute(f'DELETE FROM {table} WHERE telegram_id = ?', (uid,))

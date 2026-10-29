@@ -123,7 +123,8 @@ export function start(root, ctx) {
         <button class="tool" data-hint><span>💡</span>Подсказка<em data-hints>${HINTS}</em></button>
       </div>
       <div class="sudoku-pad">${[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => `<button data-num="${n}">${n}<small></small></button>`).join('')}</div>
-      <button class="game-btn ghost small" data-new>Новая игра</button></div>`;
+      <button class="game-btn ghost small" data-new>Новая игра</button>
+      <div class="sudoku-keys">Стрелки — выбрать клетку · 1–9 — цифра · Backspace — стереть · N — заметки · Z — отмена · H — подсказка</div></div>`;
   const grid = root.querySelector('[data-grid]');
   const cells = [...grid.children];
   const stage = root.querySelector('.game-stage');
@@ -326,9 +327,31 @@ export function start(root, ctx) {
       newGame();
     }
   });
+  const undo = () => root.querySelector('[data-undo]').click();
   document.addEventListener('keydown', (event) => {
-    if (/^Digit[1-9]$/.test(event.code)) put(Number(event.code.slice(5)));
-    else if (event.code === 'Backspace' || event.code === 'Delete') put(0);
+    if (event.ctrlKey || event.metaKey || event.altKey || event.target.closest?.('input, textarea')) return;
+    const digit = /^(?:Digit|Numpad)([1-9])$/.exec(event.code);
+    const arrow = { ArrowLeft: [0, -1], ArrowRight: [0, 1], ArrowUp: [-1, 0], ArrowDown: [1, 0] }[event.key];
+    if (digit) {
+      event.preventDefault();
+      if (selected < 0 || game?.puzzle[selected]) shake(grid);
+      else put(Number(digit[1]));
+    } else if (arrow) {
+      event.preventDefault();
+      if (selected < 0) selected = 40;
+      else selected = Math.min(8, Math.max(0, Math.floor(selected / 9) + arrow[0])) * 9 + Math.min(8, Math.max(0, (selected % 9) + arrow[1]));
+      select();
+      render();
+    } else if (event.code === 'Backspace' || event.code === 'Delete' || event.code === 'Digit0' || event.code === 'Numpad0') {
+      event.preventDefault();
+      put(0);
+    } else if (event.code === 'KeyN') root.querySelector('[data-notes]').click();
+    else if (event.code === 'KeyZ') undo();
+    else if (event.code === 'KeyH') root.querySelector('[data-hint]').click();
+    else if (event.code === 'Escape' && selected >= 0) {
+      selected = -1;
+      render();
+    }
   }, { signal: ctx.signal });
 
   ticker = setInterval(() => {

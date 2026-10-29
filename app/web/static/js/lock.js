@@ -196,7 +196,25 @@ onLocked(() => {
 const serverDown = () => Object.assign(new Error('Нет связи с сервером'), { reason: 'server' });
 const within = (promise, ms) => ms
   ? Promise.race([promise, new Promise((_, reject) => setTimeout(() => reject(serverDown()), ms))]) : promise;
-const post = (path, body = {}) => api(`/api/lock/${path}`, { method: 'POST', body: JSON.stringify(body) });
+// В запросе уходит SHA-256 от PIN (pin_key / current_key), а не сами цифры:
+// их не видно ни в сети, ни в инструментах разработчика. Без crypto.subtle
+// (старый браузер, не https) шлём как раньше — сервер принимает оба вида.
+async function pinKey(pin) {
+  const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`sgoshka-pin-v1:${pin}`));
+  return [...new Uint8Array(bytes)].map(b => b.toString(16).padStart(2, '0')).join('');
+}
+async function hidePins(body) {
+  if (!window.crypto?.subtle) return body;
+  const hidden = { ...body };
+  for (const field of ['pin', 'current']) {
+    if (typeof hidden[field] === 'string' && /^[0-9]{4}$/.test(hidden[field])) {
+      hidden[`${field}_key`] = await pinKey(hidden[field]);
+      delete hidden[field];
+    }
+  }
+  return hidden;
+}
+const post = async (path, body = {}) => api(`/api/lock/${path}`, { method: 'POST', body: JSON.stringify(await hidePins(body)) });
 
 function panel(title) {
   const root = document.createElement('div');

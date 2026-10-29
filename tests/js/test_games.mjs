@@ -28,6 +28,7 @@ const solitaire = await import(new URL('solitaire.js', games));
 const slots = await import(new URL('slots.js', games));
 const poker = await import(new URL('poker.js', games));
 const casino = await import(new URL('casino.js', games));
+const blockblast = await import(new URL('blockblast.js', games));
 
 const c = (r, s) => ({ r, s });
 
@@ -280,4 +281,30 @@ test('рулетка: выплаты и отдача 36/37', () => {
 test('paper.io: поворот выбирает короткую сторону', () => {
   assert.ok(Math.abs(paperio.angleDiff(0.1, -0.1) - 0.2) < 1e-9);
   assert.ok(Math.abs(paperio.angleDiff(-3, 3) - (2 * Math.PI - 6)) < 1e-9, 'через ±π, а не через ноль');
+});
+
+test('block blast: полные строки и столбцы находятся, очки растут с серией', () => {
+  const board = blockblast.emptyBoard();
+  for (let c = 0; c < 8; c += 1) board[2][c] = 'x';
+  for (let r = 0; r < 8; r += 1) board[r][5] = 'x';
+  assert.deepEqual(blockblast.fullLines(board), { rows: [2], cols: [5] });
+  assert.ok(blockblast.moveScore(4, 2, 1) > blockblast.moveScore(4, 2, 0));
+  assert.equal(blockblast.moveScore(4, 0, 3), 4);
+});
+
+test('block blast: фигура не выходит за поле и не ложится на занятое', () => {
+  const board = blockblast.emptyBoard();
+  const line = blockblast.SHAPES.find((cells) => cells.length === 5 && cells.every(([, y]) => y === 0));
+  assert.ok(blockblast.fits(board, line, 3, 0));
+  assert.ok(!blockblast.fits(board, line, 4, 0));
+  board[0][3] = 'x';
+  assert.ok(!blockblast.fits(board, line, 3, 0));
+});
+
+test('block blast: из новых фигур всегда помещается хотя бы одна', () => {
+  const board = blockblast.emptyBoard();
+  for (let r = 0; r < 8; r += 1) for (let c = 0; c < 8; c += 1) board[r][c] = (r * 8 + c) % 7 === 0 ? null : 'x';
+  for (let i = 0; i < 50; i += 1) {
+    assert.ok(blockblast.dealPieces(board).some((p) => blockblast.canPlaceAnywhere(board, blockblast.SHAPES[p.shape])));
+  }
 });

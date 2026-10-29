@@ -74,6 +74,7 @@
 .game-tile[data-game="snake"] { --art: linear-gradient(135deg, #9be15d, #3f9b2e); }
 .game-tile[data-game="tetris"] { --art: linear-gradient(135deg, #7b5cff, #2a1a8c); }
 .game-tile[data-game="paperio"] { --art: linear-gradient(135deg, #6db3ff, #2f6fe0); }
+.game-tile[data-game="blockblast"] { --art: linear-gradient(135deg, #3d7bff, #1a2a8c); }
 .game-tile[data-game="sudoku"] { --art: linear-gradient(135deg, #5d7bff, #23338f); }
 .game-tile[data-game="blackjack"] { --art: linear-gradient(135deg, #2b2b2b, #0b0b0b); }
 .game-tile[data-game="slots"] { --art: linear-gradient(135deg, #c03dff, #4b0a7a); }
@@ -103,6 +104,7 @@ html.in-game .game-screen { padding-bottom: max(12px, env(safe-area-inset-bottom
 }
 .game-screen[data-game="snake"] { --g-bg: linear-gradient(180deg, #4a8a2e, #24501a); }
 .game-screen[data-game="tetris"] { --g-bg: radial-gradient(ellipse at 50% 0%, #3b2a8f, #150f3d 60%, #0b0822); }
+.game-screen[data-game="blockblast"] { --g-bg: linear-gradient(180deg, #2a3a9a, #121a52); }
 .game-screen[data-game="sudoku"] { --g-bg: linear-gradient(180deg, #3550c8, #1b2a78); }
 .game-screen[data-game="paperio"] { --g-bg: linear-gradient(180deg, #5aa6ff, #2f6fe0); }
 .game-screen[data-game="casino"] { --g-bg: radial-gradient(ellipse at 50% 15%, #1f8a52, #0c4a2a 65%, #06261a); }
@@ -500,6 +502,33 @@ html.in-game .game-screen { padding-bottom: max(12px, env(safe-area-inset-bottom
 .sudoku-pad button:active { transform: translateY(3px); box-shadow: 0 1px 0 #b9c4ea; }
 .sudoku-pad button.used { opacity: .25; }
 .sudoku-tools { display: flex; justify-content: space-around; }
+
+.sudoku-keys { display: none; }
+/* Компьютер: поле слева во всю высоту окна, управление — колонкой справа. */
+@media (min-width: 900px) and (min-height: 480px) {
+  .game.sudoku {
+    max-width: 960px;
+    display: grid;
+    grid-template-columns: auto minmax(300px, 340px);
+    grid-auto-rows: min-content;
+    align-content: center;
+    justify-content: center;
+    gap: 14px 36px;
+  }
+  .game.sudoku > .game-stage { grid-column: 1; grid-row: 1 / 8; align-self: center; flex: none; }
+  .game.sudoku > :not(.game-stage) { grid-column: 2; }
+  .game.sudoku .sudoku-grid { width: min(calc(100vh - 130px), 640px); }
+  .game.sudoku .sudoku-pad { grid-template-columns: repeat(3, 1fr); }
+  .game.sudoku .sudoku-pad button { height: 56px; }
+  .game.sudoku .sudoku-pad button small { display: none; }
+  .game.sudoku .sk { font-size: clamp(20px, 3.4vh, 30px); }
+  .game.sudoku .sk-notes i { font-size: clamp(9px, 1.4vh, 12px); }
+  .sudoku-keys { display: block; font-size: 12px; line-height: 1.5; opacity: .65; text-align: center; }
+}
+
+/* ─────────────────────────── Block Blast ─────────────────────────── */
+.bb-canvas { touch-action: none; cursor: grab; box-shadow: none; background: none; }
+.bb-stage { align-items: flex-start; }
 
 /* ─────────────────────────── Тетрис ─────────────────────────── */
 

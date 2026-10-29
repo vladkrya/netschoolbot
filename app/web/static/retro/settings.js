@@ -9,6 +9,21 @@ let unlockedAt = 0;
 const get = key => { try { return localStorage.getItem(key); } catch { return null; } };
 const put = (key, value) => { try { localStorage.setItem(key, value); } catch { /* приватный режим */ } };
 
+// Как в js/lock.js: в запросе уходит SHA-256 от PIN, а не сами цифры.
+async function hidePins(body) {
+  if (!window.crypto?.subtle || !body) return body;
+  const hidden = { ...body };
+  for (const field of ['pin', 'current']) {
+    if (typeof hidden[field] === 'string' && /^[0-9]{4}$/.test(hidden[field])) {
+      const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`sgoshka-pin-v1:${hidden[field]}`));
+      hidden[`${field}_key`] = [...new Uint8Array(bytes)].map(b => b.toString(16).padStart(2, '0')).join('');
+      delete hidden[field];
+    }
+  }
+  return hidden;
+}
+const lockRequest = async (path, body) => bridge.request(path, await hidePins(body));
+
 function appearance() {
   root.classList.toggle('retro-large', get('ns-retro-text') === 'large');
   root.classList.toggle('retro-no-motion', get('ns-motion') === 'off');
@@ -49,7 +64,7 @@ async function unlock(force = false) {
       const button = event.currentTarget.querySelector('button');
       button.disabled = true;
       try {
-        const result = await bridge.request('lock/unlock', protection.pin ? { pin: field.value } : { password: field.value });
+        const result = await lockRequest('lock/unlock', protection.pin ? { pin: field.value } : { password: field.value });
         field.value = '';
         bridge.setUnlock(result.unlock);
         reveal();
@@ -124,7 +139,7 @@ $('retroPinSettings').onsubmit = async event => {
   const button = form.querySelector('button');
   button.disabled = true;
   try {
-    const result = await request('lock/pin', { pin: form.elements.pin.value, current: form.elements.current.value });
+    const result = await lockRequest('lock/pin', { pin: form.elements.pin.value, current: form.elements.current.value });
     bridge.setUnlock(result.unlock);
     form.reset();
     await refreshProtection();
@@ -141,7 +156,7 @@ $('retroRequireTelegram').onchange = async event => {
 $('retroDisablePin').onclick = async () => {
   const current = $('retroPinSettings').elements.current;
   if (!/^[0-9]{4}$/.test(current.value)) { $('retroSettingsError').textContent = 'Введите текущий PIN, чтобы выключить защиту.'; current.focus(); return; }
-  try { await request('lock/disable', { pin: current.value }); bridge.setUnlock(''); $('retroPinSettings').reset(); await refreshProtection(); }
+  try { await lockRequest('lock/disable', { pin: current.value }); bridge.setUnlock(''); $('retroPinSettings').reset(); await refreshProtection(); }
   catch (error) { $('retroSettingsError').textContent = error.message; }
 };
 async function relock() {
