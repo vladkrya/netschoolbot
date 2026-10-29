@@ -78,6 +78,11 @@ async def test_audience_by_login_and_place(app_context, users):
     await miniapp.record_visit(1, "new", "web")  # был и в Telegram, и в браузере
     await miniapp.record_visit(2, "new", "telegram")
     await miniapp.record_visit(web, "new", "pwa")
+    main_host = app_context.settings.web.public_url.split("//")[-1]
+    await miniapp.record_visit(1, "new", "telegram", host=main_host)
+    await miniapp.record_visit(1, "new", "telegram", host="old.example")  # сидит на двух адресах
+    await miniapp.record_visit(2, "new", "telegram", host="old.example")
+    await miniapp.record_visit(web, "new", "pwa", host=main_host)
     # Давний пользователь: открывал давно и только в браузере.
     old = now - 40 * 86400
     await db.execute("INSERT INTO app_clients VALUES (3, 'web', ?, ?)", (old, old))
@@ -103,6 +108,8 @@ async def test_audience_by_login_and_place(app_context, users):
     assert "<u>За всё время</u>: 4" in text and "<u>За 30 дней</u>: 3" in text
     assert "в Telegram и в браузере: <b>1</b> (25%) · +1" in text
     assert "только в браузере: <b>2</b> (50%) · +1" in text
+    assert await miniapp.host_stats(now - 86400, main_host) == {"new": 2, "old": 2, "both": 1}
+    assert f"адрес {main_host} / прежние: за сутки 2 / 2 (на обоих 1)" in text
 
 
 async def test_places_migration_keeps_last_known_place():

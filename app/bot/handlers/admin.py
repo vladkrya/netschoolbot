@@ -113,6 +113,13 @@ async def stats_report(app: AppContext) -> str:
             spooky.append(f"за {label} {_num(sum(halloween.values()))} "
                           f"(в новом {_num(halloween.get('new', 0))}, в старом {_num(halloween.get('classic', 0))})")
     lines.append("• открывали: " + ", ".join(opened))
+    main_host = app.settings.web.public_url.split("//")[-1].lower()
+    hosts = []
+    for label, days in (("сутки", 1), ("неделю", 7), ("месяц", 30)):
+        split = await app.miniapp.host_stats(now - days * 86400, main_host)
+        hosts.append(f"за {label} {_num(split['new'])} / {_num(split['old'])}"
+                     + (f" (на обоих {_num(split['both'])})" if split["both"] else ""))
+    lines.append(f"• адрес {main_host} / прежние: " + ", ".join(hosts))
     lines.append(f"• дизайн за месяц: {_split(stats['design'], DESIGNS)}")
     if spooky:
         lines.append("")

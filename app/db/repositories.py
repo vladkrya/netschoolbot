@@ -1636,7 +1636,7 @@ class MiniappRepository:
         )
 
     async def record_visit(self, telegram_id: int, design: str, client: str,
-                           halloween: bool | None = None) -> None:
+                           halloween: bool | None = None, host: str = "") -> None:
         """Открытие приложения: последний дизайн и откуда открыто (и включено
         ли хеллоуинское оформление), а также все места, где его открывали."""
         now = time.time()
@@ -1650,6 +1650,12 @@ class MiniappRepository:
                        halloween = excluded.halloween""",
                 (telegram_id, design, client, now, now, flag),
             )
+            if host:
+                await db.execute(
+                    """INSERT INTO app_hosts (telegram_id, host, seen_at) VALUES (?, ?, ?)
+                       ON CONFLICT(telegram_id, host) DO UPDATE SET seen_at = excluded.seen_at""",
+                    (telegram_id, host, now),
+                )
             await db.execute(
                 """INSERT INTO app_clients (telegram_id, client, first_seen_at, seen_at)
                    VALUES (?, ?, ?, ?)
@@ -1684,6 +1690,20 @@ class MiniappRepository:
             (since,))
         result["halloween"] = {row["key"]: row["n"] for row in rows}
         return result
+
+    async def host_stats(self, since: float, main_host: str) -> dict[str, int]:
+        """Кто открывал приложение с `since`: на основном адресе, на прежних
+        и на обоих сразу (оба входят и в «новый», и в «старый»)."""
+        rows = await self._db.fetch_all(
+            """SELECT MAX(host = ?) AS new, MAX(host != ?) AS old FROM app_hosts
+               WHERE seen_at >= ? GROUP BY telegram_id""",
+            (main_host, main_host, since),
+        )
+        return {
+            "new": sum(1 for row in rows if row["new"]),
+            "old": sum(1 for row in rows if row["old"]),
+            "both": sum(1 for row in rows if row["new"] and row["old"]),
+        }
 
     async def audience_stats(self, now: float, web_id_base: int) -> dict[str, Any]:
         """Для /adminstats: пользователи по способу входа и по местам, где

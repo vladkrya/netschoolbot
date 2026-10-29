@@ -956,6 +956,16 @@ MIGRATIONS: list[str] = [
     ALTER TABLE miniapp_tokens ADD COLUMN token_enc TEXT NOT NULL DEFAULT '';
     ALTER TABLE miniapp_tokens ADD COLUMN hashed INTEGER NOT NULL DEFAULT 0;
     """,
+    # На каких адресах открывали приложение: после переезда на другой домен
+    # видно, сколько людей ещё сидят на прежнем (/adminstats).
+    """
+    CREATE TABLE app_hosts (
+        telegram_id INTEGER NOT NULL,
+        host TEXT NOT NULL,
+        seen_at REAL NOT NULL,
+        PRIMARY KEY (telegram_id, host)
+    );
+    """,
 ]
 
 

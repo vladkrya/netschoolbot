@@ -204,7 +204,8 @@ async def visit(request: web.Request) -> web.Response:
     if design not in {"new", "classic"} or client not in {"telegram", "pwa", "web"}:
         return json_error("Некорректный запрос")
     miniapp, telegram_id = context(request).miniapp, current_user(request).telegram_id
-    await miniapp.record_visit(telegram_id, design, client, halloween if isinstance(halloween, bool) else None)
+    await miniapp.record_visit(telegram_id, design, client, halloween if isinstance(halloween, bool) else None,
+                               request.host.split(":")[0].lower())
     if client == "pwa" and (await miniapp.prefs(telegram_id)).get("pwa") != "installed":
         await miniapp.save_prefs(telegram_id, {"pwa": "installed"})
     return web.json_response({"ok": True})
