@@ -105,3 +105,18 @@ async def test_owner_can_pause_updates_but_still_download_private_apk(app_contex
         assert (await (await client.get('/mini/android/update.json')).json())['available'] is True
     finally:
         await client.close()
+
+
+async def test_update_link_stays_on_the_site_that_was_asked(app_context, tmp_path):
+    web_settings = replace(app_context.settings.web, public_url='https://new.example', legacy_urls=('https://old.example',))
+    app_context.settings = replace(app_context.settings, data_dir=tmp_path, web=web_settings)
+    publish(tmp_path / 'android-releases')
+    client = TestClient(TestServer(create_app(app_context)))
+    await client.start_server()
+    try:
+        for host, expected in (('old.example', 'https://old.example'), ('new.example', 'https://new.example'),
+                               ('evil.example', 'https://new.example')):
+            response = await client.get('/mini/android/update.json', headers={'Host': host})
+            assert (await response.json())['url'] == f'{expected}/mini/android/sgoshka-4.apk'
+    finally:
+        await client.close()

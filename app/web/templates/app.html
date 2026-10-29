@@ -347,5 +347,6 @@
   }
 </script>
 <script src="{{ base }}/static/v{{ version }}/js/boot.js" type="module" onerror="netschoolBootFailed()"></script>
-</body>
+{% if moved_to %}<script src="{{ base }}/static/v{{ version }}/moved.js" data-to="{{ moved_to }}" defer></script>
+{% endif %}</body>
 </html>

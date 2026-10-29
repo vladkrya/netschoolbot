@@ -137,6 +137,15 @@ class WebSettings:
     yandex_client_id: str = ""
     yandex_client_secret: str = ""
     yandex_hosts: tuple[str, ...] = ()
+    # Прежние адреса приложения после переезда на другой домен: установленные
+    # там копии (PWA, Android) и привязанные к домену ключи входа продолжают
+    # работать. Основной адрес и зеркало сюда не входят.
+    legacy_urls: tuple[str, ...] = ()
+
+    @property
+    def all_urls(self) -> list[str]:
+        """Все адреса, на которых приложение принимает запросы от своих клиентов."""
+        return list(dict.fromkeys(url for url in (self.public_url, self.mirror_url, *self.legacy_urls) if url))
 
     @property
     def tg_oidc_enabled(self) -> bool:
@@ -391,6 +400,7 @@ def load_settings(*, require_bot_token: bool = True) -> Settings:
             yandex_client_id=_env("NETSCHOOL_YANDEX_CLIENT_ID").strip(),
             yandex_client_secret=_env("NETSCHOOL_YANDEX_CLIENT_SECRET").strip(),
             yandex_hosts=_hosts("NETSCHOOL_YANDEX_HOSTS", public_url),
+            legacy_urls=tuple(u.strip().rstrip("/") for u in _env("NETSCHOOL_LEGACY_URLS").split(",") if u.strip()),
             miniapp_path=miniapp_path,
             token_ttl=_env_int("NETSCHOOL_MINIAPP_TOKEN_TTL", 900),
             login_code_ttl=_env_int("NETSCHOOL_LOGIN_CODE_TTL", 600),

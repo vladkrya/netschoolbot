@@ -376,6 +376,19 @@ async def yandex_verification(request: web.Request) -> web.Response:
     )
 
 
+def _moved_to(request: web.Request) -> str:
+    """Основной адрес, если страницу открыли на прежнем домене, иначе пусто.
+
+    На прежних адресах (ns.ikrya.ru и другие) приложение работает для уже
+    установленных копий, а плашка зовёт их на новый домен.
+    """
+    public = request.app[CONTEXT].settings.web.public_url
+    current = request.host.split(":")[0].lower()
+    if current in ("localhost", "127.0.0.1", "[::1]") or current.endswith((".localhost", ".test")):
+        return ""
+    return public if current != public.split("//")[-1].lower() else ""
+
+
 def _base(request: web.Request) -> str:
     """Префикс, под которым смонтировано приложение.
 
@@ -465,6 +478,7 @@ async def index(request: web.Request) -> web.Response:
             "assistant": context.settings.assistant.enabled,
             "attachment_hosts": context.settings.web.attachment_hosts,
             "site_url": _site_url(request),
+            "moved_to": _moved_to(request),
             "icon_192": await app_icon.icon_url(context, _base(request), user.telegram_id, 192) if user else "",
             "icon_180": await app_icon.icon_url(context, _base(request), user.telegram_id, 180) if user else "",
         },
@@ -568,6 +582,7 @@ async def demo(request: web.Request) -> web.Response:
             "push_enabled": False,
             "assistant": False,
             "demo": True,
+            "moved_to": _moved_to(request),
         },
     )
 

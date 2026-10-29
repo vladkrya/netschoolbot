@@ -10,6 +10,7 @@ import datetime as dt
 import json
 import re
 import time
+from dataclasses import replace
 
 import pytest
 from aiohttp.test_utils import TestClient, TestServer
@@ -1758,3 +1759,18 @@ async def test_every_report_can_be_sent_to_chat(app_context, users, tmp_path, mo
         await client.close()
     assert len(sent) == len(REPORTS) and all(sent)
     assert set(extras.EXPORT_CAPTIONS) == set(REPORTS)
+
+
+async def test_moved_banner_only_on_legacy_hosts(app_context):
+    web_settings = replace(app_context.settings.web, public_url='https://new.example', legacy_urls=('https://old.example',))
+    client = TestClient(TestServer(create_app(replace(app_context, settings=replace(app_context.settings, web=web_settings)))))
+    await client.start_server()
+    try:
+        old = await (await client.get('/mini/demo', headers={'Host': 'old.example'})).text()
+        assert '/moved.js" data-to="https://new.example"' in old
+        new = await (await client.get('/mini/demo', headers={'Host': 'new.example'})).text()
+        assert 'moved.js' not in new
+        local = await (await client.get('/mini/demo')).text()
+        assert 'moved.js' not in local
+    finally:
+        await client.close()

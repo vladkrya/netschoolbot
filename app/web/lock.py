@@ -92,7 +92,7 @@ def _duration(seconds: int) -> str:
 async def status(request):
     db, uid = context(request).db, current_user(request).telegram_id
     origin = request.query.get('origin', '')
-    allowed = [context(request).settings.web.public_url, context(request).settings.web.mirror_url]
+    allowed = context(request).settings.web.all_urls
     rp = urlsplit(origin).hostname if origin and origin in [url.rstrip('/') for url in allowed if url] else None
     keys = await db.fetch_one('SELECT COUNT(*) AS n FROM app_passkeys WHERE telegram_id = ?' +
                              (' AND rp_id = ?' if rp else ''), (uid, rp) if rp else (uid,))
@@ -227,7 +227,7 @@ async def logout(request):
 def site(request):
     # Use configured public URLs, never trust Host/forwarded headers for WebAuthn.
     settings = context(request).settings.web
-    allowed = [urlsplit(url) for url in (settings.public_url, settings.mirror_url) if url]
+    allowed = [urlsplit(url) for url in settings.all_urls]
     origin = request.headers.get('Origin', '')
     for parsed in allowed:
         expected = f'{parsed.scheme}://{parsed.netloc}'

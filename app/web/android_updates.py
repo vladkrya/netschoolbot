@@ -54,13 +54,26 @@ def release_manifest(root: Path) -> dict | None:
         return None
 
 
+def _site(request: web.Request) -> str:
+    """Адрес, на который ссылается update.json: тот, откуда спросили.
+
+    Приложение сверяет ссылку на APK со своим сайтом; установленные до
+    переезда копии спрашивают прежний домен и должны получить его же.
+    """
+    web_settings = context(request).settings.web
+    own = f"https://{request.host}".lower()
+    known = {url.lower() for url in web_settings.all_urls}
+    base = own if own in known else web_settings.public_url
+    return base.rstrip("/") + web_settings.miniapp_path.rstrip("/")
+
+
 @routes.get("/android/update.json")
 async def latest(request: web.Request) -> web.Response:
     data = release_manifest(directory(request)) if await updates_enabled(context(request)) else None
     if data is None:
         return web.json_response({"available": False}, headers={"Cache-Control": "no-store"})
     data["available"] = True
-    data["url"] = context(request).settings.web.miniapp_url.rstrip("/") + "/android/" + data["file"]
+    data["url"] = _site(request) + "/android/" + data["file"]
     return web.json_response(data, headers={"Cache-Control": "no-store"})
 
 

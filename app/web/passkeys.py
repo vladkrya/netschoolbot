@@ -41,7 +41,7 @@ _challenges: dict[str, tuple[str, int | None, bytes, str, str, float]] = {}
 def ready(request: web.Request) -> bool:
     """Ключи работают только на https-адресе из настроек (lock.site)."""
     settings = context(request).settings.web
-    return any(urlsplit(url).scheme == "https" for url in (settings.public_url, settings.mirror_url) if url)
+    return any(urlsplit(url).scheme == "https" for url in settings.all_urls)
 
 
 def _remember(kind: str, telegram_id: int | None, challenge: bytes, origin: str, rp: str) -> str:
