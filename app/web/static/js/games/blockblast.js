@@ -344,15 +344,15 @@ export function start(root, ctx) {
       const copy = board.map((row) => [...row]);
       cells.forEach(([x, y]) => { copy[spot.gy + y][spot.gx + x] = '#fff'; });
       preview = fullLines(copy);
-      const glow = new Set();
-      preview.rows.forEach((r) => { for (let c = 0; c < N; c += 1) glow.add(r * N + c); });
-      preview.cols.forEach((c) => { for (let r = 0; r < N; r += 1) glow.add(r * N + c); });
-      g.fillStyle = 'rgba(255,255,255,.18)';
-      glow.forEach((k) => {
-        g.beginPath();
-        g.roundRect(bx + (k % N) * cell + 1.5, Math.floor(k / N) * cell + 1.5, cell - 3, cell - 3, cell * 0.14);
-        g.fill();
-      });
+      // Линия, которая сгорит, светится зелёным, как в оригинале.
+      g.save();
+      g.strokeStyle = '#8cff5e';
+      g.shadowColor = '#8cff5e';
+      g.shadowBlur = cell * 0.5;
+      g.lineWidth = 2.5;
+      preview.rows.forEach((r) => g.strokeRect(bx + 1, r * cell + 1, bw - 2, cell - 2));
+      preview.cols.forEach((c) => g.strokeRect(bx + c * cell + 1, 1, cell - 2, bw - 2));
+      g.restore();
     }
     const glowing = (r, c) => preview && (preview.rows.includes(r) || preview.cols.includes(c));
     for (let r = 0; r < N; r += 1) {
