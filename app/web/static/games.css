@@ -104,7 +104,7 @@ html.in-game .game-screen { padding-bottom: max(12px, env(safe-area-inset-bottom
 }
 .game-screen[data-game="snake"] { --g-bg: linear-gradient(180deg, #4a8a2e, #24501a); }
 .game-screen[data-game="tetris"] { --g-bg: radial-gradient(ellipse at 50% 0%, #3b2a8f, #150f3d 60%, #0b0822); }
-.game-screen[data-game="blockblast"] { --g-bg: linear-gradient(180deg, #2a3a9a, #121a52); }
+.game-screen[data-game="blockblast"] { --g-bg: #4a49a8; }
 .game-screen[data-game="sudoku"] { --g-bg: linear-gradient(180deg, #3550c8, #1b2a78); }
 .game-screen[data-game="paperio"] { --g-bg: linear-gradient(180deg, #5aa6ff, #2f6fe0); }
 .game-screen[data-game="casino"] { --g-bg: radial-gradient(ellipse at 50% 15%, #1f8a52, #0c4a2a 65%, #06261a); }
@@ -529,6 +529,9 @@ html.in-game .game-screen { padding-bottom: max(12px, env(safe-area-inset-bottom
 /* ─────────────────────────── Block Blast ─────────────────────────── */
 .bb-canvas { touch-action: none; cursor: grab; box-shadow: none; background: none; }
 .bb-stage { align-items: flex-start; }
+.bb-top { position: relative; text-align: center; padding-top: 2px; }
+.bb-best { position: absolute; left: 2px; top: 0; display: flex; align-items: center; gap: 5px; font-size: 16px; font-weight: 700; opacity: .8; }
+.bb-score { font-size: 54px; font-weight: 800; line-height: 1.1; letter-spacing: -.01em; font-variant-numeric: tabular-nums; text-shadow: 0 3px 0 rgba(0, 0, 0, .15); }
 
 /* ─────────────────────────── Тетрис ─────────────────────────── */
 
