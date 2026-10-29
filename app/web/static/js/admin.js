@@ -145,6 +145,9 @@ export function openAdmin() {
   }));
 
   const draw = (data) => {
+    const versions = data.android_updates?.versions || [];
+    const current = Number(data.android_updates?.versionCode || 0);
+    const nameOf = (code) => versions.find((v) => Number(v.versionCode) === Number(code))?.versionName || 'не определена';
     pendingCount = data.icons_pending || 0;
     body.innerHTML = `${tabs('main', pendingCount)}<div class="card">
         ${data.solver_class ? toggle('solver_class', 'Решения заданий всему классу',
@@ -158,11 +161,12 @@ export function openAdmin() {
         ${data.android_updates?.available ? `<p class="muted small">Актуальная сборка: ${esc(data.android_updates.version)} · ${(data.android_updates.size / 1024 / 1024).toFixed(1)} МБ</p>
           <button class="btn outline" data-android-download>Скачать актуальный APK</button>` : '<p class="muted small">Сборка ещё не опубликована.</p>'}
         <p class="muted small">Скачать сборку вручную можно и при выключенных обновлениях.</p>
-        <label>Номер отключаемой сборки (versionCode)
-          <input class="field" data-android-code type="number" min="1" max="2100000000" step="1" placeholder="Например, 4"></label>
-        <button class="btn outline" data-android-block>Потребовать обновление этой сборки</button>
+        <label>Версия, которую нужно отключить
+          <select class="field" data-android-version>${versions.map((v) => `<option value="${Number(v.versionCode)}">${esc(v.versionName)}${Number(v.versionCode) === current ? ' · актуальная' : ''}</option>`).join('')}</select></label>
+        <button class="btn outline" data-android-block>Потребовать обновление этой версии</button>
+        <button class="btn outline" data-android-block-below>Потребовать обновление этой версии и ниже</button>
         <p class="muted small">Нужна опубликованная более новая сборка. Работает в APK с поддержкой серверной блокировки.</p>
-        ${(data.android_updates?.blockedVersionCodes || []).map((code) => `<div>Сборка ${Number(code)} отключена <button class="btn outline" data-android-allow="${Number(code)}">Разрешить снова</button></div>`).join('')}
+        ${(data.android_updates?.blockedVersionCodes || []).map((code) => `<div>Версия ${esc(nameOf(code))} отключена <button class="btn outline" data-android-allow="${Number(code)}">Разрешить снова</button></div>`).join('')}
 
       </div>
       ${widgetCard(data.widget)}
@@ -202,18 +206,28 @@ export function openAdmin() {
         banner(error.message, true);
       }
     }));
-    const versionAction = async (code, blocked, button) => {
-      if (!Number.isInteger(code) || code < 1 || code > 2100000000) { banner('Укажите номер сборки versionCode', true); return; }
-      if (blocked && !window.confirm(`Отключить сборку ${code}? Она будет требовать обновление.`)) return;
+    const versionAction = async (payload, label, button) => {
+      if (payload.blocked && !window.confirm(`Отключить ${label}? Они будут требовать обновление.`)) return;
       button.disabled = true;
       try {
-        const { data } = await post('/api/admin/android-version', { versionCode: code, blocked });
+        const { data } = await post('/api/admin/android-version', payload);
         draw(data);
       } catch (error) { banner(error.message, true); }
       finally { button.disabled = false; }
     };
-    body.querySelector('[data-android-block]')?.addEventListener('click', (event) => versionAction(Number(body.querySelector('[data-android-code]').value), true, event.currentTarget));
-    body.querySelectorAll('[data-android-allow]').forEach((button) => button.addEventListener('click', () => versionAction(Number(button.dataset.androidAllow), false, button)));
+    const picked = () => {
+      const select = body.querySelector('[data-android-version]');
+      return { code: Number(select?.value), name: select?.selectedOptions[0]?.textContent.replace(' · актуальная', '') || '' };
+    };
+    body.querySelector('[data-android-block]')?.addEventListener('click', (event) => {
+      const { code, name } = picked();
+      if (Number.isInteger(code) && code > 0) versionAction({ versionCode: code, blocked: true }, `версию ${name}`, event.currentTarget);
+    });
+    body.querySelector('[data-android-block-below]')?.addEventListener('click', (event) => {
+      const { code, name } = picked();
+      if (Number.isInteger(code) && code > 0) versionAction({ upTo: code, blocked: true }, `версию ${name} и все старше неё`, event.currentTarget);
+    });
+    body.querySelectorAll('[data-android-allow]').forEach((button) => button.addEventListener('click', () => versionAction({ versionCode: Number(button.dataset.androidAllow), blocked: false }, 'версию', button)));
     body.querySelector('[data-android-download]')?.addEventListener('click', async (event) => {
       const button = event.currentTarget;
       button.disabled = true;

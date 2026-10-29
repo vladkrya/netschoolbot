@@ -244,3 +244,31 @@ async def test_named_release_uses_primary_domain_and_keeps_legacy_updater_compat
         assert (await client.get('/mini/android/sgoshka-v.0.4.1.apk')).status == 404
     finally:
         await client.close()
+
+
+@pytest.mark.asyncio
+async def test_block_up_to_version_names_old_builds_and_spares_the_latest(app_context, tmp_path):
+    from tests.test_repositories import make_user
+    app_context.settings = replace(app_context.settings, data_dir=tmp_path)
+    await app_context.users.save(make_user(1))
+    admin = {'X-Netschool-Token': await app_context.miniapp.issue_token(1)}
+    root = tmp_path / 'android-releases'
+    publish(root, versionCode=9, versionName='0.5.4', file='sgoshka-9.apk')
+    (root / 'sgoshka-9.apk').write_bytes(b'example signed apk payload')
+    for code, name in ((7, '0.5.2'), (8, '0.5.3')):
+        (root / f'sgoshka-{code}.json').write_text(json.dumps(dict(packageName='ru.ikrya.sgoshka', versionCode=code, versionName=name)), encoding='utf-8')
+    client = TestClient(TestServer(create_app(app_context)))
+    await client.start_server()
+    try:
+        endpoint = '/mini/api/admin/android-version'
+        state = (await (await client.post('/mini/api/admin/android-updates', headers=admin, json={'on': True})).json())['data']['android_updates']
+        assert [v['versionName'] for v in state['versions']] == ['0.5.4', '0.5.3', '0.5.2', '0.5.0', '0.4.0']
+        result = await client.post(endpoint, headers=admin, json={'upTo': 8, 'blocked': True})
+        assert result.status == 200
+        assert (await result.json())['data']['android_updates']['blockedVersionCodes'] == [4, 5, 7, 8]
+        # Даже «и ниже» от актуальной сборки не отключает её саму.
+        result = await client.post(endpoint, headers=admin, json={'upTo': 9, 'blocked': True})
+        assert (await result.json())['data']['android_updates']['blockedVersionCodes'] == [4, 5, 7, 8]
+        assert (await client.post(endpoint, headers=admin, json={'upTo': True, 'blocked': True})).status == 400
+    finally:
+        await client.close()

@@ -73,6 +73,34 @@ def release_manifest(root: Path, manifest_name: str = "update.json") -> dict | N
         return None
 
 
+# Сборки, выпущенные до того, как у каждой появился свой манифест.
+LEGACY_VERSIONS = {4: "0.4.0", 5: "0.5.0"}
+
+
+def published_versions(root: Path) -> list[dict]:
+    """Все выпущенные сборки: номер и имя версии, новые первыми.
+
+    Имя берётся из манифестов sgoshka-*.json и update.json, которые остаются на сервере и
+    после удаления самих APK, — отключать старую версию можно по её имени."""
+    found = dict(LEGACY_VERSIONS)
+    try:
+        paths = sorted(root.glob("sgoshka-*.json"))[:500] + [root / "update.json"]
+    except OSError:
+        paths = []
+    for path in paths:
+        try:
+            if path.is_symlink() or path.stat().st_size > 32768:
+                continue
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        code, name = (data.get("versionCode"), data.get("versionName")) if isinstance(data, dict) else (None, None)
+        if (isinstance(data, dict) and data.get("packageName") == "ru.ikrya.sgoshka" and type(code) is int
+                and 0 < code <= 2_100_000_000 and isinstance(name, str) and 0 < len(name) <= 64):
+            found[code] = name
+    return [{"versionCode": code, "versionName": found[code]} for code in sorted(found, reverse=True)]
+
+
 def _site(request: web.Request) -> str:
     """Адрес, на который ссылается update.json: тот, откуда спросили.
 
