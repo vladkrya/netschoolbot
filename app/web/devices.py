@@ -68,7 +68,7 @@ async def touch(request: web.Request, token: str) -> None:
     # «Активность» и название устройства — сразу на открытых «Устройствах».
     if owner is not None:
         await app.hub.publish_user(owner, {"t": "sync", "topic": "devices"})
-        await migration.note_installed(request, owner, app.db, app.settings.web.public_url)
+        await migration.note_installed(request, owner, app.db, app.settings.web.public_url, app.settings.web.moved_days)
 
 
 def request_token(request: web.Request) -> str:

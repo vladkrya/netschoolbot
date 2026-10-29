@@ -141,6 +141,9 @@ class WebSettings:
     # там копии (PWA, Android) и привязанные к домену ключи входа продолжают
     # работать. Основной адрес и зеркало сюда не входят.
     legacy_urls: tuple[str, ...] = ()
+    # Через сколько дней после первого запуска приложения с основного домена
+    # прежний адрес перестаёт открываться у этого человека (app/web/migration.py).
+    moved_days: int = 7
 
     @property
     def all_urls(self) -> list[str]:
@@ -400,6 +403,7 @@ def load_settings(*, require_bot_token: bool = True) -> Settings:
             yandex_client_id=_env("NETSCHOOL_YANDEX_CLIENT_ID").strip(),
             yandex_client_secret=_env("NETSCHOOL_YANDEX_CLIENT_SECRET").strip(),
             yandex_hosts=_hosts("NETSCHOOL_YANDEX_HOSTS", public_url),
+            moved_days=max(1, _env_int("NETSCHOOL_MOVED_DAYS", 7)),
             legacy_urls=tuple(u.strip().rstrip("/") for u in _env("NETSCHOOL_LEGACY_URLS").split(",") if u.strip()),
             miniapp_path=miniapp_path,
             token_ttl=_env_int("NETSCHOOL_MINIAPP_TOKEN_TTL", 900),
