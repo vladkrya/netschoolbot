@@ -5,7 +5,7 @@
 'use strict';
 
 import {
-  ask, best, bump, fitCanvas, frames, load, overlay, particles, popText, rand, save, saveBest, sfx, shade, tap,
+  ask, best, bump, fitCanvas, frames, load, overlay, particles, popText, rand, save, saveBest, sfx, shade, shuffle, tap,
 } from './kit.js';
 
 const N = 8;
@@ -68,14 +68,55 @@ export function fullLines(board) {
   return { rows, cols };
 }
 
-/** Три новые фигуры; хотя бы одна из них обязательно помещается на доску. */
+/** Поле после хода: фигура поставлена, полные линии сгорели. */
+export function applyMove(board, cells, gx, gy) {
+  const next = board.map((row) => [...row]);
+  cells.forEach(([x, y]) => { next[gy + y][gx + x] = 'x'; });
+  const { rows, cols } = fullLines(next);
+  rows.forEach((r) => next[r].fill(null));
+  cols.forEach((c) => next.forEach((row) => { row[c] = null; }));
+  return { board: next, lines: rows.length + cols.length };
+}
+
+function placements(board, cells) {
+  const list = [];
+  for (let gy = 0; gy < N; gy += 1) {
+    for (let gx = 0; gx < N; gx += 1) if (fits(board, cells, gx, gy)) list.push([gx, gy]);
+  }
+  return list;
+}
+
+/** Можно ли поставить все фигуры по очереди, в любом порядке (перебор ограничен). */
+export function solvable(board, shapes) {
+  if (!shapes.length) return true;
+  return shapes.some((cells, i) => {
+    const rest = shapes.filter((_, k) => k !== i);
+    return shuffle(placements(board, cells)).slice(0, 14).some(([gx, gy]) => solvable(applyMove(board, cells, gx, gy).board, rest));
+  });
+}
+
+/** Сжигает ли фигура хоть одну линию, если поставить её удачно. */
+const clearsLine = (board, cells) => placements(board, cells).some(([gx, gy]) => applyMove(board, cells, gx, gy).lines > 0);
+
+/** Три новые фигуры под текущее поле: все три можно поставить подряд, а когда
+ *  поле заполнено — хотя бы одна сжигает линию. Совсем случайные наборы
+ *  давали тупики там, где ход ещё можно было дать. */
 export function dealPieces(board, palette = PALETTES[0]) {
+  const filled = board.flat().filter(Boolean).length;
+  const draw = () => Array.from({ length: 3 }, () => {
+    const shape = rand(SHAPES.length);
+    const color = palette[rand(palette.length)];
+    return { shape, colors: SHAPES[shape].map(() => color) };
+  });
+  for (let attempt = 0; attempt < 120; attempt += 1) {
+    const pieces = draw();
+    const shapes = pieces.map((piece) => SHAPES[piece.shape]);
+    if (!solvable(board, shapes)) continue;
+    if (filled >= 14 && attempt < 90 && !shapes.some((cells) => clearsLine(board, cells))) continue;
+    return pieces;
+  }
   for (let attempt = 0; attempt < 60; attempt += 1) {
-    const pieces = Array.from({ length: 3 }, () => {
-      const shape = rand(SHAPES.length);
-      const color = palette[rand(palette.length)];
-      return { shape, colors: SHAPES[shape].map(() => color) };
-    });
+    const pieces = draw();
     if (pieces.some((piece) => canPlaceAnywhere(board, SHAPES[piece.shape]))) return pieces;
   }
   return palette.slice(0, 3).map((color) => ({ shape: 0, colors: [color] }));

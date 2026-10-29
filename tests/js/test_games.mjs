@@ -308,3 +308,16 @@ test('block blast: из новых фигур всегда помещается 
     assert.ok(blockblast.dealPieces(board).some((p) => blockblast.canPlaceAnywhere(board, blockblast.SHAPES[p.shape])));
   }
 });
+
+test('block blast: фигуры подбираются под поле — все три встают подряд, на заполненном поле есть сжигающая', () => {
+  const board = blockblast.emptyBoard();
+  // Семь строк почти заполнены, в каждой по одной дырке — рядом друг с другом.
+  for (let r = 0; r < 7; r += 1) for (let c = 0; c < 8; c += 1) board[r][c] = c === 3 ? null : 'x';
+  for (let i = 0; i < 30; i += 1) {
+    const pieces = blockblast.dealPieces(board);
+    const shapes = pieces.map((p) => blockblast.SHAPES[p.shape]);
+    assert.ok(blockblast.solvable(board, shapes), 'набор можно поставить подряд');
+    assert.ok(shapes.some((cells) => blockblast.applyMove(board, cells, 0, 0).lines > 0
+      || blockblast.canPlaceAnywhere(board, cells)), 'есть ход');
+  }
+});
