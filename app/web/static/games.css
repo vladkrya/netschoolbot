@@ -104,7 +104,7 @@ html.in-game .game-screen { padding-bottom: max(12px, env(safe-area-inset-bottom
 }
 .game-screen[data-game="snake"] { --g-bg: linear-gradient(180deg, #4a8a2e, #24501a); }
 .game-screen[data-game="tetris"] { --g-bg: radial-gradient(ellipse at 50% 0%, #3b2a8f, #150f3d 60%, #0b0822); }
-.game-screen[data-game="blockblast"] { --g-bg: #4a49a8; }
+.game-screen[data-game="blockblast"] { --g-bg: linear-gradient(180deg, #4d49aa, #4147a3); }
 .game-screen[data-game="sudoku"] { --g-bg: linear-gradient(180deg, #3550c8, #1b2a78); }
 .game-screen[data-game="paperio"] { --g-bg: linear-gradient(180deg, #5aa6ff, #2f6fe0); }
 .game-screen[data-game="casino"] { --g-bg: radial-gradient(ellipse at 50% 15%, #1f8a52, #0c4a2a 65%, #06261a); }
@@ -527,13 +527,31 @@ html.in-game .game-screen { padding-bottom: max(12px, env(safe-area-inset-bottom
 }
 
 /* ─────────────────────────── Block Blast ─────────────────────────── */
-.bb-canvas { touch-action: none; cursor: grab; box-shadow: none; background: none; }
+.bb-top { position: relative; text-align: center; padding-top: 2px; font-family: ui-rounded, "SF Pro Rounded", "Arial Rounded MT Bold", system-ui, sans-serif; }
+.bb-best { position: absolute; left: 2px; top: 6px; display: flex; align-items: center; gap: 6px; font-size: 20px; font-weight: 800; color: #fff; }
+.bb-best svg { width: 30px; height: 24px; color: #b9a8f2; filter: drop-shadow(0 2px 0 rgba(0, 0, 0, .2)); }
+.bb-best.gold { color: #ffb02e; }
+.bb-best.gold svg { color: #ffc23a; }
+.bb-score { position: relative; display: inline-block; margin-top: 18px; font-size: 58px; font-weight: 800; line-height: 1.1; font-variant-numeric: tabular-nums; text-shadow: 0 3px 0 rgba(0, 0, 0, .18); }
+.bb-score span { position: relative; z-index: 1; }
+.bb-diamond {
+  position: absolute; left: 50%; top: 50%; width: 38px; height: 38px; margin: -22px 0 0 -19px; z-index: 0;
+  rotate: 45deg; border-radius: 6px; background: linear-gradient(135deg, #6ab4ff, #2f63d8); box-shadow: 0 0 22px rgba(80, 160, 255, .75);
+}
+.game-screen[data-game="blockblast"] .screen-title { visibility: hidden; }
+.bb-flash {
+  position: absolute; inset: 0; z-index: 1; pointer-events: none; opacity: 0;
+  background: linear-gradient(180deg, rgba(235, 120, 255, .75), rgba(70, 150, 255, .6));
+}
+.bb-flash.on { animation: bb-flash 1.1s ease-out; }
+@keyframes bb-flash { 0% { opacity: 0; } 18% { opacity: 1; } 100% { opacity: 0; } }
+.bb-total { font-family: ui-rounded, system-ui, sans-serif; font-size: 40px; font-weight: 900; color: #fff; text-shadow: 0 3px 0 rgba(0, 0, 0, .25), 0 0 14px rgba(255, 255, 255, .55); }
+.bb-bonus { font-family: ui-rounded, system-ui, sans-serif; font-size: 36px; font-weight: 900; font-style: italic; color: #ffe27a; text-shadow: 0 0 10px #ff8a1a, 0 3px 0 #b8501a; }
+.bb-word { font-family: ui-rounded, system-ui, sans-serif; font-size: 30px; font-weight: 900; color: #ffc93a; -webkit-text-stroke: 5px #9a4b12; paint-order: stroke fill; text-shadow: 0 4px 0 rgba(120, 50, 10, .45); }
+.bb-combo { font-family: ui-rounded, system-ui, sans-serif; font-style: italic; font-weight: 900; font-size: 46px; color: #fff; -webkit-text-stroke: 7px #2862d6; paint-order: stroke fill; text-shadow: 0 5px 0 rgba(20, 40, 120, .45); }
+.bb-combo b { font-size: 62px; color: #ffd21f; -webkit-text-stroke: 7px #d9731a; }
+.bb-canvas { touch-action: none; cursor: grab; box-shadow: none; background: none; position: relative; z-index: 2; }
 .bb-stage { align-items: flex-start; }
-.bb-top { position: relative; text-align: center; padding-top: 2px; }
-.bb-best { position: absolute; left: 2px; top: 0; display: flex; align-items: center; gap: 5px; font-size: 16px; font-weight: 700; opacity: .8; }
-.bb-word { color: #ffb347; font-weight: 800; font-size: 26px; text-shadow: 0 2px 0 rgba(0, 0, 0, .3); }
-.bb-combo { color: #fff; font-weight: 900; font-style: italic; font-size: 30px; text-shadow: 0 3px 0 #b8741a, 0 0 12px rgba(255, 190, 40, .6); }
-.bb-score { font-size: 54px; font-weight: 800; line-height: 1.1; letter-spacing: -.01em; font-variant-numeric: tabular-nums; text-shadow: 0 3px 0 rgba(0, 0, 0, .15); }
 
 /* ─────────────────────────── Тетрис ─────────────────────────── */
 

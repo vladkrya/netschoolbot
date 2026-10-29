@@ -5,18 +5,18 @@
 'use strict';
 
 import {
-  ask, best, bump, fitCanvas, frames, load, overlay, particles, popText, rand, save, saveBest, sfx, shade, shuffle, tap,
+  ask, best, bump, fitCanvas, frames, load, overlay, particles, rand, save, saveBest, sfx, shade, shuffle, tap,
 } from './kit.js';
 
 const N = 8;
 // Темы: фон экрана, поле и цвета фигур. После каждого чистого поля игра
 // переходит к следующей теме (по кругу), как в оригинале. У фигуры один цвет.
 const THEMES = [
-  { bg: '#4a49a8', frame: '#3a3984', cell: '#2b2a68', colors: ['#f2c3c8', '#5a78d4', '#a062e0', '#b9c0f2', '#2f9bf0'] },
-  { bg: '#42528f', frame: '#33406f', cell: '#232846', colors: ['#2f5be0', '#e0362f', '#2fb348', '#f08a24', '#f2c516'] },
-  { bg: '#78726f', frame: '#4b4746', cell: '#2a292b', colors: ['#3a55d6', '#c43a2c', '#e0893c', '#8a5a3a', '#e0b84a'] },
-  { bg: '#b2361d', frame: '#7b2a1a', cell: '#4a211c', colors: ['#f5c11a', '#f08a24', '#ffd84a', '#e8651f'] },
-  { bg: '#8e7fd2', frame: '#7766bd', cell: '#c3aef7', colors: ['#c92fc0', '#e04ad8', '#a31fb0'] },
+  { bg: ['#4d49aa', '#4147a3'], frame: '#3a3984', cell: '#2b2a68', colors: ['#f2c3c8', '#5a78d4', '#a062e0', '#b9c0f2', '#2f9bf0'] },
+  { bg: ['#4a5a98', '#3a4a86'], frame: '#33406f', cell: '#232846', colors: ['#2f5be0', '#e0362f', '#2fb348', '#f08a24', '#f2c516'] },
+  { bg: ['#7d7774', '#6f6a68'], frame: '#4b4746', cell: '#2a292b', colors: ['#3a55d6', '#c43a2c', '#e0893c', '#8a5a3a', '#e0b84a'] },
+  { bg: ['#b8381e', '#a22f1a'], frame: '#7b2a1a', cell: '#4a211c', colors: ['#f5c11a', '#f08a24', '#ffd84a', '#e8651f'] },
+  { bg: ['#9686d8', '#8070c8'], frame: '#7766bd', cell: '#c3aef7', colors: ['#c92fc0', '#e04ad8', '#a31fb0'] },
 ];
 const PALETTES = THEMES.map((theme) => theme.colors);
 
@@ -153,9 +153,30 @@ const WORDS = ['', '', 'Great!', 'Excellent!', 'Unbelievable!', 'Unbelievable!']
 
 export function start(root, ctx) {
   root.innerHTML = `<div class="game blockblast">
-      <div class="bb-top"><div class="bb-best"><span aria-hidden="true">👑</span><b data-best>—</b></div><div class="bb-score" data-score>0</div></div>
+      <div class="bb-top">
+        <div class="bb-best"><svg viewBox="0 0 32 26" aria-hidden="true"><path d="M2 8l7 6 7-11 7 11 7-6-3 16H5z" fill="currentColor"/><rect x="5" y="22" width="22" height="3" rx="1.5" fill="currentColor" opacity=".7"/></svg><b data-best>—</b></div>
+        <div class="bb-score"><i class="bb-diamond" data-diamond></i><span data-score>0</span></div>
+      </div>
       <div class="game-stage bb-stage"><canvas class="game-canvas bb-canvas" data-board></canvas></div>
       <button class="game-btn ghost small" data-new>Новая игра</button></div>`;
+  const flashEl = document.createElement('div');
+  flashEl.className = 'bb-flash';
+  root.closest('.game-screen')?.append(flashEl);
+  const bumpFlash = () => {
+    flashEl.classList.remove('on');
+    void flashEl.offsetWidth;
+    flashEl.classList.add('on');
+  };
+  /** Надпись поверх поля с разметкой (в kit.popText только текст). */
+  const pop = (html, cls, x = '50%', y = '40%') => {
+    const el = document.createElement('div');
+    el.className = `pop-text ${cls}`;
+    el.innerHTML = html;
+    el.style.left = x;
+    el.style.top = y;
+    stage.append(el);
+    el.addEventListener('animationend', () => el.remove());
+  };
   const stage = root.querySelector('.game-stage');
   const canvas = root.querySelector('[data-board]');
   const width = Math.floor(Math.min(root.clientWidth || 360, 460, (innerHeight - 250) * 0.72));
@@ -187,7 +208,10 @@ export function start(root, ctx) {
   // После чистого поля вокруг доски светится рамка — до следующего хода.
   let cleanGlow = false;
 
-  const showBest = () => { root.querySelector('[data-best]').textContent = String(best('blockblast') || '—'); };
+  const showBest = () => {
+    root.querySelector('[data-best]').textContent = String(Math.max(best('blockblast'), score) || '—');
+    root.querySelector('.bb-best').classList.toggle('gold', theme > 0 || score > best('blockblast'));
+  };
   const persist = () => save('blockblast', over ? null : { board, pieces, score, streak, theme });
 
   function newGame() {
@@ -209,7 +233,7 @@ export function start(root, ctx) {
 
   const screen = root.closest('.game-screen');
   const look = () => THEMES[theme % THEMES.length];
-  const paint = () => screen?.style.setProperty('--g-bg', look().bg);
+  const paint = () => { showBest(); screen?.style.setProperty('--g-bg', `linear-gradient(180deg, ${look().bg[0]}, ${look().bg[1]})`); };
 
   const piece = (i) => (pieces[i] ? SHAPES[pieces[i].shape] : null);
   // Центр слота в лотке.
@@ -249,9 +273,10 @@ export function start(root, ctx) {
       flash = 1;
       sfx(lines > 1 ? 'win' : 'good');
       tap('medium');
-      popText(stage, `+${gain}`, { x: '50%', y: '38%' });
-      if (WORDS[Math.min(lines, 5)]) popText(stage, WORDS[Math.min(lines, 5)], { x: '50%', y: '24%', cls: 'bb-word' });
-      if (streak >= 2) popText(stage, `Combo ${streak}`, { x: '50%', y: '56%', cls: 'bb-combo' });
+      bumpFlash();
+      pop(String(gain), 'bb-total', '50%', '48%');
+      if (WORDS[Math.min(lines, 5)]) pop(WORDS[Math.min(lines, 5)], 'bb-word', '50%', '30%');
+      if (streak >= 2) pop(`<span>Combo</span> <b>${streak}</b>`, 'bb-combo', '50%', '58%');
     } else {
       streak = 0;
       sfx('tap');
@@ -268,7 +293,7 @@ export function start(root, ctx) {
         return { ...p, colors: p.colors.map(() => color) };
       });
       score += 200;
-      popText(stage, '+200', { x: '50%', y: '45%' });
+      pop(String(gain + 200), 'bb-bonus', '26%', '9%');
     }
     score += gain;
     if (pieces.every((p) => !p)) pieces = dealPieces(board, PALETTES[theme]);
@@ -344,6 +369,8 @@ export function start(root, ctx) {
     if (shown !== score) {
       shown = shown < score ? Math.min(score, shown + Math.max(1, Math.ceil((score - shown) * dt * 5))) : score;
       root.querySelector('[data-score]').textContent = String(shown);
+      root.querySelector('[data-diamond]').style.rotate = `${shown * 3}deg`;
+      showBest();
     }
     // Доска.
     g.fillStyle = look().frame;
@@ -364,14 +391,15 @@ export function start(root, ctx) {
       const copy = board.map((row) => [...row]);
       cells.forEach(([x, y]) => { copy[spot.gy + y][spot.gx + x] = '#fff'; });
       preview = fullLines(copy);
-      // Линия, которая сгорит, светится зелёным, как в оригинале.
+      // Линия, которая сгорит, светится золотом.
       g.save();
-      g.strokeStyle = '#8cff5e';
-      g.shadowColor = '#8cff5e';
-      g.shadowBlur = cell * 0.5;
-      g.lineWidth = 2.5;
-      preview.rows.forEach((r) => g.strokeRect(bx + 1, r * cell + 1, bw - 2, cell - 2));
-      preview.cols.forEach((c) => g.strokeRect(bx + c * cell + 1, 1, cell - 2, bw - 2));
+      g.fillStyle = 'rgba(255, 196, 70, .22)';
+      g.strokeStyle = '#ffd36a';
+      g.shadowColor = '#ffb13a';
+      g.shadowBlur = cell * 0.6;
+      g.lineWidth = 2;
+      preview.rows.forEach((r) => { g.fillRect(bx, r * cell, bw, cell); g.strokeRect(bx + 1, r * cell + 1, bw - 2, cell - 2); });
+      preview.cols.forEach((c) => { g.fillRect(bx + c * cell, 0, cell, bw); g.strokeRect(bx + c * cell + 1, 1, cell - 2, bw - 2); });
       g.restore();
     }
     const glowing = (r, c) => preview && (preview.rows.includes(r) || preview.cols.includes(c));
@@ -385,11 +413,20 @@ export function start(root, ctx) {
     }
     // Сгорающие клетки уменьшаются и гаснут.
     fading = fading.filter((f) => {
-      f.t += dt * 3.2;
+      f.t += dt * 1.9;
       if (f.t >= 1) return false;
-      const s = cell * (1 - f.t * 0.6);
-      g.globalAlpha = 1 - f.t;
-      block(g, bx + f.c * cell + (cell - s) / 2, f.r * cell + (cell - s) / 2, s, shade(f.color, 0.4));
+      const s = cell * (1 - Math.max(0, f.t - 0.35) * 0.9);
+      g.globalAlpha = Math.min(1, 1.6 - f.t * 1.4);
+      block(g, bx + f.c * cell + (cell - s) / 2, f.r * cell + (cell - s) / 2, s, shade(f.color, 0.3));
+      // Золотая «5» на сгорающей клетке.
+      g.fillStyle = '#ffd24a';
+      g.shadowColor = '#ff7a1a';
+      g.shadowBlur = 8;
+      g.font = `900 ${Math.round(cell * 0.6)}px ui-rounded, system-ui, sans-serif`;
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.fillText('5', bx + f.c * cell + cell / 2, f.r * cell + cell / 2 + 1);
+      g.shadowBlur = 0;
       g.globalAlpha = 1;
       return true;
     });
@@ -401,12 +438,18 @@ export function start(root, ctx) {
       flash = Math.max(0, flash - dt * 4);
     }
     if (cleanGlow) {
+      g.fillStyle = 'rgba(140, 90, 255, .22)';
+      g.fillRect(bx, 0, bw, bw);
       g.save();
-      g.strokeStyle = '#5ee6ff';
-      g.shadowColor = '#5ee6ff';
-      g.shadowBlur = 14;
-      g.lineWidth = 3;
-      g.strokeRect(bx - 4, -4, bw + 8, bw + 8);
+      g.shadowColor = '#3fe0ff';
+      g.shadowBlur = 22;
+      g.strokeStyle = '#7fefff';
+      g.lineWidth = 3.5;
+      g.strokeRect(bx - 3, -3, bw + 6, bw + 6);
+      g.shadowBlur = 8;
+      g.strokeStyle = '#e8fdff';
+      g.lineWidth = 1.2;
+      g.strokeRect(bx - 3, -3, bw + 6, bw + 6);
       g.restore();
     }
     fx.draw(g, dt);
