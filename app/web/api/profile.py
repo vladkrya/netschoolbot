@@ -247,6 +247,21 @@ async def pwa_link(request: web.Request) -> web.Response:
     return web.json_response({"ok": True, "data": {"url": _device_url(app, code)}})
 
 
+@routes.get("/api/migrate-link")
+async def migrate_link(request: web.Request) -> web.Response:
+    """Ссылка на новый домен для плашки о переезде: вход уже выполнен.
+
+    Сутки и несколько открытий, как у ссылки установки: на iPhone её открывают
+    сначала в окне поверх приложения, затем через компас в Safari, и каждый
+    раз выдаётся свой токен устройства. Метка install=1 показывает, как
+    добавить приложение на экран «Домой».
+    """
+    app, user = context(request), current_user(request)
+    code = await app.miniapp.issue_enter_code(user.telegram_id)
+    url = f"{app.settings.web.miniapp_url}/?enter={code}&install=1"
+    return web.json_response({"ok": True, "data": {"url": url}})
+
+
 @routes.get("/api/push/key")
 async def push_key(request: web.Request) -> web.Response:
     settings = context(request).settings.push

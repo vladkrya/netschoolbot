@@ -1030,6 +1030,18 @@ class TestNewFeatures:
         assert token not in url and "?device=" in url and "install=1" in url
         assert await app_context.miniapp.use_device_code(url.split("device=")[1].split("&")[0])
 
+    async def test_migrate_link_signs_in_on_the_new_domain_and_opens_twice(self, client, token, app_context):
+        """Плашка о переезде: ссылка на основной домен с входом, install=1 и
+        несколькими открытиями (окно в приложении, затем Safari)."""
+        response = await client.get(f"{BASE}/api/migrate-link", params={"token": token})
+        url = (await response.json())["data"]["url"]
+        assert url.startswith(app_context.settings.web.miniapp_url) and "install=1" in url and token not in url
+        code = url.split("enter=")[1].split("&")[0]
+        for _ in range(2):
+            client.session.cookie_jar.clear()
+            page = await client.get(f"{BASE}/", params={"enter": code, "install": "1"})
+            assert page.status == 200 and "netschool_token" in client.session.cookie_jar.filter_cookies(client.make_url("/"))
+
     async def test_install_link_puts_device_token_and_clean_icon(self, client, token, app_context):
         """Ссылка установки → свой токен устройства в cookie; в иконке вместо
         токена одноразовый код, первый запуск меняет его на новый токен."""
