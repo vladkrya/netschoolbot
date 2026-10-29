@@ -192,6 +192,9 @@ class TestPages:
     async def test_yandex_verification_file(self, client):
         response = await client.get("/yandex_08b9430a7e269f67.html")
         assert "Verification: 08b9430a7e269f67" in await response.text()
+        # sgoshka.ru — свой файл.
+        response = await client.get("/yandex_cb3c3e55bc7efa33.html")
+        assert "Verification: cb3c3e55bc7efa33" in await response.text()
         assert (await client.get("/yandex_0000.html")).status == 404
 
     async def test_sitemap_lists_main_page(self, client):

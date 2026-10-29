@@ -361,7 +361,7 @@ async def google_verification(request: web.Request) -> web.Response:
 
 
 # То же для Яндекс Вебмастера.
-YANDEX_VERIFICATIONS = frozenset({"yandex_08b9430a7e269f67.html"})
+YANDEX_VERIFICATIONS = frozenset({"yandex_08b9430a7e269f67.html", "yandex_cb3c3e55bc7efa33.html"})
 
 
 async def yandex_verification(request: web.Request) -> web.Response:
