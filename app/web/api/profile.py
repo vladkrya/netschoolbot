@@ -262,6 +262,15 @@ async def migrate_link(request: web.Request) -> web.Response:
     return web.json_response({"ok": True, "data": {"url": url}})
 
 
+@routes.get("/api/migrate-status")
+async def migrate_status(request: web.Request) -> web.Response:
+    """Когда отключится прежний адрес: срок есть, если приложение уже поставлено с основного домена."""
+    from .. import migration
+
+    value = await migration.deadline(context(request).db, current_user(request).telegram_id)
+    return web.json_response({"ok": True, "data": {"deadline": value}})
+
+
 @routes.get("/api/push/key")
 async def push_key(request: web.Request) -> web.Response:
     settings = context(request).settings.push

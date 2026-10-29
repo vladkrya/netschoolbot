@@ -1789,3 +1789,26 @@ async def test_moved_banner_only_on_legacy_hosts(app_context):
         assert 'moved.js' not in local
     finally:
         await client.close()
+
+
+async def test_old_address_gets_a_deadline_only_after_the_new_app_is_launched(app_context, users):
+    """Срок отключения прежнего адреса: от суток до недели с первого запуска иконки на основном домене."""
+    await users.save(make_user(student_name="Иванов И."))
+    token = await app_context.miniapp.issue_token(1, device=True)
+    web_settings = replace(app_context.settings.web, public_url='https://new.example', legacy_urls=('https://old.example',))
+    client = TestClient(TestServer(create_app(replace(app_context, settings=replace(app_context.settings, web=web_settings)))))
+    await client.start_server()
+    try:
+        async def status(host, pwa, who=token):
+            headers = {'Host': host, 'X-Netschool-Token': who}
+            if pwa:
+                headers['X-Netschool-Client'] = 'pwa'
+            return (await (await client.get(f'{BASE}/api/migrate-status', headers=headers)).json())['data']['deadline']
+
+        assert await status('old.example', True) is None   # старый адрес срока не назначает
+        assert await status('new.example', False, await app_context.miniapp.issue_token(1, device=True)) is None  # вкладка — не приложение
+        deadline = await status('new.example', True, await app_context.miniapp.issue_token(1, device=True))
+        assert 0.9 * 86400 <= deadline - time.time() <= 7 * 86400 + 60
+        assert await status('old.example', False) == deadline  # дальше срок не пересчитывается
+    finally:
+        await client.close()

@@ -25,6 +25,7 @@ from aiohttp import web
 from ..accounts import has_telegram
 from ..accounts.site_login import describe_browser, device_model, system_version
 from ..db.repositories import token_fingerprint as fingerprint, token_key
+from . import migration
 from .api import BOT, context, current_user, json_error
 
 routes = web.RouteTableDef()
@@ -67,6 +68,7 @@ async def touch(request: web.Request, token: str) -> None:
     # «Активность» и название устройства — сразу на открытых «Устройствах».
     if owner is not None:
         await app.hub.publish_user(owner, {"t": "sync", "topic": "devices"})
+        await migration.note_installed(request, owner, app.db, app.settings.web.public_url)
 
 
 def request_token(request: web.Request) -> str:

@@ -11,9 +11,9 @@
   if (/Android/.test(navigator.userAgent)) return;
   const KEY = 'ns-moved-hidden';
   const DAY = 24 * 60 * 60 * 1000;
-  try {
-    if (Date.now() - Number(localStorage.getItem(KEY) || 0) < DAY) return;
-  } catch { /* приватный режим */ }
+  const hiddenToday = () => {
+    try { return Date.now() - Number(localStorage.getItem(KEY) || 0) < DAY; } catch { return false; }
+  };
 
   const ua = navigator.userAgent;
   const ios = /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
@@ -33,6 +33,15 @@
     el.type = 'button';
     return el;
   };
+
+  /** Срок отключения этого адреса, если приложение уже поставлено с нового; иначе null. */
+  async function deadline() {
+    try {
+      const { api } = await import(script.src.replace(/moved\.js.*$/, 'js/core.js'));
+      const value = (await api('/api/migrate-status'))?.data?.deadline;
+      return typeof value === 'number' ? value : null;
+    } catch { return null; }
+  }
 
   /** Ссылка на новый адрес с входом или '' — не вышло. Запрос идёт через
    *  клиент самого приложения: он знает токен, разблокировку по PIN и режим
@@ -95,21 +104,51 @@
     document.body.append(veil);
   }
 
-  const bar = make('div', 'position:fixed;left:8px;right:8px;bottom:calc(8px + env(safe-area-inset-bottom));' +
-    'z-index:2147483000;display:flex;gap:10px;align-items:center;padding:12px 14px;border-radius:14px;' +
-    'background:var(--card,#fff);color:var(--text,#1c2430);box-shadow:0 6px 24px rgba(0,0,0,.25);' +
-    'max-width:520px;margin:0 auto;' + font);
-  bar.setAttribute('role', 'status');
-  const text = make('div', 'flex:1', `Сайт переехал на ${host}. Перенесём вход, заново логиниться не придётся.`);
-  const go = button('Перенести');
-  go.onclick = sheet;
-  const close = make('button', 'border:0;background:none;color:inherit;font-size:22px;line-height:1;padding:4px 6px;cursor:pointer', '×');
-  close.type = 'button';
-  close.setAttribute('aria-label', 'Скрыть');
-  close.onclick = () => {
-    try { localStorage.setItem(KEY, String(Date.now())); } catch { /* приватный режим */ }
-    bar.remove();
-  };
-  bar.append(text, go, close);
-  document.body.append(bar);
+  function hideButton(bar) {
+    const close = make('button', 'border:0;background:none;color:inherit;font-size:22px;line-height:1;padding:4px 6px;cursor:pointer', '×');
+    close.type = 'button';
+    close.setAttribute('aria-label', 'Скрыть');
+    close.onclick = () => {
+      try { localStorage.setItem(KEY, String(Date.now())); } catch { /* приватный режим */ }
+      bar.remove();
+    };
+    return close;
+  }
+
+  function bar(message, action) {
+    const el = make('div', 'position:fixed;left:8px;right:8px;bottom:calc(8px + env(safe-area-inset-bottom));' +
+      'z-index:2147483000;display:flex;gap:10px;align-items:center;padding:12px 14px;border-radius:14px;' +
+      'background:var(--card,#fff);color:var(--text,#1c2430);box-shadow:0 6px 24px rgba(0,0,0,.25);' +
+      'max-width:520px;margin:0 auto;' + font);
+    el.setAttribute('role', 'status');
+    el.append(make('div', 'flex:1', message));
+    if (action) el.append(action);
+    el.append(hideButton(el));
+    document.body.append(el);
+  }
+
+  /** Срок вышел: приложение здесь больше не открываем, зовём в новое. */
+  function disabled() {
+    const veil = make('div', 'position:fixed;inset:0;z-index:2147483002;background:var(--bg,#eef1f6);color:var(--text,#1c2430);' +
+      'display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:24px;text-align:center;' + font);
+    veil.append(make('div', 'font-size:20px;font-weight:700', 'Это приложение отключено'),
+      make('div', 'max-width:360px', `СГОшка переехала на ${host}. Откройте новое приложение с иконки на экране «Домой».`));
+    const open = button('Открыть сайт');
+    open.onclick = () => { location.href = `${target}/`; };
+    veil.append(open);
+    document.body.append(veil);
+  }
+
+  (async () => {
+    const due = await deadline();
+    if (due !== null && Date.now() / 1000 >= due) return disabled();
+    if (hiddenToday()) return;
+    if (due !== null) {
+      const date = new Date(due * 1000).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
+      return bar(`Вы уже пользуетесь новым приложением на ${host}. Это перестанет работать ${date}, открывайте СГОшку с новой иконки.`);
+    }
+    const go = button('Перенести');
+    go.onclick = sheet;
+    bar(`Сайт переехал на ${host}. Перенесём вход, заново логиниться не придётся.`, go);
+  })();
 })();
