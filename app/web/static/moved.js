@@ -7,6 +7,8 @@
   const target = script?.dataset.to || '';
   const base = script?.dataset.base || '';
   if (!target) return;
+  // Android пока остаются на прежнем адресе: им позже выйдет новый APK.
+  if (/Android/.test(navigator.userAgent)) return;
   const KEY = 'ns-moved-hidden';
   const DAY = 24 * 60 * 60 * 1000;
   try {
@@ -15,7 +17,6 @@
 
   const ua = navigator.userAgent;
   const ios = /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
-  const android = /Android/.test(ua);
   const standalone = window.matchMedia?.('(display-mode: standalone)').matches || navigator.standalone === true;
   const host = new URL(target).host;
 
@@ -33,19 +34,16 @@
     return el;
   };
 
-  /** Ссылка на новый адрес с входом; без сессии на этом адресе — просто адрес. */
+  /** Ссылка на новый адрес с входом или '' — не вышло. Запрос идёт через
+   *  клиент самого приложения: он знает токен, разблокировку по PIN и режим
+   *  Telegram, а без них сервер аккаунт с защитой не опознает. */
   async function link() {
     try {
-      const headers = {};
-      const token = window.NETSCHOOL?.token;
-      if (token) headers['X-Netschool-Token'] = token;
-      const initData = window.Telegram?.WebApp?.initData;
-      if (initData) headers['X-Telegram-Init-Data'] = initData;
-      const response = await fetch(`${base}/api/migrate-link`, { headers, credentials: 'same-origin' });
-      const url = (await response.json())?.data?.url;
-      if (response.ok && typeof url === 'string' && url.startsWith(`${target}/`)) return url;
+      const { api } = await import(script.src.replace(/moved\.js.*$/, 'js/core.js'));
+      const url = (await api('/api/migrate-link'))?.data?.url;
+      if (typeof url === 'string' && url.startsWith(`${target}/`)) return url;
     } catch { /* нет сети или не вошли */ }
-    return `${target}/`;
+    return '';
   }
 
   function steps() {
@@ -59,11 +57,6 @@
           'Если это Safari, нажмите «Поделиться» → «На экран „Домой“» → «Добавить». Подсказка покажется на странице.',
           'Старую иконку СГОшки с экрана можно удалить.'];
     }
-    if (android) {
-      return ['Нажмите «Открыть»: новый адрес откроется с уже выполненным входом.',
-        'В Chrome нажмите меню ⋮ → «Установить приложение» (или «Добавить на главный экран»). Подсказка покажется на странице.',
-        'Старую иконку СГОшки можно удалить.'];
-    }
     return ['Нажмите «Открыть»: новый адрес откроется с уже выполненным входом.'];
   }
 
@@ -75,20 +68,28 @@
       'max-height:90vh;overflow:auto');
     card.append(make('div', 'font-size:18px;font-weight:700;margin-bottom:6px', `Переезд на ${host}`),
       make('div', 'margin-bottom:12px;opacity:.8', 'Вход перенесётся сам, заново логиниться не нужно.'));
+    const note = make('div', 'margin-bottom:12px;color:#d14343;display:none');
+    note.setAttribute('role', 'alert');
     const list = make('ol', 'margin:0 0 14px;padding-left:22px');
     for (const text of steps()) list.append(make('li', 'margin:0 0 8px', text));
     const open = button('Открыть', 'width:100%');
     const cancel = button('Позже', 'width:100%;margin-top:8px;background:transparent;color:inherit;opacity:.7');
     cancel.onclick = () => veil.remove();
+    let plain = false;
     open.onclick = async () => {
+      if (plain) { location.href = `${target}/`; return; }
       open.disabled = true;
       open.textContent = 'Готовим ссылку…';
       const url = await link();
       open.disabled = false;
-      open.textContent = 'Открыть';
-      location.href = url;
+      if (url) { open.textContent = 'Открыть'; location.href = url; return; }
+      // Вход перенести не вышло: честно говорим, а не открываем гостевой экран молча.
+      plain = true;
+      open.textContent = 'Открыть без входа';
+      note.textContent = 'Не удалось перенести вход. Откройте новый адрес и войдите заново, как обычно.';
+      note.style.display = 'block';
     };
-    card.append(list, open, cancel);
+    card.append(list, note, open, cancel);
     veil.append(card);
     veil.addEventListener('click', (event) => { if (event.target === veil) veil.remove(); });
     document.body.append(veil);
