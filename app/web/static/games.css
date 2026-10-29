@@ -534,6 +534,23 @@ html.in-game .game-screen { padding-bottom: max(12px, env(safe-area-inset-bottom
 .bb-top { position: relative; text-align: center; padding-top: 2px; font-family: "BB Fredoka", ui-rounded, system-ui, sans-serif; }
 .bb-best { position: absolute; left: 14px; top: 4px; display: flex; align-items: center; gap: 6px; font-size: 19px; font-weight: 600; color: #fff; }
 .bb-best svg { width: 30px; height: 24px; color: #b9a8f2; filter: drop-shadow(0 2px 0 rgba(0, 0, 0, .2)); }
+.bb-gear { position: absolute; right: 14px; top: 2px; width: 34px; height: 34px; color: #c9d4ff; display: grid; place-items: center; }
+.bb-gear svg { width: 26px; height: 26px; }
+.bb-gear:active { transform: scale(.9) rotate(30deg); }
+.game-screen[data-game="blockblast"] .game-sound { display: none; }
+.bb-modal { position: absolute; inset: 0; z-index: 60; display: grid; place-items: center; background: rgba(8, 8, 40, .55); font-family: "BB Fredoka", ui-rounded, system-ui, sans-serif; }
+.bb-card { width: min(300px, 86vw); border-radius: 22px; padding: 14px 16px 16px; background: linear-gradient(180deg, #7c67d9, #5f4cbc); box-shadow: 0 14px 40px rgba(0, 0, 0, .45), inset 0 2px 0 rgba(255, 255, 255, .25); }
+.bb-card-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.bb-card-head b { font-size: 24px; font-weight: 600; color: #d9ccff; letter-spacing: .02em; margin: 0 auto; padding-left: 28px; }
+.bb-card-head button { width: 28px; height: 28px; font-size: 18px; color: #d9ccff; }
+.bb-row { display: flex; align-items: center; justify-content: space-between; padding: 12px 4px; font-size: 18px; font-weight: 500; color: #fff; border-top: 1px solid rgba(255, 255, 255, .14); }
+.bb-sw { appearance: none; -webkit-appearance: none; width: 52px; height: 30px; border-radius: 15px; background: #3d3487; position: relative; transition: background .15s; flex: none; }
+.bb-sw::after { content: ""; position: absolute; left: 3px; top: 3px; width: 24px; height: 24px; border-radius: 50%; background: #fff; transition: left .15s; }
+.bb-sw:checked { background: #5fd068; }
+.bb-sw:checked::after { left: 25px; }
+.bb-go { padding: 7px 16px; border-radius: 10px; font-size: 16px; font-weight: 600; color: #fff; background: linear-gradient(180deg, #5fd068, #34a83f); box-shadow: 0 3px 0 #207a2b; }
+.bb-go.home { background: linear-gradient(180deg, #8f8be6, #6b66c8); box-shadow: 0 3px 0 #4a45a0; }
+.bb-go:active { transform: translateY(2px); box-shadow: 0 1px 0 #207a2b; }
 .bb-best.gold { color: #ffb02e; }
 .bb-best.gold svg { color: #ffc23a; }
 .bb-score { position: relative; display: inline-block; margin-top: 22px; font-size: 56px; font-weight: 500; line-height: 1.1; font-variant-numeric: tabular-nums; text-shadow: 0 3px 0 rgba(0, 0, 0, .18); }
@@ -547,10 +564,11 @@ html.in-game .game-screen { padding-bottom: max(12px, env(safe-area-inset-bottom
   position: absolute; inset: 0; z-index: 1; pointer-events: none; opacity: 0;
   background: linear-gradient(180deg, rgba(235, 120, 255, .75), rgba(70, 150, 255, .6));
 }
-.bb-flash.on { animation: bb-flash 1.6s ease-out; }
+.bb-flash.on { animation: bb-flash .9s ease-out; }
 @keyframes bb-flash { 0% { opacity: 0; } 22% { opacity: var(--f, 1); } 60% { opacity: calc(var(--f, 1) * .85); } 100% { opacity: 0; } }
-.bb-diamond.pulse { animation: bb-pulse .5s ease-out; }
+.bb-diamond.pulse { animation: bb-pulse .3s ease-out; }
 @keyframes bb-pulse { 0% { scale: 1; } 30% { scale: 1.7; filter: brightness(2.2); } 100% { scale: 1; } }
+.bb-total, .bb-bonus, .bb-word, .bb-combo { animation-duration: .7s; }
 .bb-total { font-family: "BB Fredoka", ui-rounded, system-ui, sans-serif; font-size: 40px; font-weight: 700; color: #fff; text-shadow: 0 3px 0 rgba(0, 0, 0, .25), 0 0 14px rgba(255, 255, 255, .55); }
 .bb-bonus { font-family: "BB Lilita", ui-rounded, system-ui, sans-serif; font-size: 38px; font-weight: 400; color: #ffe27a; text-shadow: 0 0 10px #ff8a1a, 0 3px 0 #b8501a; }
 .bb-word { font-family: "BB Lilita", ui-rounded, system-ui, sans-serif; font-size: 32px; font-weight: 400; color: #ffc93a; -webkit-text-stroke: 5px #9a4b12; paint-order: stroke fill; text-shadow: 0 4px 0 rgba(120, 50, 10, .45); }

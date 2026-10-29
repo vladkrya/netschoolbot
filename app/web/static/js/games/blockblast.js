@@ -5,7 +5,7 @@
 'use strict';
 
 import {
-  ask, best, fitCanvas, frames, load, overlay, rand, save, saveBest, sfx, shade, shuffle, tap,
+  ask, best, fitCanvas, frames, isMuted, load, overlay, rand, save, saveBest, setMuted, sfx, shade, shuffle, tap,
 } from './kit.js';
 
 const N = 8;
@@ -154,13 +154,15 @@ function block(g, x, y, s, color, alpha = 1) {
 const WORDS = ['', '', 'Great!', 'Excellent!', 'Unbelievable!', 'Unbelievable!'];
 
 export function start(root, ctx) {
+  let vibrate = load('bb-vibrate') !== false;
+  const hap = (kind) => { if (vibrate) tap(kind); };
   root.innerHTML = `<div class="game blockblast">
       <div class="bb-top">
         <div class="bb-best"><svg viewBox="0 0 32 26" aria-hidden="true"><path d="M2 8l7 6 7-11 7 11 7-6-3 16H5z" fill="currentColor"/><rect x="5" y="22" width="22" height="3" rx="1.5" fill="currentColor" opacity=".7"/></svg><b data-best>—</b></div>
+        <button class="bb-gear" data-gear aria-label="Настройки"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M19.4 13a7.6 7.6 0 0 0 0-2l2.1-1.6a.5.5 0 0 0 .1-.6l-2-3.5a.5.5 0 0 0-.6-.2l-2.5 1a7.5 7.5 0 0 0-1.7-1l-.4-2.6a.5.5 0 0 0-.5-.4h-4a.5.5 0 0 0-.5.4l-.4 2.6c-.6.3-1.2.6-1.7 1l-2.5-1a.5.5 0 0 0-.6.2l-2 3.5a.5.5 0 0 0 .1.6L4.6 11a7.6 7.6 0 0 0 0 2l-2.1 1.6a.5.5 0 0 0-.1.6l2 3.5c.1.2.4.3.6.2l2.5-1c.5.4 1.1.7 1.7 1l.4 2.6c0 .2.2.4.5.4h4c.3 0 .5-.2.5-.4l.4-2.6c.6-.3 1.2-.6 1.7-1l2.5 1c.2.1.5 0 .6-.2l2-3.5a.5.5 0 0 0-.1-.6zM12 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z"/></svg></button>
         <div class="bb-score"><i class="bb-diamond" data-diamond></i><span data-score>0</span></div>
       </div>
-      <div class="game-stage bb-stage"><canvas class="game-canvas bb-canvas" data-board></canvas></div>
-      <button class="game-btn ghost small" data-new>Новая игра</button></div>`;
+      <div class="game-stage bb-stage"><canvas class="game-canvas bb-canvas" data-board></canvas></div></div>`;
   const flashEl = document.createElement('div');
   flashEl.className = 'bb-flash';
   root.closest('.game-screen')?.append(flashEl);
@@ -214,7 +216,7 @@ export function start(root, ctx) {
   let pops = [];
   let burning = [];
   let bits = [];
-  const LIFT = 3;
+  const LIFT = 2.2;
   let drag = null;
   // Сгоревшие клетки, которые ещё гаснут на экране.
   let fading = [];
@@ -298,7 +300,7 @@ export function start(root, ctx) {
       cols.forEach((idx) => burning.push({ row: false, idx, t: 0 }));
       streak += 1;
       sfx('bbClear', { lines, combo: streak });
-      tap('medium');
+      hap('medium');
       flashEl.style.setProperty('--f', String(Math.min(1, 0.35 + lines * 0.2)));
       bumpFlash();
       pulseDiamond();
@@ -308,7 +310,7 @@ export function start(root, ctx) {
     } else {
       streak = 0;
       sfx('bbPlace');
-      tap('light');
+      hap('light');
     }
     if (board.every((row) => row.every((v) => !v))) {
       // Чистое поле: бонус и новая палитра, в том числе у фигур в лотке.
@@ -361,7 +363,7 @@ export function start(root, ctx) {
     const [sx, sy] = slotCenter(i);
     drag = { i, x, y, id: event.pointerId };
     hold = { x: sx, y: sy, s: trayScale };
-    tap('light');
+    hap('light');
     sfx('bbPick');
   });
   canvas.addEventListener('pointermove', (event) => {
@@ -382,13 +384,47 @@ export function start(root, ctx) {
   canvas.addEventListener('pointerup', release);
   canvas.addEventListener('pointercancel', release);
 
-  root.querySelector('[data-new]').addEventListener('click', async () => {
-    tap();
-    sfx('tap');
+  async function restart() {
     const started = !over && (score > 0 || board.some((row) => row.some(Boolean)));
     if (started && !(await ask(stage, 'Начать заново?', 'Текущая партия пропадёт.', 'Начать заново'))) return;
     newGame();
+  }
+
+  // Настройки: звук, вибрация, выход из игры и новая партия.
+  root.querySelector('[data-gear]').addEventListener('click', () => {
+    const host = root.closest('.game-screen') || root;
+    if (host.querySelector('.bb-modal')) return;
+    hap('light');
+    sfx('bbPick');
+    const modal = document.createElement('div');
+    modal.className = 'bb-modal';
+    modal.innerHTML = `<div class="bb-card" role="dialog" aria-label="Настройки">
+        <div class="bb-card-head"><b>Настройки</b><button data-close aria-label="Закрыть">✕</button></div>
+        <label class="bb-row"><span>Звук</span><input type="checkbox" class="bb-sw" data-sound ${isMuted() ? '' : 'checked'}></label>
+        <label class="bb-row"><span>Вибрация</span><input type="checkbox" class="bb-sw" data-vibe ${vibrate ? 'checked' : ''}></label>
+        <div class="bb-row"><span>Начать заново</span><button class="bb-go" data-again>Играть</button></div>
+        <div class="bb-row"><span>Все игры</span><button class="bb-go home" data-home>Выйти</button></div></div>`;
+    const close = () => modal.remove();
+    modal.addEventListener('click', (event) => {
+      if (event.target === modal || event.target.closest('[data-close]')) close();
+      else if (event.target.closest('[data-again]')) { close(); restart(); }
+      else if (event.target.closest('[data-home]')) {
+        close();
+        host.querySelector('.screen-back')?.click();
+      }
+    });
+    modal.querySelector('[data-sound]').addEventListener('change', (event) => {
+      setMuted(!event.target.checked);
+      sfx('bbPick');
+    });
+    modal.querySelector('[data-vibe]').addEventListener('change', (event) => {
+      vibrate = event.target.checked;
+      save('bb-vibrate', vibrate);
+      hap('light');
+    });
+    host.append(modal);
   });
+  ctx.signal.addEventListener('abort', () => document.querySelectorAll('.bb-modal').forEach((el) => el.remove()));
 
   // ───────────── Рисование ─────────────
 
@@ -401,13 +437,18 @@ export function start(root, ctx) {
   }
 
   const soft = (t) => 1 - (1 - Math.min(1, t)) ** 3;
+  // Свечение рисуется слоями линий: shadowBlur на холсте каждый кадр тормозит iPhone.
   const outline = (x, y, w, h, alpha) => {
     g.save();
+    g.strokeStyle = '#ffb83a';
+    [[8, 0.12], [4.5, 0.25]].forEach(([width, a]) => {
+      g.globalAlpha = alpha * a;
+      g.lineWidth = width;
+      g.strokeRect(x + 1, y + 1, w - 2, h - 2);
+    });
     g.globalAlpha = alpha;
-    g.strokeStyle = '#ffd36a';
-    g.shadowColor = '#ffa51f';
-    g.shadowBlur = cell * 0.55;
-    g.lineWidth = 2;
+    g.strokeStyle = '#ffe08a';
+    g.lineWidth = 1.8;
     g.strokeRect(x + 1, y + 1, w - 2, h - 2);
     g.restore();
   };
@@ -417,7 +458,7 @@ export function start(root, ctx) {
     g.save();
     g.translate(0, oy);
     if (shown !== score) {
-      shown = shown < score ? Math.min(score, shown + Math.max(1, Math.ceil((score - shown) * dt * 4))) : score;
+      shown = shown < score ? Math.min(score, shown + Math.max(1, Math.ceil((score - shown) * dt * 9))) : score;
       root.querySelector('[data-score]').textContent = String(shown);
       root.querySelector('[data-diamond]').style.rotate = `${45 + shown * 2}deg`;
       showBest();
@@ -442,7 +483,7 @@ export function start(root, ctx) {
       preview = fullLines(copy);
     }
     const glowing = (r, c) => preview && (preview.rows.includes(r) || preview.cols.includes(c));
-    pops = pops.filter((p) => { p.t += dt / 0.22; return p.t < 1; });
+    pops = pops.filter((p) => { p.t += dt / 0.14; return p.t < 1; });
     for (let r = 0; r < N; r += 1) {
       for (let c = 0; c < N; c += 1) {
         if (!board[r][c]) continue;
@@ -452,13 +493,16 @@ export function start(root, ctx) {
         block(g, bx + c * cell + o, r * cell + o, s, glowing(r, c) ? shade(board[r][c], 0.4) : board[r][c]);
       }
     }
+    if (spot) {
+      piece(drag.i).forEach(([x, y], k) => block(g, bx + (spot.gx + x) * cell, (spot.gy + y) * cell, cell, pieces[drag.i].colors[k], 0.4));
+    }
     if (preview) {
       preview.rows.forEach((r) => outline(bx, r * cell, bw, cell, 1));
       preview.cols.forEach((c) => outline(bx + c * cell, 0, cell, bw, 1));
     }
     // Сгорание линии: золотая кайма → синий неоновый луч.
     burning = burning.filter((b) => {
-      b.t += dt / 0.8;
+      b.t += dt / 0.42;
       if (b.t >= 1) return false;
       const x = b.row ? bx : bx + b.idx * cell;
       const y = b.row ? b.idx * cell : 0;
@@ -469,19 +513,22 @@ export function start(root, ctx) {
         const k = Math.sin(Math.PI * (b.t - 0.12) / 0.63);
         const th = cell * 0.16 * (1 + k);
         g.save();
-        g.globalAlpha = k;
-        g.shadowColor = '#7da8ff';
-        g.shadowBlur = cell * 0.5;
-        g.fillStyle = '#cfe0ff';
-        if (b.row) g.fillRect(x + cell * 0.2, y + cell / 2 - th / 2, w - cell * 0.4, th);
-        else g.fillRect(x + cell / 2 - th / 2, y + cell * 0.2, th, h - cell * 0.4);
+        const beam = (extra, alpha, color) => {
+          g.globalAlpha = k * alpha;
+          g.fillStyle = color;
+          if (b.row) g.fillRect(x + cell * 0.2, y + cell / 2 - (th + extra) / 2, w - cell * 0.4, th + extra);
+          else g.fillRect(x + cell / 2 - (th + extra) / 2, y + cell * 0.2, th + extra, h - cell * 0.4);
+        };
+        beam(cell * 0.5, 0.18, '#7da8ff');
+        beam(cell * 0.2, 0.35, '#9dbdff');
+        beam(0, 1, '#e4eeff');
         g.restore();
       }
       return true;
     });
     // Сгоревшие клетки: тают, потом «5» и рассыпаются квадратиками.
     fading = fading.filter((f) => {
-      f.t += dt / 0.9;
+      f.t += dt / 0.5;
       if (f.t >= 1) return false;
       const cx = bx + f.c * cell + cell / 2;
       const cy = f.r * cell + cell / 2;
@@ -502,19 +549,21 @@ export function start(root, ctx) {
         g.globalAlpha = k;
         g.fillStyle = 'rgba(255, 255, 255, .22)';
         g.fillRect(cx - cell / 2 + 1, cy - cell / 2 + 1, cell - 2, cell - 2);
-        g.fillStyle = '#ffd96a';
-        g.shadowColor = '#ff7a1a';
-        g.shadowBlur = 9;
         g.font = `${Math.round(cell * 0.64)}px "BB Lilita", ui-rounded, system-ui, sans-serif`;
         g.textAlign = 'center';
         g.textBaseline = 'middle';
+        g.strokeStyle = 'rgba(255, 110, 20, .7)';
+        g.lineWidth = 4;
+        g.lineJoin = 'round';
+        g.strokeText('5', cx, cy + 1);
+        g.fillStyle = '#ffe08a';
         g.fillText('5', cx, cy + 1);
         g.restore();
       }
       return true;
     });
     bits = bits.filter((b) => {
-      b.life -= dt / 0.7;
+      b.life -= dt / 0.45;
       if (b.life <= 0) return false;
       b.y += b.vy * dt;
       g.globalAlpha = b.life * 0.8;
@@ -527,15 +576,12 @@ export function start(root, ctx) {
       g.fillStyle = 'rgba(140, 90, 255, .22)';
       g.fillRect(bx, 0, bw, bw);
       g.save();
-      g.shadowColor = '#3fe0ff';
-      g.shadowBlur = 22;
-      g.strokeStyle = '#7fefff';
-      g.lineWidth = 3.5;
-      g.strokeRect(bx - 3, -3, bw + 6, bw + 6);
-      g.shadowBlur = 8;
-      g.strokeStyle = '#e8fdff';
-      g.lineWidth = 1.2;
-      g.strokeRect(bx - 3, -3, bw + 6, bw + 6);
+      [['#3fe0ff', 12, 0.14], ['#3fe0ff', 7, 0.28], ['#7fefff', 3.5, 1], ['#e8fdff', 1.2, 1]].forEach(([color, width, alpha]) => {
+        g.globalAlpha = alpha;
+        g.strokeStyle = color;
+        g.lineWidth = width;
+        g.strokeRect(bx - 3, -3, bw + 6, bw + 6);
+      });
       g.restore();
     }
     // Лоток. На месте взятой фигуры остаётся бирюзовая рамка.
@@ -551,22 +597,19 @@ export function start(root, ctx) {
       drawPiece(i, cx, cy, trayScale, canPlaceAnywhere(board, piece(i)) ? 1 : 0.35);
     }
     if (returning) {
-      returning.t += dt / 0.22;
+      returning.t += dt / 0.12;
       const k = soft(returning.t);
       const [tx, ty] = slotCenter(returning.i);
       drawPiece(returning.i, returning.x + (tx - returning.x) * k, returning.y + (ty - returning.y) * k, returning.s + (trayScale - returning.s) * k);
       if (returning.t >= 1) returning = null;
     }
-    // Фигура в руке: растёт из лотка, висит над пальцем и липнет к клеткам.
+    // Фигура в руке: растёт из лотка и идёт ровно за пальцем, выше него.
     if (drag && hold) {
-      const [w, h] = size(piece(drag.i));
-      const goal = spot
-        ? { x: bx + (spot.gx + w / 2) * cell, y: (spot.gy + h / 2) * cell }
-        : { x: drag.x, y: drag.y - cell * LIFT - (h * cell) / 2 };
-      const follow = 1 - Math.exp(-dt * 20);
-      hold.x += (goal.x - hold.x) * follow;
-      hold.y += (goal.y - hold.y) * follow;
-      hold.s += (cell - hold.s) * (1 - Math.exp(-dt * 14));
+      const [, h] = size(piece(drag.i));
+      const follow = 1 - Math.exp(-dt * 60);
+      hold.x += (drag.x - hold.x) * follow;
+      hold.y += (drag.y - cell * LIFT - (h * cell) / 2 - hold.y) * follow;
+      hold.s += (cell - hold.s) * (1 - Math.exp(-dt * 30));
       drawPiece(drag.i, hold.x, hold.y, hold.s);
     }
     g.restore();
