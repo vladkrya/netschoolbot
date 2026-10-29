@@ -158,6 +158,12 @@ export function openAdmin() {
         ${data.android_updates?.available ? `<p class="muted small">Актуальная сборка: ${esc(data.android_updates.version)} · ${(data.android_updates.size / 1024 / 1024).toFixed(1)} МБ</p>
           <button class="btn outline" data-android-download>Скачать актуальный APK</button>` : '<p class="muted small">Сборка ещё не опубликована.</p>'}
         <p class="muted small">Скачать сборку вручную можно и при выключенных обновлениях.</p>
+        <label>Номер отключаемой сборки (versionCode)
+          <input class="field" data-android-code type="number" min="1" max="2100000000" step="1" placeholder="Например, 4"></label>
+        <button class="btn outline" data-android-block>Потребовать обновление этой сборки</button>
+        <p class="muted small">Нужна опубликованная более новая сборка. Работает в APK с поддержкой серверной блокировки.</p>
+        ${(data.android_updates?.blockedVersionCodes || []).map((code) => `<div>Сборка ${Number(code)} отключена <button class="btn outline" data-android-allow="${Number(code)}">Разрешить снова</button></div>`).join('')}
+
       </div>
       ${widgetCard(data.widget)}
       <div class="card">
@@ -196,6 +202,18 @@ export function openAdmin() {
         banner(error.message, true);
       }
     }));
+    const versionAction = async (code, blocked, button) => {
+      if (!Number.isInteger(code) || code < 1 || code > 2100000000) { banner('Укажите номер сборки versionCode', true); return; }
+      if (blocked && !window.confirm(`Отключить сборку ${code}? Она будет требовать обновление.`)) return;
+      button.disabled = true;
+      try {
+        const { data } = await post('/api/admin/android-version', { versionCode: code, blocked });
+        draw(data);
+      } catch (error) { banner(error.message, true); }
+      finally { button.disabled = false; }
+    };
+    body.querySelector('[data-android-block]')?.addEventListener('click', (event) => versionAction(Number(body.querySelector('[data-android-code]').value), true, event.currentTarget));
+    body.querySelectorAll('[data-android-allow]').forEach((button) => button.addEventListener('click', () => versionAction(Number(button.dataset.androidAllow), false, button)));
     body.querySelector('[data-android-download]')?.addEventListener('click', async (event) => {
       const button = event.currentTarget;
       button.disabled = true;

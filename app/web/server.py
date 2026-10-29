@@ -177,6 +177,7 @@ def create_app(context: AppContext, bot=None) -> web.Application:
     inner.add_routes(account.routes)
     inner.add_routes(admin.routes)
     inner.add_routes(app_icon.routes)
+    inner[android_updates.POLICY_LOCK] = asyncio.Lock()
     inner.add_routes(android_updates.routes)
     inner.add_routes(devices.routes)
     inner.add_routes(passkeys.routes)

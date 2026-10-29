@@ -31,7 +31,9 @@ async def _state(request: web.Request) -> dict:
     release = android_updates.release_manifest(android_updates.directory(request))
     return {
         "android_updates": {"on": await android_updates.updates_enabled(app), "available": release is not None,
-                            "version": release["versionName"] if release else "", "size": release["size"] if release else 0},
+                            "version": release["versionName"] if release else "", "size": release["size"] if release else 0,
+                            "versionCode": release["versionCode"] if release else 0,
+                            "blockedVersionCodes": await android_updates.blocked_versions(app)},
         "solver_class": {"on": await solver.class_open(app)} if app.settings.assistant.enabled else None,
         "share_sgo": {"on": await ownership.sharing_allowed(app)},
         "widget": {
@@ -115,7 +117,35 @@ async def android_updates_toggle(request: web.Request) -> web.Response:
         body = None
     if not isinstance(body, dict) or not isinstance(body.get("on"), bool):
         return json_error("Некорректный запрос")
-    await AppFlagRepository(context(request).db).set("android_updates_disabled", not body["on"])
+    async with request.app[android_updates.POLICY_LOCK]:
+        if not body["on"] and await android_updates.blocked_versions(context(request)):
+            return json_error("Сначала разрешите отключённые версии APK: пользователям нужен доступ к обновлению")
+        await AppFlagRepository(context(request).db).set("android_updates_disabled", not body["on"])
+    return web.json_response({"ok": True, "data": await _state(request)})
+
+
+@routes.post("/api/admin/android-version")
+async def android_version_toggle(request: web.Request) -> web.Response:
+    if not _owner(request):
+        return json_error("Это может только владелец", status=403)
+    try:
+        body = await request.json()
+    except ValueError:
+        body = None
+    code = body.get("versionCode") if isinstance(body, dict) else None
+    blocked = body.get("blocked") if isinstance(body, dict) else None
+    if type(code) is not int or not 0 < code <= 2_100_000_000 or type(blocked) is not bool:
+        return json_error("Укажите номер сборки versionCode и состояние blocked")
+    app = context(request)
+    async with request.app[android_updates.POLICY_LOCK]:
+        if blocked:
+            existing = await android_updates.blocked_versions(app)
+            if code not in existing and len(existing) >= 1000:
+                return json_error("Слишком много отключённых версий")
+            release = android_updates.release_manifest(android_updates.directory(request))
+            if not await android_updates.updates_enabled(app) or release is None or release["versionCode"] <= code:
+                return json_error("Сначала опубликуйте более новую сборку и включите обновления APK")
+        await AppFlagRepository(app.db).set(android_updates.BLOCK_PREFIX + str(code), blocked)
     return web.json_response({"ok": True, "data": await _state(request)})
 
 

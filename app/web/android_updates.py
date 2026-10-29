@@ -1,6 +1,7 @@
 """Public distribution of signed Android builds; publication is an atomic file swap."""
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 from pathlib import Path
@@ -9,7 +10,9 @@ from .api import context, json_error
 from ..db.repositories import AppFlagRepository
 
 routes = web.RouteTableDef()
+POLICY_LOCK = web.AppKey("android_policy_lock", asyncio.Lock)
 APK_NAME = re.compile(r"sgoshka-[1-9][0-9]{0,9}\.apk")
+VERSION_APK = re.compile(r"sgoshka-v\.[0-9]{1,6}\.[0-9]{1,6}\.[0-9]{1,6}\.apk")
 MAX_APK_BYTES = 200 * 1024 * 1024
 
 
@@ -18,12 +21,27 @@ async def updates_enabled(app) -> bool:
     return not await AppFlagRepository(app.db).get("android_updates_disabled")
 
 
+BLOCK_PREFIX = "android_version_blocked:"
+
+
+async def blocked_versions(app) -> list[int]:
+    rows = await app.db.fetch_all("SELECT key FROM app_flags WHERE key GLOB ? AND value = '1'", (BLOCK_PREFIX + "*",))
+    return sorted({int(row["key"][len(BLOCK_PREFIX):]) for row in rows
+                   if re.fullmatch(r"[1-9][0-9]{0,9}", row["key"][len(BLOCK_PREFIX):]) and int(row["key"][len(BLOCK_PREFIX):]) <= 2_100_000_000})
+
+
+@routes.get("/android/policy.json")
+async def version_policy(request: web.Request) -> web.Response:
+    return web.json_response({"packageName": "ru.ikrya.sgoshka", "blockedVersionCodes": await blocked_versions(context(request))},
+                             headers={"Cache-Control": "no-store"})
+
+
 def directory(request: web.Request) -> Path:
     return context(request).settings.data_dir / "android-releases"
 
 
-def release_manifest(root: Path) -> dict | None:
-    path = root / "update.json"
+def release_manifest(root: Path, manifest_name: str = "update.json") -> dict | None:
+    path = root / manifest_name
     if not path.is_file() or path.is_symlink() or path.stat().st_size > 32768:
         return None
     try:
@@ -33,9 +51,10 @@ def release_manifest(root: Path) -> dict | None:
         code = data.get("versionCode")
         if type(code) is not int or not 0 < code <= 2_100_000_000:
             return None
-        if data.get("file") != f"sgoshka-{code}.apk":
-            return None
         if not isinstance(data.get("versionName"), str) or not 0 < len(data["versionName"]) <= 64:
+            return None
+        name = data.get("file")
+        if name != f"sgoshka-{code}.apk" and not (isinstance(name, str) and VERSION_APK.fullmatch(name) and name == f"sgoshka-v.{data['versionName']}.apk"):
             return None
         if not isinstance(data.get("sha256"), str) or not re.fullmatch(r"[0-9a-f]{64}", data["sha256"]):
             return None
@@ -73,8 +92,13 @@ async def latest(request: web.Request) -> web.Response:
     if data is None:
         return web.json_response({"available": False}, headers={"Cache-Control": "no-store"})
     data["available"] = True
+    settings = context(request).settings.web
+    own = f"https://{request.host}".lower()
+    if own in {url.lower() for url in settings.all_urls} and own != settings.public_url.lower():
+        # Existing APKs pin their original origin and sgoshka-<versionCode>.apk URL.
+        data["file"] = f"sgoshka-{data['versionCode']}.apk"
     data["url"] = _site(request) + "/android/" + data["file"]
-    return web.json_response(data, headers={"Cache-Control": "no-store"})
+    return web.json_response(data, headers={"Cache-Control": "no-store"}, dumps=lambda value: json.dumps(value, ensure_ascii=False))
 
 
 @routes.get("/android/{name}")
@@ -82,10 +106,24 @@ async def download(request: web.Request) -> web.StreamResponse:
     if not await updates_enabled(context(request)):
         return json_error("Обновления APK выключены администратором", status=403)
     name = request.match_info["name"]
-    if not APK_NAME.fullmatch(name):
+    root = directory(request)
+    if APK_NAME.fullmatch(name):
+        code = int(name.removeprefix("sgoshka-").removesuffix(".apk"))
+        metadata = release_manifest(root, f"sgoshka-{code}.json")
+        if metadata is not None and metadata["versionCode"] != code:
+            raise web.HTTPNotFound()
+        filename = metadata["file"] if metadata else name
+    elif VERSION_APK.fullmatch(name):
+        metadata = release_manifest(root, name.removesuffix(".apk") + ".json")
+        if metadata is None or metadata["file"] != name:
+            raise web.HTTPNotFound()
+        code, filename = metadata["versionCode"], name
+    else:
         raise web.HTTPNotFound()
-    path = directory(request) / name
+    if code in await blocked_versions(context(request)):
+        return json_error("Эта версия отключена. Скачайте актуальную сборку", status=410)
+    path = root / filename
     if path.is_symlink() or not path.is_file() or not 0 < path.stat().st_size <= MAX_APK_BYTES:
         raise web.HTTPNotFound()
     return web.FileResponse(path, headers={"Content-Type": "application/vnd.android.package-archive",
-        "Content-Disposition": f'attachment; filename="{name}"', "Cache-Control": "no-store"})
+        "Content-Disposition": f'attachment; filename="{filename}"', "Cache-Control": "no-store"})
