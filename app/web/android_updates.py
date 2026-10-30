@@ -101,6 +101,22 @@ def published_versions(root: Path) -> list[dict]:
     return [{"versionCode": code, "versionName": found[code]} for code in sorted(found, reverse=True)]
 
 
+def _manifest_by_code(root: Path, code: int) -> dict | None:
+    """Манифест по номеру сборки среди манифестов, названных по версии (sgoshka-v.0.6.1.json).
+
+    Ссылки вида sgoshka-11.apk остаются рабочими, хотя отдельный
+    sgoshka-11.json больше не нужен: достаточно манифеста по имени версии."""
+    try:
+        paths = sorted(root.glob("sgoshka-v.*.json"))[:500]
+    except OSError:
+        return None
+    for path in paths:
+        metadata = release_manifest(root, path.name)
+        if metadata is not None and metadata["versionCode"] == code:
+            return metadata
+    return None
+
+
 def _site(request: web.Request) -> str:
     """Адрес, на который ссылается update.json: тот, откуда спросили.
 
@@ -137,7 +153,7 @@ async def download(request: web.Request) -> web.StreamResponse:
     root = directory(request)
     if APK_NAME.fullmatch(name):
         code = int(name.removeprefix("sgoshka-").removesuffix(".apk"))
-        metadata = release_manifest(root, f"sgoshka-{code}.json")
+        metadata = release_manifest(root, f"sgoshka-{code}.json") or _manifest_by_code(root, code)
         if metadata is not None and metadata["versionCode"] != code:
             raise web.HTTPNotFound()
         filename = metadata["file"] if metadata else name

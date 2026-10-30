@@ -166,7 +166,9 @@ export function openAdmin() {
         <button class="btn outline" data-android-block>Потребовать обновление этой версии</button>
         <button class="btn outline" data-android-block-below>Потребовать обновление этой версии и ниже</button>
         <p class="muted small">Нужна опубликованная более новая сборка. Работает в APK с поддержкой серверной блокировки.</p>
-        ${(data.android_updates?.blockedVersionCodes || []).map((code) => `<div>Версия ${esc(nameOf(code))} отключена <button class="btn outline" data-android-allow="${Number(code)}">Разрешить снова</button></div>`).join('')}
+        ${(data.android_updates?.blockedVersionCodes || []).length ? `<details class="android-blocked"><summary>Отключённые версии (${(data.android_updates.blockedVersionCodes).length})</summary>
+          <div class="chips">${data.android_updates.blockedVersionCodes.map((code) => `<button class="chip" data-android-allow="${Number(code)}" title="Разрешить снова">${esc(nameOf(code))} ✕</button>`).join('')}</div>
+          <p class="muted small">Нажмите версию, чтобы снова разрешить её.</p></details>` : '<p class="muted small">Отключённых версий нет.</p>'}
 
       </div>
       ${widgetCard(data.widget)}

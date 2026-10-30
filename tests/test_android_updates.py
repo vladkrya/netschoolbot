@@ -272,3 +272,21 @@ async def test_block_up_to_version_names_old_builds_and_spares_the_latest(app_co
         assert (await client.post(endpoint, headers=admin, json={'upTo': True, 'blocked': True})).status == 400
     finally:
         await client.close()
+
+
+@pytest.mark.asyncio
+async def test_numbered_link_resolves_through_version_named_manifest(app_context, tmp_path):
+    app_context.settings = replace(app_context.settings, data_dir=tmp_path)
+    root = tmp_path / 'android-releases'
+    apk = publish(root, versionCode=11, versionName='0.6.1', file='sgoshka-v.0.6.1.apk')
+    (root / 'sgoshka-v.0.6.1.apk').write_bytes(apk)
+    (root / 'sgoshka-v.0.6.1.json').write_text((root / 'update.json').read_text(encoding='utf-8'), encoding='utf-8')
+    client = TestClient(TestServer(create_app(app_context)))
+    await client.start_server()
+    try:
+        response = await client.get('/mini/android/sgoshka-11.apk')
+        assert response.status == 200 and await response.read() == apk
+        assert 'sgoshka-v.0.6.1.apk' in response.headers['Content-Disposition']
+        assert (await client.get('/mini/android/sgoshka-12.apk')).status == 404
+    finally:
+        await client.close()
