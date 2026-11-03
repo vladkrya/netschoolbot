@@ -1,11 +1,14 @@
 /* Самостоятельная праздничная палитра; оценки сохраняют свои смысловые цвета. */
 .unity-hero { display: none; }
 :root[data-holiday="unity"]:not(#_) {
+  --unity-fill: #315fba;
+  --unity-on-fill: #fff;
+  --sync-color: var(--primary);
   --bg: #eaf0fc;
   --card: #fafdff;
   --card-2: #e2eafa;
   --text: #18294b;
-  --text2: #5c6f91;
+  --text2: #526585;
   --border: #cbd8ee;
   --primary: #285bc1;
   --soft: #315fba16;
@@ -75,12 +78,12 @@
     radial-gradient(ellipse at 100% 85%, #d3446414, transparent 55%), var(--bg);
   background-attachment: fixed;
 }
-:root[data-holiday="unity"]:not(#_) :is(.app-header, .screen-head) {
+:root[data-holiday="unity"]:not(#_) :is(.app-header, .screen-head:not(.game-screen *)) {
   background: color-mix(in srgb, var(--bg) 93%, transparent);
   color: var(--text);
   box-shadow: 0 8px 32px var(--unity-shadow), inset 0 -1px 0 var(--unity-edge);
 }
-:root[data-holiday="unity"]:not(#_) :is(.topbar-btn, .screen-back) {
+:root[data-holiday="unity"]:not(#_) :is(.topbar-btn, .screen-back:not(.game-screen *)) {
   color: var(--primary);
   background: var(--card-2);
   box-shadow: inset 0 1px 0 var(--unity-edge);
@@ -142,13 +145,8 @@
   pointer-events: none;
 }
 
-:root[data-holiday="unity"]:not(#_) :is(.lesson-card, .card, .subject-card, .hw-card, .mail-card, .ann-card, .tool-tile, .drawer-section) {
-  background: var(--unity-surface);
-  border-color: var(--border);
-  box-shadow: inset 0 1px 0 var(--unity-edge), 0 5px 20px var(--unity-shadow);
-}
 :root[data-holiday="unity"]:not(#_) .lc-num {
-  background: linear-gradient(145deg, #5a91f5, #2654a8);
+  background: linear-gradient(145deg, #315fba, #234b99);
   color: #fff;
   box-shadow: inset 0 1px 0 #e4f0ff80, 0 3px 10px #143e8e30;
 }
@@ -189,3 +187,49 @@
   0%, 100% { transform: rotate(-18deg) translateY(0); }
   50% { transform: rotate(-14deg) translateY(4px); }
 }
+
+/* --primary — цвет ссылок на поверхности, в тёмном режиме он светлый.
+   Заливки с белым текстом используют отдельную пару цветов. */
+:root[data-holiday="unity"]:not(#_) :is(
+  .chip.active, .year-pill, .avg:not(.g2):not(.g3):not(.g4):not(.g5),
+  .survey-score.on, .sgo-down-btn.primary, .back-arrow.armed,
+  .import-steps li.active span, .import-steps li.done span,
+  .import-hero-icon:not(.success *)
+) {
+  background: var(--unity-fill);
+  color: var(--unity-on-fill);
+}
+:root[data-holiday="unity"]:not(#_) .screen-head:not(.game-screen *) .screen-subtitle {
+  color: var(--text2);
+  opacity: 1;
+}
+/* «Сегодня», выходной и соседний месяц не перекрашивают выбранную дату. */
+:root[data-holiday="unity"]:not(#_) .cal-day.selected {
+  background: var(--unity-fill);
+  color: var(--unity-on-fill);
+  opacity: 1;
+  box-shadow: none;
+}
+:root[data-holiday="unity"]:not(#_) .compose-notify .switch:checked::after {
+  color: var(--unity-fill);
+}
+
+/* Поиск используется и в шапке, и отдельным окном: одна пара цветов. */
+:root[data-holiday="unity"]:not(#_) .filter-bar {
+  background: var(--card);
+  color: var(--text);
+}
+:root[data-holiday="unity"]:not(#_) .search {
+  background: var(--card-2);
+  border-color: var(--border);
+  color: var(--text2);
+}
+:root[data-holiday="unity"]:not(#_) .search input { color: var(--text); }
+:root[data-holiday="unity"]:not(#_) .search input::placeholder { color: var(--text2); }
+/* Цвет оценки остаётся смысловым; на яркой заливке нужен тёмный текст. */
+:root[data-holiday="unity"]:not(#_) :is(
+  .avg.g3, .avg.g4, .avg.g5, .dist-part.d3, .dist-part.d4, .dist-part.d5,
+  .import-hero.success .import-hero-icon, .hw-done-toggle.on,
+  .solve-pill[data-state="done"], .lt-check
+) { color: #081024; }
+:root[data-holiday="unity"]:not(#_) :is(.avg.g2, .dist-part.d2, .solve-pill[data-state="error"]) { color: #000; }
