@@ -2828,9 +2828,3 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
 .au-control .field { width: 100%; min-width: 0; margin: 0; }
 .au-security { display: grid; gap: 8px; }
 .au-danger { color: var(--g2); }
-
-/* Проверка расписания, распознанного с фото. */
-.import-preview section { border-top: 1px solid var(--line, #8884); padding-top: 12px; margin-top: 16px; }
-.import-lesson { padding: 12px 0; border-bottom: 1px solid var(--line, #8884); }
-.import-lesson .field-label { display: block; margin-bottom: 8px; }
-.import-existing .btn { margin-bottom: 8px; }
