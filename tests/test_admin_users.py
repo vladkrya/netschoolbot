@@ -106,7 +106,8 @@ async def test_pause_resume_and_notifications(app_context, users, monkeypatch):
     assert (await users.get(2)).check_interval == 600
 
 
-async def test_grants_are_checked_by_profile_and_api(app_context, users, client):
+async def test_grants_are_checked_by_profile_and_api(app_context, users, client, monkeypatch):
+    monkeypatch.setattr("app.web.api.prefs.unity_season", lambda today: False)
     await users.save(make_user(2))
     token = await app_context.miniapp.issue_token(2)
     params = {'token': token}

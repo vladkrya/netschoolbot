@@ -63,7 +63,7 @@ async def test_themes_grant_force_and_release_from_miniapp(client, people, app_c
         assert_minimal(data)
         return {item['key']: item for item in data['themes']}
     themes = await post('grant', 'unity', 'allow')
-    assert themes['unity']['available'] and not themes['unity']['active']
+    assert themes['unity']['available'] and themes['unity']['active']
     themes = await post('force', 'unity', 'on')
     assert themes['unity']['active'] and themes['unity']['forced'] == 'on'
     themes = await post('force', 'halloween', 'on')

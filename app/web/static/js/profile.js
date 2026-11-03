@@ -650,6 +650,12 @@ function bindDrawer() {
       control.title = 'Задано администратором';
     });
   }
+  for (const [name, other] of [['unity', 'halloween'], ['halloween', 'unity']]) {
+    if (state.profile?.managed_prefs?.[other] === 'on') {
+      const control = body.querySelector(`#${name}On`);
+      if (control) { control.disabled = true; control.title = 'Другая тема задана администратором'; }
+    }
+  }
   body.querySelectorAll('[data-more]').forEach((details) => {
     details.addEventListener('toggle', () => {
       if (details.open) openMore.add(details.dataset.more);

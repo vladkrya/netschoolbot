@@ -340,9 +340,14 @@ async def _cached(request: web.Request, section: str, producer, *, cacheable=lam
 
 
 def halloween_season(today: dt.date) -> bool:
-    """Хеллоуинское оформление включено у всех: с 18 октября по 8 ноября
+    """Хеллоуинское оформление включено у всех: с 18 октября по 3 ноября
     включительно (до 23:59 по времени человека)."""
-    return (10, 18) <= (today.month, today.day) <= (11, 8)
+    return (10, 18) <= (today.month, today.day) <= (11, 3)
+
+
+def unity_season(today: dt.date) -> bool:
+    """Праздничная тема доступна всем с 4 по 8 ноября."""
+    return (11, 4) <= (today.month, today.day) <= (11, 8)
 
 
 def _utc_iso(moment: dt.datetime | None) -> str | None:

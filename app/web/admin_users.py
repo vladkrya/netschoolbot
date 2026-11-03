@@ -10,6 +10,7 @@ from aiohttp import web
 
 from .. import access
 from ..accounts import has_telegram
+from .api.base import unity_season
 from .api import context, current_user, halloween_season, json_error
 
 routes = web.RouteTableDef()
@@ -46,9 +47,9 @@ async def _details(app, uid):
         return None
     control = await access.controls(app, uid)
     prefs = {**await app.miniapp.prefs(uid), **control["forced_prefs"]}
-    defaults = {"unity": access.owner(app, uid), "halloween": halloween_season(user.today())}
+    defaults = {"unity": unity_season(user.today()) or access.owner(app, uid), "halloween": halloween_season(user.today())}
     available = {key: await access.feature(app, uid, key, defaults[key]) for key, *_ in THEMES}
-    unity_on = available["unity"] and prefs.get("unity") == "on"
+    unity_on = available["unity"] and prefs.get("unity") != "off"
     from ..solver.permissions import catalog
     rule = control["grants"].get("solver_rules")
     public_rule = {k: v for k, v in rule.items() if k != "class_identity"} if rule else None

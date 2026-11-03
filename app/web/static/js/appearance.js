@@ -2,7 +2,7 @@
 'use strict';
 
 import { initData, motionAtLeast, tg } from './core.js';
-import { getPref, setPref } from './prefs.js';
+import { getPref, setPref, prefManaged } from './prefs.js';
 import { flyBats, landBats, swoopOnce } from './bats.js';
 import { HALLOWEEN_ICONS, ICONS } from './icons.js';
 
@@ -149,11 +149,12 @@ export function halloweenAvailable() {
   return halloweenAllowed === true;
 }
 
-// До профиля сохраняем оформление прошлого запуска. После — только владельцу.
+// После загрузки профиля праздничная тема включена по умолчанию у всех с доступом.
 let unityAllowed = null;
 
 export function isUnity() {
-  return unityAllowed !== false && getPref('unity') === 'on';
+  return unityAllowed === null ? getPref('unity') === 'on'
+    : unityAllowed && getPref('unity') !== 'off';
 }
 
 export function setUnityAccess(allowed) {
@@ -162,6 +163,8 @@ export function setUnityAccess(allowed) {
 }
 
 export function saveUnity(on) {
+  if (prefManaged('unity') || (on && prefManaged('halloween') && getPref('halloween') === 'on')) return;
+  if (on) setPref('halloween', 'off');
   setPref('unity', on ? 'on' : 'off');
   applyHalloween();
 }
@@ -268,6 +271,7 @@ export function setHalloweenAccess(allowed) {
 }
 
 export function saveHalloween(on) {
+  if (prefManaged('halloween') || (on && prefManaged('unity') && getPref('unity') === 'on')) return;
   if (on) setPref('unity', 'off');
   setPref('halloween', on ? 'on' : 'off');
   applyHalloween();

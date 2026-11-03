@@ -755,6 +755,22 @@ function reportVisit() {
 
 /** Разовое окно: всем включили хеллоуинское оформление — что появилось,
  *  где выключить и куда писать об ошибках. */
+async function showUnityNotice() {
+  if (demo) return;
+  await sheetFree();
+  let data;
+  try { ({ data } = await api('/api/notices/unity', { method: 'POST' })); }
+  catch { return; }
+  if (!data.show) return;
+  await sheetFree();
+  const settings = isNewDesign() ? 'Настройки' : 'Меню ☰';
+  const body = openSheet('С Днём народного единства!', `
+    <p>4 ноября — День народного единства. К празднику включили новую тему: синие акценты, светлые и тёмные карточки и ленты триколора.</p>
+    <p>Хеллоуинское оформление завершилось. Праздничную тему можно выключить: <b>${settings} → Оформление → День народного единства</b>. Ваши обычные цвета вернутся.</p>
+    <div class="notice-actions"><button class="btn" id="unityOk">Хорошо</button></div>`);
+  body.querySelector('#unityOk').addEventListener('click', () => { tap('light'); closeSheet(); });
+}
+
 async function showHalloweenNotice() {
   // Уже выключил сам (профиль пришёл раньше) — рассказывать незачем.
   if (demo || (halloweenAvailable() && !isHalloween())) return;
@@ -920,7 +936,7 @@ async function start() {
     if (changed) applySyncedPrefs();
     // Флаг «видел» уже пришёл с сервера — окошко не повторится на другом устройстве.
     dropInstallHints();
-    if (!isReadOnly()) showHalloweenNotice().then(showKeepFilesNotice).then(showSurvey);
+    if (!isReadOnly()) showUnityNotice().then(showHalloweenNotice).then(showKeepFilesNotice).then(showSurvey);
     reportVisit();
   });
   offerPushOnFirstLaunch();

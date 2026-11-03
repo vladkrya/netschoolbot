@@ -114,7 +114,8 @@ class TestAuth:
 
         assert halloween_season(dt.date(2026, 10, 18))
         assert halloween_season(dt.date(2026, 10, 31))
-        assert halloween_season(dt.date(2026, 11, 8))
+        assert halloween_season(dt.date(2026, 11, 3))
+        assert not halloween_season(dt.date(2026, 11, 4))
         assert not halloween_season(dt.date(2026, 11, 9))
         assert not halloween_season(dt.date(2026, 10, 17))
         assert not halloween_season(dt.date(2026, 6, 1))
@@ -127,6 +128,27 @@ class TestAuth:
         assert (await response.json())["data"]["show"] is True
         response = await client.post(f"{BASE}/api/notices/halloween", params={"token": token})
         assert (await response.json())["data"]["show"] is False
+
+    async def test_unity_season_notice_and_exclusive_choices(self, client, app_context, token, monkeypatch):
+        from app.web.api.base import unity_season
+        assert unity_season(dt.date(2026, 11, 4))
+        assert unity_season(dt.date(2026, 11, 8))
+        assert not unity_season(dt.date(2026, 11, 3))
+        assert not unity_season(dt.date(2026, 11, 9))
+        monkeypatch.setattr("app.web.api.prefs.unity_season", lambda today: True)
+        params = {"token": token}
+        for expected in (True, False):
+            response = await client.post(f"{BASE}/api/notices/unity", params=params)
+            assert (await response.json())["data"]["show"] is expected
+        response = await client.post(f"{BASE}/api/prefs", params=params, json={"unity":"on", "halloween":"on"})
+        assert response.status == 400
+        response = await client.post(f"{BASE}/api/prefs", params=params, json={"unity":"on"})
+        assert response.status == 200
+        assert (await app_context.miniapp.prefs(1))["halloween"] == "off"
+        from app.access import set_control
+        await set_control(app_context, 1, force=("halloween", "on"))
+        response = await client.post(f"{BASE}/api/prefs", params=params, json={"unity":"on"})
+        assert response.status == 403
 
     async def test_token_accepted_in_header(self, client, token):
         response = await client.get(f"{BASE}/api/profile", headers={"X-Netschool-Token": token})
@@ -774,7 +796,8 @@ class TestNewFeatures:
             response = await client.post(url, params={"token": token}, json={"unity": value})
             assert response.status == 400
 
-    async def test_unity_theme_is_admin_only(self, client, token, app_context):
+    async def test_unity_theme_is_admin_only_outside_season(self, client, token, app_context, monkeypatch):
+        monkeypatch.setattr("app.web.api.prefs.unity_season", lambda today: False)
         app_context.settings = replace(
             app_context.settings, telegram=replace(app_context.settings.telegram, admin_id=999),
         )

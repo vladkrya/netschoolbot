@@ -12,7 +12,7 @@ from ...context import AppContext
 from ...domain import formatting
 from ...domain.models import TIMEZONES, ApiMode, User
 from ...netschool.errors import NetSchoolError
-from .base import _utc_iso, context, current_user, halloween_season, json_error, routes
+from .base import _utc_iso, context, current_user, halloween_season, unity_season, json_error, routes
 
 
 async def _keep_attachments_info(app: AppContext, user: User) -> dict:
@@ -114,7 +114,7 @@ async def profile(request: web.Request) -> web.Response:
                 # Хеллоуинское оформление — у всех в праздничный сезон;
                 # выключается тумблером в настройках.
                 "halloween": await feature(app, (viewer or user).telegram_id, "halloween", halloween_season(user.today())),
-                "unity": await feature(app, (viewer or user).telegram_id, "unity", solver.is_owner(app, viewer or user)),
+                "unity": await feature(app, (viewer or user).telegram_id, "unity", unity_season(user.today()) or solver.is_owner(app, viewer or user)),
                 # Без капчи отчёт об ошибке не отправить — пункт меню прячется.
                 "bug_report": bool(app.settings.web.captcha_url),
                 "timezone": user.timezone,

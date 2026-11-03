@@ -9,7 +9,7 @@ from typing import Any
 from aiohttp import web
 
 from ...domain.periods import SCHEME_BOUNDS, PeriodScheme
-from .base import context, current_user, halloween_season, json_error, routes
+from .base import context, current_user, halloween_season, unity_season, json_error, routes
 
 
 THEMES = ("auto", "light", "dark")
@@ -213,6 +213,21 @@ async def visit(request: web.Request) -> web.Response:
     return web.json_response({"ok": True})
 
 
+@routes.post("/api/notices/unity")
+async def unity_notice(request: web.Request) -> web.Response:
+    """Одно приветствие к празднику на аккаунт, на всех устройствах."""
+    from ...access import feature, controls
+    app, user = context(request), current_user(request)
+    prefs = await app.miniapp.prefs(user.telegram_id)
+    prefs = {**prefs, **(await controls(app, user.telegram_id))["forced_prefs"]}
+    show = (unity_season(user.today()) and prefs.get("unity") != "off"
+            and not prefs.get("unity_notice_2026")
+            and await feature(app, user.telegram_id, "unity", True))
+    if show:
+        await app.miniapp.save_prefs(user.telegram_id, {"unity_notice_2026": True})
+    return web.json_response({"ok": True, "data": {"show": show}}, headers={"Cache-Control": "no-store"})
+
+
 @routes.post("/api/notices/halloween")
 async def halloween_notice(request: web.Request) -> web.Response:
     """Разовая карточка «включили хеллоуинское оформление» — по одной на
@@ -284,7 +299,14 @@ async def save_prefs(request: web.Request) -> web.Response:
     # Старое устройство могло поставить изменение в очередь до ограничения.
     # Принимаем остальные настройки, управляемые значения оставляем заданными.
     body = {name: managed.get(name, value) for name, value in body.items()}
+    if body.get("unity") == body.get("halloween") == "on":
+        return json_error("Выберите одну праздничную тему")
     changes: dict[str, Any] = {}
+    for name, other in (("unity", "halloween"), ("halloween", "unity")):
+        if body.get(name) == "on":
+            if managed.get(other) == "on":
+                return json_error("Другая праздничная тема задана администратором", status=403)
+            changes[other] = "off"
     if "theme" in body:
         if body["theme"] not in THEMES:
             return json_error("Неизвестная тема")
@@ -315,7 +337,7 @@ async def save_prefs(request: web.Request) -> web.Response:
 
         if body["unity"] not in ("on", "off"):
             return json_error("Некорректная настройка праздничной темы")
-        if body["unity"] == "on" and not await feature(app, user.telegram_id, "unity", is_owner(app, user)):
+        if body["unity"] == "on" and not await feature(app, user.telegram_id, "unity", unity_season(user.today()) or is_owner(app, user)):
             return json_error("Тема пока доступна только администратору", status=403)
         changes["unity"] = body["unity"]
     if "halloween" in body:

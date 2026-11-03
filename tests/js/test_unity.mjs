@@ -16,7 +16,7 @@ function setup(prefs = {}, holiday = null) {
     setAttribute: (k, v) => attrs.set(k, v), removeAttribute: (k) => attrs.delete(k),
   };
   const context = vm.createContext({
-    getPref: (k) => prefs[k] ?? null, setPref: (k, v) => { prefs[k] = v; },
+    prefManaged: () => false, getPref: (k) => prefs[k] ?? null, setPref: (k, v) => { prefs[k] = v; },
     initData: '', tg: null,
     window: { matchMedia: () => ({ addEventListener() {} }) },
     localStorage: { getItem: () => null, setItem() {}, removeItem() {} },
@@ -66,4 +66,14 @@ test('a non-admin profile disables a cached unity choice', () => {
   assert.equal(app.styles.get('--head'), '#a8434f');
   app.setUnityAccess(true);
   assert.equal(app.attrs.get('data-holiday'), 'unity');
+});
+
+ test('default Unity theme can be toggled without resurrecting Halloween', () => {
+  const app = setup({halloween: 'on'});
+  app.setUnityAccess(true);
+  assert.equal(app.attrs.get('data-holiday'), 'unity');
+  app.saveUnity(true);
+  assert.equal(app.prefs.halloween, 'off');
+  app.saveUnity(false);
+  assert.equal(app.attrs.has('data-holiday'), false);
 });

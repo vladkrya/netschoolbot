@@ -52,6 +52,10 @@ function writeLocal(name, value) {
 
 let managed = {};
 
+export function prefManaged(name) {
+  return name in managed;
+}
+
 export function getPref(name) {
   return name in managed ? managed[name] : readLocal(name);
 }
