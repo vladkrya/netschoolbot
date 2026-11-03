@@ -9,13 +9,13 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import (
-    BotCommand, BotCommandScopeAllGroupChats, BotCommandScopeAllPrivateChats,
+    BotCommand, BotCommandScopeAllGroupChats, BotCommandScopeAllPrivateChats, BotCommandScopeChat,
     MenuButtonCommands, MenuButtonWebApp, WebAppInfo,
 )
 
 from ..context import AppContext
 from ..settings import Settings
-from .handlers import account, admin, auth, family, groups, menu, settings as settings_handlers
+from .handlers import account, admin, admin_users, auth, family, groups, menu, settings as settings_handlers
 from .handlers.common import AppOnlyMiddleware, ContextMiddleware
 
 logger = logging.getLogger("netschoolbot.bot")
@@ -78,6 +78,7 @@ def create_dispatcher(context: AppContext) -> Dispatcher:
     # Порядок важен: auth перехватывает сообщения внутри диалога входа,
     # поэтому регистрируется раньше общего меню.
     dispatcher.include_router(admin.router)
+    dispatcher.include_router(admin_users.router)
     dispatcher.include_router(groups.router)
     dispatcher.include_router(account.router)
     dispatcher.include_router(family.router)
@@ -87,10 +88,23 @@ def create_dispatcher(context: AppContext) -> Dispatcher:
     return dispatcher
 
 
-async def run_bot(bot: Bot, dispatcher: Dispatcher, miniapp_url: str) -> None:
+async def run_bot(bot: Bot, dispatcher: Dispatcher, miniapp_url: str, *, admin_id: int = 0) -> None:
     await bot.delete_my_commands()
     await bot.delete_my_commands(scope=BotCommandScopeAllGroupChats())
     await bot.set_my_commands(COMMANDS, scope=BotCommandScopeAllPrivateChats())
+    if admin_id:
+        from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
+
+        try:
+            await bot.set_my_commands(COMMANDS + [
+                BotCommand(command="user", description="Управление пользователем по ID / @username"),
+                BotCommand(command="userid", description="Найти аккаунт по Telegram ID / @username"),
+                BotCommand(command="id", description="Найти пользователя по номеру аккаунта"),
+                BotCommand(command="adminstats", description="Статистика администратора"),
+                BotCommand(command="tgwidget", description="Вход через Telegram на сайте"),
+            ], scope=BotCommandScopeChat(chat_id=admin_id))
+        except (TelegramBadRequest, TelegramForbiddenError):
+            logger.warning("Не удалось установить меню команд владельца; команды доступны вручную")
     await bot.set_chat_menu_button(
         menu_button=(
             MenuButtonWebApp(text="СГОшка", web_app=WebAppInfo(url=f"{miniapp_url.rstrip('/')}/"))

@@ -188,7 +188,9 @@ async def get_prefs(request: web.Request) -> web.Response:
     # Поставили приложение до того, как оно стало отмечать это само.
     if "pwa" not in data and await app.miniapp.has_installed_app(user.telegram_id):
         data = await app.miniapp.save_prefs(user.telegram_id, {"pwa": "installed"})
-    return web.json_response({"ok": True, "data": data})
+    from ...access import controls
+    managed = (await controls(app, user.telegram_id))["forced_prefs"]
+    return web.json_response({"ok": True, "data": {**data, **managed}, "managed": managed})
 
 
 @routes.post("/api/visit")
@@ -277,6 +279,11 @@ async def save_prefs(request: web.Request) -> web.Response:
         return json_error("Некорректный запрос")
     if not isinstance(body, dict):
         return json_error("Некорректный запрос")
+    from ...access import controls, feature
+    managed = (await controls(app, user.telegram_id))["forced_prefs"]
+    # Старое устройство могло поставить изменение в очередь до ограничения.
+    # Принимаем остальные настройки, управляемые значения оставляем заданными.
+    body = {name: managed.get(name, value) for name, value in body.items()}
     changes: dict[str, Any] = {}
     if "theme" in body:
         if body["theme"] not in THEMES:
@@ -308,12 +315,14 @@ async def save_prefs(request: web.Request) -> web.Response:
 
         if body["unity"] not in ("on", "off"):
             return json_error("Некорректная настройка праздничной темы")
-        if body["unity"] == "on" and not is_owner(app, user):
+        if body["unity"] == "on" and not await feature(app, user.telegram_id, "unity", is_owner(app, user)):
             return json_error("Тема пока доступна только администратору", status=403)
         changes["unity"] = body["unity"]
     if "halloween" in body:
         if body["halloween"] not in ("on", "off"):
             return json_error("Некорректная настройка Хеллоуина")
+        if body["halloween"] == "on" and not await feature(app, user.telegram_id, "halloween", halloween_season(user.today())):
+            return json_error("Праздничная тема недоступна", status=403)
         changes["halloween"] = body["halloween"]
     if "halloweenAccent" in body:
         if not isinstance(body["halloweenAccent"], str) or not ACCENT_RE.match(body["halloweenAccent"]):

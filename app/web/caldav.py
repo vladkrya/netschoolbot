@@ -39,6 +39,9 @@ async def dav(request):
     found = await service.accounts.authenticate(auth.login, auth.password)
     telegram_id, login = found or (None, '')
     user = await context(request).users.get(telegram_id) if telegram_id is not None else None
+    from ..access import blocked
+    if telegram_id is not None and await blocked(context(request), telegram_id):
+        return web.Response(status=403, text="Доступ ограничен администратором", headers=headers)
     # Вход в «Сетевой город» не требуется: после /logout календарь на телефоне
     # показывает последнее расписание, а не просит пароль заново.
     if not user:

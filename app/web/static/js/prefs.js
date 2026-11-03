@@ -4,7 +4,7 @@
 // её до первой отрисовки, не дожидаясь сети.
 'use strict';
 
-import { api, demo } from './core.js';
+import { api, banner, demo } from './core.js';
 import { pendingOp, send } from './outbox.js';
 
 const KEYS = {
@@ -50,8 +50,10 @@ function writeLocal(name, value) {
   }
 }
 
+let managed = {};
+
 export function getPref(name) {
-  return readLocal(name);
+  return name in managed ? managed[name] : readLocal(name);
 }
 
 // Частые изменения (несколько крестиков подряд) уходят одним запросом.
@@ -67,6 +69,10 @@ let syncStarted = false;
 const editedDuringSync = new Set();
 
 export function setPref(name, value) {
+  if (name in managed) {
+    if (value !== managed[name]) banner('Эта настройка задана администратором');
+    return;
+  }
   if (!(name in pendingBase)) pendingBase[name] = readLocal(name);
   writeLocal(name, value);
   if (syncStarted) editedDuringSync.add(name);
@@ -107,12 +113,16 @@ async function flush() {
 export async function syncPrefs() {
   if (demo) return false;
   let server;
+  let managementChanged = false;
   syncStarted = true;
   try {
     const payload = await api('/api/prefs');
     // Сохранённая копия без сети старше того, что выбрано здесь.
     if (payload.offline) return false;
     server = payload.data;
+    const nextManaged = payload.managed || {};
+    managementChanged = JSON.stringify(managed) !== JSON.stringify(nextManaged);
+    managed = nextManaged;
   } catch {
     return false;
   } finally {
@@ -120,8 +130,17 @@ export async function syncPrefs() {
   }
   // Изменённое без сети ещё не дошло до сервера — его значение главнее.
   const waiting = pendingOp('prefs')?.body || {};
-  let changed = false;
+  let changed = managementChanged;
   for (const name of Object.keys(KEYS)) {
+    if (name in managed) {
+      delete pending[name];
+      delete pendingBase[name];
+      if (readLocal(name) !== managed[name]) {
+        writeLocal(name, managed[name]);
+        changed = true;
+      }
+      continue;
+    }
     if (editedDuringSync.has(name) || name in waiting) continue;
     const local = readLocal(name);
     if (name in server) {

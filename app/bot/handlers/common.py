@@ -37,8 +37,15 @@ class ContextMiddleware(BaseMiddleware):
         tg_user = data.get("event_from_user")
         if tg_user is not None:
             data["user"] = await self._context.users.get_or_create(
-                tg_user.id, display_name=tg_user.full_name or ""
+                tg_user.id, display_name=tg_user.full_name or "", telegram_username=tg_user.username or ""
             )
+            from ...access import blocked
+            if await blocked(self._context, tg_user.id):
+                if isinstance(event, CallbackQuery):
+                    await event.answer("Доступ ограничен администратором", show_alert=True)
+                else:
+                    await reply(event, "Доступ к приложению ограничен администратором.")
+                return None
         return await handler(event, data)
 
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import html
+import re
 import time
 
 from aiogram import Bot, Router
@@ -197,32 +198,63 @@ async def tg_widget(message: Message, command: CommandObject, app: AppContext) -
     await reply(message, "\n".join(lines))
 
 
+async def lookup_account(app: AppContext, raw: str, *, prefer_account: bool = False):
+    raw = raw.strip()
+    if raw.startswith("@") and re.fullmatch(r"@[A-Za-z0-9_]{1,32}", raw):
+        return await app.db.fetch_one(
+            "SELECT u.*, a.email FROM users u LEFT JOIN accounts a ON a.telegram_id = u.telegram_id "
+            "WHERE u.telegram_username = ? COLLATE NOCASE", (raw[1:],))
+    by_account = raw.startswith("#")
+    by_telegram = raw.startswith("tg:")
+    number = raw[3:] if by_telegram else raw.lstrip("#")
+    if not number.isascii() or not number.isdigit() or not 0 < int(number) <= 2**63 - 1:
+        raise ValueError("Укажите @username или число: Telegram ID; #10006 — номер аккаунта.")
+    columns = ["account_no", "telegram_id"] if by_account or (prefer_account and not by_telegram) else ["telegram_id", "account_no"]
+    if by_account or by_telegram:
+        columns = columns[:1]
+    for column in columns:
+        row = await app.db.fetch_one(
+            f"SELECT u.*, a.email FROM users u LEFT JOIN accounts a ON a.telegram_id = u.telegram_id WHERE u.{column} = ?",
+            (int(number),))
+        if row is not None:
+            return row
+    return None
+
+
+async def refresh_identity(app: AppContext, bot: Bot, row):
+    name, username = row["display_name"], row["telegram_username"]
+    if has_telegram(row["telegram_id"]):
+        try:
+            chat = await bot.get_chat(row["telegram_id"])
+            name, username = chat.full_name or name, chat.username or ""
+            await app.users.remember_telegram_username(row["telegram_id"], username)
+        except Exception:  # noqa: BLE001 — чат недоступен: показываем сохранённый профиль
+            pass
+    return name, username
+
+
 @router.message(Command("id"))
 async def find_account(message: Message, command: CommandObject, bot: Bot, app: AppContext) -> None:
-    """/id 10006 — кто стоит за номером аккаунта: имя в Telegram, @username и Telegram ID."""
+    """Прежний /id 10006; также @username и tg:123 для Telegram ID без неоднозначности."""
     if not _is_admin(message, app):
         return
-    raw = (command.args or "").strip().lstrip("#")
-    if not raw.isdigit():
-        await reply(message, "Номер аккаунта — число, например <code>/id 10006</code>.")
+    raw = (command.args or "").strip()
+    try:
+        row = await lookup_account(app, raw, prefer_account=True)
+    except ValueError as exc:
+        await reply(message, str(exc))
         return
-    row = await app.db.fetch_one(
-        """SELECT u.telegram_id, u.display_name, a.email FROM users u
-           LEFT JOIN accounts a ON a.telegram_id = u.telegram_id WHERE u.account_no = ?""",
-        (int(raw),),
-    )
     if row is None:
-        await reply(message, f"Аккаунта {raw} нет.")
+        await reply(message, "Такого пользователя нет. По @username ищу только среди пользователей приложения; "
+                    "ник сохраняется при обращении к боту или входе через Telegram.")
         return
-    lines = [f"🔎 <b>Аккаунт {raw}</b>", ""]
+    name, username = await refresh_identity(app, bot, row)
+    if raw.startswith("@") and username.lower() != raw[1:].lower():
+        await reply(message, "Этот username уже изменился. Повторите поиск с новым ником или Telegram ID.")
+        return
+    lines = [f"🔎 <b>Аккаунт {row['account_no']}</b>", ""]
     telegram_id = row["telegram_id"]
     if has_telegram(telegram_id):
-        name, username = row["display_name"], None
-        try:
-            chat = await bot.get_chat(telegram_id)
-            name, username = chat.full_name or name, chat.username
-        except Exception:  # noqa: BLE001 — бот заблокирован или чат недоступен: берём сохранённое имя
-            pass
         lines += [
             f"Имя в Telegram: {html.escape(name) if name else '—'}",
             f"Username: @{html.escape(username)}" if username else "Username: нет",
@@ -232,4 +264,5 @@ async def find_account(message: Message, command: CommandObject, bot: Bot, app: 
         lines.append("Telegram не привязан — входит по почте.")
     if row["email"]:
         lines.append(f"Почта: {html.escape(row['email'])}")
+    lines.append(f"Управление: <code>/user {telegram_id}</code>")
     await reply(message, "\n".join(lines))

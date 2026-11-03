@@ -281,8 +281,9 @@ async def tg_oidc_callback(request: web.Request) -> web.Response:
         if problem := await link_account(context(request), item.link_to, tg_user.id):
             _remember_link_problem(item.link_to, problem)
             raise _link_back(request, "problem")
+        await context(request).users.remember_telegram_username(tg_user.id, tg_user.username)
         raise _link_back(request, "ok")
-    await context(request).users.get_or_create(tg_user.id, display_name=tg_user.full_name)
+    await context(request).users.get_or_create(tg_user.id, display_name=tg_user.full_name, telegram_username=tg_user.username)
     signed = await _signed_in(request, tg_user.id, "telegram")
     response = _oidc_back(request)
     for name, morsel in signed.cookies.items():
@@ -454,7 +455,7 @@ async def tg_widget_login(request: web.Request) -> web.Response:
         IP_FAILURES.hit(ip)
         logger.info("Вход через виджет отклонён: %s", exc)
         return json_error("Telegram не подтвердил вход — попробуйте ещё раз", status=401, reason="auth")
-    await context(request).users.get_or_create(tg_user.id, display_name=tg_user.full_name)
+    await context(request).users.get_or_create(tg_user.id, display_name=tg_user.full_name, telegram_username=tg_user.username)
     logger.info("Вход на сайт через виджет Telegram: %s", tg_user.id)
     return await _signed_in(request, tg_user.id, "telegram-widget")
 
@@ -800,6 +801,7 @@ async def telegram_link_widget(request: web.Request) -> web.Response:
         return json_error("Telegram не подтвердил вход — попробуйте ещё раз", status=400)
     if problem := await link_account(app, user.telegram_id, tg_user.id):
         return json_error(problem)
+    await app.users.remember_telegram_username(tg_user.id, tg_user.username)
     return web.json_response({"ok": True})
 
 

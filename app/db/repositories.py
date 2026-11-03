@@ -75,9 +75,12 @@ class UserRepository:
             return None
         return await self._hydrate(row)
 
-    async def get_or_create(self, telegram_id: int, *, display_name: str = "") -> User:
+    async def get_or_create(self, telegram_id: int, *, display_name: str = "",
+                            telegram_username: str | None = None) -> User:
         user = await self.get(telegram_id)
         if user is not None:
+            if telegram_username is not None:
+                await self.remember_telegram_username(telegram_id, telegram_username)
             return user
         async with self._db.transaction() as db:
             await db.execute(
@@ -86,7 +89,25 @@ class UserRepository:
             )
         created = await self.get(telegram_id)
         assert created is not None
+        if telegram_username is not None:
+            await self.remember_telegram_username(telegram_id, telegram_username)
         return created
+
+    async def remember_telegram_username(self, telegram_id: int, username: str) -> None:
+        username = username.lstrip("@").strip().lower()
+        current = await self._db.fetch_one("SELECT telegram_username FROM users WHERE telegram_id = ?", (telegram_id,))
+        if current is None or current["telegram_username"] == username:
+            return
+        async with self._db.transaction() as db:
+            # Telegram мог передать освободившийся username другому человеку.
+            if username:
+                await db.execute("UPDATE users SET telegram_username = '' WHERE telegram_username = ? COLLATE NOCASE",
+                                 (username,))
+            await db.execute("UPDATE users SET telegram_username = ? WHERE telegram_id = ?", (username, telegram_id))
+
+    async def is_blocked(self, telegram_id: int) -> bool:
+        row = await self._db.fetch_one("SELECT blocked FROM user_controls WHERE telegram_id = ?", (telegram_id,))
+        return bool(row and row["blocked"])
 
     async def all_active(self) -> list[User]:
         """Пользователи, для которых имеет смысл запускать проверку."""

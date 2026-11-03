@@ -140,6 +140,7 @@ async def resolve_identity(request: web.Request) -> tuple[int | None, str]:
         except InitDataError as exc:
             logger.info("initData отклонена: %s", exc)
         else:
+            await app.users.remember_telegram_username(tg_user.id, tg_user.username)
             return tg_user.id, "telegram"
 
     token = (

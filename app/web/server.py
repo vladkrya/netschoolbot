@@ -91,6 +91,21 @@ LEGACY_PREFIX = "/mini/netschool"
 
 
 @web.middleware
+async def access_middleware(request, handler):
+    from ..access import blocked
+    from .api.base import USER
+    from .viewing import VIEWER
+
+    app = request.config_dict.get(api.CONTEXT)
+    if app is not None:
+        for key in (USER, VIEWER):
+            user = request.get(key)
+            if user is not None and await blocked(app, user.telegram_id):
+                return api.json_error("Доступ ограничен администратором", status=403, reason="blocked")
+    return await handler(request)
+
+
+@web.middleware
 async def compress_static(request: web.Request, handler):
     response = await handler(request)
     if '/static/' in request.path and request.path.endswith(('.js', '.css')):
@@ -143,7 +158,7 @@ async def security_headers(request: web.Request, handler):
 
 def create_app(context: AppContext, bot=None) -> web.Application:
     """Собрать сервер: подприложение под префиксом плюс проверка живости."""
-    inner = web.Application(middlewares=[security_headers, caldav.root_discovery, compress_static, api.error_middleware, api.auth_middleware, sync.sync_middleware])
+    inner = web.Application(middlewares=[security_headers, caldav.root_discovery, compress_static, api.error_middleware, api.auth_middleware, access_middleware, sync.sync_middleware])
     inner[CONTEXT] = context
     inner[BOT] = bot
     inner[live.HUB] = context.hub

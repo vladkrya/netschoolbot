@@ -1081,6 +1081,9 @@ class WatcherRegistry:
 
     async def start(self, user_id: int) -> None:
         """Запустить проверку. Повторный вызов перезапускает её."""
+        if await self._users.is_blocked(user_id):
+            await self.stop(user_id)
+            return
         if self._notifier is None:
             raise RuntimeError(
                 "Уведомитель не задан: вызовите WatcherRegistry.attach_notifier()"

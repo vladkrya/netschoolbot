@@ -12,7 +12,10 @@ from app.domain.models import Credentials, LoginType, School, User as SchoolUser
 
 
 async def test_dispatcher_ignores_group_commands_dialogs_and_buttons():
-    context = SimpleNamespace(users=SimpleNamespace(get_or_create=AsyncMock(
+    context = SimpleNamespace(
+        settings=SimpleNamespace(telegram=SimpleNamespace(admin_id=0)),
+        db=SimpleNamespace(fetch_one=AsyncMock(return_value=None)),
+        users=SimpleNamespace(get_or_create=AsyncMock(
         return_value=SchoolUser(
             telegram_id=42, school=School(url="", name=""),
             credentials=Credentials(login_type=LoginType.PASSWORD),

@@ -82,6 +82,10 @@ async def solver_access(app: AppContext, user: User) -> bool:
     тумблере владельца, одноклассник владельца."""
     if not app.settings.assistant.enabled:
         return False
+    from ..access import controls
+    grant = (await controls(app, user.telegram_id))["grants"].get("solver")
+    if grant is not None and (grant or not is_owner(app, user)):
+        return grant
     if available(app, user):
         return True
     if is_owner(app, user) or not app.settings.telegram.admin_id or not await class_open(app):

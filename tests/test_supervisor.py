@@ -147,7 +147,7 @@ async def test_run_exits_nonzero_when_web_crashes(monkeypatch, tmp_path):
     async def fake_create(_settings):
         return FakeContext()
 
-    async def bot_forever(*_):
+    async def bot_forever(*_, admin_id=0):
         await asyncio.Event().wait()
 
     fake_bot = types.SimpleNamespace(session=types.SimpleNamespace(close=lambda: asyncio.sleep(0)))

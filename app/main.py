@@ -323,7 +323,8 @@ async def run(settings: Settings, args: argparse.Namespace) -> int:
             tasks.append(
                 supervisor.watch(
                     asyncio.create_task(
-                        run_bot(bot, dispatcher, settings.web.miniapp_url if settings.web.enabled else ""),
+                        run_bot(bot, dispatcher, settings.web.miniapp_url if settings.web.enabled else "",
+                                admin_id=settings.telegram.admin_id),
                         name="bot",
                     ),
                     may_finish=True,

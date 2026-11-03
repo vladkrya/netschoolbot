@@ -478,7 +478,7 @@ function render() {
     </section>
     <section class="drawer-section">
       <div class="drawer-heading">Оформление</div>
-      ${data.admin ? `<label class="switch-row unity-row"><span>День народного единства<span class="muted small switch-note">4 ноября · праздничная тема</span></span>
+      ${data.unity ?? data.admin ? `<label class="switch-row unity-row"><span>День народного единства<span class="muted small switch-note">4 ноября · праздничная тема</span></span>
         <input type="checkbox" switch class="switch" id="unityOn" ${unity ? 'checked' : ''}></label>` : ''}
       ${data.halloween ? `<label class="switch-row halloween-row"><span>🎃 Хеллоуин<span class="muted small switch-note">${halloweenCountdown()}</span></span>
         <input type="checkbox" switch class="switch" id="halloweenOn" ${isHalloween() ? 'checked' : ''}></label>` : ''}
@@ -638,6 +638,17 @@ function checkReferences() {
 
 function bindDrawer() {
   const body = settingsRoot();
+  const managedSelectors = {
+    theme: '[name="theme"], [data-theme-set]', design: '#designOld', unity: '#unityOn',
+    halloween: '#halloweenOn', motion: '#motionLevel', confetti: '#confettiShow',
+  };
+  for (const name of Object.keys(state.profile?.managed_prefs || {})) {
+    if (!managedSelectors[name]) continue;
+    body.querySelectorAll(managedSelectors[name]).forEach((control) => {
+      control.disabled = true;
+      control.title = 'Задано администратором';
+    });
+  }
   body.querySelectorAll('[data-more]').forEach((details) => {
     details.addEventListener('toggle', () => {
       if (details.open) openMore.add(details.dataset.more);

@@ -64,6 +64,7 @@ async def _sgo_updates(app: AppContext, telegram_id: int, url: str) -> bool:
 @routes.get("/api/profile")
 async def profile(request: web.Request) -> web.Response:
     from .. import solver, viewing
+    from ...access import controls, feature
     from ..admin import android_apk_info
 
     app, user = context(request), current_user(request)
@@ -96,7 +97,7 @@ async def profile(request: web.Request) -> web.Response:
                 "interval_minutes": user.check_interval // 60,
                 "quiet_hours": user.quiet_hours.as_text(),
                 "enabled": user.enabled,
-                "assistant": app.settings.assistant.enabled,
+                "assistant": app.settings.assistant.enabled and await feature(app, (viewer or user).telegram_id, "assistant", True),
                 # Кнопка «Решение» под заданием (web/solver.py).
                 "solver": await solver.solver_access(app, viewer or user),
                 # Тумблер «Решения заданий всему классу» — только у владельца.
@@ -104,11 +105,13 @@ async def profile(request: web.Request) -> web.Response:
                 if app.settings.assistant.enabled and solver.is_owner(app, viewer or user) else None,
                 # Строка «Администрирование» в настройках (web/admin.py).
                 "admin": solver.is_owner(app, viewer or user),
+                "managed_prefs": (await controls(app, (viewer or user).telegram_id))["forced_prefs"],
                 # Строка «Android-приложение» внизу настроек — только владельцу (admin.py).
                 "android_apk": android_apk_info(app) if solver.is_owner(app, viewer or user) else None,
                 # Хеллоуинское оформление — у всех в праздничный сезон;
                 # выключается тумблером в настройках.
-                "halloween": halloween_season(user.today()),
+                "halloween": await feature(app, (viewer or user).telegram_id, "halloween", halloween_season(user.today())),
+                "unity": await feature(app, (viewer or user).telegram_id, "unity", solver.is_owner(app, viewer or user)),
                 # Без капчи отчёт об ошибке не отправить — пункт меню прячется.
                 "bug_report": bool(app.settings.web.captcha_url),
                 "timezone": user.timezone,

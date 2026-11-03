@@ -966,6 +966,18 @@ MIGRATIONS: list[str] = [
         PRIMARY KEY (telegram_id, host)
     );
     """,
+    # Username — индекс для поиска администратором; Telegram ID остаётся ключом.
+    """
+    ALTER TABLE users ADD COLUMN telegram_username TEXT NOT NULL DEFAULT '';
+    CREATE UNIQUE INDEX users_telegram_username ON users(telegram_username COLLATE NOCASE)
+        WHERE telegram_username != '';
+    CREATE TABLE user_controls (
+        telegram_id INTEGER PRIMARY KEY REFERENCES users(telegram_id) ON DELETE CASCADE,
+        blocked INTEGER NOT NULL DEFAULT 0,
+        grants TEXT NOT NULL DEFAULT '{}',
+        forced_prefs TEXT NOT NULL DEFAULT '{}'
+    );
+    """,
 ]
 
 

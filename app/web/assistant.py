@@ -485,7 +485,8 @@ def _refund_quota(app: AppContext, user: User) -> None:
 @routes.post("/api/assistant")
 async def ask(request: web.Request) -> web.Response:
     app, user = context(request), current_user(request)
-    if not app.settings.assistant.enabled:
+    from ..access import feature
+    if not app.settings.assistant.enabled or not await feature(app, user.telegram_id, "assistant", True):
         return json_error("Помощник выключен", status=404, reason="disabled")
     try:
         body = await request.json()
