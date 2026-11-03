@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>СГОшка · API для чтения</title>
+  <style>
+    :root { color-scheme: light dark; --bg:#f4f6fb; --card:#fff; --text:#182438; --muted:#56647a; --line:#dce3ef; --accent:#315be8; }
+    @media (prefers-color-scheme:dark) { :root { --bg:#101723; --card:#182334; --text:#edf2ff; --muted:#a8b7cf; --line:#304158; --accent:#a1baff; } }
+    * { box-sizing:border-box; } body { margin:0; background:var(--bg); color:var(--text); font:16px/1.6 system-ui,sans-serif; }
+    main { max-width:1120px; padding:48px 20px; margin:auto; } h1 { font-size:clamp(30px,5vw,48px); line-height:1.15; margin:16px 0; }
+    h2 { margin-top:0; } a { color:var(--accent); } .muted { color:var(--muted); } .badge { color:var(--accent); font-weight:650; }
+    section { padding:26px; margin:22px 0; background:var(--card); border:1px solid var(--line); border-radius:18px; }
+    pre { padding:18px; overflow:auto; border:1px solid var(--line); border-radius:12px; } code { font-size:.9em; overflow-wrap:anywhere; }
+    .scroll { overflow:auto; } table { width:100%; border-collapse:collapse; } td,th { text-align:left; padding:12px; border-bottom:1px solid var(--line); vertical-align:top; }
+    td:first-child { min-width:240px; } nav { display:flex; flex-wrap:wrap; gap:20px; } .method { color:var(--accent); font-weight:700; }
+  </style>
+</head>
+<body><main>
+  <span class="badge">СГОшка / API v1 / только чтение</span>
+  <h1>Ваш дневник.<br>В ваших интеграциях.</h1>
+  <p class="muted">Расписание, оценки, задания и школьная почта для скриптов и виджетов.</p>
+  <nav><a href="#start">Первый запрос</a><a href="#resources">Все ресурсы</a><a href="#auth">Токены</a><a href="#marks-reference">Оценки и архив</a><a href="#mail-reference">Почта</a><a href="#errors-reference">Ошибки</a><a href="#recipes">Примеры</a><a href="{{ base }}/openapi.json">OpenAPI JSON</a></nav>
+  <section id="start"><h2>1. Создайте токен</h2>
+    <p>Откройте в миниаппе <strong>Настройки → API и интеграции</strong>. Задайте название и срок действия. Сохраните токен: он показывается один раз.</p>
+    <p class="muted">Каждый токен можно отозвать отдельно. Он открывает собственные данные аккаунта, включая почту. Передавайте его только доверенным приложениям.</p>
+  </section>
+  <section><h2>2. Выполните запрос</h2>
+    <pre>curl '{{ base }}/profile' \
+  -H 'Authorization: Bearer ВАШ_ТОКЕН'</pre>
+    <p>Базовый адрес: <code>{{ base }}</code>. Передавайте токен только в заголовке <code>Authorization</code>.</p>
+    <p>Дневник текущей недели:</p>
+    <pre>curl '{{ base }}/diary?week=0&amp;window=current' \
+  -H 'Authorization: Bearer ВАШ_ТОКЕН'</pre>
+    <p>Пример на Python (переменная окружения <code>NETSCHOOL_API_TOKEN</code>):</p>
+    <pre>import json, os
+from urllib.request import Request, urlopen
+
+request = Request(
+    "{{ base }}/homework",
+    headers={"Authorization": "Bearer " + os.environ["NETSCHOOL_API_TOKEN"]},
+)
+with urlopen(request, timeout=90) as response:
+    payload = json.load(response)
+print(payload["data"])</pre>
+  </section>
+  <section><h2>3. Обработайте результат</h2>
+    <pre>{"ok": true, "data": {…}, "stale": false}</pre>
+    <p><code>stale=true</code> — данные из устаревшего кэша. <code>refreshing=true</code> — обновление в фоне. <code>age</code>, когда есть, — возраст кэша в секундах. <code>refresh=1</code> запрашивает обновление у школы.</p>
+    <p>Ошибка: <code>{"ok": false, "error": "Описание", "reason": "код"}</code>.</p>
+    <p>400 — параметры; 401 — недействующий токен (<code>invalid_token</code>) или нужен повторный вход в школу; 403 — доступ ограничен; 404 — нет ресурса; 405 — запись запрещена; 503 — школа недоступна; 504 — истёк срок ожидания файла.</p>
+    <p class="muted">Набор данных зависит от школы и режима подключения. При отсутствии возможности некоторые ресурсы возвращают <code>available=false</code>. Повторяйте запросы с паузой; обычный опрос раз в несколько минут достаточен.</p>
+  </section>
+  <section id="resources"><h2>Ресурсы</h2>
+    <p><span class="method">GET</span> <code>/profile</code> — имя, школа, часовой пояс, выбранный ученик и список учеников.</p>
+    <p>Дневник относится к ученику, выбранному в миниаппе. API не переключает его. <code>/children</code> возвращает сводку по детям аккаунта. Доступ к чужому дневнику через родных сюда не переносится.</p>
+    <p>Даты — <code>YYYY-MM-DD</code>, время уроков — местное для школы. Значения <code>quarter</code> берите из ответа <code>/marks</code>: они зависят от схемы учебных периодов.</p>
+    <div class="scroll"><table><thead><tr><th>GET</th><th>Данные</th><th>Параметры</th></tr></thead><tbody>
+      {% for path, title, params in resources %}<tr><td><code>/{{ path }}</code></td><td>{{ title }}</td><td>{{ params or '—' }}</td></tr>{% endfor %}
+    </tbody></table></div>
+    {% if mail_note %}<p>{{ mail_note }}</p>{% endif %}
+  </section>
+  {% include 'api_reference.html' %}
+</main></body></html>

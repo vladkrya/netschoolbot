@@ -27,6 +27,7 @@ from .. import __version__
 from ..context import AppContext
 from . import account, admin, admin_users, android_updates, api, app_icon, assistant, bugreport, caldav, captcha_proxy, clock, devices, extras, live, lock, passkeys, retro, schedule_import, solver, status, sync
 from .api import BOT, CONTEXT
+from . import public_api
 
 logger = logging.getLogger("netschoolbot.web")
 
@@ -159,7 +160,7 @@ async def security_headers(request: web.Request, handler):
 def create_app(context: AppContext, bot=None) -> web.Application:
     """Собрать сервер: подприложение под префиксом плюс проверка живости."""
     # Неделя может состоять из семи фото: base64 в JSON заметно больше файлов.
-    inner = web.Application(client_max_size=8 * 1024 * 1024, middlewares=[security_headers, caldav.root_discovery, compress_static, api.error_middleware, api.auth_middleware, access_middleware, sync.sync_middleware])
+    inner = web.Application(client_max_size=8 * 1024 * 1024, middlewares=[security_headers, caldav.root_discovery, compress_static, api.error_middleware, public_api.authenticate, api.auth_middleware, access_middleware, sync.sync_middleware])
     inner[CONTEXT] = context
     inner[BOT] = bot
     inner[live.HUB] = context.hub
@@ -187,6 +188,7 @@ def create_app(context: AppContext, bot=None) -> web.Application:
             await context.caldav.close()
         inner.cleanup_ctx.append(calendar_lifecycle)
     inner.add_routes(caldav.routes)
+    inner.add_routes(public_api.routes)
     inner.add_routes(api.routes)
     inner.add_routes(lock.routes)
     inner.add_routes(live.routes)

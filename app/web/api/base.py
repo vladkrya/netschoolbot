@@ -194,6 +194,9 @@ def verify_attachment_ticket(app: AppContext, ticket: str, now: float | None = N
 @web.middleware
 async def auth_middleware(request: web.Request, handler):
     """Опознание пользователя для запросов к API."""
+    if request.get("integration_api") or request.path.rstrip("/").endswith(("/api/v1/docs", "/api/v1/openapi.json")):
+        return await handler(request)
+
     # /captcha-proxy/api/v1/… — API капчи, а не наше: его зовёт виджет без входа.
     if "/api/" not in request.path or "/captcha-proxy/" in request.path:
         return await handler(request)

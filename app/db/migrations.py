@@ -993,6 +993,16 @@ MIGRATIONS: list[str] = [
     CREATE INDEX shared_schedule_class ON shared_schedule(school, class, expires);
     """,
 
+    """
+    CREATE TABLE api_tokens (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        owner_id INTEGER NOT NULL REFERENCES users(telegram_id) ON DELETE CASCADE,
+        name TEXT NOT NULL, token_hash TEXT NOT NULL UNIQUE,
+        created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, last_used_at INTEGER
+    );
+    CREATE INDEX api_tokens_owner ON api_tokens(owner_id);
+    """,
+
 ]
 
 

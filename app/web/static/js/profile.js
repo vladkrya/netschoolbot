@@ -458,6 +458,7 @@ function render() {
       ${toolTile('drawerAccount', 'mail', 'Вход по почте')}
       ${toolTile('drawerLock', 'shield', 'PIN-код')}
       ${toolTile('drawerDevices', 'install', 'Устройства')}
+      ${demo || readonly ? '' : toolTile('drawerIntegrations', 'key', 'API и интеграции')}
       </div>
       <div class="drawer-sub">Полезное</div>`}
       <div class="tool-grid">
@@ -921,6 +922,11 @@ function bindDrawer() {
     openReferences();
   });
   $('drawerLock')?.addEventListener('click', () => { closeDrawer(); openLockSettings().catch(error => banner(error.message, true)); });
+  $('drawerIntegrations')?.addEventListener('click', async () => {
+    closeDrawer();
+    const { openIntegrations } = await import('./integrations.js');
+    openIntegrations();
+  });
   $('drawerCalendar')?.addEventListener('click', () => { tap(); openCalendar(); });
   $('drawerDevices')?.addEventListener('click', async () => {
     tap();
