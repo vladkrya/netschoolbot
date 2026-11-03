@@ -266,6 +266,18 @@ def test_enrich_bells_override_ordinary_times_and_preserve_number_order():
         (1, '09:00', '09:35'), (2, '09:45', '10:20')]
 
 
+def test_enrich_does_not_restore_usual_subject_order_from_diary():
+    reference = [{'date': '2026-11-06', 'lessons': [
+        lesson(number=3, subject='Физика', start='09:50', end='10:30'),
+        lesson(number=4, subject='Алгебра', start='10:45', end='11:25'),
+    ]}]
+    photo = [{'date': '2026-11-06', 'lessons': [
+        lesson(number=3, subject='Алгебра'), lesson(number=4, subject='Физика'),
+    ]}]
+    result = module.enrich_days(photo, reference)
+    assert [item['subject'] for item in result[0]['lessons']] == ['Алгебра', 'Физика']
+
+
 def test_diary_reference_keeps_times_when_school_omits_lesson_number():
     day = SimpleNamespace(day=dt.date(2026, 11, 3), lessons=[
         SimpleNamespace(number=None, subject='Литература', start='08:30', end='09:15', room='12'),
