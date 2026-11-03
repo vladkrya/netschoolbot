@@ -35,6 +35,7 @@ class Database:
         # SQLite не любит параллельные транзакции даже на одном соединении:
         # блокировка делает каждую транзакцию неделимой.
         self._write_lock = asyncio.Lock()
+        self._transaction_owner: asyncio.Task | None = None
 
     @property
     def connection(self) -> aiosqlite.Connection:
@@ -72,19 +73,38 @@ class Database:
         async with self._write_lock:
             db = self.connection
             try:
+                # Резервируем запись до чтения: другой процесс не успеет
+                # изменить WAL-снимок между SELECT и первым UPDATE.
+                await db.execute("BEGIN IMMEDIATE")
+                self._transaction_owner = asyncio.current_task()
                 yield db
                 await db.commit()
             except BaseException:
                 await db.rollback()
                 raise
+            finally:
+                self._transaction_owner = None
+
+    @asynccontextmanager
+    async def _read_connection(self) -> AsyncIterator[aiosqlite.Connection]:
+        # Чтение внутри своей транзакции уже защищено. Чужой SELECT должен
+        # закрыть курсор до начала записи: открытый WAL-снимок иначе может
+        # вызвать SQLITE_BUSY_SNAPSHOT при записи из второго процесса.
+        if self._transaction_owner is asyncio.current_task():
+            yield self.connection
+        else:
+            async with self._write_lock:
+                yield self.connection
 
     async def fetch_one(self, sql: str, params: tuple[Any, ...] = ()) -> aiosqlite.Row | None:
-        async with self.connection.execute(sql, params) as cursor:
-            return await cursor.fetchone()
+        async with self._read_connection() as db:
+            async with db.execute(sql, params) as cursor:
+                return await cursor.fetchone()
 
     async def fetch_all(self, sql: str, params: tuple[Any, ...] = ()) -> list[aiosqlite.Row]:
-        async with self.connection.execute(sql, params) as cursor:
-            return list(await cursor.fetchall())
+        async with self._read_connection() as db:
+            async with db.execute(sql, params) as cursor:
+                return list(await cursor.fetchall())
 
     async def execute(self, sql: str, params: tuple[Any, ...] = ()) -> None:
         async with self.transaction() as db:

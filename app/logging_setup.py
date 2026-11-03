@@ -11,6 +11,7 @@ import asyncio
 import copy
 import html
 import re
+import sqlite3
 import uuid
 import logging
 import logging.handlers
@@ -39,6 +40,9 @@ def _error_label(error: BaseException) -> str:
     или у человека просто не проходит вход.
     """
     label = type(error).__name__
+    sqlite_name = getattr(error, "sqlite_errorname", "")
+    if isinstance(error, sqlite3.Error) and isinstance(sqlite_name, str) and re.fullmatch(r"SQLITE_[A-Z_]+", sqlite_name):
+        label += f"({sqlite_name})"
     value = getattr(getattr(error, "reason", None), "value", None)
     if isinstance(value, str) and value.isidentifier():
         label += f"({value})"
@@ -87,7 +91,7 @@ class SafeFormatter(logging.Formatter):
 
     def formatException(self, exc_info) -> str:
         _, exc, tb = exc_info
-        lines = [f"Ошибка: {type(exc).__name__}"]
+        lines = [f"Ошибка: {_error_label(exc)}"]
         while tb is not None:
             code = tb.tb_frame.f_code
             lines.append(f"  {Path(code.co_filename).name}:{tb.tb_lineno} ({code.co_name})")
@@ -97,7 +101,7 @@ class SafeFormatter(logging.Formatter):
 
 class AdminFormatter(SafeFormatter):
     def formatException(self, exc_info) -> str:
-        return f"Ошибка: {type(exc_info[1]).__name__}"
+        return f"Ошибка: {_error_label(exc_info[1])}"
 
 
 class TelegramHandler(logging.Handler):
