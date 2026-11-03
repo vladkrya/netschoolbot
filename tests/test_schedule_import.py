@@ -236,3 +236,30 @@ def test_missing_times_use_school_slot_not_subject_time():
     result = module.overlay(data, days('2026-11-03'))
     assert result['days'][0]['lessons'][0]['start'] == '08:00'
     assert result['days'][0]['lessons'][0]['subject'] == 'Алгебра'
+
+
+def test_enrich_uses_full_subjects_and_usual_lesson_times():
+    reference = [{'date': '2026-11-04', 'lessons': [
+        lesson(number=1, subject='Литература', start='08:30', end='09:15'),
+        lesson(number=2, subject='Английский язык', start='09:25', end='10:10'),
+    ]}]
+    photo = [{'date': '2026-11-04', 'lessons': [
+        lesson(number=2, subject='анл.', room='33'),
+        lesson(number=1, subject='литерат.', room='12'),
+    ]}]
+    result = module.enrich_days(photo, reference)
+    assert result == [{'date': '2026-11-04', 'lessons': [
+        lesson(number=1, subject='Литература', start='08:30', end='09:15', room='12'),
+        lesson(number=2, subject='Английский язык', start='09:25', end='10:10', room='33'),
+    ]}]
+
+
+def test_enrich_bells_override_ordinary_times_and_preserve_number_order():
+    reference = [{'date': '2026-11-04', 'lessons': [
+        lesson(number=2, subject='География', start='09:25', end='10:10'),
+        lesson(number=1, subject='Литература', start='08:30', end='09:15'),
+    ]}]
+    bells = [{'number': 1, 'start': '09:00', 'end': '09:35'}, {'number': 2, 'start': '09:45', 'end': '10:20'}]
+    result = module.enrich_days(reference, reference, bells)
+    assert [(item['number'], item['start'], item['end']) for item in result[0]['lessons']] == [
+        (1, '09:00', '09:35'), (2, '09:45', '10:20')]

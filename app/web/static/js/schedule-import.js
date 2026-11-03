@@ -41,8 +41,10 @@ export async function openScheduleImport(date = isoToday()) {
       <p class="muted small">Фото из школьного чата прочитает Gemini. Обрежьте его до нужного класса: перед добавлением мы покажем, как ИИ поняла расписание, и дадим всё исправить. Расписание заменит уроки только на выбранные даты; задания и оценки останутся из дневника.</p>
       <label class="field-label">Дата / день нужной недели<input class="field import-date" type="date" value="${esc(date)}"></label>
       <label class="field-label">Период<select class="field import-mode"><option value="day">На один день</option><option value="week">На выбранную неделю</option></select></label>
-      <label class="field-label">Фото расписания<input class="field import-photo" type="file" accept="image/jpeg,image/png,image/webp" multiple></label>
+      <label class="field-label">Расписание уроков<input class="field import-photo" type="file" accept="image/jpeg,image/png,image/webp" multiple></label>
       <div class="muted small import-photo-hint">Для дня выберите одно фото. Для недели можно одно общее фото или до семи фото по порядку: Пн, Вт, Ср…</div>
+      <label class="field-label">Расписание звонков <span class="muted">(необязательно)</span><input class="field import-bells" type="file" accept="image/jpeg,image/png,image/webp"></label>
+      <div class="muted small">Если приложить только звонки, предметы останутся из дневника, а время и порядок уроков обновятся.</div>
       <button class="btn import-read">Распознать фото</button>
       <div class="muted small import-status" role="status"></div>
       <div class="import-existing"></div>
@@ -55,11 +57,13 @@ export async function openScheduleImport(date = isoToday()) {
     try {
       const mode = body.querySelector('.import-mode').value;
       const files = [...body.querySelector('.import-photo').files];
-      if (!files.length) throw new Error('Выберите фото расписания');
-      if (mode === 'day' && files.length !== 1) throw new Error('Для одного дня выберите одно фото');
+      const bellFile = body.querySelector('.import-bells').files[0];
+      if (!files.length && !bellFile) throw new Error('Выберите расписание уроков или звонков');
+      if (mode === 'day' && files.length > 1) throw new Error('Для одного дня выберите одно фото расписания');
       if (files.length > 7) throw new Error('Для недели можно выбрать до семи фото');
       const images = await Promise.all(files.map(photoData));
-      const { data } = await api('/api/schedule/recognize', { method: 'POST', body: JSON.stringify({ images,
+      const bellsImage = bellFile ? await photoData(bellFile) : '';
+      const { data } = await api('/api/schedule/recognize', { method: 'POST', body: JSON.stringify({ images, bellsImage,
         date: body.querySelector('.import-date').value, mode }) });
       preview(data.days);
     } catch (error) { status.textContent = error.message; }
