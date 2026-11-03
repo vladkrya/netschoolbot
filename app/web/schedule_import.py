@@ -15,6 +15,7 @@ from PIL import Image, UnidentifiedImageError
 
 from .api import context, current_user, json_error
 from .api.profile import class_name
+from ..netschool.errors import NetSchoolError
 from ..solver.gemini import URL, TIMEOUT
 
 routes = web.RouteTableDef()
@@ -257,6 +258,39 @@ async def cached_reference(app, user, date, mode):
         return []
 
 
+def diary_reference(days, date, mode):
+    """Приводит свежий ответ дневника к безопасному формату предпрросмотра."""
+    monday = date - dt.timedelta(days=date.weekday())
+    selected = {date} if mode == 'day' else {monday + dt.timedelta(days=index) for index in range(7)}
+    rows = []
+    for day in days:
+        if day.day not in selected:
+            continue
+        lessons = []
+        for index, lesson in enumerate(day.lessons, start=1):
+            # В некоторых школах номер не приходит; порядок ответа дневника
+            # всё равно надёжнее, чем оставлять предпросмотр без времени.
+            number = lesson.number if type(lesson.number) is int else index
+            lessons.append({'number': number, 'subject': lesson.subject, 'start': lesson.start,
+                            'end': lesson.end, 'room': lesson.room})
+        rows.append({'date': day.day.isoformat(), 'lessons': lessons})
+    return clean_days(rows) if rows else []
+
+
+async def ordinary_reference(app, user, date, mode):
+    """Берём обычные уроки из кэша, а при неполной неделе — прямо из дневника."""
+    reference = await cached_reference(app, user, date, mode)
+    monday = date - dt.timedelta(days=date.weekday())
+    wanted = {date.isoformat()} if mode == 'day' else {(monday + dt.timedelta(days=index)).isoformat() for index in range(7)}
+    if wanted.issubset({day['date'] for day in reference}):
+        return reference
+    try:
+        fresh = await app.diary.fetch_diary(user, weeks_back=0, weeks_forward=0, today=date)
+        return diary_reference(fresh, date, mode) or reference
+    except NetSchoolError:  # Кэш всё ещё полезнее пустых времени и названий.
+        return reference
+
+
 @routes.post('/api/schedule/recognize')
 async def recognize(request):
     app, user = context(request), current_user(request)
@@ -294,7 +328,7 @@ async def recognize(request):
         klass = await class_name(app, user)
         monday = date - dt.timedelta(days=date.weekday())
         allowed = {date.isoformat()} if mode == 'day' else {(monday + dt.timedelta(days=n)).isoformat() for n in range(7)}
-        reference = await cached_reference(app, user, date, mode)
+        reference = await ordinary_reference(app, user, date, mode)
         known = [lesson['subject'] for day in reference for lesson in day['lessons']]
         if not raw_images:
             if not reference:

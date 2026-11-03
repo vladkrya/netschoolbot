@@ -4,6 +4,7 @@ import copy
 import datetime as dt
 import io
 from dataclasses import replace
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
@@ -263,3 +264,11 @@ def test_enrich_bells_override_ordinary_times_and_preserve_number_order():
     result = module.enrich_days(reference, reference, bells)
     assert [(item['number'], item['start'], item['end']) for item in result[0]['lessons']] == [
         (1, '09:00', '09:35'), (2, '09:45', '10:20')]
+
+
+def test_diary_reference_keeps_times_when_school_omits_lesson_number():
+    day = SimpleNamespace(day=dt.date(2026, 11, 3), lessons=[
+        SimpleNamespace(number=None, subject='Литература', start='08:30', end='09:15', room='12'),
+    ])
+    assert module.diary_reference([day], dt.date(2026, 11, 3), 'day') == [{
+        'date': '2026-11-03', 'lessons': [lesson(number=1, subject='Литература', start='08:30', end='09:15', room='12')]}]
