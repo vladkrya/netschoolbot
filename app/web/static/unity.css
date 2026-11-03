@@ -1,0 +1,42 @@
+/* Праздничная тема сохраняет выбранную светлую/тёмную палитру. */
+:root[data-holiday="unity"]:not(#_) {
+  --primary: #315fba;
+  --soft: color-mix(in srgb, var(--primary) 13%, transparent);
+  --soft-2: color-mix(in srgb, var(--primary) 22%, transparent);
+  --unity-red: #c94d5d;
+}
+:root[data-holiday="unity"][data-theme="dark"]:not(#_) { --primary: #91b5ff; }
+@media (prefers-color-scheme: dark) {
+  :root[data-holiday="unity"]:not([data-theme="light"]):not(#_) { --primary: #91b5ff; }
+}
+
+/* Цветовые блики остаются за содержимым и не перехватывают нажатия. */
+:root[data-holiday="unity"]:not(#_) body {
+  background:
+    radial-gradient(ellipse at 0 12%, #315fba12, transparent 55%),
+    radial-gradient(ellipse at 100% 80%, #c94d5d10, transparent 55%),
+    var(--bg);
+  background-attachment: fixed;
+}
+:root[data-holiday="unity"]:not(#_) :is(.app-header, .screen-head)::before {
+  content: "";
+  position: absolute;
+  inset: auto 0 0;
+  height: 6px;
+  background: linear-gradient(to bottom, #fff 0 33.33%, #315fba 33.33% 66.66%, #c94d5d 66.66%);
+  box-shadow: 0 1px 0 #315fba20;
+  pointer-events: none;
+}
+:root[data-holiday="unity"]:not(#_) :is(.card, .lesson-card, .tool-tile) {
+  border-color: color-mix(in srgb, var(--primary) 16%, var(--border));
+}
+:root[data-holiday="unity"]:not(#_) .unity-row {
+  border-radius: 14px;
+  padding: 12px;
+  background: linear-gradient(115deg, #315fba13, transparent 55%, #c94d5d12);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 16%, transparent);
+}
+:root[data-holiday="unity"]:not(#_) .lc-num {
+  background: linear-gradient(145deg, var(--soft), color-mix(in srgb, var(--unity-red) 10%, var(--card)));
+  color: var(--primary);
+}

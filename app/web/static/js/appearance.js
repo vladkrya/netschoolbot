@@ -35,6 +35,7 @@ export function applyAccent(color = currentAccent()) {
   if (!/^#[0-9a-f]{6}$/i.test(color)) color = ACCENTS[0][0];
   // У хеллоуинского оформления свой акцент — обычный выбранный цвет не трогаем.
   if (isHalloween()) color = halloweenAccent();
+  if (isUnity()) color = '#315fba';
   const root = document.documentElement.style;
   const dark = shade(color, -0.18);
   root.setProperty('--head', color);
@@ -148,7 +149,25 @@ export function halloweenAvailable() {
   return halloweenAllowed === true;
 }
 
+// До профиля сохраняем оформление прошлого запуска. После — только владельцу.
+let unityAllowed = null;
+
+export function isUnity() {
+  return unityAllowed !== false && getPref('unity') === 'on';
+}
+
+export function setUnityAccess(allowed) {
+  unityAllowed = Boolean(allowed);
+  applyHalloween();
+}
+
+export function saveUnity(on) {
+  setPref('unity', on ? 'on' : 'off');
+  applyHalloween();
+}
+
 export function isHalloween() {
+  if (isUnity()) return false;
   // Пока профиль не пришёл — верим прошлому запуску, чтобы не мигать.
   if (halloweenAllowed === null) return readHalloween() === 'on';
   return halloweenAllowed && getPref('halloween') !== 'off';
@@ -158,8 +177,9 @@ export function applyHalloween() {
   const on = isHalloween();
   if (halloweenAllowed !== null) writeHalloween(on);
   const root = document.documentElement;
-  const was = root.getAttribute('data-holiday') === 'halloween';
-  if (on) root.setAttribute('data-holiday', 'halloween');
+  const previous = root.getAttribute('data-holiday');
+  const holiday = on ? 'halloween' : isUnity() ? 'unity' : null;
+  if (holiday) root.setAttribute('data-holiday', holiday);
   else root.removeAttribute('data-holiday');
   // Луна, паутина, мыши и паук — слой внутри шапки, под её кнопками и
   // именем: мышь пролетает за заголовком, паук не закрывает стрелки.
@@ -187,7 +207,7 @@ export function applyHalloween() {
   } else if (!on) {
     document.querySelectorAll('.hw-decor, .hw-stars, .hw-fog, .hw-swoop').forEach((el) => el.remove());
   }
-  if (on === was) return;
+  if (holiday === previous) return;
   // Фон, который скрипт в <head> записал в style до загрузки стилей, —
   // по прошлому запуску. Если Хеллоуин включился (или выключился) позже,
   // он перебивал ночное небо: под прозрачным body светлел весь экран.
@@ -248,6 +268,7 @@ export function setHalloweenAccess(allowed) {
 }
 
 export function saveHalloween(on) {
+  if (on) setPref('unity', 'off');
   setPref('halloween', on ? 'on' : 'off');
   applyHalloween();
 }

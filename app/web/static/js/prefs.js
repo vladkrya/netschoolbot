@@ -10,7 +10,7 @@ import { pendingOp, send } from './outbox.js';
 const KEYS = {
   theme: 'ns-theme', design: 'ns-design-v2', designNotice: 'ns-design-notice', weekends: 'ns-weekends', hwStatus: 'ns-hw-status', scheduleTab: 'ns-schedule-tab', answers: 'ns-answers', answerHint: 'ns-answer-hint', accent: 'ns-accent', accents: 'ns-accents', weights: 'ns-weights', thresholds: 'ns-thresholds', tabs: 'ns-tabs', pins: 'ns-pins', pwa: 'ns-pwa', lessonEdits: 'ns-lesson-edits', confetti: 'ns-confetti', motion: 'ns-motion',
   // Хеллоуин: явный выбор тумблером ('on'/'off') и свой цвет на праздник.
-  halloween: 'ns-halloween-choice', halloweenAccent: 'ns-halloween-accent',
+  unity: 'ns-unity', halloween: 'ns-halloween-choice', halloweenAccent: 'ns-halloween-accent',
   // Ретро-сайт ('on'/'off'), retro.js.
   retro: 'ns-retro',
   // Сдвиг звонка для таймера урока, секунды строкой (timer.js).

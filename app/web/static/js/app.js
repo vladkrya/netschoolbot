@@ -13,7 +13,7 @@ import { initLive, liveEvents } from './live.js';
 import { initMail, loadMail, openAnnouncements, openCompose } from './mail.js';
 import {
   applyAccent, applyDesign, applyHalloween, applyScheduleTab, halloweenAvailable, initFullscreen, isHalloween,
-  isNewDesign, navIcon, setHalloweenAccess,
+  isNewDesign, navIcon, setHalloweenAccess, setUnityAccess,
 } from './appearance.js';
 import { ICONS } from './icons.js';
 import { dropInstallHints, initInstallPrompt, openInstall } from './install.js';
@@ -970,6 +970,7 @@ async function start() {
   // если страница открыта без токена (по initData Telegram).
   try {
     const profile = await profileLoad;
+    setUnityAccess(profile?.admin);
     setHalloweenAccess(profile?.halloween);
     if (profile?.name) {
       $('topName').textContent = studentFirstName(profile.name);

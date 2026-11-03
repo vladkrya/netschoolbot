@@ -5,7 +5,7 @@
 
 import { $, androidApkUrl, api, banner, demo, ensureAttachmentTicket, esc, initData, motionAtLeast, openExternal, state } from './core.js';
 import {
-  ACCENTS, applyMotion, currentAccent, forgetAccent, HALLOWEEN_ACCENTS, halloweenAccent, halloweenCountdown, isHalloween, isNewDesign, motionChosen, motionLevel, rememberAccent, saveAccent, saveAnswers, saveBells, saveConfetti, savedAccents, saveDesign, saveHalloween, saveHalloweenAccent, saveHomeworkStatus, saveMotion, saveWeekends, showAnswers, showBells, showConfetti, showHomeworkStatus, showWeekends, syncChromeColor, weakDevice,
+  isUnity, saveUnity, ACCENTS, applyMotion, currentAccent, forgetAccent, HALLOWEEN_ACCENTS, halloweenAccent, halloweenCountdown, isHalloween, isNewDesign, motionChosen, motionLevel, rememberAccent, saveAccent, saveAnswers, saveBells, saveConfetti, savedAccents, saveDesign, saveHalloween, saveHalloweenAccent, saveHomeworkStatus, saveMotion, saveWeekends, showAnswers, showBells, showConfetti, showHomeworkStatus, showWeekends, syncChromeColor, weakDevice,
 } from './appearance.js';
 import { ICONS } from './icons.js';
 import { smoothRepaint } from './motion.js';
@@ -408,12 +408,13 @@ function render() {
   const theme = currentTheme();
   // В Хеллоуин — свои цвета и свой выбранный: отмеченный кружок совпадает с экраном.
   const spooky = isHalloween();
-  const palette = spooky ? HALLOWEEN_ACCENTS : ACCENTS;
-  const accent = spooky ? halloweenAccent() : currentAccent();
+  const unity = isUnity();
+  const palette = unity ? [['#315fba', 'Праздничный синий']] : spooky ? HALLOWEEN_ACCENTS : ACCENTS;
+  const accent = unity ? '#315fba' : spooky ? halloweenAccent() : currentAccent();
   // Дневник ученика по приглашению: его уведомления и почту не трогаем.
   const readonly = Boolean(data.readonly);
   const views = data.views || [];
-  const saved = spooky ? [] : savedAccents().filter((color) => !ACCENTS.some(([c]) => c === color));
+  const saved = spooky || unity ? [] : savedAccents().filter((color) => !ACCENTS.some(([c]) => c === color));
   // Свой цвет, ещё не сохранённый: его можно оставить кружком рядом с готовыми.
   const customAccent = !palette.some(([c]) => c === accent) && !saved.includes(accent);
   const radio = (value, label) =>
@@ -477,6 +478,8 @@ function render() {
     </section>
     <section class="drawer-section">
       <div class="drawer-heading">Оформление</div>
+      ${data.admin ? `<label class="switch-row unity-row"><span>День народного единства<span class="muted small switch-note">4 ноября · праздничная тема</span></span>
+        <input type="checkbox" switch class="switch" id="unityOn" ${unity ? 'checked' : ''}></label>` : ''}
       ${data.halloween ? `<label class="switch-row halloween-row"><span>🎃 Хеллоуин<span class="muted small switch-note">${halloweenCountdown()}</span></span>
         <input type="checkbox" switch class="switch" id="halloweenOn" ${isHalloween() ? 'checked' : ''}></label>` : ''}
       ${spooky ? '<div class="muted small halloween-note">В Хеллоуин тема всегда ночная. Светлая и свой цвет вернутся, когда выключите праздник.</div>'
@@ -485,12 +488,12 @@ function render() {
       ${radio('dark', 'Тёмная тема')}`}
       <div class="drawer-sub">${ICONS.palette} ${spooky ? 'Цвет на Хеллоуин' : isNewDesign() ? 'Цвет акцента' : 'Цвет меню'}</div>
       <div class="swatches">
-        ${palette.map(([color, name]) => `<button class="swatch ${color === accent ? 'on' : ''}" data-accent="${color}" style="background:${color}" aria-label="${name}" title="${name}"></button>`).join('')}
-        ${saved.map((color) => `<button class="swatch saved ${color === accent ? 'on' : ''}" data-accent="${color}" style="background:${color}" aria-label="Сохранённый цвет ${color}" title="Сохранённый цвет"></button>`).join('')}
-        <label class="swatch custom ${customAccent ? 'on' : ''}" title="Свой цвет" style="background:${accent}">
-          <input type="color" id="accentCustom" value="${accent}">＋</label>
+        ${palette.map(([color, name]) => `<button class="swatch ${color === accent ? 'on' : ''}" ${unity ? 'disabled' : ''} data-accent="${color}" style="background:${color}" aria-label="${name}" title="${name}"></button>`).join('')}
+        ${saved.map((color) => `<button class="swatch saved ${color === accent ? 'on' : ''}" ${unity ? 'disabled' : ''} data-accent="${color}" style="background:${color}" aria-label="Сохранённый цвет ${color}" title="Сохранённый цвет"></button>`).join('')}
+        ${unity ? '' : `<label class="swatch custom ${customAccent ? 'on' : ''}" title="Свой цвет" style="background:${accent}">
+          <input type="color" id="accentCustom" value="${accent}">＋</label>`}
       </div>
-      ${spooky ? '' : customAccent ? '<button class="link accent-action" id="accentRemember">Сохранить этот цвет</button>'
+      ${spooky || unity ? '' : customAccent ? '<button class="link accent-action" id="accentRemember">Сохранить этот цвет</button>'
         : saved.includes(accent) ? '<button class="link accent-action" id="accentForget">Убрать из сохранённых</button>' : ''}
       ${tabsMore()}
       ${demo ? '' : `<button class="drawer-link" id="drawerAppIcon">${ICONS.install} Иконка приложения</button>`}
@@ -717,6 +720,13 @@ function bindDrawer() {
     select();
     smoothRepaint(() => saveBells(event.target.checked));
   });
+  $('unityOn')?.addEventListener('change', (event) => {
+    select();
+    smoothRepaint(() => {
+      saveUnity(event.target.checked);
+      render();
+    });
+  });
   $('halloweenOn')?.addEventListener('change', (event) => {
     select();
     smoothRepaint(() => {
@@ -744,7 +754,7 @@ function bindDrawer() {
       });
     })
   );
-  $('accentCustom').addEventListener('change', (event) => {
+  $('accentCustom')?.addEventListener('change', (event) => {
     select();
     smoothRepaint(() => {
       (isHalloween() ? saveHalloweenAccent : saveAccent)(event.target.value);

@@ -303,6 +303,14 @@ async def save_prefs(request: web.Request) -> web.Response:
         if body["motion"] not in ("on", "75", "50", "25", "off"):
             return json_error("Некорректная настройка анимаций")
         changes["motion"] = body["motion"]
+    if "unity" in body:
+        from ..solver import is_owner
+
+        if body["unity"] not in ("on", "off"):
+            return json_error("Некорректная настройка праздничной темы")
+        if body["unity"] == "on" and not is_owner(app, user):
+            return json_error("Тема пока доступна только администратору", status=403)
+        changes["unity"] = body["unity"]
     if "halloween" in body:
         if body["halloween"] not in ("on", "off"):
             return json_error("Некорректная настройка Хеллоуина")

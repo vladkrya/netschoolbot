@@ -763,6 +763,29 @@ class TestNewFeatures:
         assert data == {"accent": "#a8434f", "theme": "dark", "weights": [1, 2, 1.5]}
         assert (await (await client.get(url, params={"token": token})).json())["data"] == data
 
+    async def test_unity_theme_choice_is_shared(self, client, token):
+        url = f"{BASE}/api/prefs"
+        for value in ("on", "off"):
+            response = await client.post(url, params={"token": token}, json={"unity": value})
+            assert response.status == 200
+            saved = await client.get(url, params={"token": token})
+            assert (await saved.json())["data"]["unity"] == value
+        for value in ("yes", True, None, []):
+            response = await client.post(url, params={"token": token}, json={"unity": value})
+            assert response.status == 400
+
+    async def test_unity_theme_is_admin_only(self, client, token, app_context):
+        app_context.settings = replace(
+            app_context.settings, telegram=replace(app_context.settings.telegram, admin_id=999),
+        )
+        response = await client.post(f"{BASE}/api/prefs", params={"token": token}, json={"unity": "on"})
+        assert response.status == 403
+        assert "unity" not in await app_context.miniapp.prefs(1)
+        response = await client.post(f"{BASE}/api/prefs", params={"token": token}, json={"unity": "off"})
+        assert response.status == 200
+        profile = (await (await client.get(f"{BASE}/api/profile", params={"token": token})).json())["data"]
+        assert profile["admin"] is False
+
     async def test_halloween_choice_is_shared(self, client, token):
         url = f"{BASE}/api/prefs"
         response = await client.post(url, params={"token": token}, json={"halloween": "off", "halloweenAccent": "#8E4FD6"})
