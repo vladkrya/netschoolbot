@@ -157,13 +157,14 @@
     <button class="topbar-btn" id="menuBtn" aria-label="Меню" data-icon="menu"></button>
     <button class="topbar-btn topbar-refresh" id="refreshBtn" type="button" aria-label="Обновить данные" title="Обновить данные">↻</button>
     <!-- Имя ученика; у родителя с несколькими детьми — стрелка и выбор ребёнка. -->
-    <button class="topbar-title" id="topTitle" type="button"><span id="topName">{{ (student.split()[1] if student.split()|length > 1 else student) or "СГОшка" }}</span><span class="title-switch" id="titleSwitch" data-icon="down" hidden></span></button>
+    <button class="topbar-title" id="topTitle" type="button"><span id="topName">{{ student or "СГОшка" }}</span><span class="title-switch" id="titleSwitch" data-icon="down" hidden></span></button>
     <!-- С PIN сервер имя в страницу не кладёт, а без сети и при обновлении
          приложение доходит до шапки через секунды — имя прошлого входа сразу. -->
     <script>
       try {
-        var savedName = (localStorage.getItem('studentName') || '').trim().split(/\s+/);
-        if (!{{ student | tojson }} && savedName[0]) document.getElementById('topName').textContent = savedName[1] || savedName[0];
+        var savedName = ({{ student | tojson }} || localStorage.getItem('studentName') || '').trim().split(/\s+/);
+        var secondIsPatronymic = /(?:ович|евич|ич|овна|евна|ична|инична|оглы|кызы)$/iu.test(savedName[1] || '');
+        if (savedName[0]) document.getElementById('topName').textContent = (secondIsPatronymic ? savedName[0] : savedName[1]) || savedName[0];
       } catch (e) {}
     </script>
     <button class="topbar-btn" id="bellBtn" aria-label="Объявления" data-icon="bell"></button>

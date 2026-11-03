@@ -15,10 +15,11 @@ export const tabId = Math.random().toString(36).slice(2, 12);
 /** Есть ли ИИ-помощник: на сервере задан ключ, и это не демо. */
 export const assistantEnabled = Boolean(window.NETSCHOOL.assistant);
 
-/** СГО отдаёт ученика в порядке «Фамилия Имя Отчество». */
+/** Обычно «Фамилия Имя Отчество», но «Моя школа» может не вернуть фамилию. */
 export function studentFirstName(name) {
   const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
-  return parts[1] || parts[0] || '';
+  const secondIsPatronymic = /(?:ович|евич|ич|овна|евна|ична|инична|оглы|кызы)$/iu.test(parts[1] || '');
+  return (secondIsPatronymic ? parts[0] : parts[1]) || parts[0] || '';
 }
 
 // Telegram отдаёт объект только внутри мини-приложения. Вне его
