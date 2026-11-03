@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import secrets
 import time
 from aiohttp import web
@@ -12,6 +13,8 @@ from .api.profile import student_class
 
 routes = web.RouteTableDef()
 PREFIX = '/api/v1'
+TOKEN_PREFIX = 'sgoshka-'
+TOKEN_PREFIXES = (TOKEN_PREFIX, 'nsro_')
 
 # Только явно проверенные обработчики. Новые маршруты приложения не получают
 # доступ по ключу интеграции автоматически.
@@ -83,7 +86,7 @@ def digest(token):
 
 async def token_items(app, owner):
     rows = await app.db.fetch_all('SELECT id, name, created_at, expires_at, last_used_at FROM api_tokens WHERE owner_id=? ORDER BY id DESC', (owner,))
-    return [dict(row) for row in rows]
+    return [{**dict(row), 'expires_at': row['expires_at'] or None} for row in rows]
 
 
 @routes.get('/api/integration-tokens')
@@ -97,19 +100,22 @@ async def create_token(request):
         body = await request.json()
         name = body.get('name', '').strip()
         days = body.get('days', 90)
-        if not isinstance(name, str) or not 1 <= len(name) <= 80 or type(days) is not int or not 1 <= days <= 365:
+        if not isinstance(name, str) or not 1 <= len(name) <= 80 or type(days) is not int or not 0 <= days <= 365:
             raise ValueError
     except (ValueError, AttributeError, TypeError):
-        return json_error('Укажите название до 80 символов и срок от 1 до 365 дней')
+        return json_error('Укажите название до 80 символов и срок от 1 до 365 дней или 0 для бессрочного токена')
     app, owner = context(request), current_user(request).telegram_id
-    token = 'nsro_' + secrets.token_urlsafe(32)
+    number = await app.accounts.number(owner)
+    if number is None:
+        return json_error('Не удалось получить номер аккаунта', status=503)
+    token = f'{TOKEN_PREFIX}{number}_' + secrets.token_urlsafe(32)
     now = int(time.time())
     async with app.db.transaction() as db:
-        async with db.execute('SELECT COUNT(*) FROM api_tokens WHERE owner_id=? AND expires_at>?', (owner, now)) as cursor:
+        async with db.execute('SELECT COUNT(*) FROM api_tokens WHERE owner_id=? AND (expires_at=0 OR expires_at>?)', (owner, now)) as cursor:
             count = (await cursor.fetchone())[0]
         if count >= 20:
             return json_error('Не больше 20 действующих токенов', status=409)
-        await db.execute('INSERT INTO api_tokens(owner_id,name,token_hash,created_at,expires_at) VALUES (?,?,?,?,?)', (owner, name, digest(token), now, now + days * 86400))
+        await db.execute('INSERT INTO api_tokens(owner_id,name,token_hash,created_at,expires_at) VALUES (?,?,?,?,?)', (owner, name, digest(token), now, now + days * 86400 if days else 0))
     return web.json_response({'ok': True, 'data': {'token': token, 'items': await token_items(app, owner)}}, status=201)
 
 
@@ -124,6 +130,20 @@ async def revoke_token(request):
 
 
 @web.middleware
+async def readable_json(request, handler):
+    response = await handler(request)
+    relative = request.path[request.path.index('/api/'):] if '/api/' in request.path else ''
+    if (relative.startswith(PREFIX + '/') and '/captcha-proxy/' not in request.path
+            and type(response) is web.Response and not response.prepared
+            and response.content_type == 'application/json'
+            and isinstance(response.body, (bytes, bytearray))):
+        payload = json.loads(response.body)
+        response.body = json.dumps(payload, ensure_ascii=False, indent=2).encode('utf-8')
+        response.charset = 'utf-8'
+    return response
+
+
+@web.middleware
 async def authenticate(request, handler):
     path = request.path
     # Капча проксирует собственное /api/v1, это не API интеграций.
@@ -133,7 +153,7 @@ async def authenticate(request, handler):
     authorization = request.headers.get('Authorization', '')
     # Ключ API никогда не становится обычным сеансом приложения.
     if relative != PREFIX and not relative.startswith(PREFIX + '/'):
-        if authorization.split(' ', 1)[-1].startswith('nsro_'):
+        if authorization.split(' ', 1)[-1].startswith(TOKEN_PREFIXES):
             return json_error('Токен интеграции работает только в /api/v1', status=403, reason='read_only')
         return await handler(request)
     if relative in (PREFIX + '/docs', PREFIX + '/openapi.json') and request.method in ('GET', 'HEAD'):
@@ -141,8 +161,8 @@ async def authenticate(request, handler):
     scheme, _, token = authorization.partition(' ')
     app = context(request)
     row = None
-    if scheme.lower() == 'bearer' and token.startswith('nsro_') and len(token) <= 100:
-        row = await app.db.fetch_one('SELECT id,owner_id FROM api_tokens WHERE token_hash=? AND expires_at>?', (digest(token), time.time()))
+    if scheme.lower() == 'bearer' and token.startswith(TOKEN_PREFIXES) and len(token) <= 100:
+        row = await app.db.fetch_one('SELECT id,owner_id FROM api_tokens WHERE token_hash=? AND (expires_at=0 OR expires_at>?)', (digest(token), time.time()))
     user = await app.users.get(row['owner_id']) if row else None
     if user is None:
         response = json_error('Передайте действующий токен: Authorization: Bearer <token>', status=401, reason='invalid_token')

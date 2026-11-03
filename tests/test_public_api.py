@@ -12,9 +12,11 @@ async def issue(client, token):
     return (await response.json())['data']
 
 
-async def test_lifecycle_and_hash(client, token, db):
+async def test_lifecycle_and_hash(client, token, db, app_context):
     data = await issue(client, token)
     key = data['token']
+    number = await app_context.accounts.number(1)
+    assert key.startswith(f'sgoshka-{number}_')
     row = await db.fetch_one('SELECT * FROM api_tokens')
     assert row['token_hash'] == digest(key)
     assert key not in str(dict(row))
@@ -24,7 +26,9 @@ async def test_lifecycle_and_hash(client, token, db):
     assert (await response.json())['data']['name']
     assert response.headers['Cache-Control'] == 'no-store'
     response = await client.get(BASE + '/api/integration-tokens', headers={'X-Netschool-Token': token})
-    assert 'nsro_' not in await response.text()
+    listed = await response.text()
+    assert key not in listed
+    assert 'sgoshka-' not in listed
     response = await client.delete(BASE + f"/api/integration-tokens/{row['id']}", headers={'X-Netschool-Token': token})
     assert response.status == 200
     assert (await client.get(BASE + '/api/v1/profile', headers=headers)).status == 401
@@ -59,7 +63,7 @@ async def test_docs_and_unknown_routes(client, token):
     assert (await client.get(BASE + '/api/v1/admin', headers={'Authorization': 'Bearer ' + key})).status == 404
 
 
-@pytest.mark.parametrize('payload', [None, [], {'name': ''}, {'name': 'x', 'days': True}, {'name': 'x', 'days': 366}])
+@pytest.mark.parametrize('payload', [None, [], {'name': ''}, {'name': 'x', 'days': True}, {'name': 'x', 'days': 366}, {'name': 'x', 'days': -1}])
 async def test_bad_token_request(client, token, payload):
     response = await client.post(BASE + '/api/integration-tokens', headers={'X-Netschool-Token': token}, json=payload)
     assert response.status == 400
@@ -100,3 +104,46 @@ async def test_mail_message_and_attachment_route(client, token, app_context, mon
     assert read.call_args.args[1] == 7
     response = await client.get(BASE + '/api/v1/attachment/not-an-id', headers={'Authorization': 'Bearer ' + key})
     assert response.status == 400
+
+
+async def test_permanent_token_can_be_used_and_revoked(client, token, db):
+    response = await client.post(BASE + '/api/integration-tokens', headers={'X-Netschool-Token': token}, json={'name': 'Без срока', 'days': 0})
+    assert response.status == 201
+    data = (await response.json())['data']
+    assert data['items'][0]['expires_at'] is None
+    row = await db.fetch_one('SELECT * FROM api_tokens')
+    assert row['expires_at'] == 0
+    headers = {'Authorization': 'Bearer ' + data['token']}
+    assert (await client.get(BASE + '/api/v1/profile', headers=headers)).status == 200
+    await client.delete(BASE + f"/api/integration-tokens/{row['id']}", headers={'X-Netschool-Token': token})
+    assert (await client.get(BASE + '/api/v1/profile', headers=headers)).status == 401
+
+
+async def test_permanent_tokens_count_towards_limit(client, token, db):
+    await db.execute_many('INSERT INTO api_tokens(owner_id,name,token_hash,created_at,expires_at) VALUES (?,?,?,?,?)', [(1, 'Постоянный', digest(f'limit-{i}'), int(time.time()), 0) for i in range(20)])
+    response = await client.post(BASE + '/api/integration-tokens', headers={'X-Netschool-Token': token}, json={'name': 'Лишний', 'days': 30})
+    assert response.status == 409
+
+
+async def test_legacy_token_still_works_and_cannot_write(client, token, db):
+    # Синтетический ключ: не используем секреты реального аккаунта.
+    legacy = 'nsro_test_legacy_only'
+    await db.execute('INSERT INTO api_tokens(owner_id,name,token_hash,created_at,expires_at) VALUES (?,?,?,?,?)', (1, 'Старый', digest(legacy), int(time.time()), int(time.time()) + 86400))
+    headers = {'Authorization': 'Bearer ' + legacy}
+    assert (await client.get(BASE + '/api/v1/profile', headers=headers)).status == 200
+    assert (await client.post(BASE + '/api/v1/mail/send', headers=headers)).status == 405
+    assert (await client.get(BASE + '/api/profile', headers=headers)).status == 403
+
+
+async def test_json_is_readable_utf8_including_errors(client, token, app_context):
+    key = (await issue(client, token))['token']
+    await app_context.cache.put(1, 'diary:0', {'days': [{'subject': 'Русский язык'}], 'week': 0})
+    response = await client.get(BASE + '/api/v1/diary', headers={'Authorization': 'Bearer ' + key})
+    raw = await response.text()
+    assert 'Русский язык' in raw
+    assert '\\u0420' not in raw
+    assert '\n  "ok": true' in raw
+    assert (await response.json())['data']['days'][0]['subject'] == 'Русский язык'
+    response = await client.get(BASE + '/api/v1/profile')
+    assert response.status == 401
+    assert 'Передайте действующий токен' in await response.text()

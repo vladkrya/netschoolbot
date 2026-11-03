@@ -12,9 +12,9 @@ export async function openIntegrations() {
       <p><a href="${esc(base)}/api/v1/docs" target="_blank" rel="noopener">Документация API и примеры →</a></p>
       ${secret ? `<p>Сохраните токен: он показывается только сейчас.</p><input class="field" readonly value="${esc(secret)}" aria-label="Новый токен"><button class="btn outline" data-copy>Скопировать токен</button>` : ''}
       <form><label class="field-label">Название интеграции<input class="field" name="name" required maxlength="80" placeholder="Например, виджет на рабочем столе"></label>
-      <label class="field-label">Срок действия<select class="field" name="days"><option value="30">30 дней</option><option value="90" selected>90 дней</option><option value="365">1 год</option></select></label>
+      <label class="field-label">Срок действия<select class="field" name="days"><option value="30">30 дней</option><option value="90" selected>90 дней</option><option value="365">1 год</option><option value="0">Бессрочно</option></select></label>
       <button class="btn" type="submit">Создать токен</button></form></div>
-      <div class="card"><h3>Токены</h3>${items.length ? items.map(item => `<div><strong>${esc(item.name)}</strong><p class="muted small">До ${date(item.expires_at)}<br>Последний запрос: ${date(item.last_used_at)}</p><button class="btn outline" data-revoke="${item.id}">Отозвать</button></div>`).join('') : '<p class="muted">Пока нет токенов</p>'}</div>`;
+      <div class="card"><h3>Токены</h3>${items.length ? items.map(item => `<div><strong>${esc(item.name)}</strong><p class="muted small">${item.expires_at === null ? 'Бессрочно' : 'До ' + date(item.expires_at)}<br>Последний запрос: ${date(item.last_used_at)}</p><button class="btn outline" data-revoke="${item.id}">Отозвать</button></div>`).join('') : '<p class="muted">Пока нет токенов</p>'}</div>`;
     screen.querySelector('[data-copy]')?.addEventListener('click', async () => {
       try { await navigator.clipboard.writeText(secret); banner('Токен скопирован'); }
       catch { banner('Скопируйте токен из поля', true); }

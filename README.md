@@ -662,14 +662,15 @@ ID писем попадают в очередь при включённой н�
 ## API для интеграций (только чтение)
 
 В настройках миниаппа откройте **API и интеграции**, задайте название и срок
-действия (1–365 дней). Токен показывается один раз. В базе хранится его SHA-256,
+действия (1–365 дней или бессрочно). Новые токены имеют префикс `sgoshka-10001_`,
+ранее выданные `nsro_` продолжают работать. Токен показывается один раз. В базе хранится его SHA-256,
 отозвать токен можно отдельно от остальных устройств и интеграций.
 
 ```bash
 curl 'https://sgoshka.ru/api/v1/profile' \
-  -H "Authorization: Bearer $NETSCHOOL_API_TOKEN"
+  -H "Authorization: Bearer $SGOSHKA_API_TOKEN"
 curl 'https://sgoshka.ru/api/v1/diary?week=0&window=current' \
-  -H "Authorization: Bearer $NETSCHOOL_API_TOKEN"
+  -H "Authorization: Bearer $SGOSHKA_API_TOKEN"
 ```
 
 Подробная документация: `/api/v1/docs`; спецификация OpenAPI: `/api/v1/openapi.json`.

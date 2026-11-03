@@ -32,13 +32,13 @@
     <p>Дневник текущей недели:</p>
     <pre>curl '{{ base }}/diary?week=0&amp;window=current' \
   -H 'Authorization: Bearer ВАШ_ТОКЕН'</pre>
-    <p>Пример на Python (переменная окружения <code>NETSCHOOL_API_TOKEN</code>):</p>
+    <p>Пример на Python (переменная окружения <code>SGOSHKA_API_TOKEN</code>):</p>
     <pre>import json, os
 from urllib.request import Request, urlopen
 
 request = Request(
     "{{ base }}/homework",
-    headers={"Authorization": "Bearer " + os.environ["NETSCHOOL_API_TOKEN"]},
+    headers={"Authorization": "Bearer " + os.environ["SGOSHKA_API_TOKEN"]},
 )
 with urlopen(request, timeout=90) as response:
     payload = json.load(response)
