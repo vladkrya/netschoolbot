@@ -65,11 +65,13 @@ async def _sgo_updates(app: AppContext, telegram_id: int, url: str) -> bool:
 async def profile(request: web.Request) -> web.Response:
     from .. import solver, viewing
     from ...access import controls, feature
+    from ...solver.permissions import rules_for
     from ..admin import android_apk_info
 
     app, user = context(request), current_user(request)
     status = await app.state.watch_status(user.telegram_id)
     viewer = request.get(viewing.VIEWER)
+    solver_rules = await rules_for(app, viewer or user)
     return web.json_response(
         {
             "ok": True,
@@ -100,6 +102,7 @@ async def profile(request: web.Request) -> web.Response:
                 "assistant": app.settings.assistant.enabled and await feature(app, (viewer or user).telegram_id, "assistant", True),
                 # Кнопка «Решение» под заданием (web/solver.py).
                 "solver": await solver.solver_access(app, viewer or user),
+                "solver_subjects": sorted({s.casefold() for rule in solver_rules for s in rule["subjects"]}) if solver_rules else None,
                 # Тумблер «Решения заданий всему классу» — только у владельца.
                 "solver_class": {"on": await solver.class_open(app)}
                 if app.settings.assistant.enabled and solver.is_owner(app, viewer or user) else None,

@@ -8,6 +8,20 @@ import { openSheet, closeSheet } from './sheet.js';
 const label = (user) => user.username ? `@${user.username}` : `Аккаунт #${user.account_no}`;
 const permissionLabel = (theme) => theme.permission === 'default' ? 'По общим правилам' : theme.available ? 'Доступ выдан' : 'Доступ закрыт';
 
+function solverCard(user) {
+  const {rule, catalog} = user.solver_access;
+  const subjects = [...new Set(catalog.flatMap((b) => b.subjects))];
+  return `<section class="card"><h3>Доступ к решениям</h3>
+    <label class="switch-row"><span>Выборочный доступ</span><input type="checkbox" class="switch" switch data-solver-enabled ${rule ? 'checked' : ''}></label>
+    <label class="switch-row"><span>Для всего класса<span class="muted small switch-note">Выключено — только для этого человека</span></span><input type="checkbox" class="switch" switch data-solver-class ${rule?.classwide ? 'checked' : ''}></label>
+    <p class="muted small">Выберите предметы и учебники для решений. Общий доступ регулируется в разделе «Дополнительно».</p>
+    <h4>Предметы</h4>${subjects.map((name) => `<label class="switch-row"><span>${esc(name)}</span><input type="checkbox" data-solver-subject value="${esc(name)}" ${rule?.subjects.includes(name) ? 'checked' : ''}></label>`).join('')}
+    <h4>Учебники</h4>${catalog.map((book) => `<label class="switch-row"><span>${esc(book.title)}<span class="muted small switch-note">${esc(book.subjects.join(', '))}</span></span><input type="checkbox" data-solver-book value="${esc(book.id)}" ${rule?.books.includes(book.id) ? 'checked' : ''}></label>`).join('')}
+    ${!catalog.length ? '<p class="muted small">На сервере нет загруженных учебников.</p>' : ''}
+    <button type="button" class="btn" data-solver-save>Сохранить доступ к решениям</button>
+  </section>`;
+}
+
 export function userThemeCard(theme) {
   const options = [['free', 'Выбирает сам'], ['on', 'Включена'], ['off', 'Выключена']];
   return `<section class="au-theme card">
@@ -56,7 +70,7 @@ export function mountAdminUsers(container, model) {
   let searchSequence = 0;
   let selectionSequence = 0;
   let timer;
-  container.innerHTML = `<div class="au-intro"><h2>Пользователи</h2><p class="muted small">Найдите аккаунт и настройте доступ к темам.</p></div>
+  container.innerHTML = `<div class="au-intro"><h2>Пользователи</h2><p class="muted small">Найдите аккаунт и настройте доступ к темам и решениям.</p></div>
     <form class="au-search" role="search">
       <input class="field" id="adminUserQuery" aria-label="Поиск пользователя" type="search" autocomplete="off" spellcheck="false" maxlength="64" placeholder="@username, Telegram ID или #аккаунта" value="${esc(model.query)}">
       <button class="btn" type="submit" aria-label="Найти пользователя">${ICONS.search}</button>
@@ -86,6 +100,7 @@ export function mountAdminUsers(container, model) {
     <div class="au-section-title">Персональные темы</div>
     <p class="muted small au-section-note">Доступ разрешает выбрать тему. «Включена» применяет её принудительно.</p>
     <div class="au-theme-grid">${user.themes.map((theme) => userThemeCard({...theme, owner:user.owner})).join('')}</div>
+    ${solverCard(user)}
     ${userAdvanced(user, model.advancedOpen)}`;
     detail.querySelector('.au-close').addEventListener('click', () => {
       model.selected = null;
@@ -110,6 +125,12 @@ export function mountAdminUsers(container, model) {
       }
     };
     const manage = (kind, name, value) => { select(); return change(kind, name, value, 'manage'); };
+    detail.querySelector('[data-solver-save]').addEventListener('click', () => manage('solver', 'access', {
+      enabled: detail.querySelector('[data-solver-enabled]').checked,
+      classwide: detail.querySelector('[data-solver-class]').checked,
+      subjects: [...detail.querySelectorAll('[data-solver-subject]:checked')].map((el) => el.value),
+      books: [...detail.querySelectorAll('[data-solver-book]:checked')].map((el) => el.value),
+    }));
     detail.querySelector('[data-check-enabled]').addEventListener('change', (event) => manage('checking', 'enabled', event.target.checked));
     detail.querySelector('[data-check-interval]').addEventListener('change', (event) => manage('checking', 'interval', Number(event.target.value)));
     detail.querySelector('[data-user-restart]').addEventListener('click', () => manage('checking', 'restart', true));

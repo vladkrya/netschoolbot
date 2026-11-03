@@ -86,6 +86,9 @@ async def solver_access(app: AppContext, user: User) -> bool:
     grant = (await controls(app, user.telegram_id))["grants"].get("solver")
     if grant is not None and (grant or not is_owner(app, user)):
         return grant
+    from ..solver.permissions import rules_for
+    if await rules_for(app, user):
+        return True
     if available(app, user):
         return True
     if is_owner(app, user) or not app.settings.telegram.admin_id or not await class_open(app):
@@ -211,7 +214,10 @@ async def build_request(app: AppContext, user: User, task: Task, *, reread: bool
     заново») читает картинку снова — вдруг в прошлый раз прочиталось неверно.
     В imaged — номера, отправленные картинкой: их условия потом сохраняются."""
     refs = task.refs()
-    books = [(book, book.find(refs, task.topic)) for book in app.textbooks.books_for(task.subject)]
+    from ..solver.permissions import permitted_books
+    allowed = await permitted_books(app, user, task.subject)
+    books = [(book, book.find(refs, task.topic)) for book in app.textbooks.books_for(task.subject)
+             if allowed is None or book.id in allowed]
     known: dict[tuple[str, int], str] = {}
     if not reread:
         for book, found in books:
@@ -351,9 +357,13 @@ async def solve(request: web.Request) -> web.StreamResponse:
     task = _task(body)
     if task is None:
         return json_error("Некорректное задание")
+    from ..solver.permissions import permitted_books
+    allowed = await permitted_books(app, user, task.subject)
+    if allowed is not None and not allowed:
+        return json_error("Нет доступа к решениям по этому предмету", status=403)
     await _fetch_comment(app, user, body, task)
     model = app.settings.solver.model
-    key = cache_key(urlparse(user.school.url).hostname or user.school.url, task, app.textbooks.version(), model)
+    key = cache_key(urlparse(user.school.url).hostname or user.school.url, task, app.textbooks.version() + (":" + ",".join(sorted(allowed)) if allowed is not None else ""), model)
     fresh = bool(body.get("refresh"))
 
     if not fresh and (saved := await app.solutions.get(key)):

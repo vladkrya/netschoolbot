@@ -121,3 +121,37 @@ async def test_other_controls_work_without_returning_private_data(client, people
     assert (await users.get(2)).notifications.grades is False
     assert await access.blocked(app_context, 2)
     assert (await client.get('/mini/api/profile', params={'token':people['other']})).status == 403
+
+
+async def test_selective_solver_access(client, people, app_context, users, monkeypatch):
+    from app.solver.textbooks import Book
+    from app.solver.permissions import permitted_books, rules_for
+    books = [Book('algebra', 'Алгебра', ('Математика',)), Book('physics', 'Физика', ('Физика',))]
+    monkeypatch.setattr(app_context.textbooks, 'all_books', lambda: books)
+    params = {'token': people['owner']}
+    url = '/mini/api/admin/users/2/manage'
+    value = {'enabled': True, 'classwide': False, 'subjects': ['Математика'], 'books': ['algebra']}
+    async def post(token=params):
+        return await client.post(url, params=token, json={'kind': 'solver', 'name': 'access', 'value': value})
+    assert (await post({'token': people['other']})).status == 403
+    assert (await post()).status == 200
+    user = await users.get(2)
+    assert await permitted_books(app_context, user, 'Математика') == {'algebra'}
+    assert await permitted_books(app_context, user, 'Физика') == set()
+    value['books'] = ['missing']
+    assert (await post()).status == 400
+    value['books'] = ['algebra']
+    value['classwide'] = True
+    assert (await post()).status == 400
+    await app_context.cache.put(2, f'class:{user.selected_student_id}', '9 Б')
+    assert (await post()).status == 200
+    data = (await (await client.get('/mini/api/admin/users/2', params=params)).json())['data']
+    assert_minimal(data)
+    other = await users.save(replace(await users.get(3), school=user.school))
+    await app_context.cache.put(3, f'class:{other.selected_student_id}', '9б')
+    assert await permitted_books(app_context, other, 'Математика') == {'algebra'}
+    await app_context.cache.put(3, f'class:{other.selected_student_id}', '9а')
+    assert await rules_for(app_context, other) == []
+    value['enabled'] = False
+    assert (await post()).status == 200
+    assert await permitted_books(app_context, user, 'Физика') is None

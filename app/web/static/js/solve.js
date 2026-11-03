@@ -29,6 +29,7 @@ export function loadSolve(body, items) {
     body.querySelectorAll('[data-solve]').forEach((slot) => {
       const item = items[Number(slot.dataset.solve)];
       if (!item) return;
+      if (state.profile.solver_subjects && !state.profile.solver_subjects.includes((item.subject || '').trim().toLowerCase())) return;
       slot.innerHTML = `<button class="solve-btn">${ICONS.sparkles}<span>Решение</span></button>`;
       slot.hidden = false;
       slot.querySelector('button').addEventListener('click', () => openSolution(item));

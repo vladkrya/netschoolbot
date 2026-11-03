@@ -49,7 +49,11 @@ async def _details(app, uid):
     defaults = {"unity": access.owner(app, uid), "halloween": halloween_season(user.today())}
     available = {key: await access.feature(app, uid, key, defaults[key]) for key, *_ in THEMES}
     unity_on = available["unity"] and prefs.get("unity") == "on"
+    from ..solver.permissions import catalog
+    rule = control["grants"].get("solver_rules")
+    public_rule = {k: v for k, v in rule.items() if k != "class_identity"} if rule else None
     return {**_identity(row), "blocked": control["blocked"], "owner": access.owner(app, uid),
+            "solver_access": {"rule": public_rule, "catalog": catalog(app)},
             "checking": {"enabled": user.enabled, "interval": user.check_interval,
                          "ready": replace(user, enabled=True).ready_to_check},
             "notifications": {key: getattr(user.notifications, key) for key in NOTIFICATIONS},
@@ -187,6 +191,12 @@ async def manage(request):
             async with app.db.transaction() as db:
                 for table in ('app_locks', 'app_unlocks', 'app_passkeys', 'app_biometrics', 'app_lock_challenges'):
                     await db.execute(f"DELETE FROM {table} WHERE telegram_id = ?", (uid,))
+    elif kind == 'solver' and name == 'access':
+        from ..solver.permissions import save
+        try:
+            await save(app, uid, value)
+        except ValueError as exc:
+            return json_error(str(exc))
     elif kind in ('grant', 'force'):
         try:
             if not isinstance(value, str):

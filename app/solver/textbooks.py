@@ -372,6 +372,10 @@ class Library:
         self._load()
         return self._grade
 
+    def all_books(self) -> list[Book]:
+        self._load()
+        return list(self._books.values())
+
     def books_for(self, subject: str) -> list[Book]:
         self._load()
         subject = subject.strip().casefold()
