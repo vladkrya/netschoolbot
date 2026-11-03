@@ -2776,3 +2776,61 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
 
 /* «Должен сдать»: очистка списка заданий. */
 .due-clear { width: 100%; margin-top: 10px; }
+
+/* Пользователи в админке: идентификаторы и настройки, без данных дневника. */
+.au-intro { margin: 4px 2px 16px; }
+.au-intro h2 { margin: 0 0 6px; font-size: 22px; letter-spacing: -.025em; }
+.au-intro p { margin: 0; }
+.au-search { display: flex; gap: 8px; margin-bottom: 12px; }
+.au-search .field { flex: 1; min-width: 0; margin: 0; }
+.au-search .btn { width: 46px; flex: none; padding: 0; display: grid; place-items: center; }
+.au-empty { display: grid; justify-items: center; text-align: center; gap: 9px; padding: 42px 16px; }
+.au-empty > .icon { width: 40px; height: 40px; color: var(--primary); opacity: .65; margin-bottom: 5px; }
+.au-result-list { max-height: 240px; overflow-y: auto; background: var(--card); border: 1px solid var(--border); border-radius: 16px; margin-bottom: 16px; }
+.au-result { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 13px 14px; text-align: left; color: var(--text); border-bottom: 1px solid var(--border); }
+.au-result:last-child { border-bottom: 0; }
+.au-result[aria-pressed="true"] { background: var(--soft); }
+.au-result b, .au-result small { display: block; }
+.au-result small { color: var(--text2); margin-top: 4px; font-size: 11px; overflow-wrap: anywhere; }
+.au-no-results { padding: 16px 4px; }
+.au-identity { display: flex; align-items: center; gap: 12px; margin-top: 16px; }
+.au-avatar { display: grid; place-items: center; width: 44px; height: 44px; flex: none; border-radius: 14px; background: var(--soft); color: var(--primary); font-size: 20px; font-weight: 700; }
+.au-identity-copy { flex: 1; min-width: 0; }
+.au-identity-copy h2 { margin: 0 0 5px; font-size: 17px; overflow-wrap: anywhere; }
+.au-identifiers { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 11px; color: var(--text2); overflow-wrap: anywhere; }
+.au-close { flex: none; width: 30px; height: 30px; color: var(--text2); font-size: 24px; }
+.au-section-title { font-weight: 700; font-size: 18px; margin: 22px 2px 6px; }
+.au-section-note { margin: 0 2px 14px; line-height: 1.5; }
+.au-theme h3 { font-size: 16px; margin: 0; line-height: 1.3; }
+.au-theme-heading { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; }
+.au-status { font-size: 10px; color: var(--text2); background: var(--card-2); border-radius: 20px; padding: 4px 7px; }
+.au-status.active { color: var(--primary); background: var(--soft); }
+.au-theme .switch-row { margin: 12px 0; padding: 12px 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+.au-setting-label { font-size: 12px; font-weight: 600; margin: 0 0 8px; }
+.au-options { display: flex; gap: 4px; padding: 4px; background: var(--card-2); border-radius: 12px; }
+.au-options button { flex: 1; min-width: 0; min-height: 36px; padding: 7px 3px; border-radius: 9px; font-size: 11px; line-height: 1.2; color: var(--text2); }
+.au-options button.on { color: var(--primary); background: var(--card); box-shadow: var(--lift); font-weight: 650; }
+.au-explanation { min-height: 32px; margin: 9px 0 10px; line-height: 1.5; }
+.au-theme-preview { height: 78px; overflow: hidden; position: relative; border-radius: 13px; isolation: isolate; }
+.au-preview-unity { background: radial-gradient(ellipse at 100% 0, #447bd3, transparent 70%), #10274d; }
+.au-preview-unity::after { content: ''; position: absolute; width: 170px; height: 96px; right: -18px; top: -50px; border-radius: 50%; border: 10px solid #f5f8ff; box-shadow: 0 11px 0 1px #4d85f4, 0 22px 0 2px #ef5a76; transform: rotate(-20deg); }
+.au-preview-unity span { position: absolute; width: 62px; height: 7px; top: 24px; left: 16px; background: #d4e6ff; border-radius: 4px; box-shadow: 0 16px 0 -1px #7da7ed, 0 29px 0 -2px #5378b6; }
+.au-preview-halloween { background: radial-gradient(ellipse at 20% 120%, #a54e144d, transparent 70%), #1c102b; }
+.au-preview-halloween::after { content: '☾'; position: absolute; right: 25px; top: 0; font-size: 64px; line-height: 1.1; color: #f3cf88; transform: rotate(-15deg); text-shadow: 0 0 22px #e2ac5c44; }
+.au-preview-halloween span { position: absolute; width: 62px; height: 7px; top: 24px; left: 16px; background: #f3a960; border-radius: 4px; box-shadow: 0 16px 0 -1px #af6f40, 0 29px 0 -2px #644268; }
+@media (min-width: 760px) { .au-theme-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; align-items: start; } }
+.au-advanced { margin-top: 12px; }
+.au-advanced > summary { cursor: pointer; font-weight: 650; }
+.au-advanced > summary > span { display: block; margin: 6px 0 0; font-weight: 400; }
+.au-advanced-body { padding-top: 12px; }
+.au-advanced-body h3 { margin: 22px 0 8px; font-size: 14px; }
+.au-control { display: grid; grid-template-columns: minmax(90px, 1fr) minmax(130px, 1.5fr); gap: 12px; align-items: center; margin: 10px 0; font-size: 13px; }
+.au-control .field { width: 100%; min-width: 0; margin: 0; }
+.au-security { display: grid; gap: 8px; }
+.au-danger { color: var(--g2); }
+
+/* Проверка расписания, распознанного с фото. */
+.import-preview section { border-top: 1px solid var(--line, #8884); padding-top: 12px; margin-top: 16px; }
+.import-lesson { padding: 12px 0; border-bottom: 1px solid var(--line, #8884); }
+.import-lesson .field-label { display: block; margin-bottom: 8px; }
+.import-existing .btn { margin-bottom: 8px; }

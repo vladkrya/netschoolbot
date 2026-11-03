@@ -321,7 +321,7 @@ function adminSection(admin) {
   return `<section class="drawer-section">
       <div class="drawer-heading">Администрирование</div>
       <button class="drawer-link" id="drawerAdmin">${ICONS.shield} Админ-настройки</button>
-      <div class="muted small">видно только вам: решения классу, вход через Telegram, статистика, проверка иконок</div>
+      <div class="muted small">видно только вам: пользователи, доступ к темам, статистика, проверка иконок</div>
     </section>`;
 }
 

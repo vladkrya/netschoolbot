@@ -223,7 +223,7 @@ async def upload_icon(request: web.Request) -> web.Response:
     admin = app.settings.telegram.admin_id
     # Замена ещё не проверенной — владелец о ней уже знает.
     if admin and admin != user.telegram_id and not replaced and await push_on(app):
-        _push(app, admin, "Новая иконка — уже работает", f"{user.label} — Админ-настройки → Иконки", "app-icon")
+        _push(app, admin, "Новая иконка — уже работает", f"ID {user.telegram_id} — Админ-настройки → Иконки", "app-icon")
     return web.json_response({"ok": True, "data": await _mine(request)})
 
 
@@ -242,13 +242,11 @@ async def _admin_state(request: web.Request) -> dict:
     items = []
     for status in ("pending", "approved"):
         for row in await repo(request).listing(status):
-            user = await app.users.get(row["telegram_id"])
             items.append({
                 "id": row["id"],
                 "status": status,
                 "image": _data_url(await asyncio.to_thread(resized, row["image"], 192)),
-                "user": user.label if user else f"ID {row['telegram_id']}",
-                "school": user.school.name if user else "",
+                "user_id": row["telegram_id"],
                 "created_at": row["created_at"],
             })
     return {"items": items, "push": await push_on(app)}

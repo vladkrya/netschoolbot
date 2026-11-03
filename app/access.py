@@ -34,6 +34,11 @@ async def feature(app, uid, name, default=False):
 
 
 async def set_control(app, uid, *, block=None, grant=None, force=None):
+    async with app.user_controls_lock:
+        return await _set_control(app, uid, block=block, grant=grant, force=force)
+
+
+async def _set_control(app, uid, *, block=None, grant=None, force=None):
     """Изменение из админ-команд. Имена и значения — только из белых списков."""
     if block and owner(app, uid):
         raise ValueError("Нельзя заблокировать владельца")

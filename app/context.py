@@ -66,6 +66,7 @@ class AppContext:
     watchers: WatcherRegistry
     # Живые соединения приложения (WebSocket): мгновенные оценки и синхронизация.
     hub: LiveHub = field(default_factory=LiveHub)
+    user_controls_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     cache_refreshes: dict[tuple, asyncio.Task] = field(default_factory=dict)
     caldav: CaldavService | None = None
     login_tasks: dict[int, set[asyncio.Task]] = field(default_factory=dict)

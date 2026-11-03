@@ -84,6 +84,8 @@ async def test_icon_works_at_once_and_reject_revokes(client, app_context, users,
     listing = (await (await get("/mini/api/admin/icons", admin)).json())["data"]
     assert listing["push"] is True and [item["status"] for item in listing["items"]] == ["pending"]
     assert (await (await get("/mini/api/admin", admin)).json())["data"]["icons_pending"] == 1
+    assert listing["items"][0]["user_id"] == USER
+    assert "user" not in listing["items"][0] and "school" not in listing["items"][0]
     icon_id = listing["items"][0]["id"]
 
     response = await post(f"/mini/api/admin/icons/{icon_id}", admin, {"decision": "approve"})

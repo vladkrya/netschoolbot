@@ -7,6 +7,7 @@ import { api, banner, esc, openExternal, showFailure } from './core.js';
 import { notify, select } from './haptics.js';
 import { onScreenRefresh, pushScreen } from './screens.js';
 import { closeSheet, openSheet } from './sheet.js';
+import { mountAdminUsers } from './admin-users.js';
 
 const post = (path, body) => api(path, { method: 'POST', body: JSON.stringify(body || {}) });
 
@@ -39,6 +40,7 @@ function widgetCard(widget) {
 function tabs(active, pending) {
   return `<div class="chips admin-tabs">
       <button class="chip ${active === 'main' ? 'active' : ''}" data-admin-tab="main" aria-pressed="${active === 'main'}">Настройки</button>
+      <button class="chip ${active === 'users' ? 'active' : ''}" data-admin-tab="users" aria-pressed="${active === 'users'}">Пользователи</button>
       <button class="chip ${active === 'icons' ? 'active' : ''}" data-admin-tab="icons" aria-pressed="${active === 'icons'}">Иконки${pending ? ` · ${pending}` : ''}</button>
     </div>`;
 }
@@ -49,7 +51,7 @@ function iconRow(item) {
   const pending = item.status === 'pending';
   return `<div class="admin-icon">
       <img src="${item.image}" alt="" width="64" height="64">
-      <div class="admin-icon-who"><b>${esc(item.user)}</b><span class="muted small">${esc(item.school)}${item.school ? ' · ' : ''}${when(item.created_at)}</span></div>
+      <div class="admin-icon-who"><b>ID ${esc(item.user_id)}</b><span class="muted small">${when(item.created_at)}</span></div>
       <div class="admin-icon-actions">
         ${pending ? `<button class="btn" data-icon-id="${item.id}" data-decision="approve">Принять</button>` : ''}
         <button class="btn outline" data-icon-id="${item.id}" data-decision="reject">Отозвать</button>
@@ -81,6 +83,7 @@ export function openAdmin() {
   body.innerHTML = '<div class="muted small">Загрузка…</div>';
   let tab = 'main';
   let pendingCount = 0;
+  const usersModel = { query: '', selected: null };
 
   const drawIcons = (data) => {
     pendingCount = data.items.filter((item) => item.status === 'pending').length;
@@ -124,7 +127,7 @@ export function openAdmin() {
       const item = data.items.find((icon) => String(icon.id) === button.dataset.iconId);
       const sheet = openSheet('Отозвать иконку', `<div class="admin-icon">
           <img src="${item.image}" alt="" width="64" height="64">
-          <div class="admin-icon-who"><b>${esc(item.user)}</b><span class="muted small">вернётся стандартная иконка, автору придёт уведомление</span></div>
+          <div class="admin-icon-who"><b>ID ${esc(item.user_id)}</b><span class="muted small">вернётся стандартная иконка, автору придёт уведомление</span></div>
         </div>
         <textarea class="field" data-reject-comment rows="3" maxlength="300" placeholder="Причина — необязательно"></textarea>
         <div class="app-icon-actions admin-reject-actions">
@@ -250,9 +253,22 @@ export function openAdmin() {
     });
   };
 
-  const load = () => (tab === 'icons' ? api('/api/admin/icons').then(({ data }) => drawIcons(data))
+  const load = () => {
+    const screen = body.closest('.screen');
+    const title = screen?.querySelector('.screen-title');
+    const subtitle = screen?.querySelector('.screen-subtitle');
+    if (title) title.textContent = 'Админ-настройки';
+    if (subtitle) subtitle.textContent = 'видно только вам';
+    if (tab === 'users') {
+      body.innerHTML = tabs('users', pendingCount) + '<div data-admin-users></div>';
+      bindTabs();
+      mountAdminUsers(body.querySelector('[data-admin-users]'), usersModel);
+      return Promise.resolve();
+    }
+    return (tab === 'icons' ? api('/api/admin/icons').then(({ data }) => drawIcons(data))
     : api('/api/admin').then(({ data }) => draw(data)))
     .catch((error) => showFailure(body, error, `<div class="muted small">${esc(error.message)}</div>`));
+  };
   onScreenRefresh(body, load);
   load();
 }
