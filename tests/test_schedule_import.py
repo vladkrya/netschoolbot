@@ -180,6 +180,30 @@ async def test_recognize_preview_no_save_and_period_validation(client, token, ap
     assert response.status == 400
 
 
+async def test_week_recognizes_multiple_photos_in_calendar_order(client, token, app_context, monkeypatch, known_class):
+    app_context.settings = replace(app_context.settings, solver=replace(app_context.settings.solver, gemini_key='test'))
+    output = io.BytesIO()
+    Image.new('RGB', (10, 10)).save(output, format='PNG')
+    image = base64.b64encode(output.getvalue()).decode()
+    monday = (await app_context.users.get(1)).today()
+    monday -= dt.timedelta(days=monday.weekday())
+    reader = AsyncMock(side_effect=[days(monday.isoformat()), days((monday + dt.timedelta(days=1)).isoformat())])
+    monkeypatch.setattr(module, 'read_photo', reader)
+    response = await client.post(f'{BASE}/api/schedule/recognize', headers=auth(token), json={
+        'date': monday.isoformat(), 'mode': 'week', 'images': [image, image]})
+    assert response.status == 200, await response.text()
+    assert [item['date'] for item in (await response.json())['data']['days']] == [
+        monday.isoformat(), (monday + dt.timedelta(days=1)).isoformat()]
+    assert [call.args[2] for call in reader.call_args_list] == [monday.isoformat(), (monday + dt.timedelta(days=1)).isoformat()]
+
+
+async def test_day_rejects_multiple_photos(client, token, app_context):
+    app_context.settings = replace(app_context.settings, solver=replace(app_context.settings.solver, gemini_key='test'))
+    response = await client.post(f'{BASE}/api/schedule/recognize', headers=auth(token), json={
+        'date': (await app_context.users.get(1)).today().isoformat(), 'mode': 'day', 'images': ['x', 'x']})
+    assert response.status == 400
+
+
 async def test_auth_required(client):
     for route in ('imports', 'recognize'):
         response = await client.post(f'{BASE}/api/schedule/{route}', json={})

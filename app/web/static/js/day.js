@@ -24,7 +24,7 @@ import { select, tap } from './haptics.js';
 import { bindInstallCard, installCardHtml } from './install.js';
 import { msToBell, updateTimer } from './timer.js';
 import { isTestWork, loadNotes, noteWhen, openNoteEditor, setNoteDone } from './notes.js';
-import { importScheduleButton, bindImportSchedule } from './schedule-import.js';
+import { openScheduleImport } from './schedule-import.js';
 import { applyEdits, bindHidden, hiddenHtml, openAddLesson } from './edits.js';
 import { flyTo, markKey, playFresh, takeFresh } from './motion.js';
 import { bindCountdown, countdownHtml, loadCountdown } from './countdown.js';
@@ -408,7 +408,7 @@ function editsKey(day) {
 }
 
 function addLessonButton() {
-  return '<button class="btn outline add-lesson" data-add-lesson>+ Добавить урок</button>' + importScheduleButton();
+  return '<button class="btn outline add-lesson" data-add-lesson>+ Добавить</button>';
 }
 
 /** Предметы недели — подсказки в шторке «Добавить урок». */
@@ -422,9 +422,23 @@ function knownSubjects() {
 }
 
 function bindDayEdits(container, day) {
-  bindImportSchedule(container, state.date);
   if (day) bindHidden(container, day);
-  container.querySelector('[data-add-lesson]')?.addEventListener('click', () => openAddLesson(state.date, knownSubjects()));
+  container.querySelector('[data-add-lesson]')?.addEventListener('click', () => {
+    tap();
+    const body = openSheet('Добавить в расписание', `
+      <div class="note-form">
+        <button class="btn add-one-lesson">Один урок вручную</button>
+        <button class="btn outline add-photo-schedule">Расписание по фото</button>
+      </div>`);
+    body.querySelector('.add-one-lesson').addEventListener('click', () => {
+      closeSheet();
+      openAddLesson(state.date, knownSubjects());
+    });
+    body.querySelector('.add-photo-schedule').addEventListener('click', () => {
+      closeSheet();
+      openScheduleImport(state.date);
+    });
+  });
 }
 
 /** Свои задачи на этот день — под уроками; нажатие отмечает сделанной. */

@@ -158,7 +158,8 @@ async def security_headers(request: web.Request, handler):
 
 def create_app(context: AppContext, bot=None) -> web.Application:
     """Собрать сервер: подприложение под префиксом плюс проверка живости."""
-    inner = web.Application(middlewares=[security_headers, caldav.root_discovery, compress_static, api.error_middleware, api.auth_middleware, access_middleware, sync.sync_middleware])
+    # Неделя может состоять из семи фото: base64 в JSON заметно больше файлов.
+    inner = web.Application(client_max_size=8 * 1024 * 1024, middlewares=[security_headers, caldav.root_discovery, compress_static, api.error_middleware, api.auth_middleware, access_middleware, sync.sync_middleware])
     inner[CONTEXT] = context
     inner[BOT] = bot
     inner[live.HUB] = context.hub

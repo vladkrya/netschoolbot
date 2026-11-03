@@ -30,7 +30,7 @@ async function photoData(file) {
       url = canvas.toDataURL('image/jpeg', quality);
       if (url.length < 900000) return url.split(',')[1];
     }
-    throw new Error('Фото слишком большое. Обрежьте его до нужного класса');
+    throw new Error('Фото слишком большое. Обрежьте его до одного дня');
   } finally { bitmap.close(); }
 }
 
@@ -41,7 +41,8 @@ export async function openScheduleImport(date = isoToday()) {
       <p class="muted small">Фото из школьного чата прочитает Gemini. Обрежьте его до нужного класса: перед добавлением мы покажем, как ИИ поняла расписание, и дадим всё исправить. Расписание заменит уроки только на выбранные даты; задания и оценки останутся из дневника.</p>
       <label class="field-label">Дата / день нужной недели<input class="field import-date" type="date" value="${esc(date)}"></label>
       <label class="field-label">Период<select class="field import-mode"><option value="day">На один день</option><option value="week">На выбранную неделю</option></select></label>
-      <label class="field-label">Фото расписания<input class="field import-photo" type="file" accept="image/jpeg,image/png,image/webp"></label>
+      <label class="field-label">Фото расписания<input class="field import-photo" type="file" accept="image/jpeg,image/png,image/webp" multiple></label>
+      <div class="muted small import-photo-hint">Для дня выберите одно фото. Для недели можно одно общее фото или до семи фото по порядку: Пн, Вт, Ср…</div>
       <button class="btn import-read">Распознать фото</button>
       <div class="muted small import-status" role="status"></div>
       <div class="import-existing"></div>
@@ -52,9 +53,14 @@ export async function openScheduleImport(date = isoToday()) {
     button.disabled = true;
     status.textContent = 'Читаем расписание…';
     try {
-      const image = await photoData(body.querySelector('.import-photo').files[0]);
-      const { data } = await api('/api/schedule/recognize', { method: 'POST', body: JSON.stringify({ image,
-        date: body.querySelector('.import-date').value, mode: body.querySelector('.import-mode').value }) });
+      const mode = body.querySelector('.import-mode').value;
+      const files = [...body.querySelector('.import-photo').files];
+      if (!files.length) throw new Error('Выберите фото расписания');
+      if (mode === 'day' && files.length !== 1) throw new Error('Для одного дня выберите одно фото');
+      if (files.length > 7) throw new Error('Для недели можно выбрать до семи фото');
+      const images = await Promise.all(files.map(photoData));
+      const { data } = await api('/api/schedule/recognize', { method: 'POST', body: JSON.stringify({ images,
+        date: body.querySelector('.import-date').value, mode }) });
       preview(data.days);
     } catch (error) { status.textContent = error.message; }
     finally { button.disabled = false; }
