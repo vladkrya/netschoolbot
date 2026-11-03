@@ -2181,6 +2181,57 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
 .note-form { display: flex; flex-direction: column; gap: 12px; }
 .note-form textarea { resize: vertical; min-height: 70px; font: inherit; }
 .note-form select:disabled { opacity: .45; }
+
+/* Расписание по фото: короткий путь «выбрать — проверить — сохранить». */
+.import-flow { gap: 14px; padding-bottom: 4px; }
+.import-steps { display: flex; align-items: flex-start; justify-content: space-between; gap: 4px; margin: 0; padding: 0; list-style: none; color: var(--text2); font-size: 12px; }
+.import-steps li { position: relative; display: grid; justify-items: center; gap: 4px; flex: 1; }
+.import-steps li:not(:last-child)::after { content: ''; position: absolute; top: 11px; left: 60%; width: 80%; height: 1px; background: var(--border); }
+.import-steps span { position: relative; z-index: 1; display: grid; place-items: center; width: 23px; height: 23px; border-radius: 50%; background: var(--card-2); box-shadow: inset 0 0 0 1px var(--border); font-weight: 700; }
+.import-steps li.active, .import-steps li.done { color: var(--primary); font-weight: 600; }
+.import-steps li.active span, .import-steps li.done span { background: var(--primary); color: #fff; box-shadow: none; }
+.import-steps li.done::after { background: var(--primary); }
+.import-hero { display: flex; gap: 12px; align-items: center; padding: 13px; border-radius: 14px; background: linear-gradient(135deg, color-mix(in srgb, var(--primary) 13%, var(--card)), var(--card)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 20%, transparent); }
+.import-hero-icon { display: grid; flex: none; place-items: center; width: 40px; height: 40px; border-radius: 13px; background: var(--primary); color: #fff; font-size: 20px; box-shadow: 0 5px 14px color-mix(in srgb, var(--primary) 30%, transparent); }
+.import-hero.success .import-hero-icon { background: var(--g5); }
+.import-hero strong { display: block; font-size: 15px; }
+.import-hero p { margin: 3px 0 0; color: var(--text2); font-size: 12px; line-height: 1.4; }
+.import-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.import-file-card { position: relative; display: flex; align-items: center; gap: 10px; min-height: 68px; padding: 10px 12px; border: 1.5px solid var(--border); border-radius: 14px; background: var(--card); cursor: pointer; transition: border-color .2s, transform .2s var(--ease), background .2s; }
+.import-file-card:active { transform: scale(.985); }
+.import-file-card:has(input:focus-visible) { outline: 2px solid var(--primary); outline-offset: 2px; }
+.import-file-card.primary { border-color: color-mix(in srgb, var(--primary) 55%, var(--border)); background: color-mix(in srgb, var(--primary) 6%, var(--card)); }
+.import-file-card input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.import-file-card > span:nth-of-type(2) { display: grid; min-width: 0; gap: 2px; flex: 1; }
+.import-file-card strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
+.import-file-card small { overflow: hidden; color: var(--text2); text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.import-file-card b { color: var(--primary); font-size: 12px; }
+.import-file-icon { display: grid; flex: none; place-items: center; width: 36px; height: 36px; border-radius: 11px; background: var(--card-2); color: var(--primary); font-size: 22px; }
+.import-photo-hint { margin: -7px 4px 0; line-height: 1.4; }
+.import-analysis { display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: 14px; background: var(--card-2); animation: import-appear .25s var(--ease); }
+.import-analysis strong, .import-analysis small { display: block; }
+.import-analysis small { margin-top: 2px; color: var(--text2); font-size: 12px; }
+.import-orbit { width: 29px; height: 29px; flex: none; border: 3px solid color-mix(in srgb, var(--primary) 25%, transparent); border-top-color: var(--primary); border-right-color: var(--primary); border-radius: 50%; animation: import-orbit .9s linear infinite; }
+@keyframes import-orbit { to { transform: rotate(360deg); } }
+@keyframes import-appear { from { opacity: 0; transform: translateY(5px); } }
+.import-flow.analyzing .import-file-card, .import-flow.analyzing .import-controls { opacity: .55; pointer-events: none; }
+.import-existing { display: grid; gap: 7px; padding-top: 4px; border-top: 1px solid var(--border); }
+.import-existing h3 { margin: 8px 0 0; font-size: 14px; }
+.import-existing .btn { margin: 0; text-align: left; justify-content: flex-start; font-size: 13px; }
+.import-preview [data-import-day] { display: grid; gap: 10px; padding: 13px; border: 1px solid var(--border); border-radius: 14px; background: var(--card); animation: import-appear .3s var(--ease) both; }
+.import-preview [data-import-day] + [data-import-day] { margin-top: 4px; }
+.import-day-head { display: flex; gap: 10px; align-items: center; justify-content: space-between; }
+.import-day-head h3 { margin: 0; font-size: 16px; }
+.import-day-head .link { border: 0; background: none; font: inherit; font-size: 12px; cursor: pointer; }
+.import-lesson { display: grid; gap: 9px; margin-top: 9px; padding: 11px; border-radius: 12px; background: var(--card-2); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--border) 70%, transparent); }
+.import-lesson-head { display: flex; justify-content: space-between; align-items: center; color: var(--primary); font-size: 13px; }
+.import-remove { display: grid; place-items: center; width: 25px; height: 25px; border: 0; border-radius: 50%; background: transparent; color: var(--text2); font-size: 23px; line-height: 1; cursor: pointer; }
+.import-remove:active { background: color-mix(in srgb, var(--g2) 14%, transparent); color: var(--g2); }
+.import-lesson-basics { display: grid; grid-template-columns: 58px 1fr; gap: 9px; }
+.import-lesson .field-label { margin: 0; }
+.import-lesson .field { margin-top: 4px; }
+.import-add-lesson { margin: 2px 0 0; border-style: dashed; }
+@media (min-width: 620px) { .import-preview [data-import-day] { padding: 16px; } .import-lesson { grid-template-columns: 1.5fr 1fr; } .import-lesson-head, .import-lesson > .field-label { grid-column: 1 / -1; } }
 .streaks { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
 .streak {
   display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px;

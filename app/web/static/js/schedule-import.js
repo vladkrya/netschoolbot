@@ -12,6 +12,17 @@ function changed() {
   window.dispatchEvent(new Event('netschool:scheduleimported'));
 }
 
+function importSteps(current) {
+  const labels = ['Фото', 'Проверка', 'Готово'];
+  return `<ol class="import-steps" aria-label="Этапы добавления расписания">${labels.map((label, index) =>
+    `<li class="${index === current ? 'active' : index < current ? 'done' : ''}"><span>${index < current ? '✓' : index + 1}</span>${label}</li>`).join('')}</ol>`;
+}
+
+function fileDescription(files, fallback) {
+  if (!files?.length) return fallback;
+  return files.length === 1 ? files[0].name : `Выбрано фото: ${files.length}`;
+}
+
 // Масштабируем на устройстве: исходная фотография не уходит на сервер.
 async function photoData(file) {
   if (!file || file.size > 25 * 1024 * 1024) throw new Error('Выберите фото размером до 25 МБ');
@@ -37,23 +48,46 @@ async function photoData(file) {
 export async function openScheduleImport(date = isoToday()) {
   if (refuseReadOnly()) return;
   const body = openSheet('Своё расписание', `
-    <div class="note-form">
-      <p class="muted small">Фото из школьного чата прочитает Gemini. Обрежьте его до нужного класса: перед добавлением мы покажем, как ИИ поняла расписание, и дадим всё исправить. Расписание заменит уроки только на выбранные даты; задания и оценки останутся из дневника.</p>
-      <label class="field-label">Дата / день нужной недели<input class="field import-date" type="date" value="${esc(date)}"></label>
-      <label class="field-label">Период<select class="field import-mode"><option value="day">На один день</option><option value="week">На выбранную неделю</option></select></label>
-      <label class="field-label">Расписание уроков<input class="field import-photo" type="file" accept="image/jpeg,image/png,image/webp" multiple></label>
-      <div class="muted small import-photo-hint">Для дня выберите одно фото. Для недели можно одно общее фото или до семи фото по порядку: Пн, Вт, Ср…</div>
-      <label class="field-label">Расписание звонков <span class="muted">(необязательно)</span><input class="field import-bells" type="file" accept="image/jpeg,image/png,image/webp"></label>
-      <div class="muted small">Если приложить только звонки, предметы останутся из дневника, а время и порядок уроков обновятся.</div>
-      <button class="btn import-read">Распознать фото</button>
+    <div class="note-form import-flow">
+      ${importSteps(0)}
+      <section class="import-hero">
+        <span class="import-hero-icon" aria-hidden="true">✦</span>
+        <div><strong>Добавим расписание с фото</strong><p>Сначала покажем результат, затем его можно спокойно поправить перед сохранением.</p></div>
+      </section>
+      <div class="import-controls">
+        <label class="field-label">Дата<input class="field import-date" type="date" value="${esc(date)}"></label>
+        <label class="field-label">Период<select class="field import-mode"><option value="day">Один день</option><option value="week">Неделя</option></select></label>
+      </div>
+      <label class="import-file-card primary">
+        <input class="import-photo" type="file" accept="image/jpeg,image/png,image/webp" multiple>
+        <span class="import-file-icon" aria-hidden="true">▧</span><span><strong>Фото расписания уроков</strong><small class="import-photo-copy">Выберите фото из галереи или камеры</small></span><b>Выбрать</b>
+      </label>
+      <div class="muted small import-photo-hint">Для дня — одно фото. Для недели — общий снимок или до семи фото по порядку: Пн, Вт, Ср…</div>
+      <label class="import-file-card">
+        <input class="import-bells" type="file" accept="image/jpeg,image/png,image/webp">
+        <span class="import-file-icon" aria-hidden="true">◷</span><span><strong>Расписание звонков</strong><small class="import-bells-copy">Необязательно — время возьмём из дневника</small></span><b>Добавить</b>
+      </label>
+      <div class="import-analysis" hidden aria-live="polite"><span class="import-orbit" aria-hidden="true"></span><div><strong>Анализируем изображение</strong><small>Сверяем предметы, кабинеты и время с дневником…</small></div></div>
+      <button class="btn import-read">Продолжить к проверке <span aria-hidden="true">→</span></button>
       <div class="muted small import-status" role="status"></div>
       <div class="import-existing"></div>
     </div>`);
   const status = body.querySelector('.import-status');
   const button = body.querySelector('.import-read');
+  const photoInput = body.querySelector('.import-photo');
+  const bellInput = body.querySelector('.import-bells');
+  photoInput.addEventListener('change', () => {
+    body.querySelector('.import-photo-copy').textContent = fileDescription(photoInput.files, 'Выберите фото из галереи или камеры');
+  });
+  bellInput.addEventListener('change', () => {
+    body.querySelector('.import-bells-copy').textContent = fileDescription(bellInput.files, 'Необязательно — время возьмём из дневника');
+  });
   button.addEventListener('click', async () => {
     button.disabled = true;
-    status.textContent = 'Читаем расписание…';
+    button.classList.add('loading');
+    body.classList.add('analyzing');
+    body.querySelector('.import-analysis').hidden = false;
+    status.textContent = '';
     try {
       const mode = body.querySelector('.import-mode').value;
       const files = [...body.querySelector('.import-photo').files];
@@ -67,7 +101,12 @@ export async function openScheduleImport(date = isoToday()) {
         date: body.querySelector('.import-date').value, mode }) });
       preview(data.days);
     } catch (error) { status.textContent = error.message; }
-    finally { button.disabled = false; }
+    finally {
+      button.disabled = false;
+      button.classList.remove('loading');
+      body.classList.remove('analyzing');
+      body.querySelector('.import-analysis').hidden = true;
+    }
   });
   try {
     const { data } = await api('/api/schedule/imports');
@@ -93,29 +132,30 @@ export async function openScheduleImport(date = isoToday()) {
 
 function lessonRow(item = {}) {
   return `<div class="import-lesson">
-    <label class="field-label">№<input class="field" data-key="number" type="number" min="0" max="30" value="${esc(item.number ?? '')}"></label>
-    <label class="field-label">Предмет<input class="field" data-key="subject" maxlength="120" value="${esc(item.subject || '')}"></label>
+    <div class="import-lesson-head"><strong>Урок ${esc(item.number ?? '—')}</strong><button class="import-remove" type="button" data-remove-lesson aria-label="Убрать урок">×</button></div>
+    <div class="import-lesson-basics"><label class="field-label">№<input class="field" data-key="number" type="number" min="0" max="30" value="${esc(item.number ?? '')}"></label>
+    <label class="field-label">Предмет<input class="field" data-key="subject" maxlength="120" value="${esc(item.subject || '')}"></label></div>
     <div class="edit-times">
       <label class="field-label">Начало<input class="field" data-key="start" type="time" value="${esc(item.start || '')}"></label>
       <label class="field-label">Конец<input class="field" data-key="end" type="time" value="${esc(item.end || '')}"></label>
     </div>
     <label class="field-label">Кабинет<input class="field" data-key="room" maxlength="40" value="${esc(item.room || '')}"></label>
-    <button class="link" data-remove-lesson>Убрать урок</button>
   </div>`;
 }
 
 function preview(days, saved = false) {
-  const body = openSheet('Так ИИ поняла расписание', `<div class="note-form import-preview">
-    <p class="muted small">Всё верно? Исправьте предметы, порядок, время и кабинеты перед добавлением. День без уроков означает отмену всех занятий. Время можно оставить пустым.</p>
+  const total = days.reduce((count, day) => count + day.lessons.length, 0);
+  const body = openSheet('Проверьте расписание', `<div class="note-form import-preview import-flow">
+    ${importSteps(1)}
+    <section class="import-hero success"><span class="import-hero-icon" aria-hidden="true">✓</span><div><strong>Готово к проверке</strong><p>Нашли ${total} ${total === 1 ? 'урок' : total < 5 ? 'урока' : 'уроков'}. Проверьте детали — ничего ещё не сохранено.</p></div></section>
     ${days.map(day => `<section data-import-day>
-      <h3>${esc(fullDate(day.date))}</h3>
+      <div class="import-day-head"><h3>${esc(fullDate(day.date))}</h3><button class="link" type="button" data-remove-day>Не добавлять</button></div>
       <label class="field-label">Дата<input class="field" data-day-date type="date" value="${esc(day.date)}"></label>
       <div data-import-lessons>${day.lessons.map(lessonRow).join('')}</div>
-      <button class="btn outline" data-add-import-lesson>+ Урок</button>
-      <button class="link" data-remove-day>Не заменять этот день</button>
+      <button class="btn outline import-add-lesson" data-add-import-lesson>+ Добавить урок</button>
     </section>`).join('')}
     <div class="muted small import-status" role="status"></div>
-    <button class="btn" data-import-save>Да, добавить в моё расписание</button>
+    <button class="btn" data-import-save>Сохранить в моё расписание</button>
     <button class="btn outline" data-import-share>Предложить одноклассникам</button>
     ${saved ? '<button class="btn outline" data-import-delete>Убрать эти замены и вернуть дневник</button>' : ''}
   </div>`);
