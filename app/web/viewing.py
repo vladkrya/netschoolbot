@@ -27,7 +27,7 @@ VIEWER = "netschool_viewer"
 
 # Чтение дневника ученика — только GET.
 OWNER_READS = frozenset((
-    "/api/diary", "/api/homework", "/api/homework/done", "/api/marks", "/api/marks/period",
+    "/api/schedule/imports", "/api/diary", "/api/homework", "/api/homework/done", "/api/marks", "/api/marks/period",
     "/api/marks/subject", "/api/subject", "/api/subject/class-history", "/api/history", "/api/notes", "/api/student-class",
     "/api/announcements", "/api/profile", "/api/export.xlsx", "/api/bells", "/api/countdown",
     # Ретро-сайт (retro.py): неделя, карточки заданий, отчёты. Почта и

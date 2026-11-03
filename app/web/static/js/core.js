@@ -513,7 +513,7 @@ const SGO_STUCK_MS = 20000;
 // Запросы, на которые сервер бота отвечает сам, без «Сетевого города»: их
 // простой школьного сервера не касается — ни подсказок, ни обрыва.
 const OWN_PATHS = [
-  '/api/lock/', '/api/sgo/', '/api/account', '/api/profile', '/api/prefs', '/api/visit', '/api/notices/',
+  '/api/schedule/', '/api/lock/', '/api/sgo/', '/api/account', '/api/profile', '/api/prefs', '/api/visit', '/api/notices/',
   '/api/push/', '/api/family', '/api/devices', '/api/live', '/api/notes', '/api/history',
   '/api/attachment-ticket', '/api/settings/', '/api/bug-report', '/api/assistant', '/api/view',
 ];

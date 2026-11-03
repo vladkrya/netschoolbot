@@ -163,8 +163,29 @@ async def diary(request: web.Request) -> web.Response:
     # Каждое окно кэшируется отдельно, иначе соседние недели вытесняли бы
     # друг друга и стрелки снова упирались бы в сеть.
     section = f"diary:{offset}"
-    return await _cached(request, f"{section}:current" if compact else section, produce,
-                         fallback_section=section if compact else None)
+    from ..schedule_import import overlay, private_days
+    app, user = context(request), current_user(request)
+    imported = await private_days(app, user)
+    monday = user.today() + dt.timedelta(weeks=offset)
+    monday -= dt.timedelta(days=monday.weekday())
+    start = monday - dt.timedelta(weeks=0 if compact else 1)
+    end = monday + dt.timedelta(days=6, weeks=0 if compact else 1)
+    imported = [day for day in imported if start.isoformat() <= day['date'] <= end.isoformat()]
+    try:
+        response = await _cached(request, f"{section}:current" if compact else section, produce,
+                                 fallback_section=section if compact else None)
+    except NetSchoolError as exc:
+        if not imported:
+            raise
+        # Даже при первом открытии без связи со школой своё расписание доступно.
+        return web.json_response({'ok': True, 'data': overlay({'days': [], 'week': offset}, imported),
+                                  'stale': True, 'reason': exc.reason.value},
+                                 headers={'Cache-Control': 'no-store'})
+    if response.status == 200 and imported:
+        payload = json.loads(response.body)
+        payload['data'] = overlay(payload['data'], imported)
+        response = web.json_response(payload, headers={'Cache-Control': 'no-store'})
+    return response
 
 
 CALENDAR_FRESH = dt.timedelta(hours=1)

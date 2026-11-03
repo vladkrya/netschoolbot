@@ -12,6 +12,7 @@ import {
 import { dayData, ensureWeek, goToDay, isHiddenWeekend, openCalendar } from './day.js';
 import { isNewDesign, showBells } from './appearance.js';
 import { select, tap } from './haptics.js';
+import { importScheduleButton, bindImportSchedule } from './schedule-import.js';
 import { bindShareWeek, shareWeekButton } from './schedimage.js';
 
 const expanded = new Set();
@@ -141,8 +142,9 @@ function render(monday) {
   }
 
   const container = $('scheduleContent');
-  container.innerHTML = cards.join('') + shareWeekButton(monday);
+  container.innerHTML = cards.join('') + shareWeekButton(monday) + importScheduleButton();
   bindShareWeek(container);
+  bindImportSchedule(container, monday);
   container.querySelectorAll('[data-toggle]').forEach((button) =>
     button.addEventListener('click', () => {
       select();
@@ -220,7 +222,7 @@ function dayBells(lessons) {
   const rows = new Map();
   for (const lesson of lessons) {
     // Свои правки — не звонки школы.
-    if (lesson.addedBy || lesson.editedBy) continue;
+    if (lesson.addedBy || lesson.editedBy || lesson.imported) continue;
     const start = minutesOf(lesson.start);
     const end = minutesOf(lesson.end);
     if (start == null || end == null || end <= start) continue;
@@ -296,7 +298,7 @@ function shiftsOf(monday) {
   const starts = new Set();
   for (let index = 0; index < 7; index += 1) {
     for (const lesson of dayData(addDays(monday, index))?.lessons || []) {
-      if (lesson.addedBy || lesson.editedBy) continue;
+      if (lesson.addedBy || lesson.editedBy || lesson.imported) continue;
       const start = minutesOf(lesson.start);
       if (start != null) starts.add(`${index + 1}@${start}`);
     }
@@ -359,7 +361,8 @@ function daysTitle(days) {
 }
 
 function renderBells(monday) {
-  $('scheduleContent').innerHTML = bellsHtml(monday);
+  $('scheduleContent').innerHTML = bellsHtml(monday) + importScheduleButton();
+  bindImportSchedule($('scheduleContent'), monday);
 }
 
 /** Карточки звонков недели — для вкладки и для шторки из «Дня». */

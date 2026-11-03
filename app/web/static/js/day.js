@@ -10,7 +10,7 @@
 'use strict';
 
 import {
-  $, addDays, api, dayMonth, errorCard, esc, fullDate, isoOf, isoToday, keepTouch, lessonNo, mondayOf,
+  $, banner, addDays, api, dayMonth, errorCard, esc, fullDate, isoOf, isoToday, keepTouch, lessonNo, mondayOf,
   parseIso, plural, showFailure, showLoading, skeleton, state, WEEKDAYS, WEEKDAYS_FULL, weekdayIndex, weekOffsetOf, stillMotion,
 } from './core.js';
 import { ICONS } from './icons.js';
@@ -24,6 +24,7 @@ import { select, tap } from './haptics.js';
 import { bindInstallCard, installCardHtml } from './install.js';
 import { msToBell, updateTimer } from './timer.js';
 import { isTestWork, loadNotes, noteWhen, openNoteEditor, setNoteDone } from './notes.js';
+import { importScheduleButton, bindImportSchedule } from './schedule-import.js';
 import { applyEdits, bindHidden, hiddenHtml, openAddLesson } from './edits.js';
 import { flyTo, markKey, playFresh, takeFresh } from './motion.js';
 import { bindCountdown, countdownHtml, loadCountdown } from './countdown.js';
@@ -407,7 +408,7 @@ function editsKey(day) {
 }
 
 function addLessonButton() {
-  return '<button class="btn outline add-lesson" data-add-lesson>+ Добавить урок</button>';
+  return '<button class="btn outline add-lesson" data-add-lesson>+ Добавить урок</button>' + importScheduleButton();
 }
 
 /** Предметы недели — подсказки в шторке «Добавить урок». */
@@ -421,6 +422,7 @@ function knownSubjects() {
 }
 
 function bindDayEdits(container, day) {
+  bindImportSchedule(container, state.date);
   if (day) bindHidden(container, day);
   container.querySelector('[data-add-lesson]')?.addEventListener('click', () => openAddLesson(state.date, knownSubjects()));
 }
@@ -461,7 +463,8 @@ function lessonCard(lesson, index) {
         <span class="lc-subject">${esc(lesson.subject)}</span>
         <span class="lc-marks">${marks}</span>
       </div>
-      ${lesson.is_elective || lesson.addedBy || lesson.editedBy ? `<div class="lc-badges">
+      ${lesson.is_elective || lesson.addedBy || lesson.editedBy || lesson.imported ? `<div class="lc-badges">
+        ${lesson.imported ? '<span class="elective-badge edit-badge">Своё расписание</span>' : ''}
         ${lesson.is_elective ? '<span class="elective-badge">Внеурочка</span>' : ''}
         ${lesson.addedBy ? '<span class="elective-badge edit-badge">Свой урок</span>' : ''}
         ${lesson.editedBy ? '<span class="elective-badge edit-badge">Своё время</span>' : ''}
@@ -890,3 +893,15 @@ export function initDay() {
   $('weekPrev').addEventListener('click', () => pageWeek(-1));
   $('weekNext').addEventListener('click', () => pageWeek(1));
 }
+
+// Личная замена уже сохранена на сервере: перечитать окно, без обхода кэша школы.
+window.addEventListener('netschool:scheduleimported', async () => {
+  loadedWeeks.clear();
+  days.clear();
+  schoolDays.clear();
+  try {
+    await ensureWeek(state.date);
+    if (state.tab === 'day') renderDay();
+  } catch (error) { banner(error.message); }
+  window.dispatchEvent(new Event('netschool:daysedited'));
+});

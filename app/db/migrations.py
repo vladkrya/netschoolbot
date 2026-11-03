@@ -978,6 +978,21 @@ MIGRATIONS: list[str] = [
         forced_prefs TEXT NOT NULL DEFAULT '{}'
     );
     """,
+    # Расписание с фото: отдельно для каждого ребёнка и школы.
+    """
+    CREATE TABLE imported_schedule (
+        owner_id INTEGER NOT NULL REFERENCES users(telegram_id) ON DELETE CASCADE,
+        student_id TEXT NOT NULL, school TEXT NOT NULL, date TEXT NOT NULL, payload TEXT NOT NULL,
+        PRIMARY KEY(owner_id, student_id, school, date)
+    );
+    CREATE TABLE shared_schedule (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        owner_id INTEGER NOT NULL REFERENCES users(telegram_id) ON DELETE CASCADE,
+        school TEXT NOT NULL, class TEXT NOT NULL, expires TEXT NOT NULL, payload TEXT NOT NULL
+    );
+    CREATE INDEX shared_schedule_class ON shared_schedule(school, class, expires);
+    """,
+
 ]
 
 
