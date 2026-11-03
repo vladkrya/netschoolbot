@@ -47,7 +47,7 @@
         && localStorage.getItem('ns-signed-out') !== {{ token | tojson }}) {
       document.documentElement.setAttribute('data-holiday', 'unity');
       accent = '#315fba';
-      bg = dark ? (fresh ? '#0f1217' : '#141a22') : (fresh ? '#f3f4f8' : '#eef1f6');
+      bg = dark ? '#080f24' : '#eaf0fc';
     }
     var glass = CSS.supports('background', 'color-mix(in srgb, red 50%, transparent)')
       && (CSS.supports('backdrop-filter', 'blur(1px)') || CSS.supports('-webkit-backdrop-filter', 'blur(1px)'));
@@ -167,6 +167,25 @@
       } catch (e) {}
     </script>
     <button class="topbar-btn" id="bellBtn" aria-label="Объявления" data-icon="bell"></button>
+  </div>
+
+  <div class="unity-hero">
+    <div class="unity-copy">
+      <span class="unity-date">4 ноября <span>·</span> Вместе сильнее</span>
+      <div class="unity-title">День народного<br>единства</div>
+    </div>
+    <svg class="unity-ribbons" viewBox="0 0 320 180" fill="none" aria-hidden="true">
+      <defs>
+        <linearGradient id="unityWhite" x1="20" y1="20" x2="280" y2="130" gradientUnits="userSpaceOnUse"><stop stop-color="#a4b9df"/><stop offset=".35" stop-color="#fff"/><stop offset=".65" stop-color="#eaf3ff"/><stop offset="1" stop-color="#9db8df"/></linearGradient>
+        <linearGradient id="unityBlue" x1="30" y1="40" x2="280" y2="150" gradientUnits="userSpaceOnUse"><stop stop-color="#1a4aad"/><stop offset=".4" stop-color="#609cff"/><stop offset=".65" stop-color="#2462da"/><stop offset="1" stop-color="#123784"/></linearGradient>
+        <linearGradient id="unityRed" x1="30" y1="60" x2="280" y2="170" gradientUnits="userSpaceOnUse"><stop stop-color="#9b193e"/><stop offset=".4" stop-color="#ff6c80"/><stop offset=".65" stop-color="#e33858"/><stop offset="1" stop-color="#9c2546"/></linearGradient>
+      </defs>
+      <g stroke-width="26">
+        <path d="M-30 31C71-48 116 165 225 72S340 15 355 32" stroke="url(#unityWhite)"/>
+        <path d="M-30 57C71-22 116 191 225 98S340 41 355 58" stroke="url(#unityBlue)"/>
+        <path d="M-30 83C71 4 116 217 225 124S340 67 355 84" stroke="url(#unityRed)"/>
+      </g>
+    </svg>
   </div>
 
   <div class="subbar" data-for="day">

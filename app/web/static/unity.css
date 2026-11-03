@@ -1,42 +1,191 @@
-/* Праздничная тема сохраняет выбранную светлую/тёмную палитру. */
+/* Самостоятельная праздничная палитра; оценки сохраняют свои смысловые цвета. */
+.unity-hero { display: none; }
 :root[data-holiday="unity"]:not(#_) {
-  --primary: #315fba;
-  --soft: color-mix(in srgb, var(--primary) 13%, transparent);
-  --soft-2: color-mix(in srgb, var(--primary) 22%, transparent);
-  --unity-red: #c94d5d;
+  --bg: #eaf0fc;
+  --card: #fafdff;
+  --card-2: #e2eafa;
+  --text: #18294b;
+  --text2: #5c6f91;
+  --border: #cbd8ee;
+  --primary: #285bc1;
+  --soft: #315fba16;
+  --soft-2: #315fba28;
+  --mark-bg: #e2eafa;
+  --glass: rgba(244, 249, 255, .86);
+  --glass-2: rgba(232, 241, 255, .8);
+  --glass-edge: rgba(255, 255, 255, .9);
+  --lift: 0 4px 20px #183b7610, inset 0 1px 0 #fff;
+  --lift-2: 0 12px 36px #183b7620;
+  --unity-surface: linear-gradient(135deg, #fff, #f4f7ff);
+  --unity-edge: #fff;
+  --unity-shadow: #234c8a14;
+  --unity-glow: #4679dd20;
+  --boot-bg: #eaf0fc;
 }
-:root[data-holiday="unity"][data-theme="dark"]:not(#_) { --primary: #91b5ff; }
+:root[data-holiday="unity"][data-theme="dark"]:not(#_) {
+  --bg: #080f24;
+  --card: #111f3a;
+  --card-2: #1a2c4d;
+  --text: #f0f5ff;
+  --text2: #a5b8d8;
+  --border: #2a3f63;
+  --primary: #9dc2ff;
+  --soft: #79aaff22;
+  --soft-2: #79aaff38;
+  --mark-bg: #1a2c4d;
+  --glass: rgba(17, 31, 58, .86);
+  --glass-2: rgba(22, 40, 71, .78);
+  --glass-edge: rgba(158, 195, 255, .2);
+  --lift: 0 8px 24px #02081740, inset 0 1px 0 #c4deff12;
+  --lift-2: 0 14px 40px #02081780;
+  --unity-surface: linear-gradient(130deg, #192d4f, #101d36 65%, #19213f);
+  --unity-edge: #91bbff28;
+  --unity-shadow: #00071b50;
+  --unity-glow: #477dff26;
+  --boot-bg: #080f24;
+}
 @media (prefers-color-scheme: dark) {
-  :root[data-holiday="unity"]:not([data-theme="light"]):not(#_) { --primary: #91b5ff; }
+  :root[data-holiday="unity"]:not([data-theme="light"]):not(#_) {
+    --bg: #080f24;
+    --card: #111f3a;
+    --card-2: #1a2c4d;
+    --text: #f0f5ff;
+    --text2: #a5b8d8;
+    --border: #2a3f63;
+    --primary: #9dc2ff;
+    --soft: #79aaff22;
+    --soft-2: #79aaff38;
+    --mark-bg: #1a2c4d;
+    --glass: rgba(17, 31, 58, .86);
+    --glass-2: rgba(22, 40, 71, .78);
+    --glass-edge: rgba(158, 195, 255, .2);
+    --lift: 0 8px 24px #02081740, inset 0 1px 0 #c4deff12;
+    --lift-2: 0 14px 40px #02081780;
+    --unity-surface: linear-gradient(130deg, #192d4f, #101d36 65%, #19213f);
+    --unity-edge: #91bbff28;
+    --unity-shadow: #00071b50;
+    --unity-glow: #477dff26;
+    --boot-bg: #080f24;
+  }
 }
 
-/* Цветовые блики остаются за содержимым и не перехватывают нажатия. */
 :root[data-holiday="unity"]:not(#_) body {
   background:
-    radial-gradient(ellipse at 0 12%, #315fba12, transparent 55%),
-    radial-gradient(ellipse at 100% 80%, #c94d5d10, transparent 55%),
-    var(--bg);
+    radial-gradient(ellipse at 0 20%, var(--unity-glow), transparent 60%),
+    radial-gradient(ellipse at 100% 85%, #d3446414, transparent 55%), var(--bg);
   background-attachment: fixed;
 }
-:root[data-holiday="unity"]:not(#_) :is(.app-header, .screen-head)::before {
+:root[data-holiday="unity"]:not(#_) :is(.app-header, .screen-head) {
+  background: color-mix(in srgb, var(--bg) 93%, transparent);
+  color: var(--text);
+  box-shadow: 0 8px 32px var(--unity-shadow), inset 0 -1px 0 var(--unity-edge);
+}
+:root[data-holiday="unity"]:not(#_) :is(.topbar-btn, .screen-back) {
+  color: var(--primary);
+  background: var(--card-2);
+  box-shadow: inset 0 1px 0 var(--unity-edge);
+}
+
+/* Ленты нарисованы в SVG: чёткие на любом экране, без тяжёлых картинок. */
+:root[data-holiday="unity"]:not(#_) .unity-hero {
+  display: flex;
+  align-items: center;
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  min-height: 108px;
+  margin: 2px 12px 12px;
+  padding: 17px 20px;
+  border: 1px solid #c6ddff35;
+  border-radius: 24px;
+  color: #fff;
+  background:
+    radial-gradient(ellipse at 90% 10%, #548fff66, transparent 65%),
+    linear-gradient(115deg, #163c78, #0e2149 58%, #213c70);
+  box-shadow: inset 0 1px 0 #e5f0ff25, 0 8px 28px #081a4533;
+}
+:root[data-holiday="unity"]:not(#_) .unity-hero::after {
   content: "";
   position: absolute;
   inset: auto 0 0;
-  height: 6px;
-  background: linear-gradient(to bottom, #fff 0 33.33%, #315fba 33.33% 66.66%, #c94d5d 66.66%);
-  box-shadow: 0 1px 0 #315fba20;
+  height: 3px;
+  background: linear-gradient(90deg, #fff 0 33.33%, #548cff 33.33% 66.66%, #f25c77 66.66%);
+  opacity: .85;
+}
+:root[data-holiday="unity"]:not(#_) .unity-copy { position: relative; z-index: 1; }
+:root[data-holiday="unity"]:not(#_) .unity-date {
+  display: block;
+  margin-bottom: 7px;
+  color: #c0d6ff;
+  font-size: 9px;
+  font-weight: 650;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+}
+:root[data-holiday="unity"]:not(#_) .unity-date span { color: #ff92a5; margin: 0 3px; }
+:root[data-holiday="unity"]:not(#_) .unity-title {
+  font-size: 25px;
+  line-height: 1.08;
+  font-weight: 750;
+  letter-spacing: -.035em;
+  text-shadow: 0 2px 16px #06153470;
+}
+:root[data-holiday="unity"]:not(#_) .unity-ribbons {
+  position: absolute;
+  z-index: 0;
+  width: 200px;
+  height: 140px;
+  right: -78px;
+  top: -5px;
+  transform: rotate(-18deg);
+  filter: drop-shadow(0 10px 9px #040b2566);
   pointer-events: none;
 }
-:root[data-holiday="unity"]:not(#_) :is(.card, .lesson-card, .tool-tile) {
-  border-color: color-mix(in srgb, var(--primary) 16%, var(--border));
-}
-:root[data-holiday="unity"]:not(#_) .unity-row {
-  border-radius: 14px;
-  padding: 12px;
-  background: linear-gradient(115deg, #315fba13, transparent 55%, #c94d5d12);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 16%, transparent);
+
+:root[data-holiday="unity"]:not(#_) :is(.lesson-card, .card, .subject-card, .hw-card, .mail-card, .ann-card, .tool-tile, .drawer-section) {
+  background: var(--unity-surface);
+  border-color: var(--border);
+  box-shadow: inset 0 1px 0 var(--unity-edge), 0 5px 20px var(--unity-shadow);
 }
 :root[data-holiday="unity"]:not(#_) .lc-num {
-  background: linear-gradient(145deg, var(--soft), color-mix(in srgb, var(--unity-red) 10%, var(--card)));
-  color: var(--primary);
+  background: linear-gradient(145deg, #5a91f5, #2654a8);
+  color: #fff;
+  box-shadow: inset 0 1px 0 #e4f0ff80, 0 3px 10px #143e8e30;
+}
+:root[data-holiday="unity"]:not(#_) :is(.date-bar, .bottom-nav) {
+  background: var(--glass);
+  color: var(--text);
+  border-color: var(--unity-edge);
+  box-shadow: inset 0 1px 0 var(--unity-edge), 0 8px 24px var(--unity-shadow);
+}
+:root[data-holiday="unity"]:not(#_) :is(.date-title, .date-label) { color: var(--text); }
+:root[data-holiday="unity"]:not(#_) .date-sub { color: var(--text2); opacity: 1; }
+:root[data-holiday="unity"]:not(#_) .date-arrow { color: var(--primary); }
+:root[data-holiday="unity"]:not(#_) .unity-row {
+  border-radius: 16px;
+  padding: 14px;
+  background: linear-gradient(115deg, var(--soft), transparent 60%, #e6587618);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+
+@media (min-width: 720px) {
+  :root[data-holiday="unity"]:not(#_) .unity-hero { margin-left: var(--gut); margin-right: var(--gut); }
+  :root[data-holiday="unity"]:not(#_) .unity-ribbons { width: 310px; height: 180px; right: 5%; top: -25px; }
+  :root[data-holiday="unity"]:not(#_) .unity-title { font-size: 29px; }
+  :root[data-holiday="unity"]:not(#_) .unity-date { font-size: 10px; }
+}
+@media (max-width: 359px) {
+  :root[data-holiday="unity"]:not(#_) .unity-hero { padding-left: 16px; }
+  :root[data-holiday="unity"]:not(#_) .unity-title { font-size: 23px; }
+  :root[data-holiday="unity"]:not(#_) .unity-date { font-size: 8px; letter-spacing: .04em; }
+  :root[data-holiday="unity"]:not(#_) .unity-ribbons { width: 185px; right: -100px; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-holiday="unity"]:not(.motion-calm):not(.no-motion):not(#_) .unity-ribbons {
+    animation: unity-wave 9s ease-in-out infinite;
+  }
+}
+@keyframes unity-wave {
+  0%, 100% { transform: rotate(-18deg) translateY(0); }
+  50% { transform: rotate(-14deg) translateY(4px); }
 }
