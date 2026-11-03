@@ -186,6 +186,13 @@ async def test_auth_required(client):
         assert response.status == 401
 
 
+async def test_import_routes_are_registered(client):
+    """404 с HTML браузер показывал как «некорректный ответ сервера»."""
+    response = await client.get(f'{BASE}/api/schedule/imports')
+    assert response.status == 401
+    assert response.content_type == 'application/json'
+
+
 async def test_import_available_when_school_unreachable(client, token, app_context, monkeypatch):
     from app.netschool.errors import NetSchoolError, Reason
     user = await app_context.users.get(1)
