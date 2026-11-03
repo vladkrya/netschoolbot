@@ -2223,7 +2223,17 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
 .import-day-head { display: flex; gap: 10px; align-items: center; justify-content: space-between; }
 .import-day-head h3 { margin: 0; font-size: 16px; }
 .import-day-head .link { border: 0; background: none; font: inherit; font-size: 12px; cursor: pointer; }
-.import-lesson { display: grid; gap: 9px; margin-top: 9px; padding: 11px; border-radius: 12px; background: var(--card-2); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--border) 70%, transparent); }
+.import-lesson { margin-top: 8px; border-radius: 12px; background: var(--card-2); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--border) 70%, transparent); overflow: clip; }
+.import-lesson summary { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 58px; padding: 10px 12px; cursor: pointer; list-style: none; }
+.import-lesson summary::-webkit-details-marker { display: none; }
+.import-lesson summary > span { display: grid; gap: 2px; min-width: 0; }
+.import-lesson summary b { color: var(--primary); font-size: 13px; }
+.import-lesson summary small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font-size: 14px; }
+.import-lesson summary em { flex: none; max-width: 42%; overflow: hidden; color: var(--text2); font-size: 12px; font-style: normal; text-overflow: ellipsis; white-space: nowrap; }
+.import-lesson summary::after { content: '⌄'; flex: none; color: var(--primary); font-size: 18px; transition: transform .2s var(--ease); }
+.import-lesson[open] summary { border-bottom: 1px solid var(--border); }
+.import-lesson[open] summary::after { transform: rotate(180deg); }
+.import-lesson-edit { display: grid; gap: 9px; padding: 11px; animation: import-appear .2s var(--ease); }
 .import-lesson-head { display: flex; justify-content: space-between; align-items: center; color: var(--primary); font-size: 13px; }
 .import-remove { display: grid; place-items: center; width: 25px; height: 25px; border: 0; border-radius: 50%; background: transparent; color: var(--text2); font-size: 23px; line-height: 1; cursor: pointer; }
 .import-remove:active { background: color-mix(in srgb, var(--g2) 14%, transparent); color: var(--g2); }
@@ -2231,7 +2241,8 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
 .import-lesson .field-label { margin: 0; }
 .import-lesson .field { margin-top: 4px; }
 .import-add-lesson { margin: 2px 0 0; border-style: dashed; }
-@media (min-width: 620px) { .import-preview [data-import-day] { padding: 16px; } .import-lesson { grid-template-columns: 1.5fr 1fr; } .import-lesson-head, .import-lesson > .field-label { grid-column: 1 / -1; } }
+.import-share-note { margin: -5px 4px 0; line-height: 1.4; text-align: center; }
+@media (min-width: 620px) { .import-preview [data-import-day] { padding: 16px; } .import-lesson-edit { grid-template-columns: 1.5fr 1fr; } .import-lesson-head, .import-lesson-edit > .field-label { grid-column: 1 / -1; } }
 .streaks { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
 .streak {
   display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px;

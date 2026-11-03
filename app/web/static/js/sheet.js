@@ -15,6 +15,9 @@ export function openSheet(title, body, options = {}) {
   $('sheet').classList.remove('closing');
   $('sheetTitle').textContent = title;
   $('sheetBody').innerHTML = body;
+  // Одна шторка переиспользуется для экранов подряд. Без сброса следующий
+  // экран открывался посередине — шапка и первый шаг оказывались за кадром.
+  $('sheetBody').scrollTop = 0;
   $('sheet').hidden = false;
   document.body.style.overflow = 'hidden';
   onClose = options.onClose || null;

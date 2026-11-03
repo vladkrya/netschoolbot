@@ -131,16 +131,25 @@ export async function openScheduleImport(date = isoToday()) {
 }
 
 function lessonRow(item = {}) {
-  return `<div class="import-lesson">
-    <div class="import-lesson-head"><strong>Урок ${esc(item.number ?? '—')}</strong><button class="import-remove" type="button" data-remove-lesson aria-label="Убрать урок">×</button></div>
-    <div class="import-lesson-basics"><label class="field-label">№<input class="field" data-key="number" type="number" min="0" max="30" value="${esc(item.number ?? '')}"></label>
-    <label class="field-label">Предмет<input class="field" data-key="subject" maxlength="120" value="${esc(item.subject || '')}"></label></div>
-    <div class="edit-times">
-      <label class="field-label">Начало<input class="field" data-key="start" type="time" value="${esc(item.start || '')}"></label>
-      <label class="field-label">Конец<input class="field" data-key="end" type="time" value="${esc(item.end || '')}"></label>
+  // Равные время начала и конца — частая ошибка OCR, это не время урока.
+  const validTime = item.start && item.end && item.end > item.start;
+  const start = validTime ? item.start : '';
+  const end = validTime ? item.end : '';
+  const time = validTime ? `${start}–${end}` : 'время не указано';
+  const place = item.room ? ` · каб. ${item.room}` : '';
+  return `<details class="import-lesson">
+    <summary><span><b>Урок ${esc(item.number ?? '—')}</b><small>${esc(item.subject || 'Предмет не указан')}</small></span><em>${esc(time)}${esc(place)}</em></summary>
+    <div class="import-lesson-edit">
+      <div class="import-lesson-head"><strong>Изменить урок</strong><button class="import-remove" type="button" data-remove-lesson aria-label="Убрать урок">×</button></div>
+      <div class="import-lesson-basics"><label class="field-label">№<input class="field" data-key="number" type="number" min="0" max="30" value="${esc(item.number ?? '')}"></label>
+      <label class="field-label">Предмет<input class="field" data-key="subject" maxlength="120" value="${esc(item.subject || '')}"></label></div>
+      <div class="edit-times">
+      <label class="field-label">Начало<input class="field" data-key="start" type="time" value="${esc(start)}"></label>
+      <label class="field-label">Конец<input class="field" data-key="end" type="time" value="${esc(end)}"></label>
+      </div>
+      <label class="field-label">Кабинет<input class="field" data-key="room" maxlength="40" value="${esc(item.room || '')}"></label>
     </div>
-    <label class="field-label">Кабинет<input class="field" data-key="room" maxlength="40" value="${esc(item.room || '')}"></label>
-  </div>`;
+  </details>`;
 }
 
 function preview(days, saved = false) {
@@ -156,7 +165,8 @@ function preview(days, saved = false) {
     </section>`).join('')}
     <div class="muted small import-status" role="status"></div>
     <button class="btn" data-import-save>Сохранить в моё расписание</button>
-    <button class="btn outline" data-import-share>Предложить одноклассникам</button>
+    <button class="btn outline" data-import-share>Поделиться с одноклассниками</button>
+    <p class="muted small import-share-note">Его увидят только ученики той же школы и класса. Каждый сам решит, добавлять ли расписание.</p>
     ${saved ? '<button class="btn outline" data-import-delete>Убрать эти замены и вернуть дневник</button>' : ''}
   </div>`);
   const status = body.querySelector('.import-status');
