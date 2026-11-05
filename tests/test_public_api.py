@@ -180,3 +180,70 @@ async def test_previous_sgoshka_prefix_remains_valid(client, token, db):
     headers = {'Authorization': 'Bearer ' + old}
     assert (await client.get(BASE + '/api/v1/profile', headers=headers)).status == 200
     assert (await client.get(BASE + '/api/profile', headers=headers)).status == 403
+
+
+async def issue_status(client, token):
+    response = await client.post(BASE + '/api/integration-tokens', headers={'X-Netschool-Token': token}, json={'name': 'Мониторинг', 'scope': 'status', 'days': 0})
+    assert response.status == 201
+    data = (await response.json())['data']
+    assert data['items'][0]['scope'] == 'status'
+    assert '_status_' in data['token']
+    return data
+
+
+async def test_status_token_is_separate_from_diary(client, token):
+    status_key = (await issue_status(client, token))['token']
+    diary_key = (await issue(client, token))['token']
+    for path in ('/profile', '/diary', '/mail', '/attachment/123', '/homework/done'):
+        response = await client.get(BASE + '/api/v1' + path, headers={'Authorization': 'Bearer ' + status_key})
+        assert response.status == 403
+        assert (await response.json())['reason'] == 'token_scope'
+    response = await client.get(BASE + '/api/v1/status', headers={'Authorization': 'Bearer ' + diary_key})
+    assert response.status == 403
+    assert (await response.json())['reason'] == 'token_scope'
+    response = await client.post(BASE + '/api/v1/status/report', headers={'Authorization': 'Bearer ' + status_key}, json={'host': 'example.org'})
+    assert response.status == 405
+
+
+async def test_status_resources_and_validation(client, token, app_context, monkeypatch):
+    from unittest.mock import AsyncMock
+    from types import SimpleNamespace
+    snapshot = {'generated_at': 1234, 'range': '7d', 'since': 1000, 'bucket_s': 7200,
+        'hosts': [{'host': 'school.example', 'region': 'Регион', 'state': 'up', 'uptime': 100}],
+        'overview': {'down': [0]}, 'incidents': [{'host': 'school.example', 'ongoing': False}],
+        'versions': [{'host': 'school.example', 'version': '5.0'}], 'reports': [{'kind': 'slow'}]}
+    summary = AsyncMock(return_value=snapshot)
+    monkeypatch.setattr(app_context, 'status', SimpleNamespace(summary=summary, close_listeners=lambda: None))
+    headers = {'Authorization': 'Bearer ' + (await issue_status(client, token))['token']}
+    for path, field in (('status', 'hosts'), ('status/hosts', 'hosts'), ('status/hosts/school.example', 'host'), ('status/incidents', 'items'), ('status/versions', 'items'), ('status/reports', 'items')):
+        response = await client.get(BASE + '/api/v1/' + path + '?range=7d', headers=headers)
+        assert response.status == 200
+        assert field in (await response.json())['data']
+    summary.assert_awaited_with('7d')
+    assert (await client.get(BASE + '/api/v1/status?range=bad', headers=headers)).status == 400
+    assert (await client.get(BASE + '/api/v1/status/hosts/not-found.example', headers=headers)).status == 404
+    assert (await client.get(BASE + '/api/v1/status')).status == 401
+
+
+async def test_status_token_revocation_and_expiry(client, token, db):
+    data = await issue_status(client, token)
+    headers = {'Authorization': 'Bearer ' + data['token']}
+    await db.execute('UPDATE api_tokens SET expires_at=?', (int(time.time()) - 1,))
+    assert (await client.get(BASE + '/api/v1/status', headers=headers)).status == 401
+    data = await issue_status(client, token)
+    await client.delete(BASE + f"/api/integration-tokens/{data['items'][0]['id']}", headers={'X-Netschool-Token': token})
+    assert (await client.get(BASE + '/api/v1/status', headers={'Authorization': 'Bearer ' + data['token']})).status == 401
+
+
+async def test_reject_unknown_token_scope(client, token):
+    response = await client.post(BASE + '/api/integration-tokens', headers={'X-Netschool-Token': token}, json={'name': 'Недопустимый', 'scope': 'admin'})
+    assert response.status == 400
+
+
+async def test_status_openapi_has_own_bearer_and_host_parameter(client):
+    spec = await (await client.get(BASE + '/api/v1/openapi.json')).json()
+    operation = spec['paths']['/status/hosts/{host}']['get']
+    assert operation['security'] == [{'statusBearerAuth': []}]
+    host = next(p for p in operation['parameters'] if p['name'] == 'host')
+    assert host['schema']['type'] == 'string' and host['required']
+    assert 'statusBearerAuth' in spec['components']['securitySchemes']

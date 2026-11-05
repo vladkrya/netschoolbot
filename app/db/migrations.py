@@ -1003,6 +1003,11 @@ MIGRATIONS: list[str] = [
     CREATE INDEX api_tokens_owner ON api_tokens(owner_id);
     """,
 
+    """
+    ALTER TABLE api_tokens ADD COLUMN scope TEXT NOT NULL DEFAULT 'diary'
+        CHECK(scope IN ('diary', 'status'));
+    """,
+
 ]
 
 
