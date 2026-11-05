@@ -526,7 +526,7 @@ function render() {
       ${more('look', 'Другой вид', `
       <label class="switch-row design-row"><span>design</span>
         <select class="field reminder-hour" id="designMode" aria-label="design">
-          <option value="min" ${['min', 'v3'].includes(getPref('design')) ? 'selected' : ''}>min</option>
+          ${data.admin || ['min', 'v3'].includes(getPref('design')) ? `<option value="min" ${['min', 'v3'].includes(getPref('design')) ? 'selected' : ''}>min</option>` : ''}
           <option value="new" ${!['min', 'v3'].includes(getPref('design')) && isNewDesign() ? 'selected' : ''}>новый</option>
           <option value="classic" ${isNewDesign() ? '' : 'selected'}>старый</option>
         </select></label>

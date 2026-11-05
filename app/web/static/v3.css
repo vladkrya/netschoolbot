@@ -285,3 +285,114 @@
   }
   :root[data-design="v3"] .settings-page .drawer-section:first-child { padding-top: 4px; }
 }
+
+/* The grade screen is a dense data view.  It cannot rely on the optional
+   "new" stylesheet: min has its own surface treatment, but shares the same
+   semantic markup.  Keep the hierarchy local so a missing decorative rule
+   can never collapse names, averages and controls into one text run. */
+:root[data-design="v3"] .totals-hero {
+  margin-bottom: 12px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--card);
+}
+:root[data-design="v3"] .th-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+:root[data-design="v3"] .th-head > div:first-child { flex: 1; min-width: 0; }
+:root[data-design="v3"] .th-label { color: var(--text2); font-size: 13px; line-height: 1.35; }
+:root[data-design="v3"] .th-caption { margin-top: 2px; font-size: 17px; font-weight: 700; line-height: 1.25; }
+:root[data-design="v3"] .seg-glass {
+  position: relative;
+  display: flex;
+  flex: 1;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--card-2);
+}
+:root[data-design="v3"] .seg-glass button {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  min-width: 0;
+  padding: 7px 6px;
+  color: var(--text2);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+:root[data-design="v3"] .seg-glass button.on { color: var(--text); }
+:root[data-design="v3"] .seg-glass.th-mode { flex: 0 0 156px; }
+:root[data-design="v3"] .seg-lens {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: 3px;
+  width: calc((100% - 6px) / var(--n, 2));
+  translate: calc(var(--i, 0) * 100%) 0;
+  border-radius: 6px;
+  background: var(--card);
+  box-shadow: var(--lift);
+}
+:root[data-design="v3"] .th-bar { display: flex; gap: 3px; height: 8px; margin-bottom: 10px; }
+:root[data-design="v3"] .th-bar span { border-radius: 4px; }
+:root[data-design="v3"] .th-bar .d5 { background: var(--g5); }
+:root[data-design="v3"] .th-bar .d4 { background: var(--g4); }
+:root[data-design="v3"] .th-bar .d3 { background: var(--g3); }
+:root[data-design="v3"] .th-bar .d2 { background: var(--g2); }
+:root[data-design="v3"] .th-counts { display: flex; gap: 6px; font-variant-numeric: tabular-nums; }
+:root[data-design="v3"] .th-counts > button {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 4px 6px;
+  border-radius: 8px;
+  background: var(--card-2);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.2;
+}
+:root[data-design="v3"] .th-counts b { display: block; color: var(--c); font-size: 18px; line-height: 1.1; }
+:root[data-design="v3"] .th-counts small { display: block; color: var(--text2); font-size: 10px; font-weight: 500; }
+:root[data-design="v3"] .th-counts .c5 { --c: var(--g5); }
+:root[data-design="v3"] .th-counts .c4 { --c: var(--g4); }
+:root[data-design="v3"] .th-counts .c3 { --c: var(--g3); }
+:root[data-design="v3"] .th-counts .c2 { --c: var(--g2); }
+:root[data-design="v3"] .period-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+:root[data-design="v3"] .period-row.tools { margin-bottom: 12px; }
+:root[data-design="v3"] .glass-pill,
+:root[data-design="v3"] .view-toggle { flex: none; padding: 7px 10px; border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-size: 13px; font-weight: 600; }
+:root[data-design="v3"] .view-toggle { color: var(--primary); }
+:root[data-design="v3"] .subject-card {
+  display: block;
+  width: 100%;
+  margin: 0 0 8px;
+  padding: 13px 14px;
+  border-radius: 12px;
+  background: var(--card);
+}
+:root[data-design="v3"] .sc-top { display: flex; align-items: center; gap: 8px; }
+:root[data-design="v3"] .sc-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+:root[data-design="v3"] .sc-avg { flex: none; font-size: 22px; font-weight: 750; line-height: 1; }
+:root[data-design="v3"] .sc-trend { flex: none; font-size: 11px; font-weight: 700; }
+:root[data-design="v3"] .sc-bar { height: 5px; margin: 8px 0 9px; overflow: hidden; border-radius: 3px; background: var(--card-2); }
+:root[data-design="v3"] .sc-bar span { display: block; height: 100%; border-radius: inherit; background: var(--c, var(--text2)); }
+:root[data-design="v3"] .sc-marks { display: flex; flex-wrap: wrap; gap: 5px; }
+:root[data-design="v3"] .sc-marks .mark-box { min-width: 28px; height: 28px; padding: 0 5px; border-radius: 8px; font-size: 14px; }
+:root[data-design="v3"] .sc-foot { display: flex; justify-content: space-between; gap: 8px; margin-top: 9px; color: var(--text2); font-size: 12px; line-height: 1.3; }
+:root[data-design="v3"] .sc-foot > span:last-child { text-align: right; }
+@media (max-width: 520px) {
+  :root[data-design="v3"] .totals-hero { padding: 13px; }
+  :root[data-design="v3"] .th-head { display: block; }
+  :root[data-design="v3"] .seg-glass.th-mode { width: 100%; margin-top: 10px; }
+  :root[data-design="v3"] .period-row { align-items: stretch; }
+  :root[data-design="v3"] .period-row .seg-glass { min-width: 0; }
+  :root[data-design="v3"] .sc-foot { display: block; }
+  :root[data-design="v3"] .sc-foot > span { display: block; }
+  :root[data-design="v3"] .sc-foot > span:last-child { margin-top: 2px; text-align: left; }
+}

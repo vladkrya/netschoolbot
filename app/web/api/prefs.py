@@ -188,8 +188,13 @@ async def get_prefs(request: web.Request) -> web.Response:
     # Поставили приложение до того, как оно стало отмечать это само.
     if "pwa" not in data and await app.miniapp.has_installed_app(user.telegram_id):
         data = await app.miniapp.save_prefs(user.telegram_id, {"pwa": "installed"})
-    from ...access import controls
+    from ...access import controls, owner
     managed = (await controls(app, user.telegram_id))["forced_prefs"]
+    # min is an owner-only preview while it is being corrected. An explicit
+    # per-user admin override remains the only way to grant it to someone else.
+    min_allowed = owner(app, user.telegram_id) or managed.get("design") in ("min", "v3")
+    if data.get("design") in ("min", "v3") and not min_allowed:
+        data = await app.miniapp.save_prefs(user.telegram_id, {"design": "new"})
     return web.json_response({"ok": True, "data": {**data, **managed}, "managed": managed})
 
 
@@ -294,7 +299,7 @@ async def save_prefs(request: web.Request) -> web.Response:
         return json_error("Некорректный запрос")
     if not isinstance(body, dict):
         return json_error("Некорректный запрос")
-    from ...access import controls, feature
+    from ...access import controls, feature, owner
     managed = (await controls(app, user.telegram_id))["forced_prefs"]
     # Старое устройство могло поставить изменение в очередь до ограничения.
     # Принимаем остальные настройки, управляемые значения оставляем заданными.
@@ -379,6 +384,10 @@ async def save_prefs(request: web.Request) -> web.Response:
     if "design" in body:
         if body["design"] not in DESIGNS:
             return json_error("Неизвестный дизайн")
+        if body["design"] in ("min", "v3") and not (
+            owner(app, user.telegram_id) or managed.get("design") in ("min", "v3")
+        ):
+            return json_error("min пока доступен только по включению администратора", status=403)
         changes["design"] = body["design"]
     if "accent" in body:
         if not isinstance(body["accent"], str) or not ACCENT_RE.match(body["accent"]):
