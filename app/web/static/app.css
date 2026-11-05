@@ -2216,6 +2216,10 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
 .import-file-card b { color: var(--primary); font-size: 12px; }
 .import-file-icon { display: grid; flex: none; place-items: center; width: 36px; height: 36px; border-radius: 11px; background: var(--card-2); color: var(--primary); font-size: 22px; }
 .import-photo-hint { margin: -7px 4px 0; line-height: 1.4; }
+.import-privacy-note { display: flex; align-items: flex-start; gap: 9px; margin: -2px 0 0; padding: 10px 11px; border-radius: 12px; background: color-mix(in srgb, var(--primary) 7%, var(--card-2)); color: var(--text2); font-size: 12px; line-height: 1.4; }
+.import-privacy-note span { display: grid; place-items: center; flex: none; width: 22px; height: 22px; border-radius: 7px; background: color-mix(in srgb, var(--primary) 15%, transparent); color: var(--primary); font-size: 17px; }
+.import-privacy-note p { margin: 0; }
+.import-privacy-note strong { color: var(--text); }
 .import-analysis { display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: 14px; background: var(--card-2); animation: import-appear .25s var(--ease); }
 .import-analysis strong, .import-analysis small { display: block; }
 .import-analysis small { margin-top: 2px; color: var(--text2); font-size: 12px; }

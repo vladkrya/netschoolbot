@@ -63,6 +63,7 @@ export async function openScheduleImport(date = isoToday()) {
         <span class="import-file-icon" aria-hidden="true">▧</span><span><strong>Фото расписания уроков</strong><small class="import-photo-copy">Выберите фото из галереи или камеры</small></span><b>Выбрать</b>
       </label>
       <div class="muted small import-photo-hint">Для дня — одно фото. Для недели — общий снимок или до семи фото по порядку: Пн, Вт, Ср…</div>
+      <aside class="import-privacy-note" role="note"><span aria-hidden="true">⌁</span><p><strong>Перед отправкой</strong> обрежьте фото до нужного класса и дня. Не загружайте ФИО, лица, оценки, переписки или другие личные данные.</p></aside>
       <label class="import-file-card">
         <input class="import-bells" type="file" accept="image/jpeg,image/png,image/webp">
         <span class="import-file-icon" aria-hidden="true">◷</span><span><strong>Расписание звонков</strong><small class="import-bells-copy">Необязательно — время возьмём из дневника</small></span><b>Добавить</b>
