@@ -105,3 +105,80 @@
 :root[data-design="v3"] .mail-subject { color: var(--text2); }
 :root[data-design="v3"] .mail-card.unread { border-left: 3px solid var(--primary); padding-left: 12px; }
 :root[data-design="v3"] .mail-envelope { border: 1px solid var(--border); border-radius: 14px; box-shadow: none; }
+
+/* The day is a timetable, so its lessons form one scanable sequence instead
+   of six unrelated cards.  Time and lesson number stay aligned while the
+   content itself is allowed to be the visual focus. */
+:root[data-design="v3"] #dayContent {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--card);
+}
+:root[data-design="v3"] #dayContent > .lesson-card {
+  margin: 0;
+  padding: 12px 14px;
+  border: 0;
+  border-radius: 0;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  box-shadow: none;
+}
+:root[data-design="v3"] #dayContent > .lesson-card:last-of-type { border-bottom: 0; }
+:root[data-design="v3"] #dayContent > .lesson-card:active { background: var(--card-2); transform: none; }
+:root[data-design="v3"] #dayContent > .lesson-card:hover { filter: none; background: var(--card-2); }
+:root[data-design="v3"] #dayContent .lc-top { gap: 9px; }
+:root[data-design="v3"] #dayContent .lc-num {
+  min-width: 28px;
+  width: 28px;
+  height: 28px;
+  font-size: 13px;
+  border-radius: 7px;
+}
+:root[data-design="v3"] #dayContent .lc-badges,
+:root[data-design="v3"] #dayContent .lc-bottom { margin-left: 37px; }
+:root[data-design="v3"] #dayContent .lc-bottom { margin-top: 4px; font-variant-numeric: tabular-nums; }
+:root[data-design="v3"] #dayContent > :is(.day-summary, .countdown-card, .install-card) {
+  margin: 0;
+  border-radius: 0;
+  box-shadow: none;
+  border-width: 0 0 1px;
+  border-color: var(--border);
+}
+:root[data-design="v3"] #dayContent > .add-lesson {
+  width: calc(100% - 24px);
+  margin: 12px;
+  border-radius: 9px;
+}
+
+/* A desktop has room for a calm reading column and a narrow control rail;
+   neither column is a second empty canvas. */
+@media (min-width: 1200px) {
+  :root[data-design="v3"] { --col: 1080px; }
+  :root[data-design="v3"] #panel-day.active {
+    grid-template-columns: minmax(0, 1fr) 252px;
+    column-gap: 16px;
+    justify-content: center;
+  }
+  :root[data-design="v3"] .day-side { gap: 8px; }
+  :root[data-design="v3"] .day-nav { gap: 6px; }
+  :root[data-design="v3"] .day-nav-btn {
+    height: 42px;
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    box-shadow: none;
+  }
+  :root[data-design="v3"] .day-keys { margin-top: 2px; line-height: 1.35; }
+  :root[data-design="v3"] .day-side :is(.countdown-card, .day-summary, .lesson-timer) {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    box-shadow: none;
+  }
+}
+
+@media (max-width: 420px) {
+  :root[data-design="v3"] .panel { padding-inline: 10px; }
+  :root[data-design="v3"] #dayContent > .lesson-card { padding-inline: 12px; }
+  :root[data-design="v3"] #dayContent .lc-badges,
+  :root[data-design="v3"] #dayContent .lc-bottom { margin-left: 37px; }
+}
