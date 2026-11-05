@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import html
 import logging
+import math
 import zlib
 from collections import defaultdict
 from html.parser import HTMLParser
@@ -76,53 +77,93 @@ def card_html(text: str) -> str:
 
 
 def homework_card_html(items: list[HomeworkRecord], done: set[str]) -> str:
-    """Карточка /dz в палитре миниаппа, с раскрытием длинных заданий."""
+    """Карточка /dz: несколько дней на странице, пока они помещаются."""
     grouped: dict = defaultdict(list)
     for item in sorted(items, key=lambda h: (h.due_date, h.lesson_number or 0, h.subject)):
         grouped[item.due_date].append(item)
     open_count = sum(not item.nothing_to_do and item.key not in done for item in items)
-    blocks: list[str] = []
-    for day_index, (day, records) in enumerate(grouped.items()):
-        blocks.append(f'<section class="day{" active" if day_index == 0 else ""}"><div class="day-title"><span>📅 {html.escape(formatting.date_label(day))}</span><span class="day-count">{len(records)}</span></div>')
+    # У виджета нет внутренней прокрутки, а высота пузыря ограничена 600 px.
+    # Оставляем место для шапки, переключателя и подписи; несколько коротких
+    # дней могут попасть на одну страницу. Большой день делится по заданиям.
+    pages: list[list[tuple[object, list[HomeworkRecord], bool]]] = [[]]
+    used = 0
+    for day, records in grouped.items():
+        chunk: list[HomeworkRecord] = []
+        shown = 0
         for item in records:
-            complete = item.nothing_to_do or item.key in done
-            subject = html.escape(item.subject)
-            task = html.escape(item.text or "Задание не указано")
-            short = html.escape((item.text or "Задание не указано")[:95])
-            if len(item.text or "") > 95:
-                short += "…"
-            status = "Готово" if complete else "Задано"
-            blocks.append(
-                f'<details class="task{" done" if complete else ""}"><summary>'
-                f'<span class="task-top"><span class="subject">{subject}</span><span class="pill">{status}</span></span>'
-                f'<span class="summary">{short}</span><span class="more">Подробнее ↓</span></summary>'
-                f'<div class="detail">{task}</div></details>'
-            )
-        blocks.append('</section>')
-    if not blocks:
-        blocks.append('<div class="empty">На ближайшие учебные дни заданий нет ✨</div>')
+            preview_lines = max(1, math.ceil(min(len(item.text or ""), 95) / 38))
+            cost = 51 + preview_lines * 17 + (12 if len(item.subject) > 25 else 0)
+            if used + cost + (0 if chunk else 34) > 395 and (chunk or pages[-1]):
+                if chunk:
+                    pages[-1].append((day, chunk, shown > 0))
+                    shown += len(chunk)
+                    chunk = []
+                pages.append([])
+                used = 0
+            if not chunk:
+                used += 34
+            chunk.append(item)
+            used += cost
+        if chunk:
+            pages[-1].append((day, chunk, shown > 0))
+    blocks: list[str] = []
+    for page_index, chunks in enumerate(pages):
+        blocks.append(f'<div class="page{" active" if page_index == 0 else ""}">')
+        for day, records, continued in chunks:
+            suffix = " · продолжение" if continued else ""
+            blocks.append(f'<section class="day"><div class="day-title"><span>📅 {html.escape(formatting.date_label(day))}{suffix}</span><span class="day-count">{len(records)}</span></div>')
+            for item in records:
+                complete = item.nothing_to_do or item.key in done
+                subject = html.escape(item.subject)
+                task_text = item.text or "Задание не указано"
+                task = html.escape(task_text)
+                needs_full = len(task_text) > 120
+                short = html.escape(task_text[:72]) + ("…" if needs_full else html.escape(task_text[72:]))
+                status = "Готово" if complete else "Задано"
+                extras = []
+                if item.topic:
+                    extras.append(f"<b>Тема:</b> {html.escape(item.topic)}")
+                if item.comment:
+                    extras.append(f"<b>Комментарий:</b> {html.escape(item.comment)}")
+                if item.attachments:
+                    extras.append("<b>Файлы:</b> " + ", ".join(html.escape(file.name) for file in item.attachments))
+                details = ([f"<b>Полное задание:</b><br>{task}"] if needs_full else []) + extras
+                main = (f'<span class="task-top"><span class="subject">{subject}</span><span class="pill">{status}</span></span>'
+                        f'<span class="summary">{short}</span>')
+                if details:
+                    blocks.append(
+                        f'<details class="task{" done" if complete else ""}{" has-full" if needs_full else ""}"><summary>{main}'
+                        '<span class="more">Подробнее ↓</span><span class="less">Свернуть ↑</span></summary>'
+                        f'<div class="detail">{"<br>".join(details)}</div></details>'
+                    )
+                else:
+                    blocks.append(f'<div class="task{" done" if complete else ""}">{main}</div>')
+            blocks.append('</section>')
+        blocks.append('</div>')
+    if not items:
+        blocks = ['<div class="page active"><div class="empty">На ближайшие учебные дни заданий нет ✨</div></div>']
     css = (
         ':root{color-scheme:light;--bg:#eef1f6;--card:#fff;--text:#1d2430;--muted:#6b7585;--border:#dde2ea;--blue:#4a6fae;--light:#f4f6fa;--green:#2f9e4f}'
         '@media(prefers-color-scheme:dark){:root{color-scheme:dark;--bg:#141a22;--card:#1e2633;--text:#e3e8ef;--muted:#8e99aa;--border:#2d3748;--blue:#3f63a3;--light:#252f3e;--green:#4cc76a}}'
         '*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.4 system-ui,-apple-system,sans-serif}'
         '.head{background:linear-gradient(135deg,var(--blue),#36558f);color:white;padding:16px 16px 18px;border-radius:0 0 16px 16px}'
         '.head-top{font-size:11px;letter-spacing:.1em;text-transform:uppercase;opacity:.8}.head-title{font-size:19px;font-weight:700;margin:4px 0 2px}'
-        '.head-sub{font-size:12px;opacity:.85}.content{padding:10px}.day{display:none;margin:0 0 13px}.day.active{display:block}.day-title{display:flex;justify-content:space-between;align-items:center;font-weight:700;margin:4px 3px 8px}'
+        '.head-sub{font-size:12px;opacity:.85}.content{padding:10px}.page{display:none}.page.active{display:block}.day{margin:0 0 13px}.day-title{display:flex;justify-content:space-between;align-items:center;font-weight:700;margin:4px 3px 8px}'
         '.day-count{background:var(--light);color:var(--muted);padding:2px 8px;border-radius:9px;font-size:11px}'
         '.task{display:block;text-align:left;width:100%;font:inherit;color:var(--text);background:var(--card);border:1px solid var(--border);border-left:3px solid var(--blue);border-radius:12px;padding:11px 12px;margin:0 0 7px}'
         '.task summary{list-style:none;cursor:pointer}.task summary::-webkit-details-marker{display:none}'
         '.task.done{border-left-color:var(--green)}.task-top{display:flex;align-items:center;justify-content:space-between;gap:8px}.subject{font-weight:700;font-size:14px}'
         '.pill{flex:none;border-radius:8px;padding:3px 7px;background:var(--light);color:var(--blue);font-size:10px;font-weight:700}.done .pill{color:var(--green)}'
-        '.summary,.detail{display:block;margin-top:5px;overflow-wrap:anywhere}.detail{padding-top:8px;border-top:1px solid var(--border)}.done .summary{color:var(--muted)}.more{display:block;color:var(--blue);font-size:11px;margin-top:6px}.task[open] .more{display:none}'
+        '.summary,.detail{display:block;margin-top:5px;overflow-wrap:anywhere}.detail{padding-top:8px;border-top:1px solid var(--border)}.done .summary{color:var(--muted)}.more,.less{display:block;color:var(--blue);font-size:11px;margin-top:6px}.less{display:none}.task.has-full[open] .summary,.task[open] .more{display:none}.task[open] .less{display:block}'
         '.pager{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:5px 0 8px}.pager button{border:0;border-radius:9px;background:var(--blue);color:white;padding:8px 11px;font:600 12px system-ui}.pager button:disabled{background:var(--light);color:var(--muted)}.pager span{color:var(--muted);font-size:12px}'
         '.empty{padding:18px;text-align:center;background:var(--card);border-radius:12px}.foot{padding:0 13px 12px;color:var(--muted);font-size:11px}'
     )
     pager = ('<nav class="pager"><button id="prev-day" type="button">← Назад</button>'
-             f'<span id="day-position">1 / {len(grouped)}</span>'
-             '<button id="next-day" type="button">Дальше →</button></nav>') if len(grouped) > 1 else ''
-    script = ("<script>var days=document.querySelectorAll('.day'),page=0;"
+             f'<span id="day-position">1 / {len(pages)}</span>'
+             '<button id="next-day" type="button">Дальше →</button></nav>') if len(pages) > 1 else ''
+    script = ("<script>var days=document.querySelectorAll('.page'),page=0;"
               "var prev=document.getElementById('prev-day'),next=document.getElementById('next-day'),pos=document.getElementById('day-position');"
-              "function showDay(){for(var i=0;i<days.length;i++)days[i].className=i===page?'day active':'day';"
+              "function showDay(){for(var i=0;i<days.length;i++)days[i].className=i===page?'page active':'page';"
               "if(prev)prev.disabled=page===0;if(next)next.disabled=page===days.length-1;"
               "if(pos)pos.textContent=(page+1)+' / '+days.length;}"
               "if(prev)prev.addEventListener('click',function(){if(page>0){page--;showDay()}});"

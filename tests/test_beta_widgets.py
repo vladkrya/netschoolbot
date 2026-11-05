@@ -38,11 +38,31 @@ def test_homework_card_has_app_layout_and_fits_widget_limits():
     assert "#4a6fae" in source
     assert "<script>alert(1)</script>" not in source
     assert "&lt;script&gt;" in source
-    assert '<details class="task' in source
-    assert 'id="next-day"' in source
-    assert 'day active' in source
+    assert '<details class="task' not in source
+    assert 'id="next-day"' not in source
+    assert source.count('<div class="page') == 1
+    assert 'Пт 06.11' in source and 'Пн 09.11' in source
     assert len(source.encode()) <= 32768
     assert len(zlib.compress(source.encode(), 9)) <= 4096
+
+
+def test_homework_card_only_expands_extra_content_and_paginates_overflow():
+    long_text = "Очень длинное задание " * 7
+    items = [HomeworkRecord(f"Предмет {i}", dt.date(2026, 11, 6) + dt.timedelta(days=i), "ДЗ", long_text)
+             for i in range(7)]
+    source = homework_card_html(items, set())
+    assert source.count('<div class="page') > 1
+    assert 'id="next-day"' in source
+    assert '<details class="task' in source
+    assert '.task.has-full[open] .summary,.task[open] .more{display:none}' in source
+    assert '<b>Полное задание:</b>' in source
+
+
+def test_homework_card_does_not_offer_details_for_medium_text_without_extras():
+    item = HomeworkRecord("Алгебра", dt.date(2026, 11, 6), "ДЗ", "Решить номера 125 и 126, повторить правила сложения дробей")
+    source = homework_card_html([item], set())
+    assert '<details class="task' not in source
+    assert 'Подробнее ↓' not in source
 
 
 @pytest.mark.asyncio
