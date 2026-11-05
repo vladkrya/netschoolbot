@@ -171,7 +171,7 @@ def homework_card_html(items: list[HomeworkRecord], done: set[str]) -> str:
     return ("<!doctype html><html lang=ru><meta name=viewport content='width=device-width,initial-scale=1'><style>"
             + css + "</style><body><div class=head><div class=head-top>СГОшка · дневник</div>"
             f'<div class=head-title>📚 Домашние задания</div><div class=head-sub>На {len(grouped)} учебных дня · осталось {open_count}</div></div>'
-            + '<div class=content>' + ''.join(blocks) + pager + '</div><div class=foot>Отметить выполненное можно кнопками под карточкой</div>'
+            + '<div class=content>' + pager + ''.join(blocks) + '</div><div class=foot>Отметить выполненное можно кнопками под карточкой</div>'
             + script + '</body></html>')
 
 

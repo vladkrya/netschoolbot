@@ -53,6 +53,7 @@ def test_homework_card_only_expands_extra_content_and_paginates_overflow():
     source = homework_card_html(items, set())
     assert source.count('<div class="page') > 1
     assert 'id="next-day"' in source
+    assert source.index('<nav class="pager">') < source.index('<div class="page')
     assert '<details class="task' in source
     assert '.task.has-full[open] .summary,.task[open] .more{display:none}' in source
     assert '<b>Полное задание:</b>' in source
