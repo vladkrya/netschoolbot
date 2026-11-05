@@ -413,6 +413,14 @@ class TestPageLinksResolve:
         page = await (await client.get(f"{BASE}/", params={"token": token})).text()
         assert f'rel="modulepreload" href="{BASE}/static/v{STATIC_VERSION}/js/core.js"' in page
 
+    async def test_old_open_page_can_load_lazy_integration_module(self, client):
+        # Вкладка со старой версией страницы ещё не загружала этот экран.
+        response = await client.get(f"{BASE}/static/v000000000000/js/integrations.js")
+        assert response.status == 200
+        assert "no-cache" == response.headers["Cache-Control"]
+        assert "openIntegrations" in await response.text()
+        assert (await client.get(f"{BASE}/static/v000000000000/../server.py")).status == 404
+
     async def test_stylesheet_and_script_have_content(self, client, token):
         for asset in ("app.css", "js/app.js"):
             response = await client.get(f"{BASE}/static/{asset}")

@@ -217,6 +217,18 @@ def create_app(context: AppContext, bot=None) -> web.Application:
     # на 4 часа поверх наших заголовков — после деплоя экраны оставались
     # старыми. С версией в пути каждый деплой даёт всем модулям новые адреса.
     inner.router.add_static(f"/static/v{STATIC_VERSION}", STATIC_DIR, name="static_versioned")
+    # Открытая до обновления вкладка продолжает запрашивать ленивые модули
+    # по прежнему хэшу. Без этого экран, который ещё не открывали, получает 404.
+    async def old_versioned_static(request: web.Request) -> web.StreamResponse:
+        relative = request.match_info["path"]
+        target = (STATIC_DIR / relative).resolve()
+        if not target.is_relative_to(STATIC_DIR.resolve()) or not target.is_file():
+            raise web.HTTPNotFound()
+        response = web.FileResponse(target)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+    inner.router.add_get(r"/static/v{version:[0-9a-f]{12}}/{path:.*}", old_versioned_static)
     # Порядок важен: иначе /static перехватит и путь с версией.
     inner.router.add_static("/static", STATIC_DIR, name="static")
     inner.on_response_prepare.append(_revalidate_static)

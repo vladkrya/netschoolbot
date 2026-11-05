@@ -15,6 +15,22 @@ from ..domain import formatting
 logger = logging.getLogger("netschoolbot.bot")
 
 
+async def beta_api_status(bot: Bot) -> str | None:
+    """Сообщение о недоступности тестового Bot API, если он закрыт для токена."""
+    session = await bot.session.create_session()
+    url = f"https://api.telegram.org/beta/bot{bot.token}/test/getMe"
+    try:
+        async with session.get(url, timeout=8) as response:
+            result = await response.json(content_type=None)
+        if result.get("ok"):
+            return None
+        if response.status == 401:
+            return "Telegram пока не открыл тестовый Bot API для этого бота (401). Виджеты недоступны."
+        return f"Тестовый Bot API сейчас недоступен (HTTP {response.status})."
+    except Exception:  # noqa: BLE001 — только проверка доступности, без пользовательских данных
+        return "Не удалось связаться с тестовым Bot API. Попробуйте позже."
+
+
 class _PlainText(HTMLParser):
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)

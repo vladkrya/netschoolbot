@@ -1,10 +1,10 @@
 """Переключатель бета-карточек и безопасный возврат к обычному ответу."""
 
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from app.bot.widgets import beta_reply, card_html
+from app.bot.widgets import beta_api_status, beta_reply, card_html
 
 
 @pytest.mark.asyncio
@@ -32,3 +32,16 @@ async def test_beta_reply_skips_transport_when_disabled(users):
     message = AsyncMock()
     app = type("App", (), {"users": users})()
     assert not await beta_reply(message, 101, app, AsyncMock(), "Задание")
+
+
+@pytest.mark.asyncio
+async def test_beta_status_explains_unauthorized_token():
+    response = AsyncMock()
+    response.status = 401
+    response.json.return_value = {"ok": False, "description": "Unauthorized"}
+    session = MagicMock()
+    session.get.return_value.__aenter__.return_value = response
+    bot = AsyncMock()
+    bot.token = "test-token"
+    bot.session.create_session.return_value = session
+    assert "не открыл" in await beta_api_status(bot)

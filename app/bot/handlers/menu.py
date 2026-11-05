@@ -18,7 +18,7 @@ from ...notifications.outbox import mark_from_dict
 from ...netschool.errors import NetSchoolError
 from ...web import sync, viewing
 from .. import keyboards
-from ..widgets import beta_reply
+from ..widgets import beta_api_status, beta_reply
 from .common import reply, report_error, require_school
 
 logger = logging.getLogger("netschoolbot.bot")
@@ -26,10 +26,14 @@ router = Router(name="menu")
 
 
 async def diary_reply(message: Message, user: User, app: AppContext, text: str, *, reply_markup=None) -> None:
-    if await app.users.beta_widgets(user.telegram_id) and await beta_reply(
-        message, user.telegram_id, app, message.bot, text, reply_markup=reply_markup
-    ):
-        return
+    if await app.users.beta_widgets(user.telegram_id):
+        unavailable = await beta_api_status(message.bot)
+        if unavailable:
+            text = f"🧪 {formatting.esc(unavailable)}\n\n{text}"
+        elif await beta_reply(message, user.telegram_id, app, message.bot, text, reply_markup=reply_markup):
+            return
+        else:
+            text = f"🧪 Карточка не отправилась — показываю обычный ответ.\n\n{text}"
     await reply(message, text, reply_markup=reply_markup)
 
 
@@ -48,6 +52,10 @@ async def beta_mode(message: Message, user: User, app: AppContext) -> None:
     else:
         await message.answer("Используйте /beta, /beta on или /beta off.")
         return
+    if enabled:
+        if unavailable := await beta_api_status(message.bot):
+            await message.answer(f"🧪 {unavailable} Обычные ответы команд остаются доступны.")
+            return
     await app.users.set_beta_widgets(user.telegram_id, enabled)
     await message.answer(
         "🧪 Карточки для команд дневника включены. Вернуть обычные ответы: /beta off."

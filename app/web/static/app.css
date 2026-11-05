@@ -1242,6 +1242,12 @@ html.offline .switch-row:has(#pushToggle, #keepFiles, #sgoUpdates) {
 .field:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 25%, transparent); }
 .field-label { display: block; font-size: 13px; color: var(--text2); margin-top: 8px; }
 .field-label input[type=range] { width: 100%; accent-color: var(--head); }
+.integration-permissions { min-width: 0; margin: 14px 0 8px; padding: 12px; border: 1px solid var(--border); border-radius: 12px; }
+.integration-permissions legend { padding: 0 5px; color: var(--text); font-weight: 600; }
+.integration-permission { display: flex; align-items: flex-start; gap: 10px; padding: 7px 0; color: var(--text); font-size: 14px; line-height: 1.35; }
+.integration-permission + .integration-permission { border-top: 1px solid var(--border); }
+.integration-permission input { flex: 0 0 auto; width: 18px; height: 18px; margin: 0; accent-color: var(--primary); }
+.integration-permission span { min-width: 0; overflow-wrap: anywhere; }
 /* Поле даты в Safari на iPhone своё: уже остальных, ниже и с датой по центру —
    «К какому дню» в «Своей задаче» съезжало относительно соседних полей. */
 .field[type=date] { -webkit-appearance: none; appearance: none; min-width: 0; min-height: 44px; line-height: 1.25; text-align: left; }
