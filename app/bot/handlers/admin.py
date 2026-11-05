@@ -16,7 +16,7 @@ from .common import reply
 
 router = Router(name="admin")
 
-DESIGNS = {"v3": "v3", "new": "новый", "classic": "старый"}
+DESIGNS = {"min": "min", "v3": "min (старое имя)", "new": "новый", "classic": "старый"}
 LOGINS = {"telegram": "только Telegram", "both": "Telegram и почта", "email": "только почта"}
 PLACES = {"telegram": "только в Telegram", "both": "в Telegram и в браузере", "browser": "только в браузере"}
 

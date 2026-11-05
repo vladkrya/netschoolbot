@@ -14,7 +14,7 @@ import { notify, select, tap } from './haptics.js';
 import { ICONS } from './icons.js';
 import { loadRecipients, openCompose } from './mail.js';
 import { pushScreen } from './screens.js';
-import { isHalloween, isNewDesign, isV3Design } from './appearance.js';
+import { isHalloween, isMinDesign, isNewDesign } from './appearance.js';
 import { navTabs } from './tabs.js';
 import { textStream } from './text-stream.js';
 
@@ -348,7 +348,7 @@ function mount(body, { tab = false } = {}) {
           messages: chat.messages.slice(-12).map(({ role, content }) => ({ role, content })),
           // Что у человека на экране: без этого помощник отправлял искать
           // меню ☰, которого в новом дизайне нет.
-          ui: { design: isV3Design() ? 'v3' : isNewDesign() ? 'new' : 'classic', tabs: navTabs(), halloween: isHalloween() },
+          ui: { design: isMinDesign() ? 'min' : isNewDesign() ? 'new' : 'classic', tabs: navTabs(), halloween: isHalloween() },
         }),
       });
       await live.finish();

@@ -526,8 +526,8 @@ function render() {
       ${more('look', 'Другой вид', `
       <label class="switch-row design-row"><span>design</span>
         <select class="field reminder-hour" id="designMode" aria-label="design">
-          <option value="v3" ${getPref('design') === 'v3' ? 'selected' : ''}>v3</option>
-          <option value="new" ${getPref('design') !== 'v3' && isNewDesign() ? 'selected' : ''}>новый</option>
+          <option value="min" ${['min', 'v3'].includes(getPref('design')) ? 'selected' : ''}>min</option>
+          <option value="new" ${!['min', 'v3'].includes(getPref('design')) && isNewDesign() ? 'selected' : ''}>новый</option>
           <option value="classic" ${isNewDesign() ? '' : 'selected'}>старый</option>
         </select></label>
       <label class="switch-row retro-row"><span>📟 Ретро-сайт<span class="muted small switch-note">дневник страничкой из 90-х: звёзды, котики, окна Windows 98</span></span>

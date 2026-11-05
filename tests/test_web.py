@@ -836,8 +836,8 @@ class TestNewFeatures:
         url = f"{BASE}/api/prefs"
         response = await client.post(url, params={"token": token}, json={"design": "new"})
         assert (await response.json())["data"]["design"] == "new"
-        response = await client.post(url, params={"token": token}, json={"design": "v3"})
-        assert (await response.json())["data"]["design"] == "v3"
+        response = await client.post(url, params={"token": token}, json={"design": "min"})
+        assert (await response.json())["data"]["design"] == "min"
         response = await client.post(url, params={"token": token}, json={"design": "retro"})
         assert response.status == 400
 
