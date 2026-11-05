@@ -112,7 +112,7 @@ async def retro_page(request: web.Request) -> web.Response:
     """Их index.html (templates/retro.html). Удостоверение — как у главной
     страницы: токен из ссылки или cookie, в Telegram — initData в браузере."""
     from .. import __version__
-    from .server import STATIC_VERSION, _base
+    from .server import STATIC_VERSION, _base, _moved_to
 
     app = context(request)
     base = _base(request)
@@ -131,6 +131,8 @@ async def retro_page(request: web.Request) -> web.Response:
         request,
         {
             "static": static,
+            "moved_to": _moved_to(request),
+            "base": base,
             "app_version": __version__,
             "icons": f"{static}/retro/icons",
             "config": {

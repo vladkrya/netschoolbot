@@ -1008,6 +1008,10 @@ MIGRATIONS: list[str] = [
         CHECK(scope IN ('diary', 'status'));
     """,
 
+    """
+    ALTER TABLE api_tokens ADD COLUMN permissions TEXT NOT NULL DEFAULT '';
+    """,
+
 ]
 
 

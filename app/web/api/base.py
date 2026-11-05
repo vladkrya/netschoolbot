@@ -83,7 +83,7 @@ async def _count_check(app, user, ok: bool) -> None:
 
 
 def context(request: web.Request) -> AppContext:
-    return request.app[CONTEXT]
+    return request.get("integration_context", request.app[CONTEXT])
 
 
 def current_user(request: web.Request) -> User:

@@ -373,7 +373,7 @@
     }
   }
 </script>
+{% if moved_to %}<script src="{{ base }}/static/v{{ version }}/moved.js" data-to="{{ moved_to }}" data-base="{{ base }}"></script>{% endif %}
 <script src="{{ base }}/static/v{{ version }}/js/boot.js" type="module" onerror="netschoolBootFailed()"></script>
-{% if moved_to %}<script src="{{ base }}/static/v{{ version }}/moved.js" data-to="{{ moved_to }}" data-base="{{ base }}" defer></script>
-{% endif %}</body>
+</body>
 </html>

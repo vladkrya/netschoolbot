@@ -110,6 +110,7 @@ async function ownToken() {
 }
 
 async function boot() {
+  if (window.SGOSHKA_MOVING) return;
   // В браузере жест вниз — наше обновление дневника, а не перезагрузка страницы.
   if (!tg?.initData) document.documentElement.classList.add('in-browser');
   // Safari на Mac не крутит колесом мыши блок с overscroll-behavior, пока на

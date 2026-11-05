@@ -199,8 +199,7 @@ async def test_status_token_is_separate_from_diary(client, token):
         assert response.status == 403
         assert (await response.json())['reason'] == 'token_scope'
     response = await client.get(BASE + '/api/v1/status', headers={'Authorization': 'Bearer ' + diary_key})
-    assert response.status == 403
-    assert (await response.json())['reason'] == 'token_scope'
+    assert response.status != 403  # Единый токен теперь открывает и статус.
     response = await client.post(BASE + '/api/v1/status/report', headers={'Authorization': 'Bearer ' + status_key}, json={'host': 'example.org'})
     assert response.status == 405
 
@@ -243,7 +242,75 @@ async def test_reject_unknown_token_scope(client, token):
 async def test_status_openapi_has_own_bearer_and_host_parameter(client):
     spec = await (await client.get(BASE + '/api/v1/openapi.json')).json()
     operation = spec['paths']['/status/hosts/{host}']['get']
-    assert operation['security'] == [{'statusBearerAuth': []}]
+    assert operation['security'] == [{'bearerAuth': []}, {'statusBearerAuth': []}]
     host = next(p for p in operation['parameters'] if p['name'] == 'host')
     assert host['schema']['type'] == 'string' and host['required']
     assert 'statusBearerAuth' in spec['components']['securitySchemes']
+
+
+async def test_student_selection_is_request_local_and_cache_isolated(client, token, app_context, users, monkeypatch):
+    import datetime as dt
+    from dataclasses import replace
+    from app.domain.models import Student
+    from app.domain.records import DiaryDay, Lesson
+    from unittest.mock import AsyncMock
+    user = await users.get(1)
+    user = await users.save(replace(user, available_students=(Student(11, 'Первый'), Student(22, 'Второй')), selected_student_id=11, student_name='Первый'))
+    seen = []
+    async def fetch(owner, **kwargs):
+        seen.append(owner.selected_student_id)
+        return [DiaryDay(day=dt.date(2026, 11, 5), lessons=[Lesson(number=1, subject=owner.student_name)])]
+    monkeypatch.setattr(app_context.diary, 'fetch_diary', fetch)
+    monkeypatch.setattr(app_context.diary, 'fetch_teachers', AsyncMock(return_value={}))
+    key = (await issue(client, token))['token']
+    headers = {'Authorization': 'Bearer ' + key}
+    await app_context.cache.put(1, 'diary:0', {'days': [{'sentinel': 'миниапп'}], 'week': 0})
+    for sid, name in ((22, 'Второй'), (11, 'Первый'), (22, 'Второй')):
+        response = await client.get(BASE + f'/api/v1/diary?student_id={sid}', headers=headers)
+        assert response.status == 200
+        assert (await response.json())['data']['days'][0]['lessons'][0]['subject'] == name
+    assert seen == [22, 11]  # третий запрос берёт отдельный кэш второго ребёнка
+    stored = await users.get(1)
+    assert stored.selected_student_id == 11 and stored.student_name == 'Первый'
+    assert (await app_context.cache.get(1, 'diary:0'))[0]['days'][0]['sentinel'] == 'миниапп'
+    profile = await (await client.get(BASE + '/api/v1/profile?student_id=22', headers=headers)).json()
+    assert profile['data']['student_id'] == 22
+    assert next(s for s in profile['data']['students'] if s['current'])['id'] == 22
+    assert (await client.get(BASE + '/api/v1/diary?student_id=99999', headers=headers)).status == 403
+    assert (await client.get(BASE + '/api/v1/diary?student_id=x', headers=headers)).status == 400
+    assert (await client.get(BASE + '/api/v1/diary?student_id=11&student_id=22', headers=headers)).status == 400
+    assert (await client.get(BASE + '/api/v1/mail?student_id=22', headers=headers)).status == 400
+
+
+async def test_token_permissions_are_immutable_and_enforced(client, token, app_context):
+    response = await client.post(BASE + '/api/integration-tokens', headers={'X-Netschool-Token': token}, json={'name': 'Только профиль', 'permissions': ['profile']})
+    assert response.status == 201
+    data = (await response.json())['data']
+    assert data['items'][0]['permissions'] == ['profile']
+    headers = {'Authorization': 'Bearer ' + data['token']}
+    assert (await client.get(BASE + '/api/v1/profile', headers=headers)).status == 200
+    for path in ('diary', 'marks', 'homework', 'mail', 'attachment/1', 'status', 'notes', 'history', 'search?q=abc', 'children'):
+        assert (await client.get(BASE + '/api/v1/' + path, headers=headers)).status == 403
+    token_id = data['items'][0]['id']
+    for method in ('patch', 'put', 'post'):
+        response = await getattr(client, method)(BASE + f'/api/integration-tokens/{token_id}', headers={'X-Netschool-Token': token}, json={'permissions': ['mail']})
+        assert response.status in (404, 405)
+    listed = await (await client.get(BASE + '/api/integration-tokens', headers={'X-Netschool-Token': token})).json()
+    assert listed['data']['items'][0]['permissions'] == ['profile']
+    assert 'status' in listed['data']['available_permissions']
+
+
+@pytest.mark.parametrize('permissions', [[], ['admin'], 'profile', [None], [True]])
+async def test_reject_invalid_permissions(client, token, permissions):
+    response = await client.post(BASE + '/api/integration-tokens', headers={'X-Netschool-Token': token}, json={'name': 'Права', 'permissions': permissions})
+    assert response.status == 400
+
+
+async def test_combined_token_grants_status_and_profile(client, token, app_context, monkeypatch):
+    from unittest.mock import AsyncMock
+    monkeypatch.setattr(app_context.status, 'summary', AsyncMock(return_value={'hosts': []}))
+    response = await client.post(BASE + '/api/integration-tokens', headers={'X-Netschool-Token': token}, json={'name': 'Профиль и статус', 'permissions': ['profile', 'status']})
+    headers = {'Authorization': 'Bearer ' + (await response.json())['data']['token']}
+    assert (await client.get(BASE + '/api/v1/profile', headers=headers)).status == 200
+    assert (await client.get(BASE + '/api/v1/status', headers=headers)).status == 200
+    assert (await client.get(BASE + '/api/v1/mail', headers=headers)).status == 403

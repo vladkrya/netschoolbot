@@ -181,6 +181,7 @@ window.addEventListener('pageshow', event => {
 
 // Никакие данные ретро не запрашиваются до проверки защиты.
 async function start() {
+  if (window.SGOSHKA_MOVING) return;
   try {
     await bridge.ensureUnlocked();
     await import('./app.js');

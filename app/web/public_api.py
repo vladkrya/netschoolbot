@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import datetime as dt
+from dataclasses import replace
 import hashlib
 import json
 import secrets
@@ -11,6 +12,8 @@ from .api.base import USER, context, current_user, json_error
 from .api import diary, marks, homework, mail, planning, attachments
 from . import extras, status_api
 from .api.profile import student_class
+from .api_students import STUDENT_RESOURCES, StudentContext
+from .api_permissions import PERMISSIONS, permissions_for, required_permissions
 
 routes = web.RouteTableDef()
 PREFIX = '/api/v1'
@@ -20,12 +23,12 @@ TOKEN_PREFIXES = (TOKEN_PREFIX, 'sgoshka-', 'nsro_')
 # Только явно проверенные обработчики. Новые маршруты приложения не получают
 # доступ по ключу интеграции автоматически.
 READS = {
-    'status': (status_api.summary, 'Полная сводка статуса серверов', 'Отдельный токен status; range=24h, 7d или 30d'),
-    'status/hosts': (status_api.hosts, 'Все серверы и их доступность', 'Отдельный токен status; range'),
-    'status/hosts/{host}': (status_api.host, 'Статус конкретного сервера', 'Отдельный токен status; host — имя из каталога; range'),
-    'status/incidents': (status_api.incidents, 'Инциденты серверов', 'Отдельный токен status; range'),
-    'status/versions': (status_api.versions, 'Изменения версий школьных серверов', 'Отдельный токен status; range'),
-    'status/reports': (status_api.reports, 'Обезличенные жалобы на серверы', 'Отдельный токен status; range'),
+    'status': (status_api.summary, 'Полная сводка статуса серверов', 'Право status; range=24h, 7d или 30d'),
+    'status/hosts': (status_api.hosts, 'Все серверы и их доступность', 'Право status; range'),
+    'status/hosts/{host}': (status_api.host, 'Статус конкретного сервера', 'Право status; host — имя из каталога; range'),
+    'status/incidents': (status_api.incidents, 'Инциденты серверов', 'Право status; range'),
+    'status/versions': (status_api.versions, 'Изменения версий школьных серверов', 'Право status; range'),
+    'status/reports': (status_api.reports, 'Обезличенные жалобы на серверы', 'Право status; range'),
     'attachment/{attachment_id}': (attachments.attachment, 'Файл задания или письма', 'name: имя скачиваемого файла; ответ — файл'),
     'homework/{assignment_id}/comment': (homework.homework_comment, 'Комментарий к заданию', ''),
     'homework/{assignment_id}/answer': (homework.homework_answer, 'Сохранённый ответ на задание', ''),
@@ -94,13 +97,13 @@ def digest(token):
 
 
 async def token_items(app, owner):
-    rows = await app.db.fetch_all('SELECT id, name, scope, created_at, expires_at, last_used_at FROM api_tokens WHERE owner_id=? ORDER BY id DESC', (owner,))
-    return [{**dict(row), 'expires_at': row['expires_at'] or None} for row in rows]
+    rows = await app.db.fetch_all('SELECT id, name, scope, permissions, created_at, expires_at, last_used_at FROM api_tokens WHERE owner_id=? ORDER BY id DESC', (owner,))
+    return [{**dict(row), 'permissions': sorted(permissions_for(row)), 'expires_at': row['expires_at'] or None} for row in rows]
 
 
 @routes.get('/api/integration-tokens')
 async def list_tokens(request):
-    return web.json_response({'ok': True, 'data': {'items': await token_items(context(request), current_user(request).telegram_id)}})
+    return web.json_response({'ok': True, 'data': {'items': await token_items(context(request), current_user(request).telegram_id), 'available_permissions': PERMISSIONS}})
 
 
 @routes.post('/api/integration-tokens')
@@ -114,6 +117,12 @@ async def create_token(request):
         scope = body.get('scope', 'diary')
         if scope not in ('diary', 'status'):
             raise ValueError
+        permissions = body.get('permissions', ['status'] if scope == 'status' else list(PERMISSIONS))
+        if (not isinstance(permissions, list) or not permissions
+                or any(not isinstance(value, str) or value not in PERMISSIONS for value in permissions)):
+            return json_error('Выберите хотя бы одно известное право доступа', reason='invalid_permissions')
+        permissions = sorted(set(permissions))
+        scope = 'status' if permissions == ['status'] else 'diary'
         if not isinstance(name, str) or not 1 <= len(name) <= 80:
             raise ValueError
         if 'expires_on' in body:
@@ -142,7 +151,7 @@ async def create_token(request):
             count = (await cursor.fetchone())[0]
         if count >= 20:
             return json_error('Не больше 20 действующих токенов', status=409)
-        await db.execute('INSERT INTO api_tokens(owner_id,name,token_hash,created_at,expires_at,scope) VALUES (?,?,?,?,?,?)', (owner, name, digest(token), now, expires, scope))
+        await db.execute('INSERT INTO api_tokens(owner_id,name,token_hash,created_at,expires_at,scope,permissions) VALUES (?,?,?,?,?,?,?)', (owner, name, digest(token), now, expires, scope, json.dumps(permissions)))
     return web.json_response({'ok': True, 'data': {'token': token, 'items': await token_items(app, owner)}}, status=201)
 
 
@@ -189,7 +198,7 @@ async def authenticate(request, handler):
     app = context(request)
     row = None
     if scheme.lower() == 'bearer' and token.startswith(TOKEN_PREFIXES) and len(token) <= 100:
-        row = await app.db.fetch_one('SELECT id,owner_id,scope FROM api_tokens WHERE token_hash=? AND (expires_at=0 OR expires_at>?)', (digest(token), time.time()))
+        row = await app.db.fetch_one('SELECT id,owner_id,scope,permissions FROM api_tokens WHERE token_hash=? AND (expires_at=0 OR expires_at>?)', (digest(token), time.time()))
     user = await app.users.get(row['owner_id']) if row else None
     if user is None:
         response = json_error('Передайте действующий токен: Authorization: Bearer <token>', status=401, reason='invalid_token')
@@ -200,8 +209,29 @@ async def authenticate(request, handler):
     if request.method not in ('GET', 'HEAD'):
         return json_error('API доступно только для чтения', status=405, reason='read_only')
     required_scope = 'status' if relative == PREFIX + '/status' or relative.startswith(PREFIX + '/status/') else 'diary'
-    if row['scope'] != required_scope:
-        return json_error('Нужен отдельный токен «Статус серверов»' if required_scope == 'status' else 'Токен статуса не открывает личные данные', status=403, reason='token_scope')
+    resource = relative.removeprefix(PREFIX + '/')
+    needed = required_permissions(resource)
+    if not needed <= permissions_for(row):
+        return json_error('У токена нет прав на этот раздел. Создайте токен с нужными правами.', status=403, reason='token_scope')
+    if 'student_id' in request.query:
+        resource = relative.removeprefix(PREFIX + '/')
+        if resource.startswith('homework/'):
+            parts = resource.split('/')
+            resource = 'homework/{assignment_id}/' + parts[-1] if len(parts) == 3 else resource
+        if resource not in STUDENT_RESOURCES or required_scope == 'status':
+            return json_error('student_id не поддерживается этим ресурсом', reason='student_parameter')
+        try:
+            if len(request.query.getall('student_id')) != 1:
+                raise ValueError
+            student_id = int(request.query['student_id'])
+        except ValueError:
+            return json_error('student_id должен быть целым ID из /profile → students', reason='invalid_student')
+        student = next((s for s in user.available_students if s.id == student_id), None)
+        if student is None:
+            return json_error('Ученик недоступен этому аккаунту', status=403, reason='student_access')
+        user = replace(user, selected_student_id=student.id, student_name=student.name)
+        request[USER] = user
+        request['integration_context'] = StudentContext(app, user)
     await app.db.execute('UPDATE api_tokens SET last_used_at=? WHERE id=? AND (last_used_at IS NULL OR last_used_at<?)', (int(time.time()), row['id'], int(time.time()) - 300))
     return await handler(request)
 
@@ -223,9 +253,12 @@ async def openapi(request):
         is_status = path == '/status' or path.startswith('/status/')
         operation['tags'] = ['Статус серверов' if is_status else 'Личный дневник']
         if is_status:
-            operation['security'] = [{'statusBearerAuth': []}]
+            operation['security'] = [{'bearerAuth': []}, {'statusBearerAuth': []}]
         operation['responses']['403'] = {'description': 'Токен другого типа (token_scope) или доступ заблокирован'}
+        operation['description'] = operation.get('description', '') + '\nНеобходимые права: ' + ', '.join(sorted(required_permissions(path.lstrip('/'))))
         operation['parameters'] = []
+        if path.lstrip('/') in STUDENT_RESOURCES:
+            operation['parameters'].append({'name': 'student_id', 'in': 'query', 'required': False, 'description': 'ID из /profile → students; только для этого запроса, без переключения в миниаппе', 'schema': {'type': 'integer'}})
         for name in ('attachment_id', 'assignment_id', 'message_id', 'host'):
             if '{' + name + '}' in path:
                 operation['parameters'].append({'name': name, 'in': 'path', 'required': True, 'schema': {'type': 'string'} if name == 'host' else {'type': 'integer', 'minimum': 1}})
@@ -234,7 +267,7 @@ async def openapi(request):
         operation['responses']['200']['content'] = {'application/json': {'schema': {'$ref': '#/components/schemas/Response'}}}
         if path.startswith('/attachment/'):
             operation['responses']['200']['content'] = {'application/octet-stream': {'schema': {'type': 'string', 'format': 'binary'}}}
-    return web.json_response({'openapi': '3.0.3', 'info': {'title': 'СГОшка · Read-only API', 'version': '1.0.0'}, 'servers': [{'url': context(request).settings.web.miniapp_url.rstrip('/') + PREFIX}], 'security': [{'bearerAuth': []}], 'components': {'schemas': {'Response': {'type': 'object', 'required': ['ok', 'data'], 'properties': {'ok': {'type': 'boolean', 'enum': [True]}, 'data': {}, 'stale': {'type': 'boolean'}, 'age': {'type': 'integer', 'minimum': 0}, 'refreshing': {'type': 'boolean'}}}}, 'securitySchemes': {'bearerAuth': {'type': 'http', 'scheme': 'bearer', 'description': 'Токен с доступом «Мой дневник и почта»'}, 'statusBearerAuth': {'type': 'http', 'scheme': 'bearer', 'description': 'Отдельный токен «Статус серверов», не открывает личные данные'}}}, 'paths': paths})
+    return web.json_response({'openapi': '3.0.3', 'info': {'title': 'СГОшка · Read-only API', 'version': '1.0.0'}, 'servers': [{'url': context(request).settings.web.miniapp_url.rstrip('/') + PREFIX}], 'security': [{'bearerAuth': []}], 'components': {'schemas': {'Response': {'type': 'object', 'required': ['ok', 'data'], 'properties': {'ok': {'type': 'boolean', 'enum': [True]}, 'data': {}, 'stale': {'type': 'boolean'}, 'age': {'type': 'integer', 'minimum': 0}, 'refreshing': {'type': 'boolean'}}}}, 'securitySchemes': {'bearerAuth': {'type': 'http', 'scheme': 'bearer', 'description': 'Единый токен «Дневник, почта и статус», подходит и для API статуса'}, 'statusBearerAuth': {'type': 'http', 'scheme': 'bearer', 'description': 'Отдельный токен «Статус серверов», не открывает личные данные'}}}, 'paths': paths})
 
 
 @routes.get(PREFIX + '/docs')

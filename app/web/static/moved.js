@@ -7,8 +7,6 @@
   const target = script?.dataset.to || '';
   const base = script?.dataset.base || '';
   if (!target) return;
-  // Android пока остаются на прежнем адресе: им позже выйдет новый APK.
-  if (/Android/.test(navigator.userAgent)) return;
   const KEY = 'ns-moved-hidden';
   const DAY = 24 * 60 * 60 * 1000;
   const hiddenToday = () => {
@@ -18,6 +16,51 @@
   const ua = navigator.userAgent;
   const ios = /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
   const standalone = window.matchMedia?.('(display-mode: standalone)').matches || navigator.standalone === true;
+  const telegram = Boolean(window.Telegram?.WebApp?.initData)
+    || /Telegram/i.test(ua) || new URLSearchParams(location.search).has('tgWebAppData')
+    || /(?:^|[&#])tgWebAppData=/.test(location.hash);
+  const nativeAndroid = /; wv\)|SGOSHKAAndroid|NetschoolAndroid/i.test(ua);
+  const installed = standalone || window.matchMedia?.('(display-mode: fullscreen)').matches
+    || window.matchMedia?.('(display-mode: minimal-ui)').matches;
+  if (!installed && !telegram && !nativeAndroid) {
+    // Это вкладка браузера: дневник здесь больше не запускаем.
+    window.SGOSHKA_MOVING = true;
+    const destination = new URL(target);
+    destination.pathname = location.pathname;
+    destination.search = location.search;
+    destination.hash = location.hash;
+    destination.searchParams.delete('token');
+    const moving = document.createElement('div');
+    moving.style.cssText = 'position:fixed;inset:0;z-index:2147483647;background:#f4f6fb;color:#182438;display:grid;place-items:center;font:16px system-ui;padding:24px;text-align:center';
+    moving.textContent = 'Переходим на ' + new URL(target).host + '…';
+    document.body.append(moving);
+    (async () => {
+      const timeout = setTimeout(() => location.replace(destination.href), 5000);
+      try {
+        // Вход переносится только через штатный endpoint с проверкой PIN.
+        const { api } = await import(script.src.replace(/moved\.js.*$/, 'js/core.js'));
+        if (window.NETSCHOOL?.token) {
+          const result = await Promise.race([
+            api('/api/migrate-link'),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000)),
+          ]);
+          if (typeof result?.data?.url === 'string') {
+            const signed = new URL(result.data.url);
+            if (signed.origin === new URL(target).origin && signed.searchParams.has('enter')) {
+              destination.pathname = signed.pathname;
+              destination.searchParams.set('enter', signed.searchParams.get('enter'));
+            }
+          }
+        }
+      } catch { /* На новом домене можно войти заново. */ }
+      clearTimeout(timeout);
+      location.replace(destination.href);
+    })();
+    return;
+  }
+  // Установленные приложения и Telegram пока остаются на прежнем домене.
+  // Ранее назначенный срок отключения к ним сейчас не применяется.
+  if (nativeAndroid) return;
   const host = new URL(target).host;
 
   const style = (el, css) => { el.style.cssText = css; return el; };
@@ -33,15 +76,6 @@
     el.type = 'button';
     return el;
   };
-
-  /** Срок отключения этого адреса, если приложение уже поставлено с нового; иначе null. */
-  async function deadline() {
-    try {
-      const { api } = await import(script.src.replace(/moved\.js.*$/, 'js/core.js'));
-      const value = (await api('/api/migrate-status'))?.data?.deadline;
-      return typeof value === 'number' ? value : null;
-    } catch { return null; }
-  }
 
   /** Ссылка на новый адрес с входом или '' — не вышло. Запрос идёт через
    *  клиент самого приложения: он знает токен, разблокировку по PIN и режим
@@ -127,26 +161,8 @@
     document.body.append(el);
   }
 
-  /** Срок вышел: приложение здесь больше не открываем, зовём в новое. */
-  function disabled() {
-    const veil = make('div', 'position:fixed;inset:0;z-index:2147483002;background:var(--bg,#eef1f6);color:var(--text,#1c2430);' +
-      'display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:24px;text-align:center;' + font);
-    veil.append(make('div', 'font-size:20px;font-weight:700', 'Это приложение отключено'),
-      make('div', 'max-width:360px', `СГОшка переехала на ${host}. Откройте новое приложение с иконки на экране «Домой».`));
-    const open = button('Открыть сайт');
-    open.onclick = () => { location.href = `${target}/`; };
-    veil.append(open);
-    document.body.append(veil);
-  }
-
   (async () => {
-    const due = await deadline();
-    if (due !== null && Date.now() / 1000 >= due) return disabled();
     if (hiddenToday()) return;
-    if (due !== null) {
-      const date = new Date(due * 1000).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
-      return bar(`Вы уже пользуетесь новым приложением на ${host}. Это перестанет работать ${date}, открывайте СГОшку с новой иконки.`);
-    }
     const go = button('Перенести');
     go.onclick = sheet;
     bar(`Сайт переехал на ${host}. Перенесём вход, заново логиниться не придётся.`, go);
