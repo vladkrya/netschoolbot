@@ -178,7 +178,8 @@ def homework_digest(items: list[HomeworkRecord], *, tz: dt.tzinfo = MSK) -> str:
         suffix = f" ({files_label(len(item.attachments))})" if item.attachments else ""
         text = esc(item.text) or "—"
         lines.append(
-            f"• {item.due_date:%d.%m} — {esc(item.subject)}: {text}{suffix}{published_label(item, tz)}"
+            f"• {item.due_date:%d.%m} ({WEEKDAYS[item.due_date.weekday()]}) — "
+            f"{esc(item.subject)}: {text}{suffix}{published_label(item, tz)}"
         )
     return "\n".join(lines)
 

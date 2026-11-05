@@ -120,7 +120,9 @@ class TestDigests:
                 attachments=(Attachment(1, "лист.pdf"),),
             )
         ]
-        assert "1 файл" in homework_digest(items)
+        digest = homework_digest(items)
+        assert "03.03 (Вт) — Алгебра" in digest
+        assert "1 файл" in digest
 
 
 class TestHomeworkList:
