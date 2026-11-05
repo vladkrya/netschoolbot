@@ -1,6 +1,7 @@
 """Версионированное API интеграций с отдельными от входа read-only ключами."""
 from __future__ import annotations
 
+import datetime as dt
 import hashlib
 import json
 import secrets
@@ -13,8 +14,8 @@ from .api.profile import student_class
 
 routes = web.RouteTableDef()
 PREFIX = '/api/v1'
-TOKEN_PREFIX = 'sgoshka-'
-TOKEN_PREFIXES = (TOKEN_PREFIX, 'nsro_')
+TOKEN_PREFIX = 'sgoshka_'
+TOKEN_PREFIXES = (TOKEN_PREFIX, 'sgoshka-', 'nsro_')
 
 # Только явно проверенные обработчики. Новые маршруты приложения не получают
 # доступ по ключу интеграции автоматически.
@@ -96,26 +97,41 @@ async def list_tokens(request):
 
 @routes.post('/api/integration-tokens')
 async def create_token(request):
+    app, user = context(request), current_user(request)
+    owner = user.telegram_id
+    now = int(time.time())
     try:
         body = await request.json()
         name = body.get('name', '').strip()
-        days = body.get('days', 90)
-        if not isinstance(name, str) or not 1 <= len(name) <= 80 or type(days) is not int or not 0 <= days <= 365:
+        if not isinstance(name, str) or not 1 <= len(name) <= 80:
             raise ValueError
-    except (ValueError, AttributeError, TypeError):
-        return json_error('Укажите название до 80 символов и срок от 1 до 365 дней или 0 для бессрочного токена')
-    app, owner = context(request), current_user(request).telegram_id
+        if 'expires_on' in body:
+            # Дата включительно, до полуночи следующего дня в поясе аккаунта.
+            if 'days' in body or not isinstance(body['expires_on'], str):
+                raise ValueError
+            end = dt.date.fromisoformat(body['expires_on'])
+            if end.isoformat() != body['expires_on']:
+                raise ValueError
+            expires = int(dt.datetime.combine(end + dt.timedelta(days=1), dt.time(), tzinfo=user.tz).timestamp())
+            if expires <= now:
+                raise ValueError
+        else:
+            days = body.get('days', 90)
+            if type(days) is not int or not 0 <= days <= 365:
+                raise ValueError
+            expires = now + days * 86400 if days else 0
+    except (ValueError, AttributeError, TypeError, OverflowError):
+        return json_error('Укажите название до 80 символов и срок: 1–365 дней, 0 для бессрочного токена или дату окончания YYYY-MM-DD не в прошлом')
     number = await app.accounts.number(owner)
     if number is None:
         return json_error('Не удалось получить номер аккаунта', status=503)
     token = f'{TOKEN_PREFIX}{number}_' + secrets.token_urlsafe(32)
-    now = int(time.time())
     async with app.db.transaction() as db:
         async with db.execute('SELECT COUNT(*) FROM api_tokens WHERE owner_id=? AND (expires_at=0 OR expires_at>?)', (owner, now)) as cursor:
             count = (await cursor.fetchone())[0]
         if count >= 20:
             return json_error('Не больше 20 действующих токенов', status=409)
-        await db.execute('INSERT INTO api_tokens(owner_id,name,token_hash,created_at,expires_at) VALUES (?,?,?,?,?)', (owner, name, digest(token), now, now + days * 86400 if days else 0))
+        await db.execute('INSERT INTO api_tokens(owner_id,name,token_hash,created_at,expires_at) VALUES (?,?,?,?,?)', (owner, name, digest(token), now, expires))
     return web.json_response({'ok': True, 'data': {'token': token, 'items': await token_items(app, owner)}}, status=201)
 
 

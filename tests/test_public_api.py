@@ -16,7 +16,7 @@ async def test_lifecycle_and_hash(client, token, db, app_context):
     data = await issue(client, token)
     key = data['token']
     number = await app_context.accounts.number(1)
-    assert key.startswith(f'sgoshka-{number}_')
+    assert key.startswith(f'sgoshka_{number}_')
     row = await db.fetch_one('SELECT * FROM api_tokens')
     assert row['token_hash'] == digest(key)
     assert key not in str(dict(row))
@@ -28,7 +28,7 @@ async def test_lifecycle_and_hash(client, token, db, app_context):
     response = await client.get(BASE + '/api/integration-tokens', headers={'X-Netschool-Token': token})
     listed = await response.text()
     assert key not in listed
-    assert 'sgoshka-' not in listed
+    assert 'sgoshka_' not in listed
     response = await client.delete(BASE + f"/api/integration-tokens/{row['id']}", headers={'X-Netschool-Token': token})
     assert response.status == 200
     assert (await client.get(BASE + '/api/v1/profile', headers=headers)).status == 401
@@ -147,3 +147,36 @@ async def test_json_is_readable_utf8_including_errors(client, token, app_context
     response = await client.get(BASE + '/api/v1/profile')
     assert response.status == 401
     assert 'Передайте действующий токен' in await response.text()
+
+
+async def test_custom_expiry_uses_account_timezone_and_is_inclusive(client, token, app_context, db):
+    import datetime as dt
+    user = await app_context.users.get(1)
+    end = user.today() + dt.timedelta(days=500)
+    response = await client.post(BASE + '/api/integration-tokens', headers={'X-Netschool-Token': token}, json={'name': 'До даты', 'expires_on': end.isoformat()})
+    assert response.status == 201
+    data = (await response.json())['data']
+    expected = int(dt.datetime.combine(end + dt.timedelta(days=1), dt.time(), tzinfo=user.tz).timestamp())
+    assert data['items'][0]['expires_at'] == expected
+    headers = {'Authorization': 'Bearer ' + data['token']}
+    assert (await client.get(BASE + '/api/v1/profile', headers=headers)).status == 200
+    await db.execute('UPDATE api_tokens SET expires_at=?', (int(time.time()) - 1,))
+    assert (await client.get(BASE + '/api/v1/profile', headers=headers)).status == 401
+
+
+@pytest.mark.parametrize('extra', [
+    {'expires_on': '2000-01-01'}, {'expires_on': '2026-02-30'},
+    {'expires_on': ''}, {'expires_on': None}, {'expires_on': 123},
+    {'expires_on': '9999-12-31'}, {'expires_on': '2030-01-01', 'days': 30},
+])
+async def test_invalid_custom_expiry(client, token, extra):
+    response = await client.post(BASE + '/api/integration-tokens', headers={'X-Netschool-Token': token}, json={'name': 'Дата', **extra})
+    assert response.status == 400
+
+
+async def test_previous_sgoshka_prefix_remains_valid(client, token, db):
+    old = 'sgoshka-10001_test_only'
+    await db.execute('INSERT INTO api_tokens(owner_id,name,token_hash,created_at,expires_at) VALUES (?,?,?,?,?)', (1, 'Старый', digest(old), int(time.time()), 0))
+    headers = {'Authorization': 'Bearer ' + old}
+    assert (await client.get(BASE + '/api/v1/profile', headers=headers)).status == 200
+    assert (await client.get(BASE + '/api/profile', headers=headers)).status == 403
