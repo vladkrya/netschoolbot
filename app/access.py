@@ -6,7 +6,7 @@ import json
 FEATURES = {"unity": "День единства", "halloween": "Хеллоуин", "solver": "Решения заданий", "assistant": "ИИ-помощник"}
 MANAGED_PREFS = {
     "unity": ("on", "off"), "halloween": ("on", "off"),
-    "theme": ("light", "dark", "auto"), "design": ("new", "classic"),
+    "theme": ("light", "dark", "auto"), "design": ("v3", "new", "classic"),
     "motion": ("on", "off"), "confetti": ("show", "hide"),
 }
 

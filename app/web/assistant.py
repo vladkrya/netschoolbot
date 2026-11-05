@@ -82,7 +82,7 @@ def app_guide(design: str = "classic", tabs: list[str] | None = None) -> str:
     человек выбирает сам. Без этого модель отправляла искать три полоски,
     которых нет на экране.
     """
-    if design == "new":
+    if design in {"new", "v3"}:
         tabs = [tab for tab in tabs or DEFAULT_NEW_TABS if tab in NEW_TABS] or list(DEFAULT_NEW_TABS)
         hidden = [TAB_GUIDE[tab] for tab in NEW_TABS if tab not in tabs]
         lines = [
@@ -501,7 +501,7 @@ async def ask(request: web.Request) -> web.Response:
         return json_error("На сегодня вопросы закончились. Возвращайтесь завтра!", status=429, reason="limit")
 
     ui = body.get("ui") if isinstance(body.get("ui"), dict) else {}
-    design = "new" if ui.get("design") == "new" else "classic"
+    design = ui.get("design") if ui.get("design") in {"new", "v3"} else "classic"
     tabs = [tab for tab in ui.get("tabs") or [] if isinstance(tab, str)][:7] if isinstance(ui.get("tabs"), list) else None
     guide = app_guide(design, tabs)
     rules = RULES

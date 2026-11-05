@@ -1,0 +1,107 @@
+/* design v3 — a daily school plan, not a collection of decorative cards.
+   Time, subject, status and action keep distinct roles; surfaces only group a
+   real task or control. Kept separate from new.css so existing choices remain
+   byte-for-byte available. */
+
+:root[data-design="v3"] {
+  --bg: #f6f7f8;
+  --card: #fff;
+  --card-2: #edf0f2;
+  --text: #1e2732;
+  --text2: #596675;
+  --border: #d8dee5;
+  --primary: var(--head);
+  --soft: color-mix(in srgb, var(--primary) 11%, transparent);
+  --soft-2: color-mix(in srgb, var(--primary) 18%, transparent);
+  --lift: 0 1px 0 rgba(16, 24, 40, .05);
+  --lift-2: 0 6px 18px rgba(16, 24, 40, .10);
+  --radius: 16px;
+  --sync-color: var(--primary);
+}
+
+:root[data-design="v3"][data-theme="dark"] {
+  --bg: #111820;
+  --card: #18212b;
+  --card-2: #222e3a;
+  --text: #f0f3f6;
+  --text2: #aeb9c5;
+  --border: #2c3946;
+  --primary: color-mix(in srgb, var(--head) 65%, #fff);
+  --lift: 0 1px 0 rgba(255, 255, 255, .06);
+  --lift-2: 0 6px 18px rgba(0, 0, 0, .3);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-design="v3"]:not([data-theme="light"]) {
+    --bg: #111820; --card: #18212b; --card-2: #222e3a;
+    --text: #f0f3f6; --text2: #aeb9c5; --border: #2c3946;
+    --primary: color-mix(in srgb, var(--head) 65%, #fff);
+    --lift: 0 1px 0 rgba(255, 255, 255, .06);
+    --lift-2: 0 6px 18px rgba(0, 0, 0, .3);
+  }
+}
+
+:root[data-design="v3"] body { font-size: 15px; letter-spacing: 0; }
+:root[data-design="v3"] .app-header,
+:root[data-design="v3"] .screen-head {
+  background: var(--bg); color: var(--text); box-shadow: inset 0 -1px var(--border);
+}
+:root[data-design="v3"] .topbar { padding-inline: 14px; }
+:root[data-design="v3"] .topbar-title { font-size: 17px; font-weight: 700; letter-spacing: 0; }
+:root[data-design="v3"] .topbar-btn,
+:root[data-design="v3"] .screen-back { background: transparent; box-shadow: none; color: var(--primary); }
+
+/* Schedule navigation is an instrument: a quiet rule and an explicit active day. */
+:root[data-design="v3"] .date-bar { margin: 0 14px 8px; padding: 0; border-radius: 0; background: transparent; box-shadow: none; }
+:root[data-design="v3"] .date-arrow { background: transparent; color: var(--primary); border-radius: 8px; }
+:root[data-design="v3"] .filter-bar { padding: 0 14px 8px; background: transparent; }
+:root[data-design="v3"] .week-day { border-radius: 8px; }
+
+/* Cards survive only where a complete lesson, task or control is actionable. */
+:root[data-design="v3"] .panel { padding: 12px 14px 24px; }
+:root[data-design="v3"] .card,
+:root[data-design="v3"] .lesson-card,
+:root[data-design="v3"] .task-block,
+:root[data-design="v3"] .info-card,
+:root[data-design="v3"] .history-item { border: 1px solid var(--border); border-radius: var(--radius); box-shadow: none; }
+:root[data-design="v3"] .card { padding: 15px; margin-bottom: 10px; }
+:root[data-design="v3"] .lesson-card { padding: 13px 14px; margin-bottom: 8px; }
+:root[data-design="v3"] .lc-top { gap: 10px; }
+:root[data-design="v3"] .lc-num { border-radius: 8px; background: var(--soft); }
+:root[data-design="v3"] .lc-subject { font-size: 16px; font-weight: 650; }
+:root[data-design="v3"] .lc-badges,
+:root[data-design="v3"] .lc-bottom { margin-left: 44px; }
+:root[data-design="v3"] .lc-bottom { border-top: 0; padding-top: 3px; }
+
+:root[data-design="v3"] .chip { border: 1px solid var(--border); border-radius: 9px; background: transparent; box-shadow: none; }
+:root[data-design="v3"] .chip.active { border-color: var(--head); background: var(--head); color: #fff; }
+:root[data-design="v3"] .btn { border-radius: 10px; box-shadow: none; }
+:root[data-design="v3"] .btn.outline { background: transparent; border: 1px solid var(--border); }
+:root[data-design="v3"] .field,
+:root[data-design="v3"] .to-field,
+:root[data-design="v3"] .calc-input { border: 1px solid var(--border); border-radius: 10px; background: var(--card); }
+:root[data-design="v3"] .fab { border-radius: 12px; box-shadow: var(--lift-2); }
+
+/* The navigation is part of wayfinding, not a floating decoration. */
+:root[data-design="v3"] .bottom-nav { border-radius: 14px; background: var(--card); border: 1px solid var(--border); box-shadow: var(--lift-2); }
+:root[data-design="v3"] .nav-glider { border-radius: 9px; background: var(--soft); }
+:root[data-design="v3"] .drawer-section { border: 1px solid var(--border); border-radius: 14px; box-shadow: none; }
+:root[data-design="v3"] .drawer-heading { letter-spacing: .04em; }
+
+/* Assignments, grades and messages are scan-heavy collections. Their rows keep
+   the reading order visible instead of turning every record into a promo card. */
+:root[data-design="v3"] .task-block { border-left: 3px solid var(--primary); padding: 13px 14px; }
+:root[data-design="v3"] .task-head { gap: 10px; }
+:root[data-design="v3"] .hw-subject,
+:root[data-design="v3"] .sc-name { font-size: 16px; font-weight: 650; }
+:root[data-design="v3"] .subject-card { padding: 13px 14px; text-align: left; }
+:root[data-design="v3"] .subject-card.glass { background: var(--card); border: 1px solid var(--border); box-shadow: none; }
+:root[data-design="v3"] .sc-avg { font-variant-numeric: tabular-nums; }
+:root[data-design="v3"] .distribution,
+:root[data-design="v3"] .grade-distribution { border-radius: 4px; }
+:root[data-design="v3"] .mail-card { padding: 12px 14px; gap: 10px; border-color: var(--border); }
+:root[data-design="v3"] .mail-card .avatar { width: 36px; height: 36px; border-radius: 9px; }
+:root[data-design="v3"] .mail-author { font-size: 15px; }
+:root[data-design="v3"] .mail-subject { color: var(--text2); }
+:root[data-design="v3"] .mail-card.unread { border-left: 3px solid var(--primary); padding-left: 12px; }
+:root[data-design="v3"] .mail-envelope { border: 1px solid var(--border); border-radius: 14px; box-shadow: none; }

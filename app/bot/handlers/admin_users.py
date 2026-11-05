@@ -163,7 +163,7 @@ async def advanced_panel(app, uid, panel):
     elif panel == "appearance":
         lines = [f"🎨 <b>Оформление пользователя {uid}</b>", "Заданную здесь настройку пользователь изменить не сможет. «Свободно» снимает ограничение."]
         labels = {"unity": "День единства", "halloween": "Хеллоуин", "theme": "Светлая / тёмная", "design": "Дизайн", "motion": "Анимации", "confetti": "Конфетти"}
-        names = {"on": "Вкл.", "off": "Выкл.", "light": "Светлая", "dark": "Тёмная", "auto": "Системная", "new": "Новый", "classic": "Старый", "show": "Вкл.", "hide": "Выкл."}
+        names = {"on": "Вкл.", "off": "Выкл.", "light": "Светлая", "dark": "Тёмная", "auto": "Системная", "v3": "v3", "new": "Новый", "classic": "Старый", "show": "Вкл.", "hide": "Выкл."}
         for key, values in MANAGED_PREFS.items():
             forced = data["forced_prefs"].get(key)
             lines.append(f"{labels[key]}: <b>{names.get(forced, 'свободно')}</b>")

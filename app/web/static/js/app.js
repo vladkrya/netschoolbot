@@ -749,7 +749,7 @@ function reportVisit() {
   const client = tg?.initData ? 'telegram'
     : window.matchMedia('(display-mode: standalone)').matches || navigator.standalone ? 'pwa' : 'web';
   api('/api/visit', {
-    method: 'POST', body: JSON.stringify({ design: isNewDesign() ? 'new' : 'classic', client, halloween: isHalloween() }),
+    method: 'POST', body: JSON.stringify({ design: getPref('design') === 'v3' ? 'v3' : isNewDesign() ? 'new' : 'classic', client, halloween: isHalloween() }),
   }).catch(() => {});
 }
 

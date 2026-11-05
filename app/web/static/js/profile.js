@@ -524,8 +524,12 @@ function render() {
         <input type="checkbox" switch class="switch" id="swipeRight" ${swipeFromRight() ? 'checked' : ''}></label>
       `)}
       ${more('look', 'Другой вид', `
-      <label class="switch-row design-row"><span>Старый дизайн</span>
-        <input type="checkbox" switch class="switch" id="designOld" ${isNewDesign() ? '' : 'checked'}></label>
+      <label class="switch-row design-row"><span>design</span>
+        <select class="field reminder-hour" id="designMode" aria-label="design">
+          <option value="v3" ${getPref('design') === 'v3' ? 'selected' : ''}>v3</option>
+          <option value="new" ${getPref('design') !== 'v3' && isNewDesign() ? 'selected' : ''}>новый</option>
+          <option value="classic" ${isNewDesign() ? '' : 'selected'}>старый</option>
+        </select></label>
       <label class="switch-row retro-row"><span>📟 Ретро-сайт<span class="muted small switch-note">дневник страничкой из 90-х: звёзды, котики, окна Windows 98</span></span>
         <input type="checkbox" switch class="switch" id="retroSite"></label>
       <div class="muted small retro-credit">Разработано: <a href="${RETRO_AUTHOR_URL}" target="_blank" rel="noopener">faustyu1</a> (netschool-retro). Спасибо!</div>
@@ -640,7 +644,7 @@ function checkReferences() {
 function bindDrawer() {
   const body = settingsRoot();
   const managedSelectors = {
-    theme: '[name="theme"], [data-theme-set]', design: '#designOld', unity: '#unityOn',
+    theme: '[name="theme"], [data-theme-set]', design: '#designMode', unity: '#unityOn',
     halloween: '#halloweenOn', motion: '#motionLevel', confetti: '#confettiShow',
   };
   for (const name of Object.keys(state.profile?.managed_prefs || {})) {
@@ -759,9 +763,9 @@ function bindDrawer() {
     await flushPrefs().catch(() => {});
     openRetro();
   });
-  $('designOld').addEventListener('change', (event) => {
+  $('designMode')?.addEventListener('change', (event) => {
     select();
-    smoothRepaint(() => saveDesign(!event.target.checked));
+    smoothRepaint(() => saveDesign(event.target.value));
   });
   body.querySelectorAll('[data-accent]').forEach((button) =>
     button.addEventListener('click', () => {

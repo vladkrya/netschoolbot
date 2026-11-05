@@ -21,9 +21,10 @@
     if (theme === 'dark' || theme === 'light') document.documentElement.setAttribute('data-theme', theme);
     var accent = localStorage.getItem('ns-accent');
     if (!/^#[0-9a-f]{6}$/i.test(accent || '')) accent = '#4a6fae';
-    // Новый дизайн — по умолчанию; старый — только если его выбрали.
-    var fresh = localStorage.getItem('ns-design-v2') !== 'classic';
-    if (fresh) document.documentElement.setAttribute('data-design', 'new');
+    // Новый дизайн — по умолчанию; v3 и старый восстанавливаем до первого кадра.
+    var savedDesign = localStorage.getItem('ns-design-v2');
+    if (savedDesign === 'v3') document.documentElement.setAttribute('data-design', 'v3');
+    else if (savedDesign !== 'classic') document.documentElement.setAttribute('data-design', 'new');
     // Сколько анимаций играть (настройка «Анимации», appearance.js) — до
     // первой отрисовки, без мигания. Не выбрано: на слабом телефоне 50%.
     var motion = localStorage.getItem('ns-motion');
@@ -113,6 +114,7 @@
 <link rel="stylesheet" href="{{ base }}/static/v{{ version }}/app.css">
 <!-- Новый дизайн — по умолчанию, «Старый дизайн» — тумблер в настройках. Правила нового — под html[data-design="new"]. -->
 <link rel="stylesheet" href="{{ base }}/static/v{{ version }}/new.css">
+<link rel="stylesheet" href="{{ base }}/static/v{{ version }}/v3.css">
 <!-- Планшеты и компьютеры: колонка по центру, на компьютере вкладки слева. -->
 <link rel="stylesheet" href="{{ base }}/static/v{{ version }}/wide.css">
 <!-- Хеллоуин: правила под html[data-holiday="halloween"], включает appearance.js. -->

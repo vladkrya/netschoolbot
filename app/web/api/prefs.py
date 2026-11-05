@@ -20,7 +20,7 @@ MAX_NAV_TABS = 8
 MAX_PINS = 40
 # Свои цвета акцента, сохранённые рядом с готовыми.
 MAX_SAVED_ACCENTS = 8
-DESIGNS = ("classic", "new")
+DESIGNS = ("classic", "new", "v3")
 # Сдвиг звонка для таймера урока, с (BELL_SHIFTS в timer.js).
 BELL_SHIFTS = tuple(str(value) for value in range(-5, 11))
 ACCENT_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
@@ -203,7 +203,7 @@ async def visit(request: web.Request) -> web.Response:
     design = body.get("design") if isinstance(body, dict) else None
     client = body.get("client") if isinstance(body, dict) else None
     halloween = body.get("halloween") if isinstance(body, dict) else None
-    if design not in {"new", "classic"} or client not in {"telegram", "pwa", "web"}:
+    if design not in {"v3", "new", "classic"} or client not in {"telegram", "pwa", "web"}:
         return json_error("Некорректный запрос")
     miniapp, telegram_id = context(request).miniapp, current_user(request).telegram_id
     await miniapp.record_visit(telegram_id, design, client, halloween if isinstance(halloween, bool) else None,

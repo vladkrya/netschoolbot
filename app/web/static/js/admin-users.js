@@ -54,7 +54,7 @@ export function userAdvanced(user, open = false) {
       ${user.features.map((feature) => `<label class="au-control"><span>${esc(feature.name)}</span><select class="field" data-user-feature="${feature.key}">${[['default','По общим правилам'],['allow','Разрешить'],['deny','Запретить']].map(([value,text]) => `<option value="${value}" ${value === feature.permission ? 'selected' : ''}>${text}</option>`).join('')}</select></label>`).join('')}
       <h3>Остальное оформление</h3>
       ${option('theme','Светлая / тёмная',[['auto','По системе'],['light','Светлая'],['dark','Тёмная']])}
-      ${option('design','Дизайн',[['new','Новый'],['classic','Старый']])}
+      ${option('design','Дизайн',[['v3','v3'],['new','Новый'],['classic','Старый']])}
       ${option('motion','Анимации',[['on','Включены'],['off','Выключены']])}
       ${option('confetti','Конфетти',[['show','Включено'],['hide','Выключено']])}
       <h3>Безопасность</h3>

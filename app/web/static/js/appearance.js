@@ -79,20 +79,28 @@ export function syncChromeColor() {
 // В режиме «как в системе» оформление меняется без перезапуска приложения.
 window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', syncChromeColor);
 
-/** Новый дизайн — по умолчанию у всех; старый остаётся тумблером «Старый дизайн». */
+/** Новый дизайн — по умолчанию у всех; v3 — отдельный, синхронизируемый выбор. */
 export function isNewDesign() {
+  // v3 keeps the native-screen structure introduced by the new design.
   return getPref('design') !== 'classic';
+}
+
+export function isV3Design() {
+  return getPref('design') === 'v3';
 }
 
 /** Включить или выключить новый дизайн: атрибут на <html>, правила в new.css. */
 export function applyDesign() {
-  if (isNewDesign()) document.documentElement.setAttribute('data-design', 'new');
+  if (isV3Design()) document.documentElement.setAttribute('data-design', 'v3');
+  else if (isNewDesign()) document.documentElement.setAttribute('data-design', 'new');
   else document.documentElement.removeAttribute('data-design');
   syncChromeColor();
 }
 
-export function saveDesign(on) {
-  setPref('design', on ? 'new' : 'classic');
+export function saveDesign(value) {
+  // Boolean is retained for old callers while v3 is rolled out.
+  const design = typeof value === 'boolean' ? (value ? 'new' : 'classic') : value;
+  setPref('design', ['v3', 'new', 'classic'].includes(design) ? design : 'new');
   applyDesign();
   // Часть экранов в новом дизайне устроена иначе — их надо перерисовать.
   window.dispatchEvent(new CustomEvent('netschool:design'));
