@@ -32,11 +32,15 @@ def test_card_escapes_message_text():
 
 def test_homework_card_has_app_layout_and_fits_widget_limits():
     item = HomeworkRecord("Алгебра", dt.date(2026, 11, 6), "ДЗ", "<script>alert(1)</script>")
-    source = homework_card_html([item], set())
+    other = HomeworkRecord("Литература", dt.date(2026, 11, 9), "ДЗ", "Прочитать главу")
+    source = homework_card_html([item, other], set())
     assert "СГОшка · дневник" in source
     assert "#4a6fae" in source
     assert "<script>alert(1)</script>" not in source
     assert "&lt;script&gt;" in source
+    assert '<details class="task' in source
+    assert 'id="next-day"' in source
+    assert 'day active' in source
     assert len(source.encode()) <= 32768
     assert len(zlib.compress(source.encode(), 9)) <= 4096
 

@@ -82,8 +82,8 @@ def homework_card_html(items: list[HomeworkRecord], done: set[str]) -> str:
         grouped[item.due_date].append(item)
     open_count = sum(not item.nothing_to_do and item.key not in done for item in items)
     blocks: list[str] = []
-    for day, records in grouped.items():
-        blocks.append(f'<section class="day"><div class="day-title"><span>📅 {html.escape(formatting.date_label(day))}</span><span class="day-count">{len(records)}</span></div>')
+    for day_index, (day, records) in enumerate(grouped.items()):
+        blocks.append(f'<section class="day{" active" if day_index == 0 else ""}"><div class="day-title"><span>📅 {html.escape(formatting.date_label(day))}</span><span class="day-count">{len(records)}</span></div>')
         for item in records:
             complete = item.nothing_to_do or item.key in done
             subject = html.escape(item.subject)
@@ -93,10 +93,10 @@ def homework_card_html(items: list[HomeworkRecord], done: set[str]) -> str:
                 short += "…"
             status = "Готово" if complete else "Задано"
             blocks.append(
-                f'<button type="button" class="task{" done" if complete else ""}" aria-expanded="false">'
+                f'<details class="task{" done" if complete else ""}"><summary>'
                 f'<span class="task-top"><span class="subject">{subject}</span><span class="pill">{status}</span></span>'
-                f'<span class="summary">{short}</span><span class="detail" hidden>{task}</span>'
-                '<span class="more">Подробнее ↓</span></button>'
+                f'<span class="summary">{short}</span><span class="more">Подробнее ↓</span></summary>'
+                f'<div class="detail">{task}</div></details>'
             )
         blocks.append('</section>')
     if not blocks:
@@ -107,22 +107,30 @@ def homework_card_html(items: list[HomeworkRecord], done: set[str]) -> str:
         '*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.4 system-ui,-apple-system,sans-serif}'
         '.head{background:linear-gradient(135deg,var(--blue),#36558f);color:white;padding:16px 16px 18px;border-radius:0 0 16px 16px}'
         '.head-top{font-size:11px;letter-spacing:.1em;text-transform:uppercase;opacity:.8}.head-title{font-size:19px;font-weight:700;margin:4px 0 2px}'
-        '.head-sub{font-size:12px;opacity:.85}.content{padding:10px}.day{margin:0 0 13px}.day-title{display:flex;justify-content:space-between;align-items:center;font-weight:700;margin:4px 3px 8px}'
+        '.head-sub{font-size:12px;opacity:.85}.content{padding:10px}.day{display:none;margin:0 0 13px}.day.active{display:block}.day-title{display:flex;justify-content:space-between;align-items:center;font-weight:700;margin:4px 3px 8px}'
         '.day-count{background:var(--light);color:var(--muted);padding:2px 8px;border-radius:9px;font-size:11px}'
         '.task{display:block;text-align:left;width:100%;font:inherit;color:var(--text);background:var(--card);border:1px solid var(--border);border-left:3px solid var(--blue);border-radius:12px;padding:11px 12px;margin:0 0 7px}'
+        '.task summary{list-style:none;cursor:pointer}.task summary::-webkit-details-marker{display:none}'
         '.task.done{border-left-color:var(--green)}.task-top{display:flex;align-items:center;justify-content:space-between;gap:8px}.subject{font-weight:700;font-size:14px}'
         '.pill{flex:none;border-radius:8px;padding:3px 7px;background:var(--light);color:var(--blue);font-size:10px;font-weight:700}.done .pill{color:var(--green)}'
-        '.summary,.detail{display:block;margin-top:5px;overflow-wrap:anywhere}.done .summary{color:var(--muted)}.more{display:block;color:var(--blue);font-size:11px;margin-top:6px}'
+        '.summary,.detail{display:block;margin-top:5px;overflow-wrap:anywhere}.detail{padding-top:8px;border-top:1px solid var(--border)}.done .summary{color:var(--muted)}.more{display:block;color:var(--blue);font-size:11px;margin-top:6px}.task[open] .more{display:none}'
+        '.pager{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:5px 0 8px}.pager button{border:0;border-radius:9px;background:var(--blue);color:white;padding:8px 11px;font:600 12px system-ui}.pager button:disabled{background:var(--light);color:var(--muted)}.pager span{color:var(--muted);font-size:12px}'
         '.empty{padding:18px;text-align:center;background:var(--card);border-radius:12px}.foot{padding:0 13px 12px;color:var(--muted);font-size:11px}'
     )
-    script = ("<script>document.querySelectorAll('.task').forEach(b=>b.addEventListener('click',()=>{"
-              "let open=b.getAttribute('aria-expanded')==='true';b.setAttribute('aria-expanded',String(!open));"
-              "b.querySelector('.summary').hidden=!open;b.querySelector('.detail').hidden=open;"
-              "b.querySelector('.more').textContent=open?'Подробнее ↓':'Свернуть ↑'}))</script>")
+    pager = ('<nav class="pager"><button id="prev-day" type="button">← Назад</button>'
+             f'<span id="day-position">1 / {len(grouped)}</span>'
+             '<button id="next-day" type="button">Дальше →</button></nav>') if len(grouped) > 1 else ''
+    script = ("<script>var days=document.querySelectorAll('.day'),page=0;"
+              "var prev=document.getElementById('prev-day'),next=document.getElementById('next-day'),pos=document.getElementById('day-position');"
+              "function showDay(){for(var i=0;i<days.length;i++)days[i].className=i===page?'day active':'day';"
+              "if(prev)prev.disabled=page===0;if(next)next.disabled=page===days.length-1;"
+              "if(pos)pos.textContent=(page+1)+' / '+days.length;}"
+              "if(prev)prev.addEventListener('click',function(){if(page>0){page--;showDay()}});"
+              "if(next)next.addEventListener('click',function(){if(page<days.length-1){page++;showDay()}});showDay();</script>")
     return ("<!doctype html><html lang=ru><meta name=viewport content='width=device-width,initial-scale=1'><style>"
             + css + "</style><body><div class=head><div class=head-top>СГОшка · дневник</div>"
             f'<div class=head-title>📚 Домашние задания</div><div class=head-sub>На {len(grouped)} учебных дня · осталось {open_count}</div></div>'
-            + '<div class=content>' + ''.join(blocks) + '</div><div class=foot>Отметить выполненное можно кнопками под карточкой</div>'
+            + '<div class=content>' + ''.join(blocks) + pager + '</div><div class=foot>Отметить выполненное можно кнопками под карточкой</div>'
             + script + '</body></html>')
 
 
