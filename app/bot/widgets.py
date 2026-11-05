@@ -5,12 +5,14 @@ from __future__ import annotations
 import html
 import logging
 import zlib
+from collections import defaultdict
 from html.parser import HTMLParser
 
 from aiogram import Bot
 from aiogram.types import Message
 
 from ..domain import formatting
+from ..domain.records import HomeworkRecord
 
 logger = logging.getLogger("netschoolbot.bot")
 
@@ -53,32 +55,87 @@ def _plain(value: str) -> str:
 def card_html(text: str) -> str:
     """Оформить существующий ответ как компактную, автономную карточку."""
     lines = _plain(text).splitlines()
+    title = html.escape(lines[0]) if lines else "СГОшка"
     blocks = []
-    for index, line in enumerate(lines):
+    for line in lines[1:]:
         if not line.strip():
             continue
-        kind = "title" if index == 0 else "section" if line.startswith(("📅", "🗓", "📆")) else "row"
+        kind = "section" if line.startswith(("📅", "🗓", "📆")) else "row"
         blocks.append(f'<div class="{kind}">{html.escape(line)}</div>')
     return ("<!doctype html><html><head><meta name=viewport content='width=device-width,initial-scale=1'>"
-            "<style>html{color-scheme:light dark}body{margin:0;padding:14px;font:14px/1.45 system-ui;"
-            "color:var(--tg-theme-text-color,#20242a);background:var(--tg-theme-bg-color,#fff)}"
-            ".card{overflow-wrap:anywhere}.title{font-size:17px;font-weight:700;margin-bottom:10px}"
-            ".section{font-weight:700;margin:12px 0 4px;color:var(--tg-theme-link-color,#3981dc)}"
-            ".row{padding:5px 0;border-bottom:1px solid var(--tg-theme-hint-color,#9993)}"
-            ".row:last-child{border:0}"
-            "</style></head><body><div class=card>" + "".join(blocks) + "</div></body></html>")
+            "<style>:root{color-scheme:light;--bg:#eef1f6;--card:#fff;--text:#1d2430;--muted:#6b7585;--border:#dde2ea;--blue:#4a6fae}"
+            "@media(prefers-color-scheme:dark){:root{color-scheme:dark;--bg:#141a22;--card:#1e2633;--text:#e3e8ef;--muted:#8e99aa;--border:#2d3748;--blue:#3f63a3}}"
+            "*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,-apple-system,sans-serif}"
+            ".head{background:linear-gradient(135deg,var(--blue),#36558f);color:#fff;padding:15px 16px;border-radius:0 0 16px 16px}"
+            ".brand{font-size:11px;letter-spacing:.1em;opacity:.8}.title{font-size:18px;font-weight:700;margin-top:4px}"
+            ".card{margin:10px;padding:4px 12px;background:var(--card);border-radius:12px;overflow-wrap:anywhere}"
+            ".section{font-weight:700;padding:11px 0 5px;color:var(--blue)}"
+            ".row{padding:8px 0;border-bottom:1px solid var(--border)}.row:last-child{border:0}"
+            "</style></head><body><div class=head><div class=brand>СГОшка · дневник</div><div class=title>"
+            + title + "</div></div><div class=card>" + "".join(blocks) + "</div></body></html>")
 
 
-async def send_card(message: Message, bot: Bot, text: str, *, reply_markup=None) -> bool:
+def homework_card_html(items: list[HomeworkRecord], done: set[str]) -> str:
+    """Карточка /dz в палитре миниаппа, с раскрытием длинных заданий."""
+    grouped: dict = defaultdict(list)
+    for item in sorted(items, key=lambda h: (h.due_date, h.lesson_number or 0, h.subject)):
+        grouped[item.due_date].append(item)
+    open_count = sum(not item.nothing_to_do and item.key not in done for item in items)
+    blocks: list[str] = []
+    for day, records in grouped.items():
+        blocks.append(f'<section class="day"><div class="day-title"><span>📅 {html.escape(formatting.date_label(day))}</span><span class="day-count">{len(records)}</span></div>')
+        for item in records:
+            complete = item.nothing_to_do or item.key in done
+            subject = html.escape(item.subject)
+            task = html.escape(item.text or "Задание не указано")
+            short = html.escape((item.text or "Задание не указано")[:95])
+            if len(item.text or "") > 95:
+                short += "…"
+            status = "Готово" if complete else "Задано"
+            blocks.append(
+                f'<button type="button" class="task{" done" if complete else ""}" aria-expanded="false">'
+                f'<span class="task-top"><span class="subject">{subject}</span><span class="pill">{status}</span></span>'
+                f'<span class="summary">{short}</span><span class="detail" hidden>{task}</span>'
+                '<span class="more">Подробнее ↓</span></button>'
+            )
+        blocks.append('</section>')
+    if not blocks:
+        blocks.append('<div class="empty">На ближайшие учебные дни заданий нет ✨</div>')
+    css = (
+        ':root{color-scheme:light;--bg:#eef1f6;--card:#fff;--text:#1d2430;--muted:#6b7585;--border:#dde2ea;--blue:#4a6fae;--light:#f4f6fa;--green:#2f9e4f}'
+        '@media(prefers-color-scheme:dark){:root{color-scheme:dark;--bg:#141a22;--card:#1e2633;--text:#e3e8ef;--muted:#8e99aa;--border:#2d3748;--blue:#3f63a3;--light:#252f3e;--green:#4cc76a}}'
+        '*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.4 system-ui,-apple-system,sans-serif}'
+        '.head{background:linear-gradient(135deg,var(--blue),#36558f);color:white;padding:16px 16px 18px;border-radius:0 0 16px 16px}'
+        '.head-top{font-size:11px;letter-spacing:.1em;text-transform:uppercase;opacity:.8}.head-title{font-size:19px;font-weight:700;margin:4px 0 2px}'
+        '.head-sub{font-size:12px;opacity:.85}.content{padding:10px}.day{margin:0 0 13px}.day-title{display:flex;justify-content:space-between;align-items:center;font-weight:700;margin:4px 3px 8px}'
+        '.day-count{background:var(--light);color:var(--muted);padding:2px 8px;border-radius:9px;font-size:11px}'
+        '.task{display:block;text-align:left;width:100%;font:inherit;color:var(--text);background:var(--card);border:1px solid var(--border);border-left:3px solid var(--blue);border-radius:12px;padding:11px 12px;margin:0 0 7px}'
+        '.task.done{border-left-color:var(--green)}.task-top{display:flex;align-items:center;justify-content:space-between;gap:8px}.subject{font-weight:700;font-size:14px}'
+        '.pill{flex:none;border-radius:8px;padding:3px 7px;background:var(--light);color:var(--blue);font-size:10px;font-weight:700}.done .pill{color:var(--green)}'
+        '.summary,.detail{display:block;margin-top:5px;overflow-wrap:anywhere}.done .summary{color:var(--muted)}.more{display:block;color:var(--blue);font-size:11px;margin-top:6px}'
+        '.empty{padding:18px;text-align:center;background:var(--card);border-radius:12px}.foot{padding:0 13px 12px;color:var(--muted);font-size:11px}'
+    )
+    script = ("<script>document.querySelectorAll('.task').forEach(b=>b.addEventListener('click',()=>{"
+              "let open=b.getAttribute('aria-expanded')==='true';b.setAttribute('aria-expanded',String(!open));"
+              "b.querySelector('.summary').hidden=!open;b.querySelector('.detail').hidden=open;"
+              "b.querySelector('.more').textContent=open?'Подробнее ↓':'Свернуть ↑'}))</script>")
+    return ("<!doctype html><html lang=ru><meta name=viewport content='width=device-width,initial-scale=1'><style>"
+            + css + "</style><body><div class=head><div class=head-top>СГОшка · дневник</div>"
+            f'<div class=head-title>📚 Домашние задания</div><div class=head-sub>На {len(grouped)} учебных дня · осталось {open_count}</div></div>'
+            + '<div class=content>' + ''.join(blocks) + '</div><div class=foot>Отметить выполненное можно кнопками под карточкой</div>'
+            + script + '</body></html>')
+
+
+async def send_card(message: Message, bot: Bot, text: str, *, reply_markup=None, source_html: str | None = None) -> bool:
     """Отправить виджет через beta API; False позволяет обычный текстовый ответ."""
-    source = card_html(text)
+    source = source_html or card_html(text)
     encoded = source.encode("utf-8")
     if len(encoded) > 32768 or len(zlib.compress(encoded, 9)) > 4096:
         return False
     # В beta API методы доступны на отдельном URL. Сессию и прокси берём у aiogram.
     session = await bot.session.create_session()
     url = f"https://api.telegram.org/beta/bot{bot.token}/test/sendWidget"
-    caption = _plain(text)
+    caption = _plain(text).splitlines()[0] if source_html else _plain(text)
     caption = caption.encode("utf-8")[:850].decode("utf-8", "ignore")
     payload = {
         "chat_id": str(message.chat.id),
@@ -100,14 +157,16 @@ async def send_card(message: Message, bot: Bot, text: str, *, reply_markup=None)
     return False
 
 
-async def beta_reply(message: Message, user_id: int, app, bot: Bot, text: str, *, reply_markup=None) -> bool:
+async def beta_reply(message: Message, user_id: int, app, bot: Bot, text: str, *, reply_markup=None, source_html: str | None = None) -> bool:
     if not await app.users.beta_widgets(user_id):
         return False
     parts = formatting.split_message(text)
-    if not all(len(zlib.compress(card_html(part).encode(), 9)) <= 4096 for part in parts):
+    if source_html is not None:
+        parts = [text]
+    if not all(len(zlib.compress((source_html or card_html(part)).encode(), 9)) <= 4096 for part in parts):
         return False
     for index, part in enumerate(parts):
-        if not await send_card(message, bot, part, reply_markup=reply_markup if index == len(parts) - 1 else None):
+        if not await send_card(message, bot, part, reply_markup=reply_markup if index == len(parts) - 1 else None, source_html=source_html):
             # Не повторяем уже отправленные части при частичном сбое.
             if index:
                 return True

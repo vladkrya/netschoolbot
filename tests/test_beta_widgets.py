@@ -4,7 +4,11 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from app.bot.widgets import beta_api_status, beta_reply, card_html
+import datetime as dt
+import zlib
+
+from app.bot.widgets import beta_api_status, beta_reply, card_html, homework_card_html
+from app.domain.records import HomeworkRecord
 
 
 @pytest.mark.asyncio
@@ -24,6 +28,17 @@ def test_card_escapes_message_text():
     assert "<script>" not in source
     assert "Задание" in source
     assert "&lt;script&gt;" in source
+
+
+def test_homework_card_has_app_layout_and_fits_widget_limits():
+    item = HomeworkRecord("Алгебра", dt.date(2026, 11, 6), "ДЗ", "<script>alert(1)</script>")
+    source = homework_card_html([item], set())
+    assert "СГОшка · дневник" in source
+    assert "#4a6fae" in source
+    assert "<script>alert(1)</script>" not in source
+    assert "&lt;script&gt;" in source
+    assert len(source.encode()) <= 32768
+    assert len(zlib.compress(source.encode(), 9)) <= 4096
 
 
 @pytest.mark.asyncio

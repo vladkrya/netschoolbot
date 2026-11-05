@@ -18,19 +18,19 @@ from ...notifications.outbox import mark_from_dict
 from ...netschool.errors import NetSchoolError
 from ...web import sync, viewing
 from .. import keyboards
-from ..widgets import beta_api_status, beta_reply
+from ..widgets import beta_api_status, beta_reply, homework_card_html
 from .common import reply, report_error, require_school
 
 logger = logging.getLogger("netschoolbot.bot")
 router = Router(name="menu")
 
 
-async def diary_reply(message: Message, user: User, app: AppContext, text: str, *, reply_markup=None) -> None:
+async def diary_reply(message: Message, user: User, app: AppContext, text: str, *, reply_markup=None, source_html: str | None = None) -> None:
     if await app.users.beta_widgets(user.telegram_id):
         unavailable = await beta_api_status(message.bot)
         if unavailable:
             text = f"🧪 {formatting.esc(unavailable)}\n\n{text}"
-        elif await beta_reply(message, user.telegram_id, app, message.bot, text, reply_markup=reply_markup):
+        elif await beta_reply(message, user.telegram_id, app, message.bot, text, reply_markup=reply_markup, source_html=source_html):
             return
         else:
             text = f"🧪 Карточка не отправилась — показываю обычный ответ.\n\n{text}"
@@ -134,7 +134,8 @@ async def homework(message: Message, user: User, app: AppContext) -> None:
     )
     done = await app.state.done_homework(user.telegram_id)
     text = formatting.homework_list(relevant, "📚 <b>Домашние задания</b>", tz=user.tz, done=done)
-    await diary_reply(message, user, app, text, reply_markup=keyboards.homework_done(relevant, done))
+    await diary_reply(message, user, app, text, reply_markup=keyboards.homework_done(relevant, done),
+                      source_html=homework_card_html(relevant, done))
 
 
 @router.callback_query(F.data.startswith("hwdone:"))
