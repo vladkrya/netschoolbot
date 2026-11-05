@@ -337,9 +337,11 @@ function paintOfflinePill() {
   const waiting = outboxCount
     ? `${outboxCount} ${plural(outboxCount, 'изменение ждёт', 'изменения ждут', 'изменений ждут')} сети`
     : 'Показано сохранённое';
-  pill.setAttribute('aria-label', `${offlineTitle()}. ${waiting}`);
+  const vpnHint = navigator.onLine !== false && !updating
+    ? 'Если включён VPN, смените сервер или отключите его' : '';
+  pill.setAttribute('aria-label', `${offlineTitle()}. ${waiting}${vpnHint ? `. ${vpnHint}` : ''}`);
   pill.innerHTML = `<span class="net-pill-icon">${updating && navigator.onLine !== false ? ICONS.updating : ICONS.offline}</span>`
-    + `<span class="net-pill-text"><b>${offlineTitle()}</b><small>${waiting}</small></span>`
+    + `<span class="net-pill-text"><b>${offlineTitle()}</b><small>${waiting}</small>${vpnHint ? `<small class="vpn-hint">${vpnHint}</small>` : ''}</span>`
     + (outboxCount ? `<span class="net-pill-count">${outboxCount}</span>` : '');
   if (fresh) openOfflinePill();
   else fitOfflinePill(pill);

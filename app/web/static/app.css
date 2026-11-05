@@ -434,8 +434,10 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .net-pill.open .net-pill-text { opacity: 1; transform: none; transition: opacity .25s ease .15s, transform .35s var(--ease) .1s; }
 .net-pill b { font-size: 13px; font-weight: 650; white-space: nowrap; }
 .net-pill small { font-size: 11px; opacity: .78; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.net-pill .vpn-hint { white-space: normal; }
 .net-pill.brief b { display: none; }
 .net-pill.brief small { font-size: 13px; font-weight: 600; opacity: 1; }
+.net-pill.brief .vpn-hint { display: none; }
 /* Сколько изменений ждёт сети — бейдж на свёрнутом кружке. */
 .net-pill-count { position: absolute; top: -4px; left: 32px; min-width: 18px; padding: 1px 4px; box-sizing: border-box;
   border-radius: 9px; font-size: 11px; font-weight: 700; text-align: center; color: #fff; background: var(--g2, #e0533d);

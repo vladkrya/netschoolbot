@@ -61,12 +61,12 @@ async def marks(request: web.Request) -> web.Response:
             # Каникулы между периодами или лето — последний начавшийся.
             started = [q for q in year if q.start <= today]
             now_quarter = started[-1] if started else year[0]
-        # На каникулах экран уже показывает следующий период: без его недель
-        # полоса уроков получала только край последней недели («0/1»).
-        fetched_end = now_quarter.end
+        # После последнего учебного дня школа может ещё держать каникулы
+        # внутри предыдущего периода. Итоги уже открываем на следующем.
         upcoming = next((q for q in year if q.start > today), None)
         if upcoming and now_quarter.lessons_end and today > now_quarter.lessons_end:
-            fetched_end = upcoming.end
+            now_quarter = upcoming
+        fetched_end = now_quarter.end
         days = await app.diary.fetch_period(user, year[0].start, fetched_end, today=today)
 
         by_subject: dict[str, list] = {}

@@ -36,6 +36,7 @@ window.addEventListener('netschool:marksoutdated', () => { outdated = true; });
 
 export async function loadTotals(force = false) {
   const container = $('totalsContent');
+  if (!force) { period = null; manualPeriod = false; }
   // Устаревшее остаётся на экране, пока идёт запрос, — без скелетона.
   const behind = !force && outdated && state.totals && !state.totals.archived;
   if (state.totals && !force && !behind) {
@@ -100,6 +101,8 @@ function bindYearPicker(data) {
       closeSheet();
       if (year.id === data.year_id) return;
       selectedYear = year.current ? null : year.id;
+      period = null;
+      manualPeriod = false;
       yearContext = { ...data, year: year.name, year_id: year.id, class_name: year.class_name };
       state.totals = null;
       select();
@@ -145,6 +148,7 @@ if (!(sort in SORTS)) sort = 'alpha';
 const COUNTS_KEY = 'ns-totals-counts';
 let countMode = readLocal(COUNTS_KEY, 'subjects') === 'marks' ? 'marks' : 'subjects';
 let period = null;
+let manualPeriod = false;
 
 /** Закреплённые предметы — сверху списка, в общих настройках. */
 const pins = () => new Set(Array.isArray(getPref('pins')) ? getPref('pins') : []);
@@ -194,7 +198,7 @@ function viewToggle(label, next) {
 /** Период по умолчанию — текущий, а если его нет — последний с оценками. */
 function pickPeriod(data, quarters) {
   const keys = quarters.map((q) => q.key);
-  if (keys.includes(period)) return period;
+  if (manualPeriod && keys.includes(period)) return period;
   if (keys.includes(data.current_quarter)) return data.current_quarter;
   return [...keys].reverse().find((key) => data.subjects.some((s) => quarterMarks(s, key).length)) || keys[0];
 }
@@ -291,8 +295,8 @@ function expectedGrade(row) {
 }
 
 /** Все предметы с оценками за период уже получили выставленную оценку. */
-const allOfficial = (rows) => rows.some((row) => row.official)
-  && rows.every((row) => row.official || row.avg == null);
+const officialGrade = (row) => Number(String(row.official || '').match(/[2-5]/)?.[0]) || null;
+const ungradedSubjects = (rows) => rows.filter((row) => !officialGrade(row) && (row.avg != null || row.marks.length));
 
 const markWeight = (mark) => (Number(mark.weight) > 0 ? Number(mark.weight) : 1);
 
@@ -301,9 +305,11 @@ const markWeight = (mark) => (Number(mark.weight) > 0 ? Number(mark.weight) : 1)
  *  не говорит, его здесь больше нет. */
 function heroHtml(rows, quarter) {
   const counts = { 5: 0, 4: 0, 3: 0, 2: 0 };
+  const hasOfficial = rows.some((row) => officialGrade(row) != null);
+  const missing = hasOfficial ? ungradedSubjects(rows) : [];
   if (countMode === 'subjects') {
     for (const row of rows) {
-      const grade = expectedGrade(row);
+      const grade = hasOfficial ? officialGrade(row) : expectedGrade(row);
       if (grade) counts[grade] += 1;
     }
   } else {
@@ -318,7 +324,7 @@ function heroHtml(rows, quarter) {
   }
   const total = counts[5] + counts[4] + counts[3] + counts[2];
   const caption = countMode === 'subjects'
-    ? (total ? `${allOfficial(rows) ? 'Вышли' : 'Выходит'} по ${total} ${plural(total, 'предмету', 'предметам', 'предметам')}` : 'Оценок за период пока нет')
+    ? (total ? `${hasOfficial ? 'Выставлено' : 'Выходит'} по ${total} ${plural(total, 'предмету', 'предметам', 'предметам')}` : 'Оценок за период пока нет')
     : `${total} ${plural(total, 'оценка', 'оценки', 'оценок')}`;
   const unit = (value) => (countMode === 'subjects' ? plural(value, 'предмет', 'предмета', 'предметов') : plural(value, 'оценка', 'оценки', 'оценок'));
   return `<div class="totals-hero glass">
@@ -337,6 +343,7 @@ function heroHtml(rows, quarter) {
         .map((v) => `<span class="d${v}" style="flex:${counts[v]}"></span>`).join('')}</div>` : ''}
       <div class="th-counts">${[5, 4, 3, 2].map((v) => `<button class="c${v}" data-grade="${v}" ${counts[v] ? '' : 'disabled'}
           aria-label="${v}: ${counts[v]} ${unit(counts[v])}"><b>${v}</b><span>${counts[v]} <small>${unit(counts[v])}</small></span></button>`).join('')}</div>
+      ${countMode === 'subjects' && missing.length ? `<p class="muted small th-missing" style="margin:10px 0 0">Пока не выставили: ${missing.map((row) => esc(row.subject.subject)).join(', ')}. Возможно, по этим предметам оценки ставят по полугодиям.</p>` : ''}
     </div>`;
 }
 
@@ -516,6 +523,8 @@ function renderCards(data, quarters) {
     const bar = fresh.querySelector('.th-bar');
     if (bar) box.querySelector('.th-counts').before(bar);
     box.querySelector('.th-counts').replaceWith(fresh.querySelector('.th-counts'));
+    box.querySelector('.th-missing')?.remove();
+    if (fresh.querySelector('.th-missing')) box.append(fresh.querySelector('.th-missing'));
   });
 
   // Период меняется на месте: линза переезжает, карточки перерисовываются.
@@ -526,6 +535,7 @@ function renderCards(data, quarters) {
     if (!button || button.dataset.period === period) return;
     select();
     period = button.dataset.period;
+    manualPeriod = true;
     control.style.setProperty('--i', quarters.findIndex((q) => q.key === period));
     control.querySelectorAll('[data-period]').forEach((b) => b.classList.toggle('on', b === button));
     fill(false);
@@ -560,9 +570,11 @@ function renderCards(data, quarters) {
  *  стоят такие оценки — смотря что считает сводка. */
 function openGrade(data, quarter, value) {
   const byMarks = countMode === 'marks';
-  const rows = periodRows(data).filter((row) => (byMarks
+  const allRows = periodRows(data);
+  const hasOfficial = allRows.some((row) => officialGrade(row) != null);
+  const rows = allRows.filter((row) => (byMarks
     ? row.marks.some((mark) => markValue(mark.mark) === value)
-    : expectedGrade(row) === value));
+    : hasOfficial ? officialGrade(row) === value : expectedGrade(row) === value));
   const title = byMarks ? `Оценки «${value}»`
     : `${rows.length && rows.every((row) => row.official) ? 'Вышла' : 'Выходит'} «${value}»`;
   const body = pushScreen(title, quarter?.label || '');

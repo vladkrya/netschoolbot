@@ -155,6 +155,7 @@ def periods_from_terms(terms: list[dict[str, Any]], today: dt.date) -> list[Quar
     None — данных не хватает, вызывающий берёт общепринятые даты.
     """
     by_scheme: dict[PeriodScheme, list[tuple[str, str, dt.date, dt.date]]] = {}
+    school_year = academic_year_start(today)
     for term in terms or []:
         key = term_key(term.get("name"))
         if key is None:
@@ -163,6 +164,10 @@ def periods_from_terms(terms: list[dict[str, Any]], today: dt.date) -> list[Quar
             start = dt.date.fromisoformat(str(term.get("startDate"))[:10])
             end = dt.date.fromisoformat(str(term.get("endDate"))[:10])
         except ValueError:
+            continue
+        # /terms may contain another school year; its q1 must not become the
+        # current q1 when this year's second quarter has already started.
+        if not (dt.date(school_year, 9, 1) <= start <= dt.date(school_year + 1, 8, 31)) or end < start:
             continue
         scheme = next(s for s, prefix in _PREFIX.items() if key.startswith(prefix))
         by_scheme.setdefault(scheme, []).append((key, str(term.get("name")).strip(), start, end))

@@ -146,3 +146,13 @@ class TestSchoolTerms:
         from app.domain.periods import periods_from_terms
 
         assert periods_from_terms(self.TERMS[:2], dt.date(2026, 10, 5)) is None
+
+    def test_previous_school_year_terms_are_ignored(self):
+        from app.domain.periods import period_of, periods_from_terms
+
+        old = [{**term, "startDate": term["startDate"].replace("2026", "2025").replace("2027", "2026"),
+                "endDate": term["endDate"].replace("2026", "2025").replace("2027", "2026")}
+               for term in self.TERMS]
+        year = periods_from_terms(old + self.TERMS, dt.date(2026, 11, 5))
+        assert year is not None
+        assert period_of(dt.date(2026, 11, 5), year) == "q2"
