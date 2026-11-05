@@ -67,6 +67,14 @@ class UserRepository:
         self._db = db
         self._cipher = cipher
 
+    async def beta_widgets(self, telegram_id: int) -> bool:
+        row = await self._db.fetch_one("SELECT beta_widgets FROM users WHERE telegram_id = ?", (telegram_id,))
+        return bool(row and row["beta_widgets"])
+
+    async def set_beta_widgets(self, telegram_id: int, enabled: bool) -> None:
+        async with self._db.transaction() as db:
+            await db.execute("UPDATE users SET beta_widgets = ? WHERE telegram_id = ?", (int(enabled), telegram_id))
+
     async def get(self, telegram_id: int) -> User | None:
         row = await self._db.fetch_one(
             "SELECT * FROM users WHERE telegram_id = ?", (telegram_id,)

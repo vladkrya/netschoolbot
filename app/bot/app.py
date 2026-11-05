@@ -22,6 +22,7 @@ logger = logging.getLogger("netschoolbot.bot")
 
 COMMANDS = [
     BotCommand(command="menu", description="Главное меню"),
+    BotCommand(command="beta", description="Карточки команд: включить или выключить"),
     BotCommand(command="today", description="Сегодня: уроки, оценки, задания"),
     BotCommand(command="tomorrow", description="Завтра: уроки и задания"),
     BotCommand(command="last", description="Последние оценки"),

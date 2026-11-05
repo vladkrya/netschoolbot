@@ -18,10 +18,41 @@ from ...notifications.outbox import mark_from_dict
 from ...netschool.errors import NetSchoolError
 from ...web import sync, viewing
 from .. import keyboards
+from ..widgets import beta_reply
 from .common import reply, report_error, require_school
 
 logger = logging.getLogger("netschoolbot.bot")
 router = Router(name="menu")
+
+
+async def diary_reply(message: Message, user: User, app: AppContext, text: str, *, reply_markup=None) -> None:
+    if await app.users.beta_widgets(user.telegram_id) and await beta_reply(
+        message, user.telegram_id, app, message.bot, text, reply_markup=reply_markup
+    ):
+        return
+    await reply(message, text, reply_markup=reply_markup)
+
+
+@router.message(Command("beta"))
+async def beta_mode(message: Message, user: User, app: AppContext) -> None:
+    """Включить или выключить карточки для команд дневника."""
+    # Аргумент читаем из текста, чтобы /beta работала и без school login.
+    arg = (message.text or "").partition(" ")[2].strip().lower()
+    current = await app.users.beta_widgets(user.telegram_id)
+    if arg in {"off", "выкл", "0"}:
+        enabled = False
+    elif arg in {"on", "вкл", "1"}:
+        enabled = True
+    elif not arg:
+        enabled = not current
+    else:
+        await message.answer("Используйте /beta, /beta on или /beta off.")
+        return
+    await app.users.set_beta_widgets(user.telegram_id, enabled)
+    await message.answer(
+        "🧪 Карточки для команд дневника включены. Вернуть обычные ответы: /beta off."
+        if enabled else "Обычные ответы команд включены. Вернуть карточки: /beta on."
+    )
 
 GREETING = (
     "👋 <b>Бот «Сетевого города» и «Моей школы»</b>\n\n"
@@ -95,14 +126,7 @@ async def homework(message: Message, user: User, app: AppContext) -> None:
     )
     done = await app.state.done_homework(user.telegram_id)
     text = formatting.homework_list(relevant, "📚 <b>Домашние задания</b>", tz=user.tz, done=done)
-    parts = formatting.split_message(text)
-    for index, part in enumerate(parts):
-        last = index == len(parts) - 1
-        await message.answer(
-            part,
-            parse_mode="HTML",
-            reply_markup=keyboards.homework_done(relevant, done) if last else None,
-        )
+    await diary_reply(message, user, app, text, reply_markup=keyboards.homework_done(relevant, done))
 
 
 @router.callback_query(F.data.startswith("hwdone:"))
@@ -141,7 +165,7 @@ async def schedule(message: Message, user: User, app: AppContext) -> None:
         return
 
     relevant = [day for day in days if day.day in wanted]
-    await reply(message, formatting.schedule(relevant, "🗓 <b>Расписание</b>"))
+    await diary_reply(message, user, app, formatting.schedule(relevant, "🗓 <b>Расписание</b>"))
 
 
 @router.message(Command("grades"))
@@ -161,11 +185,7 @@ async def grades(message: Message, user: User, app: AppContext) -> None:
 
     subjects = sorted({record.subject for record in records})
     await app.cache.put(user.telegram_id, "subjects", subjects)
-    await reply(
-        message,
-        "📊 Выберите предмет:",
-        reply_markup=keyboards.subjects(subjects),
-    )
+    await diary_reply(message, user, app, "📊 Выберите предмет:", reply_markup=keyboards.subjects(subjects))
 
 
 @router.callback_query(F.data.startswith("subject:"))
@@ -190,7 +210,8 @@ async def subject_marks(callback: CallbackQuery, user: User, app: AppContext) ->
         return
     wanted = normalize(subject)
     selected = [r for r in records if normalize(r.subject) == wanted]
-    await reply(callback, formatting.marks_by_subject(subject, selected))
+    if callback.message:
+        await diary_reply(callback.message, user, app, formatting.marks_by_subject(subject, selected))
 
 
 @router.message(Command("mystats"))
@@ -204,7 +225,7 @@ async def statistics(message: Message, user: User, app: AppContext) -> None:
     except NetSchoolError as exc:
         await report_error(message, exc)
         return
-    await reply(message, formatting.statistics(user, records))
+    await diary_reply(message, user, app, formatting.statistics(user, records))
 
 
 @router.message(Command("weeksummary"))
@@ -220,7 +241,7 @@ async def week_summary(message: Message, user: User, app: AppContext) -> None:
         await report_error(message, exc)
         return
     week = [r for r in records if start <= r.date <= today]
-    await reply(message, formatting.weekly_summary(week, start, today))
+    await diary_reply(message, user, app, formatting.weekly_summary(week, start, today))
 
 
 async def _day_command(message: Message, user: User, app: AppContext, *, tomorrow: bool) -> None:
@@ -247,7 +268,7 @@ async def _day_command(message: Message, user: User, app: AppContext, *, tomorro
         text += "\n\n📝 <b>Свои задачи</b>\n" + "\n".join(
             f"⬜ {formatting.esc(n['subject'] + ': ' if n['subject'] else '')}{formatting.esc(n['text'])}" for n in notes
         )
-    await reply(message, text)
+    await diary_reply(message, user, app, text)
 
 
 @router.message(Command("today"))
@@ -270,7 +291,7 @@ async def last_command(message: Message, user: User, app: AppContext) -> None:
     except NetSchoolError as exc:
         await report_error(message, exc)
         return
-    await reply(message, formatting.last_marks(records))
+    await diary_reply(message, user, app, formatting.last_marks(records))
 
 
 @router.message(Command("export"))

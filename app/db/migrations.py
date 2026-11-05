@@ -1012,6 +1012,10 @@ MIGRATIONS: list[str] = [
     ALTER TABLE api_tokens ADD COLUMN permissions TEXT NOT NULL DEFAULT '';
     """,
 
+    """
+    ALTER TABLE users ADD COLUMN beta_widgets INTEGER NOT NULL DEFAULT 0;
+    """,
+
 ]
 
 
