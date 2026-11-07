@@ -92,9 +92,19 @@ export function isMinDesign() {
 
 /** Включить или выключить новый дизайн: атрибут на <html>, правила в new.css. */
 export function applyDesign() {
-  if (isMinDesign()) document.documentElement.setAttribute('data-design', 'v3');
-  else if (isNewDesign()) document.documentElement.setAttribute('data-design', 'new');
-  else document.documentElement.removeAttribute('data-design');
+  if (isMinDesign()) {
+    // min is a compact variant of the maintained new layout.  It must inherit
+    // every structural rule (not merely share its palette), otherwise a new
+    // screen can silently lose its grid or typography.
+    document.documentElement.setAttribute('data-design', 'new');
+    document.documentElement.setAttribute('data-variant', 'min');
+  } else if (isNewDesign()) {
+    document.documentElement.setAttribute('data-design', 'new');
+    document.documentElement.removeAttribute('data-variant');
+  } else {
+    document.documentElement.removeAttribute('data-design');
+    document.documentElement.removeAttribute('data-variant');
+  }
   syncChromeColor();
 }
 

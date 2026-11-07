@@ -1,9 +1,9 @@
-/* design v3 — a daily school plan, not a collection of decorative cards.
+/* min design — a daily school plan, not a collection of decorative cards.
    Time, subject, status and action keep distinct roles; surfaces only group a
    real task or control. Kept separate from new.css so existing choices remain
    byte-for-byte available. */
 
-:root[data-design="v3"] {
+:root[data-design="new"][data-variant="min"] {
   --bg: #f6f7f8;
   --card: #fff;
   --card-2: #edf0f2;
@@ -19,7 +19,7 @@
   --sync-color: var(--primary);
 }
 
-:root[data-design="v3"][data-theme="dark"] {
+:root[data-design="new"][data-variant="min"][data-theme="dark"] {
   --bg: #111820;
   --card: #18212b;
   --card-2: #222e3a;
@@ -32,7 +32,7 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  :root[data-design="v3"]:not([data-theme="light"]) {
+  :root[data-design="new"][data-variant="min"]:not([data-theme="light"]) {
     --bg: #111820; --card: #18212b; --card-2: #222e3a;
     --text: #f0f3f6; --text2: #aeb9c5; --border: #2c3946;
     --primary: color-mix(in srgb, var(--head) 65%, #fff);
@@ -41,88 +41,88 @@
   }
 }
 
-:root[data-design="v3"] body { font-size: 15px; letter-spacing: 0; }
-:root[data-design="v3"] .app-header,
-:root[data-design="v3"] .screen-head {
+:root[data-design="new"][data-variant="min"] body { font-size: 15px; letter-spacing: 0; }
+:root[data-design="new"][data-variant="min"] .app-header,
+:root[data-design="new"][data-variant="min"] .screen-head {
   background: var(--bg); color: var(--text); box-shadow: inset 0 -1px var(--border);
 }
-:root[data-design="v3"] .topbar { padding-inline: 14px; }
-:root[data-design="v3"] .topbar-title { font-size: 17px; font-weight: 700; letter-spacing: 0; }
-:root[data-design="v3"] .topbar-btn,
-:root[data-design="v3"] .screen-back { background: transparent; box-shadow: none; color: var(--primary); }
+:root[data-design="new"][data-variant="min"] .topbar { padding-inline: 14px; }
+:root[data-design="new"][data-variant="min"] .topbar-title { font-size: 17px; font-weight: 700; letter-spacing: 0; }
+:root[data-design="new"][data-variant="min"] .topbar-btn,
+:root[data-design="new"][data-variant="min"] .screen-back { background: transparent; box-shadow: none; color: var(--primary); }
 
 /* Schedule navigation is an instrument: a quiet rule and an explicit active day. */
-:root[data-design="v3"] .date-bar { margin: 0 14px 8px; padding: 0; border-radius: 0; background: transparent; box-shadow: none; }
-:root[data-design="v3"] .date-arrow { background: transparent; color: var(--primary); border-radius: 8px; }
-:root[data-design="v3"] .filter-bar { padding: 0 14px 8px; background: transparent; }
-:root[data-design="v3"] .week-day { border-radius: 8px; }
+:root[data-design="new"][data-variant="min"] .date-bar { margin: 0 14px 8px; padding: 0; border-radius: 0; background: transparent; box-shadow: none; }
+:root[data-design="new"][data-variant="min"] .date-arrow { background: transparent; color: var(--primary); border-radius: 8px; }
+:root[data-design="new"][data-variant="min"] .filter-bar { padding: 0 14px 8px; background: transparent; }
+:root[data-design="new"][data-variant="min"] .week-day { border-radius: 8px; }
 
 /* Cards survive only where a complete lesson, task or control is actionable. */
-:root[data-design="v3"] .panel { padding: 12px 14px 24px; }
-:root[data-design="v3"] .card,
-:root[data-design="v3"] .lesson-card,
-:root[data-design="v3"] .task-block,
-:root[data-design="v3"] .info-card,
-:root[data-design="v3"] .history-item { border: 1px solid var(--border); border-radius: var(--radius); box-shadow: none; }
-:root[data-design="v3"] .card { padding: 15px; margin-bottom: 10px; }
-:root[data-design="v3"] .lesson-card { padding: 13px 14px; margin-bottom: 8px; }
-:root[data-design="v3"] .lc-top { gap: 10px; }
-:root[data-design="v3"] .lc-num { border-radius: 8px; background: var(--soft); }
-:root[data-design="v3"] .lc-subject { font-size: 16px; font-weight: 650; }
-:root[data-design="v3"] .lc-badges,
-:root[data-design="v3"] .lc-bottom { margin-left: 44px; }
-:root[data-design="v3"] .lc-bottom { border-top: 0; padding-top: 3px; }
+:root[data-design="new"][data-variant="min"] .panel { padding: 12px 14px 24px; }
+:root[data-design="new"][data-variant="min"] .card,
+:root[data-design="new"][data-variant="min"] .lesson-card,
+:root[data-design="new"][data-variant="min"] .task-block,
+:root[data-design="new"][data-variant="min"] .info-card,
+:root[data-design="new"][data-variant="min"] .history-item { border: 1px solid var(--border); border-radius: var(--radius); box-shadow: none; }
+:root[data-design="new"][data-variant="min"] .card { padding: 15px; margin-bottom: 10px; }
+:root[data-design="new"][data-variant="min"] .lesson-card { padding: 13px 14px; margin-bottom: 8px; }
+:root[data-design="new"][data-variant="min"] .lc-top { gap: 10px; }
+:root[data-design="new"][data-variant="min"] .lc-num { border-radius: 8px; background: var(--soft); }
+:root[data-design="new"][data-variant="min"] .lc-subject { font-size: 16px; font-weight: 650; }
+:root[data-design="new"][data-variant="min"] .lc-badges,
+:root[data-design="new"][data-variant="min"] .lc-bottom { margin-left: 44px; }
+:root[data-design="new"][data-variant="min"] .lc-bottom { border-top: 0; padding-top: 3px; }
 
-:root[data-design="v3"] .chip { border: 1px solid var(--border); border-radius: 9px; background: transparent; box-shadow: none; }
-:root[data-design="v3"] .chip.active { border-color: var(--head); background: var(--head); color: #fff; }
-:root[data-design="v3"] .btn { border-radius: 10px; box-shadow: none; }
-:root[data-design="v3"] .btn.outline { background: transparent; border: 1px solid var(--border); }
-:root[data-design="v3"] .field,
-:root[data-design="v3"] .to-field,
-:root[data-design="v3"] .calc-input { border: 1px solid var(--border); border-radius: 10px; background: var(--card); }
-:root[data-design="v3"] .fab { border-radius: 12px; box-shadow: var(--lift-2); }
+:root[data-design="new"][data-variant="min"] .chip { border: 1px solid var(--border); border-radius: 9px; background: transparent; box-shadow: none; }
+:root[data-design="new"][data-variant="min"] .chip.active { border-color: var(--head); background: var(--head); color: #fff; }
+:root[data-design="new"][data-variant="min"] .btn { border-radius: 10px; box-shadow: none; }
+:root[data-design="new"][data-variant="min"] .btn.outline { background: transparent; border: 1px solid var(--border); }
+:root[data-design="new"][data-variant="min"] .field,
+:root[data-design="new"][data-variant="min"] .to-field,
+:root[data-design="new"][data-variant="min"] .calc-input { border: 1px solid var(--border); border-radius: 10px; background: var(--card); }
+:root[data-design="new"][data-variant="min"] .fab { border-radius: 12px; box-shadow: var(--lift-2); }
 
 /* The navigation is part of wayfinding, not a floating decoration. */
-:root[data-design="v3"] .bottom-nav { border-radius: 14px; background: var(--card); border: 1px solid var(--border); box-shadow: var(--lift-2); }
-:root[data-design="v3"] .nav-glider { border-radius: 9px; background: var(--soft); }
-:root[data-design="v3"] .drawer-section { border: 1px solid var(--border); border-radius: 14px; box-shadow: none; }
-:root[data-design="v3"] .drawer-heading { letter-spacing: .04em; }
+:root[data-design="new"][data-variant="min"] .bottom-nav { border-radius: 14px; background: var(--card); border: 1px solid var(--border); box-shadow: var(--lift-2); }
+:root[data-design="new"][data-variant="min"] .nav-glider { border-radius: 9px; background: var(--soft); }
+:root[data-design="new"][data-variant="min"] .drawer-section { border: 1px solid var(--border); border-radius: 14px; box-shadow: none; }
+:root[data-design="new"][data-variant="min"] .drawer-heading { letter-spacing: .04em; }
 
 /* Assignments, grades and messages are scan-heavy collections. Their rows keep
    the reading order visible instead of turning every record into a promo card. */
-:root[data-design="v3"] .task-block { border-left: 3px solid var(--primary); padding: 13px 14px; }
-:root[data-design="v3"] .task-head { gap: 10px; }
-:root[data-design="v3"] .hw-subject,
-:root[data-design="v3"] .sc-name { font-size: 16px; font-weight: 650; }
-:root[data-design="v3"] .subject-card { padding: 13px 14px; text-align: left; }
-:root[data-design="v3"] .subject-card.glass { background: var(--card); border: 1px solid var(--border); box-shadow: none; }
-:root[data-design="v3"] .sc-avg { font-variant-numeric: tabular-nums; }
-:root[data-design="v3"] .distribution,
-:root[data-design="v3"] .grade-distribution { border-radius: 4px; }
-:root[data-design="v3"] .mail-card { padding: 12px 14px; gap: 10px; border-color: var(--border); }
-:root[data-design="v3"] .mail-card .avatar { width: 36px; height: 36px; border-radius: 9px; }
-:root[data-design="v3"] .mail-author { font-size: 15px; }
-:root[data-design="v3"] .mail-subject { color: var(--text2); }
-:root[data-design="v3"] .mail-card.unread { border-left: 3px solid var(--primary); padding-left: 12px; }
-:root[data-design="v3"] .mail-envelope { border: 1px solid var(--border); border-radius: 14px; box-shadow: none; }
+:root[data-design="new"][data-variant="min"] .task-block { border-left: 3px solid var(--primary); padding: 13px 14px; }
+:root[data-design="new"][data-variant="min"] .task-head { gap: 10px; }
+:root[data-design="new"][data-variant="min"] .hw-subject,
+:root[data-design="new"][data-variant="min"] .sc-name { font-size: 16px; font-weight: 650; }
+:root[data-design="new"][data-variant="min"] .subject-card { padding: 13px 14px; text-align: left; }
+:root[data-design="new"][data-variant="min"] .subject-card.glass { background: var(--card); border: 1px solid var(--border); box-shadow: none; }
+:root[data-design="new"][data-variant="min"] .sc-avg { font-variant-numeric: tabular-nums; }
+:root[data-design="new"][data-variant="min"] .distribution,
+:root[data-design="new"][data-variant="min"] .grade-distribution { border-radius: 4px; }
+:root[data-design="new"][data-variant="min"] .mail-card { padding: 12px 14px; gap: 10px; border-color: var(--border); }
+:root[data-design="new"][data-variant="min"] .mail-card .avatar { width: 36px; height: 36px; border-radius: 9px; }
+:root[data-design="new"][data-variant="min"] .mail-author { font-size: 15px; }
+:root[data-design="new"][data-variant="min"] .mail-subject { color: var(--text2); }
+:root[data-design="new"][data-variant="min"] .mail-card.unread { border-left: 3px solid var(--primary); padding-left: 12px; }
+:root[data-design="new"][data-variant="min"] .mail-envelope { border: 1px solid var(--border); border-radius: 14px; box-shadow: none; }
 
 /* These blocks are opt-in in app.css for the newer navigation. min uses the
    same information architecture, so leaving them hidden made the desktop
    grades screen look empty. */
-:root[data-design="v3"] .totals-cards { display: block; }
-:root[data-design="v3"] .totals-year { padding-bottom: 12px; }
-:root[data-design="v3"] .totals-cards > * { animation: none; }
+:root[data-design="new"][data-variant="min"] .totals-cards { display: block; }
+:root[data-design="new"][data-variant="min"] .totals-year { padding-bottom: 12px; }
+:root[data-design="new"][data-variant="min"] .totals-cards > * { animation: none; }
 
 /* The day is a timetable, so its lessons form one scanable sequence instead
    of six unrelated cards.  Time and lesson number stay aligned while the
    content itself is allowed to be the visual focus. */
-:root[data-design="v3"] #dayContent {
+:root[data-design="new"][data-variant="min"] #dayContent {
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: 14px;
   background: var(--card);
 }
-:root[data-design="v3"] #dayContent > .lesson-card {
+:root[data-design="new"][data-variant="min"] #dayContent > .lesson-card {
   margin: 0;
   padding: 12px 14px;
   border: 0;
@@ -131,28 +131,28 @@
   background: transparent;
   box-shadow: none;
 }
-:root[data-design="v3"] #dayContent > .lesson-card:last-of-type { border-bottom: 0; }
-:root[data-design="v3"] #dayContent > .lesson-card:active { background: var(--card-2); transform: none; }
-:root[data-design="v3"] #dayContent > .lesson-card:hover { filter: none; background: var(--card-2); }
-:root[data-design="v3"] #dayContent .lc-top { gap: 9px; }
-:root[data-design="v3"] #dayContent .lc-num {
+:root[data-design="new"][data-variant="min"] #dayContent > .lesson-card:last-of-type { border-bottom: 0; }
+:root[data-design="new"][data-variant="min"] #dayContent > .lesson-card:active { background: var(--card-2); transform: none; }
+:root[data-design="new"][data-variant="min"] #dayContent > .lesson-card:hover { filter: none; background: var(--card-2); }
+:root[data-design="new"][data-variant="min"] #dayContent .lc-top { gap: 9px; }
+:root[data-design="new"][data-variant="min"] #dayContent .lc-num {
   min-width: 28px;
   width: 28px;
   height: 28px;
   font-size: 13px;
   border-radius: 7px;
 }
-:root[data-design="v3"] #dayContent .lc-badges,
-:root[data-design="v3"] #dayContent .lc-bottom { margin-left: 37px; }
-:root[data-design="v3"] #dayContent .lc-bottom { margin-top: 4px; font-variant-numeric: tabular-nums; }
-:root[data-design="v3"] #dayContent > :is(.day-summary, .countdown-card, .install-card) {
+:root[data-design="new"][data-variant="min"] #dayContent .lc-badges,
+:root[data-design="new"][data-variant="min"] #dayContent .lc-bottom { margin-left: 37px; }
+:root[data-design="new"][data-variant="min"] #dayContent .lc-bottom { margin-top: 4px; font-variant-numeric: tabular-nums; }
+:root[data-design="new"][data-variant="min"] #dayContent > :is(.day-summary, .countdown-card, .install-card) {
   margin: 0;
   border-radius: 0;
   box-shadow: none;
   border-width: 0 0 1px;
   border-color: var(--border);
 }
-:root[data-design="v3"] #dayContent > .add-lesson {
+:root[data-design="new"][data-variant="min"] #dayContent > .add-lesson {
   width: calc(100% - 24px);
   margin: 12px;
   border-radius: 9px;
@@ -161,22 +161,22 @@
 /* A desktop has room for a calm reading column and a narrow control rail;
    neither column is a second empty canvas. */
 @media (min-width: 1200px) {
-  :root[data-design="v3"] { --col: 1080px; }
-  :root[data-design="v3"] #panel-day.active {
+  :root[data-design="new"][data-variant="min"] { --col: 1080px; }
+  :root[data-design="new"][data-variant="min"] #panel-day.active {
     grid-template-columns: minmax(0, 1fr) 252px;
     column-gap: 16px;
     justify-content: center;
   }
-  :root[data-design="v3"] .day-side { gap: 8px; }
-  :root[data-design="v3"] .day-nav { gap: 6px; }
-  :root[data-design="v3"] .day-nav-btn {
+  :root[data-design="new"][data-variant="min"] .day-side { gap: 8px; }
+  :root[data-design="new"][data-variant="min"] .day-nav { gap: 6px; }
+  :root[data-design="new"][data-variant="min"] .day-nav-btn {
     height: 42px;
     border: 1px solid var(--border);
     border-radius: 9px;
     box-shadow: none;
   }
-  :root[data-design="v3"] .day-keys { margin-top: 2px; line-height: 1.35; }
-  :root[data-design="v3"] .day-side :is(.countdown-card, .day-summary, .lesson-timer) {
+  :root[data-design="new"][data-variant="min"] .day-keys { margin-top: 2px; line-height: 1.35; }
+  :root[data-design="new"][data-variant="min"] .day-side :is(.countdown-card, .day-summary, .lesson-timer) {
     border: 1px solid var(--border);
     border-radius: 12px;
     box-shadow: none;
@@ -184,17 +184,17 @@
 }
 
 @media (max-width: 420px) {
-  :root[data-design="v3"] .panel { padding-inline: 10px; }
-  :root[data-design="v3"] #dayContent > .lesson-card { padding-inline: 12px; }
-  :root[data-design="v3"] #dayContent .lc-badges,
-  :root[data-design="v3"] #dayContent .lc-bottom { margin-left: 37px; }
+  :root[data-design="new"][data-variant="min"] .panel { padding-inline: 10px; }
+  :root[data-design="new"][data-variant="min"] #dayContent > .lesson-card { padding-inline: 12px; }
+  :root[data-design="new"][data-variant="min"] #dayContent .lc-badges,
+  :root[data-design="new"][data-variant="min"] #dayContent .lc-bottom { margin-left: 37px; }
 }
 
-/* Phone v3 is deliberately not the glass-card variant. A diary is operated
+/* Phone min is deliberately not the glass-card variant. A diary is operated
    hundreds of times in a week: fixed wayfinding and grouped rows make the
    current task visible without the visual weight of a card around every row. */
 @media (max-width: 1023px) {
-  :root[data-design="v3"] .bottom-nav {
+  :root[data-design="new"][data-variant="min"] .bottom-nav {
     left: 0;
     right: 0;
     bottom: 0;
@@ -208,7 +208,7 @@
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
   }
-  :root[data-design="v3"] .nav-glider {
+  :root[data-design="new"][data-variant="min"] .nav-glider {
     top: 4px;
     bottom: auto;
     height: 42px;
@@ -218,17 +218,17 @@
     box-shadow: none;
     transition: translate .2s ease, background-color .2s;
   }
-  :root[data-design="v3"] .bottom-nav.dragging .nav-glider { scale: 1; box-shadow: none; }
-  :root[data-design="v3"] .nav-item { border-radius: 8px; padding-bottom: 0; }
-  :root[data-design="v3"] .nav-item.active .ico { animation: none; }
+  :root[data-design="new"][data-variant="min"] .bottom-nav.dragging .nav-glider { scale: 1; box-shadow: none; }
+  :root[data-design="new"][data-variant="min"] .nav-item { border-radius: 8px; padding-bottom: 0; }
+  :root[data-design="new"][data-variant="min"] .nav-item.active .ico { animation: none; }
 
-  :root[data-design="v3"] #homeworkContent > .hw-day {
+  :root[data-design="new"][data-variant="min"] #homeworkContent > .hw-day {
     margin: 18px 0 0;
     padding: 10px 2px 6px;
     border-top: 1px solid var(--border);
   }
-  :root[data-design="v3"] #homeworkContent > .hw-day:first-child { border-top: 0; }
-  :root[data-design="v3"] #homeworkContent > .hw-card {
+  :root[data-design="new"][data-variant="min"] #homeworkContent > .hw-day:first-child { border-top: 0; }
+  :root[data-design="new"][data-variant="min"] #homeworkContent > .hw-card {
     margin: 0;
     padding: 12px 4px;
     border: 0;
@@ -237,11 +237,11 @@
     background: transparent;
     box-shadow: none;
   }
-  :root[data-design="v3"] #homeworkContent > .hw-card:active { transform: none; background: var(--card-2); }
-  :root[data-design="v3"] #homeworkContent > .hw-card.done { opacity: .58; }
-  :root[data-design="v3"] #homeworkContent .hw-foot > .muted { display: inline; }
-  :root[data-design="v3"] #homeworkContent .hw-foot:not(:has(.clip)) { display: flex; }
-  :root[data-design="v3"] #homeworkContent .hw-add {
+  :root[data-design="new"][data-variant="min"] #homeworkContent > .hw-card:active { transform: none; background: var(--card-2); }
+  :root[data-design="new"][data-variant="min"] #homeworkContent > .hw-card.done { opacity: .58; }
+  :root[data-design="new"][data-variant="min"] #homeworkContent .hw-foot > .muted { display: inline; }
+  :root[data-design="new"][data-variant="min"] #homeworkContent .hw-foot:not(:has(.clip)) { display: flex; }
+  :root[data-design="new"][data-variant="min"] #homeworkContent .hw-add {
     display: flex;
     width: fit-content;
     margin: 8px 0 12px auto;
@@ -258,7 +258,7 @@
     border-radius: 8px;
   }
 
-  :root[data-design="v3"] #mailContent > .mail-card {
+  :root[data-design="new"][data-variant="min"] #mailContent > .mail-card {
     margin: 0;
     padding: 12px 4px;
     border: 0;
@@ -267,14 +267,14 @@
     background: transparent;
     box-shadow: none;
   }
-  :root[data-design="v3"] #mailContent > .mail-card.unread {
+  :root[data-design="new"][data-variant="min"] #mailContent > .mail-card.unread {
     padding-left: 10px;
     border-left: 3px solid var(--primary);
   }
-  :root[data-design="v3"] #mailContent > .mail-card:active { transform: none; background: var(--card-2); }
+  :root[data-design="new"][data-variant="min"] #mailContent > .mail-card:active { transform: none; background: var(--card-2); }
 
-  :root[data-design="v3"] .settings-page .drawer-section,
-  :root[data-design="v3"] .drawer-panel .drawer-section {
+  :root[data-design="new"][data-variant="min"] .settings-page .drawer-section,
+  :root[data-design="new"][data-variant="min"] .drawer-panel .drawer-section {
     margin: 0;
     padding: 16px 0;
     border: 0;
@@ -283,31 +283,31 @@
     background: transparent;
     box-shadow: none;
   }
-  :root[data-design="v3"] .settings-page .drawer-section:first-child { padding-top: 4px; }
+  :root[data-design="new"][data-variant="min"] .settings-page .drawer-section:first-child { padding-top: 4px; }
 }
 
 /* The grade screen is a dense data view.  It cannot rely on the optional
    "new" stylesheet: min has its own surface treatment, but shares the same
    semantic markup.  Keep the hierarchy local so a missing decorative rule
    can never collapse names, averages and controls into one text run. */
-:root[data-design="v3"] .totals-hero {
+:root[data-design="new"][data-variant="min"] .totals-hero {
   margin-bottom: 12px;
   padding: 16px;
   border: 1px solid var(--border);
   border-radius: 14px;
   background: var(--card);
 }
-:root[data-design="v3"] .th-head {
+:root[data-design="new"][data-variant="min"] .th-head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 14px;
 }
-:root[data-design="v3"] .th-head > div:first-child { flex: 1; min-width: 0; }
-:root[data-design="v3"] .th-label { color: var(--text2); font-size: 13px; line-height: 1.35; }
-:root[data-design="v3"] .th-caption { margin-top: 2px; font-size: 17px; font-weight: 700; line-height: 1.25; }
-:root[data-design="v3"] .seg-glass {
+:root[data-design="new"][data-variant="min"] .th-head > div:first-child { flex: 1; min-width: 0; }
+:root[data-design="new"][data-variant="min"] .th-label { color: var(--text2); font-size: 13px; line-height: 1.35; }
+:root[data-design="new"][data-variant="min"] .th-caption { margin-top: 2px; font-size: 17px; font-weight: 700; line-height: 1.25; }
+:root[data-design="new"][data-variant="min"] .seg-glass {
   position: relative;
   display: flex;
   flex: 1;
@@ -316,7 +316,7 @@
   border-radius: 9px;
   background: var(--card-2);
 }
-:root[data-design="v3"] .seg-glass button {
+:root[data-design="new"][data-variant="min"] .seg-glass button {
   position: relative;
   z-index: 1;
   flex: 1;
@@ -327,9 +327,9 @@
   font-weight: 600;
   line-height: 1.2;
 }
-:root[data-design="v3"] .seg-glass button.on { color: var(--text); }
-:root[data-design="v3"] .seg-glass.th-mode { flex: 0 0 156px; }
-:root[data-design="v3"] .seg-lens {
+:root[data-design="new"][data-variant="min"] .seg-glass button.on { color: var(--text); }
+:root[data-design="new"][data-variant="min"] .seg-glass.th-mode { flex: 0 0 156px; }
+:root[data-design="new"][data-variant="min"] .seg-lens {
   position: absolute;
   top: 3px;
   bottom: 3px;
@@ -340,14 +340,14 @@
   background: var(--card);
   box-shadow: var(--lift);
 }
-:root[data-design="v3"] .th-bar { display: flex; gap: 3px; height: 8px; margin-bottom: 10px; }
-:root[data-design="v3"] .th-bar span { border-radius: 4px; }
-:root[data-design="v3"] .th-bar .d5 { background: var(--g5); }
-:root[data-design="v3"] .th-bar .d4 { background: var(--g4); }
-:root[data-design="v3"] .th-bar .d3 { background: var(--g3); }
-:root[data-design="v3"] .th-bar .d2 { background: var(--g2); }
-:root[data-design="v3"] .th-counts { display: flex; gap: 6px; font-variant-numeric: tabular-nums; }
-:root[data-design="v3"] .th-counts > button {
+:root[data-design="new"][data-variant="min"] .th-bar { display: flex; gap: 3px; height: 8px; margin-bottom: 10px; }
+:root[data-design="new"][data-variant="min"] .th-bar span { border-radius: 4px; }
+:root[data-design="new"][data-variant="min"] .th-bar .d5 { background: var(--g5); }
+:root[data-design="new"][data-variant="min"] .th-bar .d4 { background: var(--g4); }
+:root[data-design="new"][data-variant="min"] .th-bar .d3 { background: var(--g3); }
+:root[data-design="new"][data-variant="min"] .th-bar .d2 { background: var(--g2); }
+:root[data-design="new"][data-variant="min"] .th-counts { display: flex; gap: 6px; font-variant-numeric: tabular-nums; }
+:root[data-design="new"][data-variant="min"] .th-counts > button {
   flex: 1;
   min-width: 0;
   padding: 7px 4px 6px;
@@ -357,18 +357,18 @@
   font-size: 12px;
   line-height: 1.2;
 }
-:root[data-design="v3"] .th-counts b { display: block; color: var(--c); font-size: 18px; line-height: 1.1; }
-:root[data-design="v3"] .th-counts small { display: block; color: var(--text2); font-size: 10px; font-weight: 500; }
-:root[data-design="v3"] .th-counts .c5 { --c: var(--g5); }
-:root[data-design="v3"] .th-counts .c4 { --c: var(--g4); }
-:root[data-design="v3"] .th-counts .c3 { --c: var(--g3); }
-:root[data-design="v3"] .th-counts .c2 { --c: var(--g2); }
-:root[data-design="v3"] .period-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
-:root[data-design="v3"] .period-row.tools { margin-bottom: 12px; }
-:root[data-design="v3"] .glass-pill,
-:root[data-design="v3"] .view-toggle { flex: none; padding: 7px 10px; border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-size: 13px; font-weight: 600; }
-:root[data-design="v3"] .view-toggle { color: var(--primary); }
-:root[data-design="v3"] .subject-card {
+:root[data-design="new"][data-variant="min"] .th-counts b { display: block; color: var(--c); font-size: 18px; line-height: 1.1; }
+:root[data-design="new"][data-variant="min"] .th-counts small { display: block; color: var(--text2); font-size: 10px; font-weight: 500; }
+:root[data-design="new"][data-variant="min"] .th-counts .c5 { --c: var(--g5); }
+:root[data-design="new"][data-variant="min"] .th-counts .c4 { --c: var(--g4); }
+:root[data-design="new"][data-variant="min"] .th-counts .c3 { --c: var(--g3); }
+:root[data-design="new"][data-variant="min"] .th-counts .c2 { --c: var(--g2); }
+:root[data-design="new"][data-variant="min"] .period-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+:root[data-design="new"][data-variant="min"] .period-row.tools { margin-bottom: 12px; }
+:root[data-design="new"][data-variant="min"] .glass-pill,
+:root[data-design="new"][data-variant="min"] .view-toggle { flex: none; padding: 7px 10px; border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-size: 13px; font-weight: 600; }
+:root[data-design="new"][data-variant="min"] .view-toggle { color: var(--primary); }
+:root[data-design="new"][data-variant="min"] .subject-card {
   display: block;
   width: 100%;
   margin: 0 0 8px;
@@ -376,23 +376,23 @@
   border-radius: 12px;
   background: var(--card);
 }
-:root[data-design="v3"] .sc-top { display: flex; align-items: center; gap: 8px; }
-:root[data-design="v3"] .sc-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-:root[data-design="v3"] .sc-avg { flex: none; font-size: 22px; font-weight: 750; line-height: 1; }
-:root[data-design="v3"] .sc-trend { flex: none; font-size: 11px; font-weight: 700; }
-:root[data-design="v3"] .sc-bar { height: 5px; margin: 8px 0 9px; overflow: hidden; border-radius: 3px; background: var(--card-2); }
-:root[data-design="v3"] .sc-bar span { display: block; height: 100%; border-radius: inherit; background: var(--c, var(--text2)); }
-:root[data-design="v3"] .sc-marks { display: flex; flex-wrap: wrap; gap: 5px; }
-:root[data-design="v3"] .sc-marks .mark-box { min-width: 28px; height: 28px; padding: 0 5px; border-radius: 8px; font-size: 14px; }
-:root[data-design="v3"] .sc-foot { display: flex; justify-content: space-between; gap: 8px; margin-top: 9px; color: var(--text2); font-size: 12px; line-height: 1.3; }
-:root[data-design="v3"] .sc-foot > span:last-child { text-align: right; }
+:root[data-design="new"][data-variant="min"] .sc-top { display: flex; align-items: center; gap: 8px; }
+:root[data-design="new"][data-variant="min"] .sc-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+:root[data-design="new"][data-variant="min"] .sc-avg { flex: none; font-size: 22px; font-weight: 750; line-height: 1; }
+:root[data-design="new"][data-variant="min"] .sc-trend { flex: none; font-size: 11px; font-weight: 700; }
+:root[data-design="new"][data-variant="min"] .sc-bar { height: 5px; margin: 8px 0 9px; overflow: hidden; border-radius: 3px; background: var(--card-2); }
+:root[data-design="new"][data-variant="min"] .sc-bar span { display: block; height: 100%; border-radius: inherit; background: var(--c, var(--text2)); }
+:root[data-design="new"][data-variant="min"] .sc-marks { display: flex; flex-wrap: wrap; gap: 5px; }
+:root[data-design="new"][data-variant="min"] .sc-marks .mark-box { min-width: 28px; height: 28px; padding: 0 5px; border-radius: 8px; font-size: 14px; }
+:root[data-design="new"][data-variant="min"] .sc-foot { display: flex; justify-content: space-between; gap: 8px; margin-top: 9px; color: var(--text2); font-size: 12px; line-height: 1.3; }
+:root[data-design="new"][data-variant="min"] .sc-foot > span:last-child { text-align: right; }
 @media (max-width: 520px) {
-  :root[data-design="v3"] .totals-hero { padding: 13px; }
-  :root[data-design="v3"] .th-head { display: block; }
-  :root[data-design="v3"] .seg-glass.th-mode { width: 100%; margin-top: 10px; }
-  :root[data-design="v3"] .period-row { align-items: stretch; }
-  :root[data-design="v3"] .period-row .seg-glass { min-width: 0; }
-  :root[data-design="v3"] .sc-foot { display: block; }
-  :root[data-design="v3"] .sc-foot > span { display: block; }
-  :root[data-design="v3"] .sc-foot > span:last-child { margin-top: 2px; text-align: left; }
+  :root[data-design="new"][data-variant="min"] .totals-hero { padding: 13px; }
+  :root[data-design="new"][data-variant="min"] .th-head { display: block; }
+  :root[data-design="new"][data-variant="min"] .seg-glass.th-mode { width: 100%; margin-top: 10px; }
+  :root[data-design="new"][data-variant="min"] .period-row { align-items: stretch; }
+  :root[data-design="new"][data-variant="min"] .period-row .seg-glass { min-width: 0; }
+  :root[data-design="new"][data-variant="min"] .sc-foot { display: block; }
+  :root[data-design="new"][data-variant="min"] .sc-foot > span { display: block; }
+  :root[data-design="new"][data-variant="min"] .sc-foot > span:last-child { margin-top: 2px; text-align: left; }
 }

@@ -23,8 +23,10 @@
     if (!/^#[0-9a-f]{6}$/i.test(accent || '')) accent = '#4a6fae';
     // Новый дизайн — по умолчанию; min и старый восстанавливаем до первого кадра.
     var savedDesign = localStorage.getItem('ns-design-v2');
-    if (savedDesign === 'min' || savedDesign === 'v3') document.documentElement.setAttribute('data-design', 'v3');
-    else if (savedDesign !== 'classic') document.documentElement.setAttribute('data-design', 'new');
+    if (savedDesign === 'min' || savedDesign === 'v3') {
+      document.documentElement.setAttribute('data-design', 'new');
+      document.documentElement.setAttribute('data-variant', 'min');
+    } else if (savedDesign !== 'classic') document.documentElement.setAttribute('data-design', 'new');
     // Сколько анимаций играть (настройка «Анимации», appearance.js) — до
     // первой отрисовки, без мигания. Не выбрано: на слабом телефоне 50%.
     var motion = localStorage.getItem('ns-motion');
