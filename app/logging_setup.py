@@ -12,10 +12,13 @@ import copy
 import html
 import re
 import sqlite3
+import time
 import uuid
 import logging
 import logging.handlers
 from pathlib import Path
+
+from aiogram.exceptions import TelegramNetworkError, TelegramServerError
 
 from .settings import Settings
 
@@ -108,11 +111,33 @@ class TelegramHandler(logging.Handler):
     """Кладёт запись в очередь; отправкой занимается отдельная задача."""
 
     def __init__(self, queue: asyncio.Queue[str], level: int = logging.ERROR) -> None:
-        super().__init__(level)
+        super().__init__(min(level, logging.INFO))
+        self._alert_level = level
+        self._polling_failed_at: float | None = None
+        self._polling_alerted = False
         self._queue = queue
         self.setFormatter(AdminFormatter(LOG_FORMAT, DATE_FORMAT))
 
     def emit(self, record: logging.LogRecord) -> None:
+        if record.name == "aiogram.dispatcher":
+            if str(record.msg).startswith("Connection established ("):
+                self._polling_failed_at = None
+                self._polling_alerted = False
+            if (
+                record.levelno >= self._alert_level
+                and str(record.msg).startswith("Failed to fetch updates - ")
+                and isinstance(record.args, tuple)
+                and len(record.args) == 2
+                and isinstance(record.args[1], (TelegramNetworkError, TelegramServerError, TimeoutError))
+            ):
+                now = time.monotonic()
+                if self._polling_failed_at is None:
+                    self._polling_failed_at = now
+                if self._polling_alerted or now - self._polling_failed_at < 60:
+                    return
+                self._polling_alerted = True
+        if record.levelno < self._alert_level:
+            return
         try:
             message = self.format(record)
         except Exception:  # noqa: BLE001 — форматирование не должно ронять логгер

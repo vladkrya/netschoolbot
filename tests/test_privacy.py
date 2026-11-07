@@ -248,3 +248,34 @@ async def test_migration_wipes_saved_esia_passwords(db, users):
         await conn.executescript(next(m for m in MIGRATIONS if "login_type IN ('esia', 'esia_qr')" in m))
     row = await db.fetch_one('SELECT login, password, remember_credentials FROM users WHERE telegram_id = 1')
     assert (row['login'], row['password'], row['remember_credentials']) == ('', '', 0)
+
+
+def test_admin_alerts_only_for_persistent_polling_network_errors(monkeypatch):
+    from aiogram.exceptions import TelegramConflictError, TelegramNetworkError
+    from aiogram.methods import GetUpdates
+
+    now = 0
+    monkeypatch.setattr("app.logging_setup.time.monotonic", lambda: now)
+    queue = asyncio.Queue()
+    handler = TelegramHandler(queue)
+    message = "Failed to fetch updates - %s: %s"
+    network_error = TelegramNetworkError(GetUpdates(), "private connection details")
+
+    def emit(level, template, args=()):
+        handler.handle(logging.LogRecord("aiogram.dispatcher", level, __file__, 1, template, args, None))
+
+    emit(logging.ERROR, message, ("TelegramNetworkError", network_error))
+    now = 11
+    emit(logging.INFO, "Connection established (tryings = %d, bot id = %d)", (1, 1))
+    assert queue.empty()
+    now = 100
+    emit(logging.ERROR, message, ("TelegramNetworkError", network_error))
+    assert queue.empty()
+    now = 160
+    emit(logging.ERROR, message, ("TelegramNetworkError", network_error))
+    assert "private connection details" not in queue.get_nowait()
+    now = 200
+    emit(logging.ERROR, message, ("TelegramNetworkError", network_error))
+    assert queue.empty()
+    emit(logging.ERROR, message, ("TelegramConflictError", TelegramConflictError(GetUpdates(), "conflict")))
+    assert queue.qsize() == 1
