@@ -58,6 +58,7 @@ export async function openScheduleImport(date = isoToday()) {
         <label class="field-label">Дата<input class="field import-date" type="date" value="${esc(date)}"></label>
         <label class="field-label">Период<select class="field import-mode"><option value="day">Один день</option><option value="week">Неделя</option></select></label>
       </div>
+      <p class="import-ai-note"><span aria-hidden="true">✦</span> Gemini найдёт строку вашего класса и колонку выбранного дня. Перед сохранением вы сможете всё проверить и исправить.</p>
       <label class="import-file-card primary">
         <input class="import-photo" type="file" accept="image/jpeg,image/png,image/webp" multiple>
         <span class="import-file-icon" aria-hidden="true">▧</span><span><strong>Фото расписания уроков</strong><small class="import-photo-copy">Выберите фото из галереи или камеры</small></span><b>Выбрать</b>
