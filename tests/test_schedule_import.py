@@ -165,11 +165,13 @@ async def test_recognize_preview_no_save_and_period_validation(client, token, ap
     reader = AsyncMock(return_value=days(date.isoformat()))
     monkeypatch.setattr(module, 'read_photo', reader)
     url = f'{BASE}/api/schedule/recognize'
-    response = await client.post(url, headers=auth(token), json={'date': date.isoformat(), 'mode': 'day', 'image': image})
+    response = await client.post(url, headers=auth(token), json={
+        'date': date.isoformat(), 'mode': 'day', 'image': image, 'hint': '  9 Б, первая смена  '})
     assert response.status == 200, await response.text()
     assert (await response.json())['data']['days'] == days(date.isoformat())
     assert await module.private_days(app_context, await app_context.users.get(1)) == []
     assert reader.call_args.args[1][:2] == b'\xff\xd8'  # Сервер декодировал и перекодировал фото.
+    assert reader.call_args.args[6] == '9 Б, первая смена'
     response = await client.post(url, headers=auth(token), json={'date': date.isoformat(), 'mode': 'day', 'image': image})
     assert response.status == 429
     module._last.clear()

@@ -2205,7 +2205,8 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
 .import-hero strong { display: block; font-size: 15px; }
 .import-hero p { margin: 3px 0 0; color: var(--text2); font-size: 12px; line-height: 1.4; }
 .import-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.import-ai-note { display: flex; gap: 7px; margin: -5px 2px 0; color: var(--text2); font-size: 12px; line-height: 1.4; }
+.import-context-label { margin-top: -2px; }
+.import-ai-note { display: flex; gap: 7px; margin: -8px 2px 0; color: var(--text2); font-size: 12px; line-height: 1.4; }
 .import-ai-note span { color: var(--primary); font-weight: 700; }
 .import-file-card { position: relative; display: flex; align-items: center; gap: 10px; min-height: 68px; padding: 10px 12px; border: 1.5px solid var(--border); border-radius: 14px; background: var(--card); cursor: pointer; transition: border-color .2s, transform .2s var(--ease), background .2s; }
 .import-file-card:active { transform: scale(.985); }

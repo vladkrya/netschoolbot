@@ -58,7 +58,8 @@ export async function openScheduleImport(date = isoToday()) {
         <label class="field-label">Дата<input class="field import-date" type="date" value="${esc(date)}"></label>
         <label class="field-label">Период<select class="field import-mode"><option value="day">Один день</option><option value="week">Неделя</option></select></label>
       </div>
-      <p class="import-ai-note"><span aria-hidden="true">✦</span> Gemini найдёт строку вашего класса и колонку выбранного дня. Перед сохранением вы сможете всё проверить и исправить.</p>
+      <label class="field-label import-context-label">Уточнение для Gemini <span class="muted">(необязательно)</span><input class="field import-context" maxlength="300" placeholder="Например: 8А, первая смена; нужна пятница"></label>
+      <p class="import-ai-note"><span aria-hidden="true">✦</span> Напишите класс, смену или день, если это поможет найти нужную строку. Не указывайте ФИО и другие личные данные.</p>
       <label class="import-file-card primary">
         <input class="import-photo" type="file" accept="image/jpeg,image/png,image/webp" multiple>
         <span class="import-file-icon" aria-hidden="true">▧</span><span><strong>Фото расписания уроков</strong><small class="import-photo-copy">Выберите фото из галереи или камеры</small></span><b>Выбрать</b>
@@ -99,8 +100,9 @@ export async function openScheduleImport(date = isoToday()) {
       if (files.length > 7) throw new Error('Для недели можно выбрать до семи фото');
       const images = await Promise.all(files.map(photoData));
       const bellsImage = bellFile ? await photoData(bellFile) : '';
+      const hint = body.querySelector('.import-context').value.trim();
       const { data } = await api('/api/schedule/recognize', { method: 'POST', body: JSON.stringify({ images, bellsImage,
-        date: body.querySelector('.import-date').value, mode }) });
+        hint, date: body.querySelector('.import-date').value, mode }) });
       preview(data.days);
     } catch (error) { status.textContent = error.message; }
     finally {
