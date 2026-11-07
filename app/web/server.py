@@ -238,6 +238,7 @@ def create_app(context: AppContext, bot=None) -> web.Application:
         # Приложение отдаётся с корня домена — вложенность не нужна.
         inner.middlewares.insert(0, _legacy_prefix_middleware)
         inner.router.add_route("*", "/.well-known/caldav", caldav.discovery)
+        inner.router.add_get("/.well-known/assetlinks.json", android_updates.asset_links)
         inner.router.add_get("/health", health)
         inner.router.add_get("/robots.txt", robots)
         inner.router.add_get("/sitemap.xml", sitemap)
@@ -252,6 +253,7 @@ def create_app(context: AppContext, bot=None) -> web.Application:
     # Проверка живости остаётся в корне: ею пользуются systemd и мониторинг,
     # которым незачем знать про префикс приложения.
     outer.router.add_route("*", "/.well-known/caldav", caldav.discovery)
+    outer.router.add_get("/.well-known/assetlinks.json", android_updates.asset_links)
     outer.router.add_get("/health", health)
     outer.router.add_get("/robots.txt", robots)
     outer.router.add_get("/sitemap.xml", sitemap)

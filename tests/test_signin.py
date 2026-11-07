@@ -82,6 +82,13 @@ def fake_credential(credential_id=b"key-1"):
 
 
 class TestPasskeys:
+    async def test_android_asset_links_are_public(self, client):
+        response = await client.get(f"{BASE}/.well-known/assetlinks.json")
+        assert response.status == 200
+        target = (await response.json())[0]["target"]
+        assert target["package_name"] == "ru.ikrya.sgoshka"
+        assert target["sha256_cert_fingerprints"] == ["D1:B3:98:F2:C2:27:3E:39:B0:D4:5A:2E:2D:3A:EC:5A:F8:52:CF:CB:36:32:D5:D1:3E:4C:77:7B:A9:AF:33:B1"]
+
     async def register(self, client, token, monkeypatch, credential_id=b"key-1"):
         status, options = await call(client, "/api/devices/passkeys/options", {}, token, ORIGIN)
         assert status == 200

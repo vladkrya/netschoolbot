@@ -16,6 +16,19 @@ VERSION_APK = re.compile(r"sgoshka-v\.[0-9]{1,6}\.[0-9]{1,6}\.[0-9]{1,6}\.apk")
 MAX_APK_BYTES = 200 * 1024 * 1024
 
 
+@routes.get("/.well-known/assetlinks.json")
+async def asset_links(_: web.Request) -> web.Response:
+    """Prove to Android that the release APK may use sgoshka.ru passkeys."""
+    return web.json_response([{
+        "relation": ["delegate_permission/common.get_login_creds"],
+        "target": {
+            "namespace": "android_app",
+            "package_name": "ru.ikrya.sgoshka",
+            "sha256_cert_fingerprints": ["D1:B3:98:F2:C2:27:3E:39:B0:D4:5A:2E:2D:3A:EC:5A:F8:52:CF:CB:36:32:D5:D1:3E:4C:77:7B:A9:AF:33:B1"],
+        },
+    }], headers={"Cache-Control": "public, max-age=86400"})
+
+
 async def updates_enabled(app) -> bool:
     # Existing installations keep updating unless the owner explicitly pauses the channel.
     return not await AppFlagRepository(app.db).get("android_updates_disabled")

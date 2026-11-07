@@ -25,6 +25,12 @@ from .api import context, current_user, json_error
 routes = web.RouteTableDef()
 PUBLIC = {'status', 'unlock', 'authenticate/options', 'authenticate/verify', 'biometric/unlock', 'password-reset'}
 
+# Android Credential Manager signs WebAuthn clientData with this origin, not
+# with an arbitrary HTTP Origin header.  It is the base64url SHA-256 digest of
+# the release signing certificate for ru.ikrya.sgoshka.
+ANDROID_PACKAGE = 'ru.ikrya.sgoshka'
+ANDROID_ORIGIN = 'android:apk-key-hash:0bOY8sInPjmw1FouLTrsWvhSz8s2MtXRPkx3e6mvM7E'
+
 
 # Клиент шлёт не цифры PIN, а их SHA-256 (pin_key): в запросе, логах и инструментах
 # разработчика PIN не виден. Защиты это не добавляет — вариантов всего 10 000, —
@@ -243,6 +249,14 @@ async def logout(request):
 def site(request):
     # Use configured public URLs, never trust Host/forwarded headers for WebAuthn.
     settings = context(request).settings.web
+    # Credential Manager's origin is bound to the installed, release-signed
+    # application.  The normal HTTPS RP ID still scopes the passkey to this
+    # site. A forged request cannot forge the WebAuthn response origin.
+    if request.headers.get('X-Netschool-Client') == 'android':
+        for url in settings.all_urls:
+            parsed = urlsplit(url)
+            if parsed.scheme == 'https' and parsed.hostname == 'sgoshka.ru':
+                return ANDROID_ORIGIN, parsed.hostname
     allowed = [urlsplit(url) for url in settings.all_urls]
     origin = request.headers.get('Origin', '')
     for parsed in allowed:
