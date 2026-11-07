@@ -68,7 +68,7 @@ async def _details(app, uid):
         "permission": "default" if key not in control["grants"] else "allow" if control["grants"][key] else "deny",
         "forced": control["forced_prefs"].get(key, "free"),
         "active": unity_on if key == "unity" else available[key] and not unity_on and prefs.get(key) != "off",
-    } for key, name, description in THEMES]}
+    } for key, name, description in THEMES if key != "unity" or access.UNITY_ENABLED]}
 
 
 @routes.get('/api/admin/users')

@@ -169,11 +169,10 @@ export function halloweenAvailable() {
 }
 
 // После загрузки профиля праздничная тема включена по умолчанию у всех с доступом.
-let unityAllowed = null;
+let unityAllowed = false;
 
 export function isUnity() {
-  return unityAllowed === null ? getPref('unity') === 'on'
-    : unityAllowed && getPref('unity') !== 'off';
+  return unityAllowed && getPref('unity') !== 'off';
 }
 
 export function setUnityAccess(allowed) {

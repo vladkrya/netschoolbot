@@ -130,6 +130,7 @@ class TestAuth:
         assert (await response.json())["data"]["show"] is False
 
     async def test_unity_season_notice_and_exclusive_choices(self, client, app_context, token, monkeypatch):
+        monkeypatch.setattr("app.access.UNITY_ENABLED", True)
         from app.web.api.base import unity_season
         assert unity_season(dt.date(2026, 11, 4))
         assert unity_season(dt.date(2026, 11, 8))
@@ -793,7 +794,8 @@ class TestNewFeatures:
         assert data == {"accent": "#a8434f", "theme": "dark", "weights": [1, 2, 1.5]}
         assert (await (await client.get(url, params={"token": token})).json())["data"] == data
 
-    async def test_unity_theme_choice_is_shared(self, client, token):
+    async def test_unity_theme_choice_is_shared(self, client, token, monkeypatch):
+        monkeypatch.setattr("app.access.UNITY_ENABLED", True)
         url = f"{BASE}/api/prefs"
         for value in ("on", "off"):
             response = await client.post(url, params={"token": token}, json={"unity": value})
@@ -805,6 +807,7 @@ class TestNewFeatures:
             assert response.status == 400
 
     async def test_unity_theme_is_admin_only_outside_season(self, client, token, app_context, monkeypatch):
+        monkeypatch.setattr("app.access.UNITY_ENABLED", True)
         monkeypatch.setattr("app.web.api.prefs.unity_season", lambda today: False)
         app_context.settings = replace(
             app_context.settings, telegram=replace(app_context.settings.telegram, admin_id=999),

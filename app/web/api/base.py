@@ -347,7 +347,8 @@ def halloween_season(today: dt.date) -> bool:
 
 def unity_season(today: dt.date) -> bool:
     """Праздничная тема доступна всем с 4 по 8 ноября."""
-    return (11, 4) <= (today.month, today.day) <= (11, 8)
+    from ...access import UNITY_ENABLED
+    return UNITY_ENABLED and (11, 4) <= (today.month, today.day) <= (11, 8)
 
 
 def _utc_iso(moment: dt.datetime | None) -> str | None:

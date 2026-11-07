@@ -479,7 +479,7 @@ function render() {
     </section>
     <section class="drawer-section">
       <div class="drawer-heading">Оформление</div>
-      ${data.unity ?? data.admin ? `<label class="switch-row unity-row"><span>День народного единства<span class="muted small switch-note">4 ноября · праздничная тема</span></span>
+      ${data.unity ? `<label class="switch-row unity-row"><span>День народного единства<span class="muted small switch-note">4 ноября · праздничная тема</span></span>
         <input type="checkbox" switch class="switch" id="unityOn" ${unity ? 'checked' : ''}></label>` : ''}
       ${data.halloween ? `<label class="switch-row halloween-row"><span>🎃 Хеллоуин<span class="muted small switch-note">${halloweenCountdown()}</span></span>
         <input type="checkbox" switch class="switch" id="halloweenOn" ${isHalloween() ? 'checked' : ''}></label>` : ''}

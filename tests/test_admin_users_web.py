@@ -36,7 +36,8 @@ async def test_owner_only_search_details_and_actions(client, people):
         assert response.status == 403
 
 
-async def test_search_by_username_id_and_account_number_is_minimal(client, people, app_context):
+async def test_search_by_username_id_and_account_number_is_minimal(client, people, app_context, monkeypatch):
+    monkeypatch.setattr("app.access.UNITY_ENABLED", True)
     params = {'token': people['owner']}
     assert (await (await client.get('/mini/api/admin/users', params=params)).json())['data']['items'] == []
     number = (await app_context.db.fetch_one('SELECT account_no FROM users WHERE telegram_id=2'))['account_no']
@@ -53,7 +54,8 @@ async def test_search_by_username_id_and_account_number_is_minimal(client, peopl
     assert_minimal(data)
 
 
-async def test_themes_grant_force_and_release_from_miniapp(client, people, app_context):
+async def test_themes_grant_force_and_release_from_miniapp(client, people, app_context, monkeypatch):
+    monkeypatch.setattr("app.access.UNITY_ENABLED", True)
     params = {'token': people['owner']}
     url = '/mini/api/admin/users/2/theme'
     async def post(kind, name, value):
@@ -155,3 +157,25 @@ async def test_selective_solver_access(client, people, app_context, users, monke
     value['enabled'] = False
     assert (await post()).status == 200
     assert await permitted_books(app_context, user, 'Физика') is None
+
+
+async def test_retired_unity_theme_ignores_existing_override(client, people, app_context, monkeypatch):
+    with monkeypatch.context() as enabled:
+        enabled.setattr("app.access.UNITY_ENABLED", True)
+        await access.set_control(app_context, 1, force=("unity", "on"))
+
+    params = {"token": people["owner"]}
+    profile = await client.get("/mini/api/profile", params=params)
+    profile_data = (await profile.json())["data"]
+    assert profile_data["unity"] is False
+    assert "unity" not in profile_data["managed_prefs"]
+    prefs = await client.get("/mini/api/prefs", params=params)
+    payload = await prefs.json()
+    assert payload["data"]["unity"] == "off"
+    assert "unity" not in payload["managed"]
+    details = await client.get("/mini/api/admin/users/1", params=params)
+    assert [theme["key"] for theme in (await details.json())["data"]["themes"]] == ["halloween"]
+    notice = await client.post("/mini/api/notices/unity", params=params)
+    assert (await notice.json())["data"]["show"] is False
+    with pytest.raises(ValueError):
+        await access.set_control(app_context, 1, force=("unity", "on"))

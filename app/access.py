@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import json
 
+UNITY_ENABLED = False
+
 FEATURES = {"unity": "День единства", "halloween": "Хеллоуин", "solver": "Решения заданий", "assistant": "ИИ-помощник"}
 MANAGED_PREFS = {
     "unity": ("on", "off"), "halloween": ("on", "off"),
@@ -29,6 +31,8 @@ async def blocked(app, uid):
 
 
 async def feature(app, uid, name, default=False):
+    if name == "unity" and not UNITY_ENABLED:
+        return False
     data = await controls(app, uid)
     return data["grants"].get(name, default) if not owner(app, uid) else default or data["grants"].get(name, False)
 
@@ -40,6 +44,8 @@ async def set_control(app, uid, *, block=None, grant=None, force=None):
 
 async def _set_control(app, uid, *, block=None, grant=None, force=None):
     """Изменение из админ-команд. Имена и значения — только из белых списков."""
+    if not UNITY_ENABLED and any(change and change[0] == "unity" for change in (grant, force)):
+        raise ValueError("Праздничная тема завершилась")
     if block and owner(app, uid):
         raise ValueError("Нельзя заблокировать владельца")
     data = await controls(app, uid)

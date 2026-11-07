@@ -64,7 +64,7 @@ async def _sgo_updates(app: AppContext, telegram_id: int, url: str) -> bool:
 @routes.get("/api/profile")
 async def profile(request: web.Request) -> web.Response:
     from .. import solver, viewing
-    from ...access import controls, feature
+    from ...access import UNITY_ENABLED, controls, feature
     from ...solver.permissions import rules_for
     from ..admin import android_apk_info
 
@@ -72,6 +72,9 @@ async def profile(request: web.Request) -> web.Response:
     status = await app.state.watch_status(user.telegram_id)
     viewer = request.get(viewing.VIEWER)
     solver_rules = await rules_for(app, viewer or user)
+    managed_prefs = (await controls(app, (viewer or user).telegram_id))["forced_prefs"]
+    if not UNITY_ENABLED:
+        managed_prefs.pop("unity", None)
     return web.json_response(
         {
             "ok": True,
@@ -108,7 +111,7 @@ async def profile(request: web.Request) -> web.Response:
                 if app.settings.assistant.enabled and solver.is_owner(app, viewer or user) else None,
                 # Строка «Администрирование» в настройках (web/admin.py).
                 "admin": solver.is_owner(app, viewer or user),
-                "managed_prefs": (await controls(app, (viewer or user).telegram_id))["forced_prefs"],
+                "managed_prefs": managed_prefs,
                 # Строка «Android-приложение» внизу настроек — только владельцу (admin.py).
                 "android_apk": android_apk_info(app) if solver.is_owner(app, viewer or user) else None,
                 # Хеллоуинское оформление — у всех в праздничный сезон;

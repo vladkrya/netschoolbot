@@ -107,6 +107,7 @@ async def test_pause_resume_and_notifications(app_context, users, monkeypatch):
 
 
 async def test_grants_are_checked_by_profile_and_api(app_context, users, client, monkeypatch):
+    monkeypatch.setattr("app.access.UNITY_ENABLED", True)
     monkeypatch.setattr("app.web.api.prefs.unity_season", lambda today: False)
     await users.save(make_user(2))
     token = await app_context.miniapp.issue_token(2)
@@ -124,7 +125,8 @@ async def test_grants_are_checked_by_profile_and_api(app_context, users, client,
     assert 'admin' not in (await access.controls(app_context, 2))['grants']
 
 
-async def test_forced_settings_cannot_be_overridden_and_can_be_released(app_context, users, client):
+async def test_forced_settings_cannot_be_overridden_and_can_be_released(app_context, users, client, monkeypatch):
+    monkeypatch.setattr("app.access.UNITY_ENABLED", True)
     await users.save(make_user(2))
     token = await app_context.miniapp.issue_token(2)
     params = {'token': token}
@@ -199,7 +201,8 @@ async def test_owner_cannot_be_deleted_or_reset(app_context, users):
     assert await users.get(1) is not None
 
 
-async def test_feature_denials_are_enforced_on_ai_endpoints(app_context, users, client):
+async def test_feature_denials_are_enforced_on_ai_endpoints(app_context, users, client, monkeypatch):
+    monkeypatch.setattr("app.access.UNITY_ENABLED", True)
     from app.web.solver import solver_access
     await users.save(make_user(2))
     app_context.settings = replace(app_context.settings, assistant=replace(app_context.settings.assistant, api_key='test'))

@@ -188,8 +188,12 @@ async def get_prefs(request: web.Request) -> web.Response:
     # Поставили приложение до того, как оно стало отмечать это само.
     if "pwa" not in data and await app.miniapp.has_installed_app(user.telegram_id):
         data = await app.miniapp.save_prefs(user.telegram_id, {"pwa": "installed"})
-    from ...access import controls, owner
+    from ...access import UNITY_ENABLED, controls, owner
     managed = (await controls(app, user.telegram_id))["forced_prefs"]
+    if not UNITY_ENABLED:
+        managed.pop("unity", None)
+        if "unity" in data:
+            data = {**data, "unity": "off"}
     # min is an owner-only preview while it is being corrected. An explicit
     # per-user admin override remains the only way to grant it to someone else.
     min_allowed = owner(app, user.telegram_id) or managed.get("design") in ("min", "v3")
@@ -299,8 +303,11 @@ async def save_prefs(request: web.Request) -> web.Response:
         return json_error("Некорректный запрос")
     if not isinstance(body, dict):
         return json_error("Некорректный запрос")
-    from ...access import controls, feature, owner
+    from ...access import UNITY_ENABLED, controls, feature, owner
     managed = (await controls(app, user.telegram_id))["forced_prefs"]
+    if not UNITY_ENABLED:
+        managed.pop("unity", None)
+        body.pop("unity", None)
     # Старое устройство могло поставить изменение в очередь до ограничения.
     # Принимаем остальные настройки, управляемые значения оставляем заданными.
     body = {name: managed.get(name, value) for name, value in body.items()}

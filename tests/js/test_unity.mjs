@@ -34,6 +34,7 @@ function setup(prefs = {}, holiday = null) {
 test('unity replaces Halloween decor and restores the chosen accent when disabled', () => {
   const app = setup({ accent: '#a8434f' }, 'halloween');
   app.setHalloweenAccess(false);
+  app.setUnityAccess(true);
   app.saveUnity(true);
   assert.equal(app.attrs.get('data-holiday'), 'unity');
   assert.equal(app.styles.get('--head'), '#315fba');
@@ -47,6 +48,9 @@ test('unity replaces Halloween decor and restores the chosen accent when disable
 
 test('server Halloween access cannot override a restored unity choice', () => {
   const app = setup({ unity: 'on', theme: 'dark' }, 'unity');
+  app.applyHalloween();
+  assert.equal(app.attrs.has('data-holiday'), false);
+  app.setUnityAccess(true);
   app.setHalloweenAccess(true);
   app.applyAccent();
   assert.equal(app.attrs.get('data-holiday'), 'unity');

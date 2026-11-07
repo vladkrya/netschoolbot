@@ -519,7 +519,7 @@ async function applySync(topic) {
   } else if (topic === 'settings' || topic === 'family') {
     const profile = await loadProfile(true).catch(() => null);
     if (profile) {
-      setUnityAccess(profile.unity ?? profile.admin);
+      setUnityAccess(profile.unity);
       setHalloweenAccess(profile.halloween);
     }
     if (isDrawerOpen()) await loadSettings();
@@ -990,7 +990,7 @@ async function start() {
   // если страница открыта без токена (по initData Telegram).
   try {
     const profile = await profileLoad;
-    setUnityAccess(profile?.unity ?? profile?.admin);
+    setUnityAccess(profile?.unity);
     setHalloweenAccess(profile?.halloween);
     if (profile?.name) {
       $('topName').textContent = studentFirstName(profile.name);
