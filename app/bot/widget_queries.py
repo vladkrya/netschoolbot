@@ -84,10 +84,11 @@ async def handle_widget_query(query: dict, bot: Bot, app: AppContext) -> None:
     if meta.get("kind") == "grades" and data.startswith("g:"):
         try:
             _, index, page = data.split(":")
-            pages = meta["pages"][int(index)]
+            subject_index = int(index)
             page_number = int(page)
-            if page_number < 0:
+            if subject_index < 0 or page_number < 0:
                 raise IndexError
+            pages = meta["pages"][subject_index]
             body = pages[page_number]
         except (ValueError, IndexError, KeyError, TypeError):
             await _answer(bot, query_id, {"error": "Неизвестная страница оценок"})

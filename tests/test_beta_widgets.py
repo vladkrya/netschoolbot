@@ -204,6 +204,25 @@ async def test_grade_widget_query_returns_selected_page(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_grade_widget_query_rejects_negative_subject_index(monkeypatch):
+    from app.bot import widget_queries
+    api = AsyncMock(return_value={"ok": True})
+    monkeypatch.setattr(widget_queries, "_api", api)
+    monkeypatch.setattr(widget_queries, "blocked", AsyncMock(return_value=False))
+    app = SimpleNamespace(
+        users=SimpleNamespace(get=AsyncMock(return_value=SimpleNamespace(selected_student_id=4)),
+                              beta_widgets=AsyncMock(return_value=True)),
+        cache=SimpleNamespace(get=AsyncMock(return_value=({"kind": "grades", "pages": [["one"], ["two"]],
+                                                    "student_id": 4}, None))),
+    )
+    query = {"id": "77", "from": {"id": 123}, "chat": {"id": 123, "type": "private"},
+             "message_id": 5, "data": "g:-1:0"}
+    await handle_widget_query(query, MagicMock(), app)
+    assert "Неизвестная страница" in api.await_args.args[2]["data"]
+    assert '"body":"two"' not in api.await_args.args[2]["data"]
+
+
+@pytest.mark.asyncio
 async def test_aiogram_dispatcher_routes_unrecognized_widget_update(monkeypatch):
     from app.bot import widget_queries
     handle = AsyncMock()
