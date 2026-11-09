@@ -50,7 +50,7 @@ async function loadBotName() {
 }
 
 /** Неделя в две колонки: дни сверху вниз, у каждого — уроки со временем и кабинетом. */
-export function drawWeek(monday, { site = location.host, bot = '' } = {}) {
+export function drawWeek(monday, { site = 'sgoshka.ru', bot = '' } = {}) {
   const days = [];
   for (let index = 0; index < 7; index += 1) {
     const iso = addDays(monday, index);
@@ -167,6 +167,9 @@ export async function openScheduleImage(monday = mondayOf(isoToday())) {
     select();
     const button = event.currentTarget;
     button.disabled = true;
+    button.classList.add('loading');
+    button.setAttribute('aria-busy', 'true');
+    button.innerHTML = '<span class="button-spinner" aria-hidden="true"></span>Отправляю…';
     status.textContent = 'Отправляю…';
     try {
       await api(`/api/share/schedule?caption=${encodeURIComponent(`Расписание на ${dayMonth(monday)} – ${dayMonth(addDays(monday, 6))}`)}`,
@@ -178,6 +181,9 @@ export async function openScheduleImage(monday = mondayOf(isoToday())) {
       status.textContent = error.reason === 'no_telegram' ? 'Telegram не привязан — сохраните картинку или поделитесь ею.' : error.message;
     } finally {
       button.disabled = false;
+      button.classList.remove('loading');
+      button.removeAttribute('aria-busy');
+      button.textContent = 'Прислать в чат с ботом';
     }
   });
   body.querySelector('#shareSystem')?.addEventListener('click', async () => {

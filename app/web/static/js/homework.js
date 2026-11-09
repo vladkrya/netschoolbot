@@ -100,8 +100,8 @@ function render() {
 
   const container = $('homeworkContent');
   const top = filter === 'past' || query.trim() ? ''
-    : streaksHtml(streaks(state.grades, state.homework?.items, done, state.notes || []))
-      + '<button class="hw-add" data-add-note>＋ Своя задача</button>';
+    : `<div class="hw-toolbar">${streaksHtml(streaks(state.grades, state.homework?.items, done, state.notes || []))}
+      <button class="hw-add" data-add-note>＋ Своя задача</button></div>`;
   // «Должен сдать» — сверху и только когда что-то висит (due.js).
   const due = filter === 'past' || query.trim() ? '' : `<div id="hwDue">${dueButtonHtml()}</div>`;
   // Поле ищет по загруженным неделям, всё остальное — «Поиск за год».

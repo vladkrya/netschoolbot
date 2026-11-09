@@ -229,7 +229,7 @@ export const NO_INTERNET = 'Нет подключения к интернету'
 const ONLINE_ONLY = [
   'a.attach', '[data-online]', '#refreshBtn', '#composeBtn', '#composeSend', '#aiFab',
   '.nav-item[data-tab="assistant"]', '#drawerAccount', '#drawerLock',
-  '#drawerDevices', '#drawerAssistant', '#drawerStatus', '#drawerExport', '#drawerFamily',
+  '#drawerDevices', '#drawerAssistant', '#drawerIntegrations', '#drawerStatus', '#drawerExport', '#drawerFamily',
   '#drawerCalendar', '#drawerEvents', '#drawerReferences', '#drawerBug', '#drawerLogout', '#drawerApk',
   '.view-switch [data-view]', '[data-student]', '#pushToggle', '#keepFiles', '#sgoUpdates',
   '[data-answer-save]', '[data-answer-edit]', '[data-answer-clear]', '[data-answer-delete]',

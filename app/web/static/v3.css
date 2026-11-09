@@ -241,7 +241,7 @@
   :root[data-design="new"][data-variant="min"] #homeworkContent > .hw-card.done { opacity: .58; }
   :root[data-design="new"][data-variant="min"] #homeworkContent .hw-foot > .muted { display: inline; }
   :root[data-design="new"][data-variant="min"] #homeworkContent .hw-foot:not(:has(.clip)) { display: flex; }
-  :root[data-design="new"][data-variant="min"] #homeworkContent .hw-add {
+  :root[data-design="new"][data-variant="min"] #homeworkContent .hw-toolbar .hw-add {
     display: flex;
     width: fit-content;
     margin: 8px 0 12px auto;
@@ -250,7 +250,7 @@
   }
   /* The action belongs to the task toolbar, not to a full-width content row
      in either of the current mobile designs. */
-  :root[data-design="new"] #homeworkContent .hw-add {
+  :root[data-design="new"] #homeworkContent .hw-toolbar .hw-add {
     display: flex;
     width: fit-content;
     margin: 8px 0 12px auto;

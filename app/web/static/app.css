@@ -453,7 +453,7 @@ html.offline body, html.offline .screen { padding-bottom: calc(var(--nav-h) + 68
    Тот же список — ONLINE_ONLY в core.js. */
 html.offline :is(a.attach, [data-online], #refreshBtn, #composeBtn, #composeSend, #aiFab,
   .nav-item[data-tab="assistant"], #drawerAccount, #drawerLock,
-  #drawerDevices, #drawerAssistant, #drawerStatus, #drawerExport, #drawerFamily,
+  #drawerDevices, #drawerAssistant, #drawerIntegrations, #drawerStatus, #drawerExport, #drawerFamily,
   #drawerCalendar, #drawerEvents, #drawerReferences, #drawerBug, #drawerLogout,
   .view-switch [data-view], [data-student], [data-answer-save], [data-answer-edit], [data-answer-clear],
   [data-answer-delete], [data-reference], .distance-join),
@@ -2176,7 +2176,14 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
   border: 1.5px dashed var(--border); border-radius: var(--radius);
   background: transparent; color: var(--primary); font: inherit; font-size: 15px; text-align: left; cursor: pointer;
 }
+.hw-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin-bottom: 10px; }
+.hw-toolbar .streaks { flex: 1 1 220px; margin: 0; }
+.hw-toolbar .hw-add { flex: none; width: auto; margin: 0; white-space: nowrap; }
 .hw-add:active { background: var(--card-2); }
+.btn.loading { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+.button-spinner { width: 15px; height: 15px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: button-spin .7s linear infinite; }
+@keyframes button-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .button-spinner { animation: none; } }
 .hw-tag { display: inline-block; margin-left: 4px; padding: 1px 8px; border-radius: 8px; border: 1px solid;
   font-size: 12px; font-weight: 500; vertical-align: middle; white-space: nowrap; }
 .hw-tag.own { color: var(--primary); }

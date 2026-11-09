@@ -453,6 +453,14 @@ class TestLessons:
         lessons = lessons_from_day(day(raw), today=dt.date(2026, 3, 2))
         assert [item.number for item in lessons] == [1, 3]
 
+    def test_repeated_classmeeting_is_shown_once(self):
+        raw = lesson([], subject="Физика", number=2)
+        raw.classmeeting_id = 12
+        duplicate = lesson([], subject="Физика", number=2)
+        duplicate.classmeeting_id = 12
+        lessons = lessons_from_day(day([raw, duplicate]), today=dt.date(2026, 3, 2))
+        assert [item.subject for item in lessons] == ["Физика"]
+
     def test_missing_number_falls_back_to_position(self):
         raw = lesson([assignment(mark=None, content="")], number=None)
         lessons = lessons_from_day(day([raw]), today=dt.date(2026, 3, 2))

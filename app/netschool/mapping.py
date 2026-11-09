@@ -221,7 +221,13 @@ def lessons_from_day(day: Any, *, today: dt.date | None = None) -> list[Lesson]:
     all_homework = homework_from_day(day, today=today, only_current=False)
 
     lessons: list[Lesson] = []
+    seen_meetings: set[int] = set()
     for position, raw in enumerate(_attr(day, "lessons", []) or []):
+        meeting_id = _safe_int(_attr(raw, "classmeeting_id") or _attr(raw, "classmeetingId"))
+        if meeting_id is not None:
+            if meeting_id in seen_meetings:
+                continue
+            seen_meetings.add(meeting_id)
         subject = str(_attr(raw, "subject", "") or "—")
         number = _safe_int(_attr(raw, "number"))
         lessons.append(
