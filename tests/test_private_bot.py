@@ -68,7 +68,7 @@ async def test_command_menu_is_only_published_in_private_chats():
         delete_my_commands=AsyncMock(), set_my_commands=AsyncMock(),
         set_chat_menu_button=AsyncMock(), get_me=AsyncMock(return_value=SimpleNamespace(username="bot")),
     )
-    dispatcher = SimpleNamespace(start_polling=AsyncMock())
+    dispatcher = SimpleNamespace(start_polling=AsyncMock(), resolve_used_update_types=lambda: ["message", "callback_query"])
     await run_bot(bot, dispatcher, "https://example.com/mini")
     assert bot.delete_my_commands.await_count == 2
     assert bot.delete_my_commands.await_args_list[0].kwargs == {}
@@ -76,3 +76,4 @@ async def test_command_menu_is_only_published_in_private_chats():
     bot.set_my_commands.assert_awaited_once()
     assert bot.set_my_commands.call_args.args[0] == COMMANDS
     assert bot.set_my_commands.call_args.kwargs["scope"].type == "all_private_chats"
+    assert "widget_query" in dispatcher.start_polling.call_args.kwargs["allowed_updates"]

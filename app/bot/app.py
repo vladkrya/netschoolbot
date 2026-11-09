@@ -17,6 +17,7 @@ from ..context import AppContext
 from ..settings import Settings
 from .handlers import account, admin, admin_users, auth, family, groups, menu, settings as settings_handlers
 from .handlers.common import AppOnlyMiddleware, ContextMiddleware
+from .widget_queries import WidgetQueryMiddleware
 
 logger = logging.getLogger("netschoolbot.bot")
 
@@ -64,6 +65,7 @@ def create_bot(settings: Settings) -> Bot:
 
 def create_dispatcher(context: AppContext) -> Dispatcher:
     dispatcher = Dispatcher(storage=MemoryStorage())
+    dispatcher.update.outer_middleware(WidgetQueryMiddleware(context))
 
     # В группах бот только публикует служебные уведомления. Отсекаем
     # сообщения и старые кнопки до обработчиков и создания пользователя.
@@ -116,4 +118,5 @@ async def run_bot(bot: Bot, dispatcher: Dispatcher, miniapp_url: str, *, admin_i
     logger.info("Бот @%s запущен", me.username)
     # drop_pending_updates: после простоя очередь может быть забита старыми
     # сообщениями, отвечать на которые уже поздно и странно.
-    await dispatcher.start_polling(bot, drop_pending_updates=True)
+    await dispatcher.start_polling(bot, drop_pending_updates=True,
+                                   allowed_updates=dispatcher.resolve_used_update_types() + ["widget_query"])
