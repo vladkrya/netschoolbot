@@ -8,7 +8,7 @@ import pytest
 import datetime as dt
 import zlib
 
-from app.bot.widgets import widget_api_status, beta_reply, card_html, homework_card_html, grades_card_html, grade_detail_pages, send_card
+from app.bot.widgets import widget_api_status, beta_reply, card_html, homework_card_html, homework_widget_parts, grades_card_html, grade_detail_pages, send_card
 from app.bot.widget_queries import handle_widget_query
 from app.bot.widget_queries import WidgetQueryMiddleware
 from aiogram import Bot, Dispatcher
@@ -81,6 +81,30 @@ def test_homework_card_does_not_offer_details_for_medium_text_without_extras():
     source = homework_card_html([item], set())
     assert '<details class="task' not in source
     assert 'Подробнее ↓' not in source
+
+
+def test_homework_large_list_splits_into_valid_widgets_without_losing_assignments():
+    items = [HomeworkRecord(f"Предмет {i}", dt.date(2026, 11, 9) + dt.timedelta(days=i // 5),
+                            "ДЗ", f"Задание {i}: " + (f"слово{i} " * 55)) for i in range(25)]
+    parts = homework_widget_parts(items, set())
+    assert len(parts) > 1
+    assert [item for part in parts for item in part] == items
+    assert all(len(homework_card_html(part, set()).encode()) <= 32768 and
+               len(zlib.compress(homework_card_html(part, set()).encode(), 9)) <= 4096 for part in parts)
+
+
+@pytest.mark.asyncio
+async def test_homework_multiple_widgets_have_no_external_keyboard(monkeypatch):
+    from app.bot import widgets
+    send = AsyncMock(side_effect=[12, 13])
+    monkeypatch.setattr(widgets, "send_card", send)
+    app = SimpleNamespace(users=SimpleNamespace(beta_widgets=AsyncMock(return_value=True)),
+                          cache=SimpleNamespace(put=AsyncMock()))
+    parts = [(homework_card_html([], set()), {"kind": "homework", "keys": [], "done": [], "student_id": 4})] * 2
+    assert await beta_reply(MagicMock(), 123, app, MagicMock(), "ДЗ", reply_markup=MagicMock(), widget_parts=parts)
+    assert send.await_count == 2
+    assert all(call.kwargs["reply_markup"] is None and call.kwargs["interactive"] for call in send.await_args_list)
+    assert app.cache.put.await_count == 2
 
 
 def test_generic_card_paginates_long_command_output():

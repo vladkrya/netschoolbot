@@ -255,6 +255,28 @@ def homework_card_html(items: list[HomeworkRecord], done: set[str]) -> str:
             + script + '</body></html>')
 
 
+def homework_widget_parts(items: list[HomeworkRecord], done: set[str]) -> list[list[HomeworkRecord]]:
+    """Разбить большой список до отправки: Telegram ограничивает виджет 4 КБ zlib."""
+    if not items:
+        return [[]]
+    parts: list[list[HomeworkRecord]] = []
+    current: list[HomeworkRecord] = []
+    for item in items:
+        candidate = current + [item]
+        source = homework_card_html(candidate, done).encode()
+        if current and (len(source) > 32768 or len(zlib.compress(source, 9)) > 3700):
+            parts.append(current)
+            current = [item]
+        else:
+            current = candidate
+        single = homework_card_html(current, done).encode()
+        if len(single) > 32768 or len(zlib.compress(single, 9)) > 4096:
+            return []
+    if current:
+        parts.append(current)
+    return parts
+
+
 async def send_card(message: Message, bot: Bot, text: str, *, reply_markup=None, source_html: str | None = None,
                     interactive: bool = False, chat_data: str | None = None) -> int | None:
     """Отправить виджет; ID сообщения нужен для обработки действий в HTML."""
@@ -292,27 +314,30 @@ async def send_card(message: Message, bot: Bot, text: str, *, reply_markup=None,
 
 
 async def beta_reply(message: Message, user_id: int, app, bot: Bot, text: str, *, reply_markup=None,
-                     source_html: str | None = None, widget_meta: dict | None = None) -> bool:
+                     source_html: str | None = None, widget_meta: dict | None = None,
+                     widget_parts: list[tuple[str, dict]] | None = None) -> bool:
     if not await app.users.beta_widgets(user_id):
         return False
-    parts = formatting.split_message(text)
-    if source_html is not None:
-        parts = [text]
-    if not all(len(zlib.compress((source_html or card_html(part)).encode(), 9)) <= 4096 for part in parts):
+    payloads = ([(text, source, meta) for source, meta in widget_parts] if widget_parts is not None
+                else [(text, source_html, widget_meta)] if source_html is not None
+                else [(part, None, None) for part in formatting.split_message(text)])
+    if not payloads or not all(len((source or card_html(part)).encode()) <= 32768 and
+                               len(zlib.compress((source or card_html(part)).encode(), 9)) <= 4096
+                               for part, source, _ in payloads):
         return False
-    chat_data = None
-    if widget_meta and widget_meta.get("kind") == "homework":
-        chat_data = json.dumps({"done": widget_meta["done"]}, separators=(",", ":"))
-        if len(chat_data.encode()) > 1024:
-            return False
-    for index, part in enumerate(parts):
-        sent_id = await send_card(message, bot, part, reply_markup=reply_markup if index == len(parts) - 1 and widget_meta is None else None,
-                                  source_html=source_html, interactive=widget_meta is not None, chat_data=chat_data)
+    for index, (part, source, meta) in enumerate(payloads):
+        chat_data = None
+        if meta and meta.get("kind") == "homework":
+            chat_data = json.dumps({"done": meta["done"]}, separators=(",", ":"))
+            if len(chat_data.encode()) > 1024:
+                return bool(index)
+        sent_id = await send_card(message, bot, part, reply_markup=reply_markup if index == len(payloads) - 1 and meta is None else None,
+                                  source_html=source, interactive=meta is not None, chat_data=chat_data)
         if not sent_id:
             # Не повторяем уже отправленные части при частичном сбое.
             if index:
                 return True
             return False
-        if widget_meta:
-            await app.cache.put(user_id, f"widget:{sent_id}", {k: v for k, v in widget_meta.items() if k != "done"})
+        if meta:
+            await app.cache.put(user_id, f"widget:{sent_id}", {k: v for k, v in meta.items() if k != "done"})
     return True
