@@ -93,7 +93,7 @@ def homework_card_html(items: list[HomeworkRecord], done: set[str]) -> str:
         for item in records:
             preview_lines = max(1, math.ceil(min(len(item.text or ""), 95) / 38))
             cost = 51 + preview_lines * 17 + (12 if len(item.subject) > 25 else 0)
-            if used + cost + (0 if chunk else 34) > 395 and (chunk or pages[-1]):
+            if used + cost + (0 if chunk else 34) > 280 and (chunk or pages[-1]):
                 if chunk:
                     pages[-1].append((day, chunk, shown > 0))
                     shown += len(chunk)

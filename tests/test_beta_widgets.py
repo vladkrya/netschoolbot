@@ -59,6 +59,18 @@ def test_homework_card_only_expands_extra_content_and_paginates_overflow():
     assert '<b>Полное задание:</b>' in source
 
 
+def test_homework_card_splits_four_assignments_before_widget_clips_them():
+    day = dt.date(2026, 11, 9)
+    items = [
+        HomeworkRecord("История", day, "ДЗ", "§16 (прочитать), выполнить тест https://onlinetestpad.com/o2egfvgixtrgv"),
+        HomeworkRecord("Литература", day, "ДЗ", 'Наизусть отрывок "А судьи кто?" из комедии Грибоедова.'),
+        HomeworkRecord("Химия", day, "ДЗ", "§9 читать"),
+        HomeworkRecord("Русский язык", day, "ДЗ", "Упражнение 45"),
+    ]
+    source = homework_card_html(items, set())
+    assert source.count('<div class="page') >= 2
+
+
 def test_homework_card_does_not_offer_details_for_medium_text_without_extras():
     item = HomeworkRecord("Алгебра", dt.date(2026, 11, 6), "ДЗ", "Решить номера 125 и 126, повторить правила сложения дробей")
     source = homework_card_html([item], set())
