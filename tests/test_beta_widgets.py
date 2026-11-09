@@ -7,7 +7,7 @@ import pytest
 import datetime as dt
 import zlib
 
-from app.bot.widgets import beta_api_status, beta_reply, card_html, homework_card_html
+from app.bot.widgets import widget_api_status, beta_reply, card_html, homework_card_html, send_card
 from app.domain.records import HomeworkRecord
 
 
@@ -75,7 +75,7 @@ async def test_beta_reply_skips_transport_when_disabled(users):
 
 
 @pytest.mark.asyncio
-async def test_beta_status_explains_unauthorized_token():
+async def test_widget_status_explains_unauthorized_token():
     response = AsyncMock()
     response.status = 401
     response.json.return_value = {"ok": False, "description": "Unauthorized"}
@@ -84,4 +84,20 @@ async def test_beta_status_explains_unauthorized_token():
     bot = AsyncMock()
     bot.token = "test-token"
     bot.session.create_session.return_value = session
-    assert "не открыл" in await beta_api_status(bot)
+    assert "отклонил токен" in await widget_api_status(bot)
+    session.get.assert_called_once_with("https://api.telegram.org/bottest-token/getMe", timeout=8)
+
+
+@pytest.mark.asyncio
+async def test_send_card_uses_production_widget_endpoint():
+    response = AsyncMock()
+    response.json.return_value = {"ok": True, "result": {"message_id": 1}}
+    session = MagicMock()
+    session.post.return_value.__aenter__.return_value = response
+    bot = AsyncMock()
+    bot.token = "test-token"
+    bot.session.create_session.return_value = session
+    message = MagicMock()
+    message.chat.id = 123
+    assert await send_card(message, bot, "Задание")
+    assert session.post.call_args.args[0] == "https://api.telegram.org/bottest-token/sendWidget"

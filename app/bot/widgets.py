@@ -1,4 +1,4 @@
-"""Экспериментальные карточки Telegram Widget (Bot API 10.4 beta)."""
+"""Карточки Telegram Widget (Bot API 10.4)."""
 
 from __future__ import annotations
 
@@ -18,20 +18,20 @@ from ..domain.records import HomeworkRecord
 logger = logging.getLogger("netschoolbot.bot")
 
 
-async def beta_api_status(bot: Bot) -> str | None:
-    """Сообщение о недоступности тестового Bot API, если он закрыт для токена."""
+async def widget_api_status(bot: Bot) -> str | None:
+    """Сообщение о недоступности основного Bot API для этого токена."""
     session = await bot.session.create_session()
-    url = f"https://api.telegram.org/beta/bot{bot.token}/test/getMe"
+    url = f"https://api.telegram.org/bot{bot.token}/getMe"
     try:
         async with session.get(url, timeout=8) as response:
             result = await response.json(content_type=None)
         if result.get("ok"):
             return None
         if response.status == 401:
-            return "Telegram пока не открыл тестовый Bot API для этого бота (401). Виджеты недоступны."
-        return f"Тестовый Bot API сейчас недоступен (HTTP {response.status})."
+            return "Telegram отклонил токен бота (401). Виджеты недоступны."
+        return f"Bot API сейчас недоступен (HTTP {response.status})."
     except Exception:  # noqa: BLE001 — только проверка доступности, без пользовательских данных
-        return "Не удалось связаться с тестовым Bot API. Попробуйте позже."
+        return "Не удалось связаться с Bot API. Попробуйте позже."
 
 
 class _PlainText(HTMLParser):
@@ -181,9 +181,9 @@ async def send_card(message: Message, bot: Bot, text: str, *, reply_markup=None,
     encoded = source.encode("utf-8")
     if len(encoded) > 32768 or len(zlib.compress(encoded, 9)) > 4096:
         return False
-    # В beta API методы доступны на отдельном URL. Сессию и прокси берём у aiogram.
+    # Сессию и прокси берём у aiogram.
     session = await bot.session.create_session()
-    url = f"https://api.telegram.org/beta/bot{bot.token}/test/sendWidget"
+    url = f"https://api.telegram.org/bot{bot.token}/sendWidget"
     caption = _plain(text).splitlines()[0] if source_html else _plain(text)
     caption = caption.encode("utf-8")[:850].decode("utf-8", "ignore")
     payload = {
@@ -200,9 +200,9 @@ async def send_card(message: Message, bot: Bot, text: str, *, reply_markup=None,
             result = await response.json(content_type=None)
         if result.get("ok"):
             return True
-        logger.warning("Beta Widget API rejected sendWidget: %s", str(result.get("description", ""))[:160])
+        logger.warning("Widget API rejected sendWidget: %s", str(result.get("description", ""))[:160])
     except Exception as exc:  # noqa: BLE001 — бета недоступна, ответим обычным сообщением
-        logger.warning("Beta Widget API unavailable: %s", type(exc).__name__)
+        logger.warning("Widget API unavailable: %s", type(exc).__name__)
     return False
 
 
