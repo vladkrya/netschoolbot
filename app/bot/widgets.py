@@ -287,7 +287,8 @@ async def send_card(message: Message, bot: Bot, text: str, *, reply_markup=None,
     # Сессию и прокси берём у aiogram.
     session = await bot.session.create_session()
     url = f"https://api.telegram.org/bot{bot.token}/sendWidget"
-    caption = _plain(text).splitlines()[0] if source_html else _plain(text)
+    lines = _plain(text).splitlines()
+    caption = lines[0] if lines else "СГОшка"
     caption = caption.encode("utf-8")[:850].decode("utf-8", "ignore")
     payload = {
         "chat_id": str(message.chat.id),

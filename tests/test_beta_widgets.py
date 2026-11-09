@@ -257,3 +257,20 @@ async def test_send_card_uses_production_widget_endpoint():
     message.chat.id = 123
     assert await send_card(message, bot, "Задание")
     assert session.post.call_args.args[0] == "https://api.telegram.org/bottest-token/sendWidget"
+
+
+@pytest.mark.asyncio
+async def test_generic_widget_caption_does_not_repeat_card_body():
+    response = AsyncMock()
+    response.json.return_value = {"ok": True, "result": {"message_id": 1}}
+    session = MagicMock()
+    session.post.return_value.__aenter__.return_value = response
+    bot = AsyncMock()
+    bot.token = "test-token"
+    bot.session.create_session.return_value = session
+    message = MagicMock()
+    message.chat.id = 123
+    assert await send_card(message, bot, "Расписание\n1. Математика\n2. Русский язык")
+    caption = session.post.call_args.kwargs["data"]["caption"]
+    assert caption.startswith("Расписание\n")
+    assert "Математика" not in caption
