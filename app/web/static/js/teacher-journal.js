@@ -146,11 +146,14 @@ async function loadJournal() {
     box.innerHTML = '<p class="empty">Выберите класс, предмет и период.</p>';
     return;
   }
+  const classItem = data().classes.find((c) => number(c, ['id', 'classId']) === classId);
+  const isIup = Boolean(classItem && (classItem.isIup || String(classItem.name || '').includes('*')));
   const params = new URLSearchParams({
     class_id: classId,
     subject_group_id: subjectId,
     term_id: termId,
     year_id: yearIdVal,
+    ...(isIup ? { iup: '1' } : {}),
   });
   showLoading(box, skeleton(5));
   try {

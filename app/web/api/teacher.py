@@ -39,11 +39,13 @@ async def teacher_journal(request: web.Request) -> web.Response:
         return json_error("Некорректная параллель")
     grade = grade if grade >= -1 else -1
 
+    is_iup = request.query.get("iup") in ("1", "true")
+
     async def produce(app: AppContext, user: User):
         return await app.diary.fetch_teacher_journal(
             user, class_id=values["class_id"], subject_group_id=values["subject_group_id"],
-            term_id=values["term_id"], year_id=values["year_id"], grade=grade,
+            term_id=values["term_id"], year_id=values["year_id"], grade=grade, is_iup=is_iup,
         )
 
-    section = "teacher:journal:" + ":".join(str(values[name]) for name in values) + f":{grade}"
+    section = "teacher:journal:" + ":".join(str(values[name]) for name in values) + f":{grade}:{int(is_iup)}"
     return await _cached(request, section, produce)

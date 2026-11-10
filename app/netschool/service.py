@@ -105,7 +105,12 @@ def _normalize_teacher_filter(
         cid_str = val.split("_")[0] if "_" in val else val
         cid = int(cid_str) if cid_str.isdigit() else 0
         if cid:
-            classes.append({"id": cid, "name": title or str(cid), "value": val})
+            classes.append({
+                "id": cid,
+                "name": title or str(cid),
+                "value": val,
+                "isIup": val.endswith("_1") or "*" in title,
+            })
 
     # Сопоставляем предметы с классами через группы обучения учителей
     subjects_by_class: dict[str, list[dict[str, Any]]] = {}
@@ -430,7 +435,7 @@ class DiaryService:
 
     async def fetch_teacher_journal(
         self, user: User, *, class_id: int, subject_group_id: int, term_id: int,
-        year_id: int, grade: int = -1,
+        year_id: int, grade: int = -1, is_iup: bool = False,
     ) -> dict[str, Any]:
         """Снимок журнала учителя без каких-либо операций записи."""
         if not user.credentials.can_relogin and user.effective_api_mode is not ApiMode.WEB:
@@ -438,8 +443,8 @@ class DiaryService:
 
         async def call(client: Any) -> dict[str, Any]:
             y_id = year_id or getattr(client, "_year_id", 0)
-            c_id = -1 if class_id <= 11 else class_id
-            g_val = -1 if class_id <= 11 else grade
+            c_id = -1 if (is_iup or class_id == -1) else class_id
+            g_val = -1 if (is_iup or class_id == -1) else grade
             if hasattr(client, "teacher_journal"):
                 return await client.teacher_journal(
                     c_id, subject_group_id, term_id, y_id, grade=g_val,
