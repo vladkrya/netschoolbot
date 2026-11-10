@@ -103,7 +103,7 @@ function renderJournal(payload) {
   const head = works.map((item) => '<th title="' + esc(item.assignmentName || '') + '">' +
     esc(dates.get(item.classMeetingId) || '—') + '</th>').join('');
   const rows = (journal.students || []).map((student, index) => '<tr><th>' + (index + 1) + '. ' +
-    esc(student.fullName) + '</th>' + works.map((item) => '<td>' +
+    esc(student.fullName || student.name || '') + '</th>' + works.map((item) => '<td>' +
     esc(String(marks.get(student.id + ':' + item.id) || '')) + '</td>').join('') +
     '<td class="teacher-average">' + (formatAverage(averages.get(student.id)) || '—') + '</td></tr>').join('');
   box.innerHTML = '<p class="teacher-caption">' + esc(journal.className || '') + ' · ' +
