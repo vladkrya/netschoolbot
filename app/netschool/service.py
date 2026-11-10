@@ -315,26 +315,24 @@ class DiaryService:
     async def fetch_bells(self, user: User) -> list[dict[str, Any]] | None:
         """Расписание звонков школы (веб-API ``schedule/times``).
 
-        В мобильном API звонков нет, поэтому в мобильном режиме — разовый
-        веб-вход по сохранённому паролю. `None` — звонков взять неоткуда
-        (вход через Госуслуги, сбой): приложение соберёт их из уроков недели.
+        В мобильном API звонков нет. Не открываем для них отдельную
+        веб-сессию: это показывало в СГО второй вход в аккаунт. `None`
+        означает, что приложение соберёт время из мобильного расписания
+        уроков.
         """
 
+        if user.effective_api_mode is not ApiMode.WEB:
+            return None
+
         async def call(client: Any) -> Any:
-            # У мобильного клиента bell_schedule собран из уроков — он не нужен.
-            if hasattr(client, "classmeetings") or not hasattr(client, "bell_schedule"):
+            if not hasattr(client, "bell_schedule"):
                 return None
             return await client.bell_schedule()
 
         try:
-            if user.effective_api_mode is ApiMode.WEB:
-                bells = await self._with_session(user, call)
-            elif user.credentials.can_relogin:
-                bells = await self._pool.with_web_once(user, call)
-            else:
-                return None
+            bells = await self._with_session(user, call)
         except NetSchoolError as exc:
-            if exc.reason.needs_relogin and user.effective_api_mode is ApiMode.WEB:
+            if exc.reason.needs_relogin:
                 raise
             logger.info("Звонки недоступны для %s: %s", user.telegram_id, exc.reason)
             return None

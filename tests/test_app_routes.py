@@ -59,12 +59,11 @@ class TestBells:
         bells = await service.fetch_bells(user)
         assert bells[0] == {"weekday": 1, "shift": 1, "number": 0, "start": "08:00", "end": "08:25", "used": True}
 
-    async def test_mobile_user_with_password_logs_into_web_once(self, service, users):
+    async def test_mobile_user_does_not_open_web_session_for_bells(self, service, users):
         user = make_user(api_mode=ApiMode.MOBILE)
         await users.save(user)
-        assert [b["number"] for b in await service.fetch_bells(user)] == [0, 1]
-        # Разовая веб-сессия закрыта и в пул не попала.
-        assert WebClient.logouts == 1
+        assert await service.fetch_bells(user) is None
+        assert WebClient.logouts == 0
         assert not await service._pool.has_client(user.telegram_id)
 
     async def test_gosuslugi_mobile_user_falls_back_to_lessons(self, service, users):
