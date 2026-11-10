@@ -101,10 +101,13 @@ def _normalize_teacher_filter(
     classes = []
     for item in pclid.get("items") or []:
         val = str(item.get("value") or "")
+        title = str(item.get("title") or "")
+        if val.endswith("_1") or "*" in title:
+            continue
         cid_str = val.split("_")[0] if "_" in val else val
         cid = int(cid_str) if cid_str.isdigit() else 0
         if cid:
-            classes.append({"id": cid, "name": item.get("title", str(cid)), "value": val})
+            classes.append({"id": cid, "name": title or str(cid), "value": val})
 
     # Сопоставляем предметы с классами через группы обучения учителей
     subjects_by_class: dict[str, list[dict[str, Any]]] = {}

@@ -133,17 +133,26 @@ function renderJournal(payload) {
 async function loadJournal() {
   const box = $('teacherJournalResult');
   if (!box) return;
+  const classId = selected('teacherClass');
+  const subjectId = selected('teacherSubject');
+  const termId = selected('teacherTerm');
+  const yearIdVal = selected('teacherYear');
+  if (!classId || !subjectId || !termId) {
+    box.innerHTML = '<p class="empty">Выберите класс, предмет и период.</p>';
+    return;
+  }
   const params = new URLSearchParams({
-    class_id: selected('teacherClass'), subject_group_id: selected('teacherSubject'),
-    term_id: selected('teacherTerm'), year_id: selected('teacherYear'),
+    class_id: classId,
+    subject_group_id: subjectId,
+    term_id: termId,
+    year_id: yearIdVal,
   });
-  if ([...params.values()].some((value) => !Number(value))) { box.textContent = 'Школа не передала параметры журнала.'; return; }
   showLoading(box);
   try {
     const res = await api('/api/teacher/journal?' + params);
     renderJournal(res.data);
   } catch (error) {
-    showFailure(box, error);
+    showFailure(box, error, '<p class="empty">' + esc(error.message || 'Не удалось загрузить журнал') + '</p>');
   }
 }
 
@@ -152,7 +161,9 @@ export async function loadTeacherJournal() {
   if (!container) return;
   showLoading(container);
   try {
-    if (!filters) filters = (await api('/api/teacher/journal/filter')).data;
+    if (!filters || !filters.subjectsByClass) {
+      filters = (await api('/api/teacher/journal/filter?refresh=1')).data;
+    }
     const choices = data();
     if (!choices.classes.length || !choices.subjects.length || !choices.terms.length) {
       container.innerHTML = '<section class="teacher-journal"><h2>Классный журнал</h2><p class="empty">Учительский журнал для этого аккаунта недоступен.</p></section>';
@@ -161,6 +172,6 @@ export async function loadTeacherJournal() {
     renderFilter();
     await loadJournal();
   } catch (error) {
-    showFailure(container, error);
+    showFailure(container, error, '<p class="empty">' + esc(error.message || 'Ошибка загрузки') + '</p>');
   }
 }

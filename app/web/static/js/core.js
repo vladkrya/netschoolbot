@@ -155,7 +155,7 @@ export function showFailure(container, error, html) {
     banner(error.message, true, 5000);
     return;
   }
-  container.innerHTML = html;
+  container.innerHTML = html || `<p class="empty">${esc(error?.message || 'Не удалось загрузить данные')}</p>`;
 }
 
 export function skeleton(count = 5) {
