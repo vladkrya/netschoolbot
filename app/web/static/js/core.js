@@ -137,7 +137,7 @@ export function avgClass(value, thresholds = DEFAULT_THRESHOLDS) {
  *  только индикатор сверху, а данные меняются на месте. → заменено ли. */
 export function showLoading(container, html) {
   if (state.refreshing && container.childElementCount) return false;
-  container.innerHTML = html;
+  container.innerHTML = html || skeleton();
   return true;
 }
 

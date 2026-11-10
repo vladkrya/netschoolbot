@@ -23,7 +23,7 @@ async def teacher_journal_filter(request: web.Request) -> web.Response:
     async def produce(app: AppContext, user: User):
         return await app.diary.fetch_teacher_journal_filter(user)
 
-    return await _cached(request, "teacher:journal:filter:v2", produce)
+    return await _cached(request, "teacher:journal:filter:v3", produce)
 
 
 @routes.get("/api/teacher/journal")

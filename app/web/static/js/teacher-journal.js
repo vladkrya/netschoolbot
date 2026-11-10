@@ -1,7 +1,7 @@
 // Учительский журнал — исключительно GET /api/teacher/journal*.
 'use strict';
 
-import { $, api, esc, formatAverage, showFailure, showLoading } from './core.js';
+import { $, api, avgClass, esc, formatAverage, showFailure, showLoading, skeleton } from './core.js';
 
 let filters;
 
@@ -121,10 +121,15 @@ function renderJournal(payload) {
   const averages = new Map((journal.avgMarks || []).map((item) => [item.studentId, item.avgMark]));
   const head = works.map((item) => '<th title="' + esc(item.assignmentName || '') + '">' +
     esc(dates.get(item.classMeetingId) || '—') + '</th>').join('');
-  const rows = (journal.students || []).map((student, index) => '<tr><th>' + (index + 1) + '. ' +
-    esc(student.fullName || student.name || '') + '</th>' + works.map((item) => '<td>' +
-    esc(String(marks.get(student.id + ':' + item.id) || '')) + '</td>').join('') +
-    '<td class="teacher-average">' + (formatAverage(averages.get(student.id)) || '—') + '</td></tr>').join('');
+  const rows = (journal.students || []).map((student, index) => {
+    const avgVal = averages.get(student.id);
+    const avgCls = avgVal != null ? avgClass(avgVal) : '';
+    const fullName = student.fullName || student.name || '';
+    return '<tr><th title="' + esc(fullName) + '">' + (index + 1) + '. ' +
+      esc(fullName) + '</th>' + works.map((item) => '<td>' +
+      esc(String(marks.get(student.id + ':' + item.id) || '')) + '</td>').join('') +
+      '<td class="teacher-average ' + avgCls + '">' + (formatAverage(avgVal) || '—') + '</td></tr>';
+  }).join('');
   box.innerHTML = '<p class="teacher-caption">' + esc(journal.className || '') + ' · ' +
     esc(journal.subjectGroupName || '') + '</p><div class="teacher-table-wrap"><table class="teacher-table"><thead><tr><th>Ученик</th>' +
     head + '<th>Средний</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
@@ -147,7 +152,7 @@ async function loadJournal() {
     term_id: termId,
     year_id: yearIdVal,
   });
-  showLoading(box);
+  showLoading(box, skeleton(5));
   try {
     const res = await api('/api/teacher/journal?' + params);
     renderJournal(res.data);
@@ -159,11 +164,9 @@ async function loadJournal() {
 export async function loadTeacherJournal() {
   const container = $('teacherJournalContent');
   if (!container) return;
-  showLoading(container);
+  showLoading(container, skeleton(6));
   try {
-    if (!filters || !filters.subjectsByClass) {
-      filters = (await api('/api/teacher/journal/filter?refresh=1')).data;
-    }
+    filters = (await api('/api/teacher/journal/filter?refresh=1')).data;
     const choices = data();
     if (!choices.classes.length || !choices.subjects.length || !choices.terms.length) {
       container.innerHTML = '<section class="teacher-journal"><h2>Классный журнал</h2><p class="empty">Учительский журнал для этого аккаунта недоступен.</p></section>';

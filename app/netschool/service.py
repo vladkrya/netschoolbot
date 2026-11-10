@@ -102,8 +102,6 @@ def _normalize_teacher_filter(
     for item in pclid.get("items") or []:
         val = str(item.get("value") or "")
         title = str(item.get("title") or "")
-        if val.endswith("_1") or "*" in title:
-            continue
         cid_str = val.split("_")[0] if "_" in val else val
         cid = int(cid_str) if cid_str.isdigit() else 0
         if cid:
@@ -122,14 +120,17 @@ def _normalize_teacher_filter(
                 or (t_name and any(t_name in name or name in t_name for name in t_names))
             )
             if matches_teacher:
+                subgroup = g.get("name")
+                s_name = (g.get("subject") or {}).get("name") or subgroup or "Предмет"
+                display_name = f"{s_name} ({subgroup})" if subgroup and subgroup != s_name else s_name
+                item_entry = {"id": g.get("id"), "name": display_name}
                 cls = g.get("class") or {}
                 cid = cls.get("id")
                 if cid:
-                    s_name = (g.get("subject") or {}).get("name") or g.get("name") or "Предмет"
-                    subjects_by_class.setdefault(str(cid), []).append({
-                        "id": g.get("id"),
-                        "name": s_name,
-                    })
+                    subjects_by_class.setdefault(str(cid), []).append(item_entry)
+                elif g.get("iup"):
+                    for grade in g.get("grades") or []:
+                        subjects_by_class.setdefault(str(grade), []).append(item_entry)
 
     # Предметы по умолчанию из исходного фильтра СГО
     sgid = by_id.get("SGID") or by_id.get("SBJID") or {}
@@ -437,13 +438,15 @@ class DiaryService:
 
         async def call(client: Any) -> dict[str, Any]:
             y_id = year_id or getattr(client, "_year_id", 0)
+            c_id = -1 if class_id <= 11 else class_id
+            g_val = -1 if class_id <= 11 else grade
             if hasattr(client, "teacher_journal"):
                 return await client.teacher_journal(
-                    class_id, subject_group_id, term_id, y_id, grade=grade,
+                    c_id, subject_group_id, term_id, y_id, grade=g_val,
                 )
             response = await client._authed_get(
                 "grade/journal",
-                params={"classId": class_id, "grade": grade, "sgId": subject_group_id,
+                params={"classId": c_id, "grade": g_val, "sgId": subject_group_id,
                         "termId": term_id, "v": 1, "yearId": y_id},
             )
             return response.json()

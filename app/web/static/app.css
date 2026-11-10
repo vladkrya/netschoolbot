@@ -812,20 +812,34 @@ html.offline .switch-row:has(#pushToggle, #keepFiles, #sgoUpdates) {
 .teacher-journal { padding: 16px 12px 24px; }
 .teacher-journal h2 { margin: 0 0 4px; }
 .teacher-hint, .teacher-caption { color: var(--muted, #697386); margin: 0 0 14px; }
-.teacher-filters { display: grid; grid-template-columns: repeat(3, minmax(150px, 1fr)); gap: 10px; margin-bottom: 12px; }
+.teacher-filters { display: grid; grid-template-columns: repeat(3, minmax(140px, 1fr)); gap: 10px; margin-bottom: 12px; }
 .teacher-filters label { display: grid; gap: 5px; font-weight: 600; font-size: 14px; }
 .teacher-filters select { min-width: 0; padding: 9px; border: 1px solid var(--border); border-radius: 10px; background: var(--card); color: var(--text); font: inherit; }
-.teacher-table-wrap { overflow: auto; border: 1px solid var(--border); border-radius: 12px; margin-top: 14px; max-height: calc(100vh - 280px); background: var(--card); }
+.teacher-table-wrap { overflow: auto; -webkit-overflow-scrolling: touch; border: 1px solid var(--border); border-radius: 12px; margin-top: 14px; max-height: calc(100vh - 280px); background: var(--card); }
 .teacher-table { width: max-content; min-width: 100%; border-collapse: collapse; background: var(--card); color: var(--text); font-size: 14px; }
 .teacher-table th, .teacher-table td { padding: 9px 10px; border-bottom: 1px solid var(--border); border-right: 1px solid var(--border); text-align: center; white-space: nowrap; }
 .teacher-table thead th { position: sticky; top: 0; z-index: 2; background: var(--card-2); color: var(--text2); font-size: 12px; }
-.teacher-table th:first-child { position: sticky; left: 0; z-index: 1; text-align: left; background: var(--card); color: var(--text); }
+.teacher-table th:first-child { position: sticky; left: 0; z-index: 1; text-align: left; background: var(--card); color: var(--text); max-width: 160px; min-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .teacher-table thead th:first-child { z-index: 3; background: var(--card-2); color: var(--text2); }
-.teacher-table .teacher-average { position: sticky; right: 0; background: var(--card-2); color: var(--g5); font-weight: 700; }
+.teacher-table .teacher-average { position: sticky; right: 0; background: var(--card-2); font-weight: 700; }
+.teacher-table .teacher-average.g5 { color: var(--g5); }
+.teacher-table .teacher-average.g4 { color: var(--g4); }
+.teacher-table .teacher-average.g3 { color: var(--g3); }
+.teacher-table .teacher-average.g2 { color: var(--g2); }
 @media (max-width: 640px) {
-  .teacher-journal { padding: 12px 0 20px; }
-  .teacher-filters { grid-template-columns: 1fr; }
-  .teacher-table-wrap { border-radius: 0; max-height: calc(100vh - 330px); }
+  .teacher-journal { padding: 12px 10px 20px; }
+  .teacher-journal h2 { font-size: 20px; margin-bottom: 2px; }
+  .teacher-hint { display: none; }
+  .teacher-filters { grid-template-columns: 0.9fr 1.6fr 1.2fr; gap: 6px; margin-bottom: 10px; }
+  .teacher-filters label { gap: 3px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.4px; color: var(--text2); }
+  .teacher-filters select { padding: 7px 6px; font-size: 13px; border-radius: 8px; }
+  #teacherLoad { display: none; }
+  .teacher-caption { margin: 6px 0 8px; font-size: 13px; }
+  .teacher-table-wrap { margin-top: 8px; border-radius: 8px; max-height: calc(100vh - 220px); }
+  .teacher-table { font-size: 13px; }
+  .teacher-table th, .teacher-table td { padding: 6px 7px; }
+  .teacher-table th:first-child, .teacher-table thead th:first-child { max-width: 130px; min-width: 105px; font-size: 12px; }
+  .teacher-table thead th { font-size: 11px; }
 }
 .totals-table .tt-row { min-width: calc(110px + var(--totals-columns, 4) * 44px); }
 .totals-table .tt-cell { width: 44px; }
