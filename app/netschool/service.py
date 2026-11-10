@@ -281,6 +281,37 @@ class DiaryService:
             return None
         return {name: value for name, value in result.items() if value is not None}
 
+    async def fetch_teacher_journal_filter(self, user: User) -> dict[str, Any]:
+        """Классы, предметы и периоды учительского журнала (только чтение)."""
+        async def call(client: Any) -> dict[str, Any]:
+            if hasattr(client, "teacher_journal_filter"):
+                return await client.teacher_journal_filter()
+            response = await client._authed_get("grade/journal/filter")
+            return response.json()
+
+        payload = await self._with_session(user, call)
+        return payload if isinstance(payload, dict) else {}
+
+    async def fetch_teacher_journal(
+        self, user: User, *, class_id: int, subject_group_id: int, term_id: int,
+        year_id: int, grade: int = -1,
+    ) -> dict[str, Any]:
+        """Снимок журнала учителя без каких-либо операций записи."""
+        async def call(client: Any) -> dict[str, Any]:
+            if hasattr(client, "teacher_journal"):
+                return await client.teacher_journal(
+                    class_id, subject_group_id, term_id, year_id, grade=grade,
+                )
+            response = await client._authed_get(
+                "grade/journal",
+                params={"classId": class_id, "grade": grade, "sgId": subject_group_id,
+                        "termId": term_id, "v": 1, "yearId": year_id},
+            )
+            return response.json()
+
+        payload = await self._with_session(user, call)
+        return payload if isinstance(payload, dict) else {}
+
     async def fetch_bells(self, user: User) -> list[dict[str, Any]] | None:
         """Расписание звонков школы (веб-API ``schedule/times``).
 

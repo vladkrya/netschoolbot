@@ -284,7 +284,35 @@ export async function demoApi(path, options = {}) {
       timezone: 'Europe/Moscow',
       timezones: [{ id: 'Europe/Moscow', name: 'Москва' }],
       status: { running: true, last_ok_at: new Date().toISOString(), queued: 0 },
+      teacher_journal: true,
     });
+  }
+
+  // Небольшой, но полный снимок учительского журнала для ручной проверки
+  // интерфейса и скриншотов: классы, четверти, оценки и средние.
+  if (route === '/api/teacher/journal/filter') {
+    return ok({
+      classes: [{ id: 1, name: '5а' }, { id: 2, name: '5б' }],
+      subjectGroups: [{ id: 10, name: 'География' }, { id: 11, name: 'История' }],
+      terms: [{ id: 101, name: '1 четверть' }, { id: 102, name: '2 четверть' },
+        { id: 103, name: '3 четверть' }, { id: 104, name: '4 четверть' }],
+      yearId: 2026,
+    });
+  }
+  if (route === '/api/teacher/journal') {
+    const students = ['Алексей Воронов', 'Мария Ильина', 'София Петрова'].map((fullName, index) => ({ id: index + 1, fullName }));
+    return ok({ journals: [{
+      className: url.searchParams.get('class_id') === '2' ? '5б' : '5а',
+      subjectGroupName: url.searchParams.get('subject_group_id') === '11' ? 'История' : 'География',
+      students,
+      classMeeting: [{ id: 1, date: '2026-09-05' }, { id: 2, date: '2026-09-19' }, { id: 3, date: '2026-10-03' }],
+      assignments: [{ id: 1, classMeetingId: 1, assignmentName: 'Ответ у карты' },
+        { id: 2, classMeetingId: 2, assignmentName: 'Контрольная работа' }, { id: 3, classMeetingId: 3, assignmentName: 'Тест' }],
+      marks: [{ studentId: 1, assignmentId: 1, mark: '5' }, { studentId: 1, assignmentId: 2, mark: '4' },
+        { studentId: 2, assignmentId: 1, mark: '4' }, { studentId: 2, assignmentId: 3, mark: '5' },
+        { studentId: 3, assignmentId: 2, mark: '3' }],
+      avgMarks: [{ studentId: 1, avgMark: 4.5 }, { studentId: 2, avgMark: 4.5 }, { studentId: 3, avgMark: 3 }],
+    }] });
   }
 
   if (route === '/api/diary') {

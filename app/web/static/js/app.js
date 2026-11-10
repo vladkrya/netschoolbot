@@ -9,6 +9,7 @@ import { initUpdates, reopenScreens, takeResume } from './update.js';
 import { initSchedule, loadSchedule } from './schedule.js';
 import { initHomework, loadHomework } from './homework.js';
 import { loadTotals } from './totals.js';
+import { loadTeacherJournal } from './teacher-journal.js';
 import { initLive, liveEvents } from './live.js';
 import { initMail, loadMail, openAnnouncements, openCompose } from './mail.js';
 import {
@@ -44,6 +45,7 @@ const TABS = {
   assistant: loadAssistantTab,
   homework: loadHomework,
   totals: loadTotals,
+  teacher: loadTeacherJournal,
   mail: loadMail,
   games: loadGames,
   settings: loadSettings,
@@ -671,8 +673,9 @@ async function quietly(render) {
  *  при переключении вкладка берёт готовое из state. По одной, чтобы не
  *  забить школьный сервер пачкой запросов. */
 async function prefetch() {
-  for (const name of ['day', 'schedule', 'homework', 'totals', 'mail']) {
+  for (const name of ['day', 'schedule', 'homework', 'totals', 'teacher', 'mail']) {
     if (name === state.tab || (name === 'mail' && (isReadOnly() || isMyschool()))) continue;
+    if (name === 'teacher' && !state.profile?.teacher_journal) continue;
     try {
       await TABS[name]();
     } catch {
@@ -700,6 +703,7 @@ function initChrome() {
     applyScheduleTab();
     syncNav();
   });
+  window.addEventListener('netschool:profile', () => renderNav(state.tab));
   $('bellBtn').addEventListener('click', openAnnouncements);
   $('composeBtn').addEventListener('click', () => openCompose());
   // При просмотре дневника родным почты нет — и опрашивать её незачем.

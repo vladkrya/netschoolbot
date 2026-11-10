@@ -33,7 +33,12 @@ class DiaryClient(FakeClient):
     async def diary_init(self):
         return self.init_payload
 
-    async def _authed_get(self, path):
+    async def _authed_get(self, path, params=None):
+        self.last_get = (path, params)
+        if path == "grade/journal/filter":
+            return SimpleNamespace(json=lambda: {"classes": [{"id": 1, "name": "5а"}]})
+        if path == "grade/journal":
+            return SimpleNamespace(json=lambda: {"journals": [{"students": []}]})
         if path == "student/diary/init":
             return SimpleNamespace(
                 status_code=self.session_status, json=lambda: self.init_payload
@@ -83,6 +88,23 @@ def service(db, client_holder):
 
 
 class TestFetch:
+    async def test_teacher_journal_only_uses_get(self, service, users, client_holder):
+        user = make_user()
+        await users.save(user)
+
+        assert await service.fetch_teacher_journal_filter(user) == {"classes": [{"id": 1, "name": "5а"}]}
+        assert client_holder["client"].last_get == ("grade/journal/filter", None)
+
+        result = await service.fetch_teacher_journal(
+            user, class_id=1, subject_group_id=2, term_id=3, year_id=4,
+        )
+
+        assert result == {"journals": [{"students": []}]}
+        assert client_holder["client"].last_get == (
+            "grade/journal",
+            {"classId": 1, "grade": -1, "sgId": 2, "termId": 3, "v": 1, "yearId": 4},
+        )
+
     async def test_weeks_are_walked_from_monday(self, service, users, client_holder):
         user = make_user()
         await users.save(user)

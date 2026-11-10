@@ -7,7 +7,7 @@
 // вернуть.
 'use strict';
 
-import { $, isMyschool, isReadOnly } from './core.js';
+import { $, isMyschool, isReadOnly, state } from './core.js';
 import { getPref, setPref } from './prefs.js';
 import { isNewDesign, navIcon } from './appearance.js';
 
@@ -18,6 +18,7 @@ export const TAB_DEFS = {
   assistant: { icon: 'sparkles', old: 'Помощник', fresh: 'Помощник' },
   homework: { icon: 'checklist', old: 'Д/З', fresh: 'Задания' },
   totals: { icon: 'book', old: 'Итоги', fresh: 'Оценки' },
+  teacher: { icon: 'book', old: 'Журнал', fresh: 'Журнал' },
   mail: { icon: 'chat', old: 'Сообщения', fresh: 'Сообщения' },
   games: { icon: 'game', old: 'Игры', fresh: 'Игры' },
   settings: { icon: 'gear', old: 'Настройки', fresh: 'Настройки' },
@@ -27,6 +28,7 @@ export const TAB_DEFS = {
 export const TAB_NAMES = {
   day: 'День', schedule: 'Звонки / неделя', assistant: 'ИИ-помощник', homework: 'Задания',
   totals: 'Оценки', mail: 'Сообщения (почта и объявления)', games: 'Игры', settings: 'Настройки',
+  teacher: 'Классный журнал',
 };
 
 // Вкладок в новом дизайне пять (звонки и помощник переехали на «День»), и
@@ -44,7 +46,8 @@ const HIDDEN_READONLY = new Set(['mail', 'assistant']);
 // Включить «Сообщения» нельзя: их нет в списке доступных вкладок.
 const HIDDEN_MYSCHOOL = new Set(['mail']);
 
-const hidden = (tab) => (isReadOnly() && HIDDEN_READONLY.has(tab)) || (isMyschool() && HIDDEN_MYSCHOOL.has(tab));
+const hidden = (tab) => (isReadOnly() && HIDDEN_READONLY.has(tab)) || (isMyschool() && HIDDEN_MYSCHOOL.has(tab)) ||
+  (tab === 'teacher' && !state.profile?.teacher_journal);
 
 /** «Сообщения» → «Игры» для «Моей школы»; остальное как есть, без повторов. */
 function swapMail(tabs) {
@@ -56,10 +59,10 @@ export function availableTabs() {
   return Object.keys(TAB_DEFS).filter((tab) => !MERGED_IN_NEW.has(tab) && !hidden(tab));
 }
 
-const CLASSIC_TABS = ['day', 'schedule', 'homework', 'totals', 'mail'];
+const CLASSIC_TABS = ['day', 'schedule', 'homework', 'totals', 'teacher', 'mail'];
 
 export function defaultTabs() {
-  return swapMail(['day', 'homework', 'totals', 'mail', 'settings']);
+  return swapMail(['day', 'homework', 'totals', 'teacher', 'mail', 'settings']);
 }
 
 /** Вкладки панели: сохранённый выбор без неизвестных и недоступных. */

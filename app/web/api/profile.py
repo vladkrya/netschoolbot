@@ -22,6 +22,17 @@ async def _keep_attachments_info(app: AppContext, user: User) -> dict:
     return {"available": True, "on": await app.keep_attachments_wanted(user)}
 
 
+async def _teacher_journal_info(app: AppContext, user: User) -> bool:
+    """Есть ли у текущей роли хотя бы один доступный учительский журнал."""
+    if not hasattr(app.diary, "fetch_teacher_journal_filter"):
+        return False
+    try:
+        data = await app.diary.fetch_teacher_journal_filter(user)
+    except NetSchoolError:
+        return False
+    return bool(data.get("classes") or data.get("classGroups") or data.get("classList"))
+
+
 async def _keep_signed_in_info(app: AppContext, user: User) -> dict:
     from ...context import KEEP_SIGNED_IN_PREF
 
@@ -99,6 +110,7 @@ async def profile(request: web.Request) -> web.Response:
                 if viewer is None or viewer.telegram_id == user.telegram_id else {"available": False},
                 # Тумблер пропусков показывается только там, где есть отметки посещаемости.
                 "api_mode": user.effective_api_mode.value,
+                "teacher_journal": await _teacher_journal_info(app, user),
                 "interval_minutes": user.check_interval // 60,
                 "quiet_hours": user.quiet_hours.as_text(),
                 "enabled": user.enabled,

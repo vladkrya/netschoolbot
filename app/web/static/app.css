@@ -809,6 +809,24 @@ html.offline .switch-row:has(#pushToggle, #keepFiles, #sgoUpdates) {
 /* ───────────────────────────── Итоги ───────────────────────────── */
 
 .totals-table { margin: 0 -12px; overflow-x: auto; }
+.teacher-journal { padding: 16px 12px 24px; }
+.teacher-journal h2 { margin: 0 0 4px; }
+.teacher-hint, .teacher-caption { color: var(--muted, #697386); margin: 0 0 14px; }
+.teacher-filters { display: grid; grid-template-columns: repeat(3, minmax(150px, 1fr)); gap: 10px; margin-bottom: 12px; }
+.teacher-filters label { display: grid; gap: 5px; font-weight: 600; font-size: 14px; }
+.teacher-filters select { min-width: 0; padding: 9px; border: 1px solid #d7dce5; border-radius: 10px; background: #fff; font: inherit; }
+.teacher-table-wrap { overflow: auto; border: 1px solid #e0e4eb; border-radius: 12px; margin-top: 14px; max-height: calc(100vh - 280px); }
+.teacher-table { width: max-content; min-width: 100%; border-collapse: collapse; background: #fff; font-size: 14px; }
+.teacher-table th, .teacher-table td { padding: 9px 10px; border-bottom: 1px solid #e6e9ef; border-right: 1px solid #eef0f4; text-align: center; white-space: nowrap; }
+.teacher-table thead th { position: sticky; top: 0; z-index: 2; background: #f5f7fb; font-size: 12px; }
+.teacher-table th:first-child { position: sticky; left: 0; z-index: 1; text-align: left; background: #fff; }
+.teacher-table thead th:first-child { z-index: 3; background: #f5f7fb; }
+.teacher-table .teacher-average { position: sticky; right: 0; background: #edf7ef; font-weight: 700; }
+@media (max-width: 640px) {
+  .teacher-journal { padding: 12px 0 20px; }
+  .teacher-filters { grid-template-columns: 1fr; }
+  .teacher-table-wrap { border-radius: 0; max-height: calc(100vh - 330px); }
+}
 .totals-table .tt-row { min-width: calc(110px + var(--totals-columns, 4) * 44px); }
 .totals-table .tt-cell { width: 44px; }
 .totals-table .tt-head { top: 0; }
