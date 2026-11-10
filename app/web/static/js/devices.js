@@ -323,19 +323,25 @@ export async function openQrApproval(code) {
   }));
 }
 
-/** Сканер Telegram: QR-код с экрана входа ведёт на …/?qr=<код>. */
+/** Сканер Telegram или веб-камеры: QR-код с экрана входа ведёт на …/?qr=<код>. */
 function canScan() {
-  return Boolean(initData && tg?.showScanQrPopup && tg.isVersionAtLeast?.('6.4'));
+  if (initData && tg?.showScanQrPopup && tg.isVersionAtLeast?.('6.4')) return true;
+  return Boolean(navigator.mediaDevices?.getUserMedia || window.BarcodeDetector);
 }
 
-function scanQr() {
-  tg.showScanQrPopup({ text: 'QR-код с экрана входа в дневник' }, (text) => {
-    let code = '';
-    try { code = new URL(text).searchParams.get('qr') || ''; } catch { /* не ссылка */ }
-    if (!code) return false; // чужой код — сканер ждёт дальше
-    openQrApproval(code);
-    return true;
-  });
+async function scanQr() {
+  if (initData && tg?.showScanQrPopup && tg.isVersionAtLeast?.('6.4')) {
+    tg.showScanQrPopup({ text: 'QR-код с экрана входа в дневник' }, (text) => {
+      let code = '';
+      try { code = new URL(text).searchParams.get('qr') || text; } catch { code = text; }
+      if (!code) return false; // чужой код — сканер ждёт дальше
+      openQrApproval(code);
+      return true;
+    });
+    return;
+  }
+  const { openWebQrScanner } = await import('./qr-scanner.js');
+  openWebQrScanner((code) => openQrApproval(code));
 }
 
 /** «Создать ключ входа»: Face ID, Touch ID или PIN телефона вместо пароля. */

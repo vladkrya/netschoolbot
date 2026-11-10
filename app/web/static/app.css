@@ -375,13 +375,13 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
    раскрытии ставит core.js по тексту. */
 .net-pill {
   position: fixed;
-  right: 16px;
+  right: 12px;
   bottom: calc(var(--nav-h) + 14px);
   z-index: 45;
   display: flex; align-items: center; gap: 8px;
-  height: 52px; width: 52px;
-  padding: 0 6px; box-sizing: border-box;
-  border: 0; border-radius: 999px;
+  min-height: 52px; height: auto; width: 52px;
+  padding: 6px 14px 6px 6px; box-sizing: border-box;
+  border: 0; border-radius: 26px;
   font: inherit; text-align: left;
   color: #fff;
   background: color-mix(in srgb, #37404d 92%, transparent);
@@ -389,7 +389,13 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
   backdrop-filter: blur(12px);
   box-shadow: 0 6px 20px rgba(0, 0, 0, .25);
   animation: pop .35s var(--ease) both;
-  transition: width .5s cubic-bezier(.32, .72, 0, 1), opacity .25s ease, transform .25s var(--ease);
+  transition: width .35s cubic-bezier(.32, .72, 0, 1), opacity .25s ease, transform .25s var(--ease);
+}
+.net-pill:not(.open) {
+  width: 52px !important;
+  height: 52px !important;
+  min-height: 52px !important;
+  padding: 0 6px !important;
 }
 .net-pill:active { transform: scale(.92); }
 .net-pill.leaving { opacity: 0; transform: scale(.6); pointer-events: none; }
@@ -429,12 +435,22 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .net-pill-icon { flex: none; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; }
 /* Обрезает текст сама надпись, а не плашка: overflow на плашке срезал
    по скруглению и бейдж со счётчиком. */
-.net-pill-text { display: grid; flex: 0 1 auto; min-width: 0; overflow: hidden; max-width: calc(min(300px, 100vw - 92px) - 72px); line-height: 1.2; opacity: 0; transform: translateX(-6px);
-  transition: opacity .15s ease, transform .2s ease; }
-.net-pill.open .net-pill-text { opacity: 1; transform: none; transition: opacity .25s ease .15s, transform .35s var(--ease) .1s; }
+.net-pill-text {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: calc(100vw - 84px);
+  line-height: 1.25;
+  opacity: 0;
+  transform: translateX(-6px);
+  transition: opacity .15s ease, transform .2s ease;
+}
+.net-pill.open .net-pill-text { opacity: 1; transform: none; transition: opacity .25s ease .1s, transform .25s var(--ease) .05s; }
 .net-pill b { font-size: 13px; font-weight: 650; white-space: nowrap; }
-.net-pill small { font-size: 11px; opacity: .78; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.net-pill .vpn-hint { white-space: normal; }
+.net-pill small { font-size: 11px; opacity: .85; line-height: 1.3; }
+.net-pill .vpn-hint { white-space: normal; margin-top: 2px; }
 .net-pill.brief b { display: none; }
 .net-pill.brief small { font-size: 13px; font-weight: 600; opacity: 1; }
 .net-pill.brief .vpn-hint { display: none; }
@@ -811,7 +827,10 @@ html.offline .switch-row:has(#pushToggle, #keepFiles, #sgoUpdates) {
 .totals-table { margin: 0 -12px; overflow-x: auto; }
 .teacher-journal { padding: 16px 12px 24px; }
 .teacher-journal h2 { margin: 0 0 4px; }
-.teacher-hint, .teacher-caption { color: var(--muted, #697386); margin: 0 0 14px; }
+.teacher-hint { color: var(--text2); font-size: 13px; margin: 0 0 12px; line-height: 1.4; }
+.teacher-caption-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin: 6px 0 10px; }
+.teacher-caption { font-size: 14px; font-weight: 600; color: var(--text); margin: 0; }
+.teacher-updated { font-size: 12px; color: var(--text2); white-space: nowrap; }
 .teacher-filters { display: grid; grid-template-columns: repeat(3, minmax(140px, 1fr)); gap: 10px; margin-bottom: 12px; }
 .teacher-filters label { display: grid; gap: 5px; font-weight: 600; font-size: 14px; }
 .teacher-filters select { min-width: 0; padding: 9px; border: 1px solid var(--border); border-radius: 10px; background: var(--card); color: var(--text); font: inherit; }
@@ -860,18 +879,34 @@ html.offline .switch-row:has(#pushToggle, #keepFiles, #sgoUpdates) {
 @media (max-width: 640px) {
   .teacher-journal { padding: 12px 10px 20px; }
   .teacher-journal h2 { font-size: 20px; margin-bottom: 2px; }
-  .teacher-hint { display: none; }
+  .teacher-hint { font-size: 11px; margin: 0 0 8px; line-height: 1.3; opacity: 0.85; }
   .teacher-filters { grid-template-columns: 0.9fr 1.6fr 1.2fr; gap: 6px; margin-bottom: 10px; }
   .teacher-filters label { gap: 3px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.4px; color: var(--text2); }
   .teacher-filters select { padding: 7px 6px; font-size: 13px; border-radius: 8px; }
   #teacherLoad { display: none; }
-  .teacher-caption { margin: 6px 0 8px; font-size: 13px; }
+  .teacher-caption-row { margin: 4px 0 6px; }
+  .teacher-caption { font-size: 13px; }
+  .teacher-updated { font-size: 11px; }
   .teacher-table-wrap { margin-top: 8px; border-radius: 8px; max-height: calc(100vh - 220px); }
   .teacher-table { font-size: 13px; }
   .teacher-table th, .teacher-table td { padding: 6px 7px; }
   .teacher-table th:first-child, .teacher-table thead th:first-child { max-width: 130px; min-width: 105px; font-size: 12px; }
   .teacher-table thead th { font-size: 11px; }
 }
+@media (min-width: 641px) {
+  #panel-teacher { padding: 16px 20px 32px; max-width: 100%; }
+  .teacher-journal { max-width: 100%; padding: 0; }
+  .teacher-table-wrap { max-height: calc(100vh - 190px); width: 100%; }
+}
+@media (min-width: 1024px) {
+  #panel-teacher { padding: 20px 28px 40px; }
+  .teacher-filters { grid-template-columns: 180px 260px 180px; gap: 12px; }
+  .teacher-table-wrap { max-height: calc(100vh - 200px); }
+}
+.qr-scanner-modal { display: flex; flex-direction: column; align-items: center; padding: 8px 0 16px; }
+.qr-viewfinder { position: relative; width: min(100%, 320px); height: 260px; border-radius: 16px; overflow: hidden; background: #000; display: flex; align-items: center; justify-content: center; }
+.qr-viewfinder video { width: 100%; height: 100%; object-fit: cover; }
+.qr-target-box { position: absolute; width: 200px; height: 200px; border: 2px dashed rgba(255, 255, 255, 0.8); border-radius: 12px; box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.35); pointer-events: none; }
 .totals-table .tt-row { min-width: calc(110px + var(--totals-columns, 4) * 44px); }
 .totals-table .tt-cell { width: 44px; }
 .totals-table .tt-head { top: 0; }

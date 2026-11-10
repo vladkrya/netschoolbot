@@ -986,6 +986,13 @@ async function start() {
   initTapWaves();
   setFallbackBack(fallbackBack);
 
+  const qrParam = new URLSearchParams(location.search).get('qr');
+  if (qrParam) {
+    const cleanSearch = location.search.replace(/[?&]qr=[^&]+/, '').replace(/^&/, '?');
+    history.replaceState(history.state, '', location.pathname + cleanSearch);
+    import('./devices.js').then(({ openQrApproval }) => openQrApproval(qrParam)).catch(() => {});
+  }
+
   // С PIN сервер не кладёт имя в страницу, а профиль без сети приходит
   // последним — до него в шапке стояло «Дневник». Берём имя прошлого входа.
   $('topName').textContent = studentFirstName(student) || storedName() || school || 'СГОшка';

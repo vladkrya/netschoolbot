@@ -4,6 +4,19 @@
 import { $, api, avgClass, esc, formatAverage, showFailure, showLoading, skeleton } from './core.js';
 
 let filters;
+let lastPayload;
+let lastUpdated;
+
+function formatUpdated(timestamp) {
+  if (!timestamp) return '';
+  const d = new Date(timestamp);
+  const now = new Date();
+  const time = d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+  if (d.toDateString() === now.toDateString()) {
+    return `Обновлено в ${time}`;
+  }
+  return `Обновлено ${d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })}, ${time}`;
+}
 
 function list(data, names) {
   for (const name of names) if (Array.isArray(data && data[name])) return data[name];
@@ -83,7 +96,7 @@ function renderFilter() {
 
   $('teacherJournalContent').innerHTML =
     '<section class="teacher-journal"><h2>Классный журнал</h2>' +
-    '<p class="teacher-hint">Только просмотр: оценки и посещаемость здесь не редактируются.</p>' +
+    '<p class="teacher-hint">Только просмотр без редактирования (редактирование оценок появится в будущих обновлениях).</p>' +
     '<div class="teacher-filters">' +
     '<label>Класс<select id="teacherClass">' + options(choices.classes, ['id', 'classId'], ['name', 'className', 'title'], prefClass) + '</select></label>' +
     '<label>Предмет<select id="teacherSubject"></select></label>' +
@@ -130,8 +143,10 @@ function renderJournal(payload) {
       esc(String(marks.get(student.id + ':' + item.id) || '')) + '</td>').join('') +
       '<td class="teacher-average ' + avgCls + '">' + (formatAverage(avgVal) || '—') + '</td></tr>';
   }).join('');
-  box.innerHTML = '<p class="teacher-caption">' + esc(journal.className || '') + ' · ' +
-    esc(journal.subjectGroupName || '') + '</p><div class="teacher-table-wrap" data-own-gesture="true"><table class="teacher-table"><thead><tr><th>Ученик</th>' +
+  const updatedText = formatUpdated(lastUpdated || Date.now());
+  box.innerHTML = '<div class="teacher-caption-row"><p class="teacher-caption">' + esc(journal.className || '') + ' · ' +
+    esc(journal.subjectGroupName || '') + '</p>' + (updatedText ? '<span class="teacher-updated">' + esc(updatedText) + '</span>' : '') +
+    '</div><div class="teacher-table-wrap" data-own-gesture="true"><table class="teacher-table"><thead><tr><th>Ученик</th>' +
     head + '<th>Средний</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
 
   const table = box.querySelector('.teacher-table');
@@ -197,6 +212,8 @@ async function loadJournal() {
   showLoading(box, skeleton(5));
   try {
     const res = await api('/api/teacher/journal?' + params);
+    lastPayload = res.data;
+    lastUpdated = Date.now();
     renderJournal(res.data);
   } catch (error) {
     showFailure(box, error, '<p class="empty">' + esc(error.message || 'Не удалось загрузить журнал') + '</p>');
@@ -206,9 +223,18 @@ async function loadJournal() {
 export async function loadTeacherJournal() {
   const container = $('teacherJournalContent');
   if (!container) return;
+  if (filters && lastPayload) {
+    if (!$('teacherClass')) {
+      renderFilter();
+    }
+    renderJournal(lastPayload);
+    return;
+  }
   showLoading(container, skeleton(6));
   try {
-    filters = (await api('/api/teacher/journal/filter?refresh=1')).data;
+    if (!filters) {
+      filters = (await api('/api/teacher/journal/filter')).data;
+    }
     const choices = data();
     if (!choices.classes.length || !choices.subjects.length || !choices.terms.length) {
       container.innerHTML = '<section class="teacher-journal"><h2>Классный журнал</h2><p class="empty">Учительский журнал для этого аккаунта недоступен.</p></section>';

@@ -288,10 +288,13 @@ let pillTimer = 0;
 // сначала «съедало» пустой запас и только потом заметно сжималось.
 function fitOfflinePill(pill) {
   if (!pill.classList.contains('open')) { pill.style.width = ''; return; }
-  const lines = [...pill.querySelectorAll('.net-pill-text > *')].filter((line) => line.offsetParent);
+  const textEl = pill.querySelector('.net-pill-text');
+  if (!textEl) return;
+  const lines = [...textEl.children].filter((line) => line.offsetParent);
   const text = Math.max(0, ...lines.map((line) => line.scrollWidth));
-  const limit = Math.min(300, window.innerWidth - 92);
-  pill.style.width = `${Math.min(limit, 6 + 40 + 8 + text + 18)}px`;
+  const limit = Math.min(390, window.innerWidth - 24);
+  const target = Math.min(limit, Math.max(220, 6 + 40 + 8 + text + 20));
+  pill.style.width = `${target}px`;
 }
 
 function openOfflinePill(brief = false) {
@@ -300,7 +303,7 @@ function openOfflinePill(brief = false) {
   // Уже раскрыта полностью — касание не сворачивает её до одной строки.
   pill.classList.toggle('brief', brief && !(pill.classList.contains('open') && !pill.classList.contains('brief')));
   pill.classList.add('open');
-  fitOfflinePill(pill);
+  requestAnimationFrame(() => fitOfflinePill(pill));
   clearTimeout(pillTimer);
   pillTimer = setTimeout(() => {
     pill.classList.remove('open');
@@ -343,8 +346,8 @@ function paintOfflinePill() {
   pill.innerHTML = `<span class="net-pill-icon">${updating && navigator.onLine !== false ? ICONS.updating : ICONS.offline}</span>`
     + `<span class="net-pill-text"><b>${offlineTitle()}</b><small>${waiting}</small>${vpnHint ? `<small class="vpn-hint">${vpnHint}</small>` : ''}</span>`
     + (outboxCount ? `<span class="net-pill-count">${outboxCount}</span>` : '');
-  if (fresh) openOfflinePill();
-  else fitOfflinePill(pill);
+  if (fresh) requestAnimationFrame(() => openOfflinePill());
+  else requestAnimationFrame(() => fitOfflinePill(pill));
 }
 
 export function setOffline(value) {

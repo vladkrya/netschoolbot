@@ -113,6 +113,9 @@ class SessionPool:
 
     async def _ensure_logged_in_teacher(self, user: User, entry: _Entry) -> Any:
         if entry.client is not None:
+            idle = (dt.datetime.now() - entry.last_used).total_seconds()
+            if idle < 900:
+                return entry.client
             try:
                 await entry.client._authed_get("years/current")
                 return entry.client
