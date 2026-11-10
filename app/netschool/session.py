@@ -116,6 +116,8 @@ class SessionPool:
                 await entry.client._authed_get("years/current")
                 return entry.client
             except Exception:
+                with contextlib.suppress(Exception):
+                    await entry.client.logout()
                 await _close_client(entry.client)
                 entry.client = None
 
@@ -140,7 +142,10 @@ class SessionPool:
                 await _close_client(entry.client)
         if t_entry is not None:
             async with t_entry.lock:
-                await _close_client(t_entry.client)
+                if t_entry.client is not None:
+                    with contextlib.suppress(Exception):
+                        await t_entry.client.logout()
+                    await _close_client(t_entry.client)
         if forget_saved:
             await self._sessions.drop(telegram_id)
 
@@ -158,6 +163,8 @@ class SessionPool:
         for _, t_entry in t_entries:
             async with t_entry.lock:
                 if t_entry.client is not None:
+                    with contextlib.suppress(Exception):
+                        await t_entry.client.logout()
                     await _close_client(t_entry.client)
 
     async def checkpoint_all(self) -> None:
@@ -188,12 +195,24 @@ class SessionPool:
                 if e.last_used < deadline and not e.keep_alive
             ]
             entries = [self._entries.pop(uid) for uid in stale]
+            stale_t = [
+                uid
+                for uid, e in self._teacher_entries.items()
+                if e.last_used < deadline
+            ]
+            t_entries = [self._teacher_entries.pop(uid) for uid in stale_t]
         for entry in entries:
             async with entry.lock:
                 await _close_client(entry.client)
-        if stale:
-            logger.debug("Закрыто простаивающих сессий: %s", len(stale))
-        return len(stale)
+        for t_entry in t_entries:
+            async with t_entry.lock:
+                if t_entry.client is not None:
+                    with contextlib.suppress(Exception):
+                        await t_entry.client.logout()
+                    await _close_client(t_entry.client)
+        if stale or stale_t:
+            logger.debug("Закрыто простаивающих сессий: %s (учительских: %s)", len(stale), len(stale_t))
+        return len(stale) + len(stale_t)
 
     @property
     def mobile_available(self) -> bool:

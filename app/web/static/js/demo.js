@@ -294,6 +294,10 @@ export async function demoApi(path, options = {}) {
     return ok({
       classes: [{ id: 1, name: '5а' }, { id: 2, name: '5б' }],
       subjectGroups: [{ id: 10, name: 'Алгебра' }, { id: 11, name: 'Геометрия' }],
+      subjectsByClass: {
+        '1': [{ id: 10, name: 'Алгебра' }],
+        '2': [{ id: 11, name: 'Геометрия' }],
+      },
       terms: [{ id: 101, name: '1 четверть' }, { id: 102, name: '2 четверть' },
         { id: 103, name: '3 четверть' }, { id: 104, name: '4 четверть' }],
       yearId: 2026,

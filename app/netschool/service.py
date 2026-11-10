@@ -81,7 +81,13 @@ class TokenCheck:
     expires_at: dt.datetime  # UTC
 
 
-def _normalize_teacher_filter(raw: dict[str, Any], year_id: int | None = None) -> dict[str, Any]:
+def _normalize_teacher_filter(
+    raw: dict[str, Any],
+    year_id: int | None = None,
+    subject_groups: list[dict[str, Any]] | None = None,
+    teacher_id: int | None = None,
+    teacher_name: str | None = None,
+) -> dict[str, Any]:
     if not isinstance(raw, dict):
         return {}
     if "classes" in raw or "classGroups" in raw or "classList" in raw:
@@ -100,13 +106,49 @@ def _normalize_teacher_filter(raw: dict[str, Any], year_id: int | None = None) -
         if cid:
             classes.append({"id": cid, "name": item.get("title", str(cid)), "value": val})
 
+    # Сопоставляем предметы с классами через группы обучения учителей
+    subjects_by_class: dict[str, list[dict[str, Any]]] = {}
+    if subject_groups:
+        t_name = (teacher_name or "").strip().lower()
+        for g in subject_groups:
+            teachers = g.get("teachers", [])
+            t_ids = [t.get("id") for t in teachers if isinstance(t, dict)]
+            t_names = [str(t.get("name") or "").strip().lower() for t in teachers if isinstance(t, dict)]
+            matches_teacher = (
+                teacher_id in t_ids
+                or (t_name and any(t_name in name or name in t_name for name in t_names))
+            )
+            if matches_teacher:
+                cls = g.get("class") or {}
+                cid = cls.get("id")
+                if cid:
+                    s_name = (g.get("subject") or {}).get("name") or g.get("name") or "Предмет"
+                    subjects_by_class.setdefault(str(cid), []).append({
+                        "id": g.get("id"),
+                        "name": s_name,
+                    })
+
+    # Предметы по умолчанию из исходного фильтра СГО
     sgid = by_id.get("SGID") or by_id.get("SBJID") or {}
-    subjects = []
+    default_subjects = []
     for item in sgid.get("items") or []:
         val = str(item.get("value") or "")
         sid = int(val) if val.isdigit() else 0
         if sid:
-            subjects.append({"id": sid, "name": item.get("title", str(sid))})
+            default_subjects.append({"id": sid, "name": item.get("title", str(sid))})
+
+    default_class = pclid.get("defaultValue")
+    default_cid = int(str(default_class).split("_")[0]) if default_class and str(default_class).split("_")[0].isdigit() else (classes[0]["id"] if classes else None)
+
+    if default_cid and str(default_cid) in subjects_by_class:
+        cur_subjects = subjects_by_class[str(default_cid)]
+    else:
+        cur_subjects = default_subjects
+
+    if default_cid and str(default_cid) not in subjects_by_class and default_subjects:
+        subjects_by_class[str(default_cid)] = default_subjects
+
+    default_sid = cur_subjects[0]["id"] if cur_subjects else (int(str(sgid.get("defaultValue"))) if sgid.get("defaultValue") and str(sgid.get("defaultValue")).isdigit() else None)
 
     termid = by_id.get("TERMID") or {}
     terms = []
@@ -116,18 +158,13 @@ def _normalize_teacher_filter(raw: dict[str, Any], year_id: int | None = None) -
         if tid:
             terms.append({"id": tid, "name": item.get("title", str(tid))})
 
-    default_class = pclid.get("defaultValue")
-    default_cid = int(str(default_class).split("_")[0]) if default_class and str(default_class).split("_")[0].isdigit() else (classes[0]["id"] if classes else None)
-
-    default_subject = sgid.get("defaultValue")
-    default_sid = int(str(default_subject)) if default_subject and str(default_subject).isdigit() else (subjects[0]["id"] if subjects else None)
-
     default_term = termid.get("defaultValue")
     default_tid = int(str(default_term)) if default_term and str(default_term).isdigit() else (terms[0]["id"] if terms else None)
 
     return {
         "classes": classes,
-        "subjects": subjects,
+        "subjects": cur_subjects,
+        "subjectsByClass": subjects_by_class,
         "terms": terms,
         "yearId": year_id or raw.get("yearId"),
         "defaults": {
@@ -349,7 +386,32 @@ class DiaryService:
             else:
                 response = await client._authed_get("grade/journal/filter")
                 raw = response.json()
-            return _normalize_teacher_filter(raw, getattr(client, "_year_id", None))
+
+            if isinstance(raw, dict) and ("classes" in raw or "classGroups" in raw or "classList" in raw):
+                return raw
+
+            subject_groups = None
+            teacher_id = None
+            teacher_name = None
+            try:
+                sg_resp = await client._authed_get("subjectgroups")
+                if sg_resp.status_code == 200:
+                    subject_groups = sg_resp.json()
+                ctx_resp = await client._http.get("context")
+                if ctx_resp.status_code == 200:
+                    ctx_data = ctx_resp.json()
+                    teacher_id = ctx_data.get("userId")
+                    teacher_name = (ctx_data.get("user") or {}).get("name")
+            except Exception as exc:
+                logger.debug("Не удалось загрузить подгруппы учителей: %s", exc)
+
+            return _normalize_teacher_filter(
+                raw,
+                getattr(client, "_year_id", None),
+                subject_groups=subject_groups,
+                teacher_id=teacher_id,
+                teacher_name=teacher_name,
+            )
 
         try:
             acquire = getattr(self._pool, "acquire_teacher", self._pool.acquire)

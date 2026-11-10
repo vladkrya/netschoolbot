@@ -520,3 +520,27 @@ class TestMailPages:
         data = await service.fetch_mail_page(user, "Deleted")
         assert data["pages"] == 1
         assert data["messages"][0]["read"] is True
+
+
+def test_normalize_teacher_filter_with_subject_groups():
+    from app.netschool.service import _normalize_teacher_filter
+
+    raw = {
+        "filterSources": [
+            {"filterId": "PCLID_IUP", "defaultValue": "91715_0", "items": [{"title": "5а", "value": "91715_0"}, {"title": "5б", "value": "91716_0"}]},
+            {"filterId": "SGID", "defaultValue": "916861", "items": [{"title": "География", "value": "916861"}]},
+            {"filterId": "TERMID", "defaultValue": "24589", "items": [{"title": "2 четверть", "value": "24589"}]},
+        ]
+    }
+    sg = [
+        {"id": 916861, "subject": {"name": "География"}, "class": {"id": 91715, "name": "5а"}, "teachers": [{"id": 16644, "name": "Учитель"}]},
+        {"id": 916874, "subject": {"name": "География"}, "class": {"id": 91716, "name": "5б"}, "teachers": [{"id": 16644, "name": "Учитель"}]},
+    ]
+    result = _normalize_teacher_filter(raw, year_id=7131, subject_groups=sg, teacher_id=16644)
+    assert len(result["classes"]) == 2
+    assert result["subjectsByClass"]["91715"] == [{"id": 916861, "name": "География"}]
+    assert result["subjectsByClass"]["91716"] == [{"id": 916874, "name": "География"}]
+    assert result["defaults"]["classId"] == 91715
+    assert result["defaults"]["subjectId"] == 916861
+    assert result["yearId"] == 7131
+

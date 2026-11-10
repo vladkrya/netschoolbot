@@ -73,19 +73,38 @@ function renderFilter() {
   const prefSubject = defs.subjectId || 'алгебра';
   const prefTerm = defs.termId || null;
 
+  function subjectsFor(cid) {
+    const key = String(cid);
+    if (filters?.subjectsByClass && filters.subjectsByClass[key]?.length) {
+      return filters.subjectsByClass[key];
+    }
+    return choices.subjects;
+  }
+
   $('teacherJournalContent').innerHTML =
     '<section class="teacher-journal"><h2>Классный журнал</h2>' +
     '<p class="teacher-hint">Только просмотр: оценки и посещаемость здесь не редактируются.</p>' +
     '<div class="teacher-filters">' +
     '<label>Класс<select id="teacherClass">' + options(choices.classes, ['id', 'classId'], ['name', 'className', 'title'], prefClass) + '</select></label>' +
-    '<label>Предмет<select id="teacherSubject">' + options(choices.subjects, ['id', 'subjectGroupId', 'sgId'], ['name', 'subjectName', 'title'], prefSubject) + '</select></label>' +
+    '<label>Предмет<select id="teacherSubject"></select></label>' +
     '<label>Период<select id="teacherTerm">' + options(choices.terms, ['id', 'termId'], ['name', 'title'], prefTerm) + '</select></label>' +
     '<input id="teacherYear" type="hidden" value="' + year + '">' +
     '</div><button class="primary-btn" id="teacherLoad">Показать оценки</button>' +
     '<div id="teacherJournalResult"></div></section>';
 
+  function updateSubjects(preferred) {
+    const cid = selected('teacherClass');
+    const items = subjectsFor(cid);
+    $('teacherSubject').innerHTML = options(items, ['id', 'subjectGroupId', 'sgId'], ['name', 'subjectName', 'title'], preferred);
+  }
+
+  updateSubjects(prefSubject);
+
   $('teacherLoad').addEventListener('click', loadJournal);
-  $('teacherClass').addEventListener('change', loadJournal);
+  $('teacherClass').addEventListener('change', () => {
+    updateSubjects();
+    loadJournal();
+  });
   $('teacherSubject').addEventListener('change', loadJournal);
   $('teacherTerm').addEventListener('change', loadJournal);
 }
