@@ -99,6 +99,7 @@ export function initSwipeBack() {
 
   document.addEventListener('touchstart', (event) => {
     if (gesture || event.touches.length !== 1) return;
+    if (event.target.closest?.('.teacher-table-wrap, [data-own-gesture]')) return;
     const touch = event.touches[0];
     const mode = swipeBackMode();
     if (mode === 'off' || !canGoBack()) return;

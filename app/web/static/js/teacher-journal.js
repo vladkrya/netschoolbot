@@ -119,20 +119,59 @@ function renderJournal(payload) {
     (dates.get(a.classMeetingId) || '').localeCompare(dates.get(b.classMeetingId) || '') || a.id - b.id);
   const marks = new Map((journal.marks || []).map((item) => [item.studentId + ':' + item.assignmentId, item.mark]));
   const averages = new Map((journal.avgMarks || []).map((item) => [item.studentId, item.avgMark]));
-  const head = works.map((item) => '<th title="' + esc(item.assignmentName || '') + '">' +
+  const head = works.map((item, colIdx) => '<th data-col="' + colIdx + '" title="' + esc(item.assignmentName || '') + '">' +
     esc(dates.get(item.classMeetingId) || '—') + '</th>').join('');
-  const rows = (journal.students || []).map((student, index) => {
+  const rows = (journal.students || []).map((student, rowIndex) => {
     const avgVal = averages.get(student.id);
     const avgCls = avgVal != null ? avgClass(avgVal) : '';
     const fullName = student.fullName || student.name || '';
-    return '<tr><th title="' + esc(fullName) + '">' + (index + 1) + '. ' +
-      esc(fullName) + '</th>' + works.map((item) => '<td>' +
+    return '<tr data-row="' + rowIndex + '"><th class="teacher-student" title="' + esc(fullName) + '">' + (rowIndex + 1) + '. ' +
+      esc(fullName) + '</th>' + works.map((item, colIdx) => '<td class="teacher-cell" data-col="' + colIdx + '">' +
       esc(String(marks.get(student.id + ':' + item.id) || '')) + '</td>').join('') +
       '<td class="teacher-average ' + avgCls + '">' + (formatAverage(avgVal) || '—') + '</td></tr>';
   }).join('');
   box.innerHTML = '<p class="teacher-caption">' + esc(journal.className || '') + ' · ' +
-    esc(journal.subjectGroupName || '') + '</p><div class="teacher-table-wrap"><table class="teacher-table"><thead><tr><th>Ученик</th>' +
+    esc(journal.subjectGroupName || '') + '</p><div class="teacher-table-wrap" data-own-gesture="true"><table class="teacher-table"><thead><tr><th>Ученик</th>' +
     head + '<th>Средний</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+
+  const table = box.querySelector('.teacher-table');
+  if (table) {
+    table.addEventListener('click', (event) => {
+      const target = event.target;
+      const studentTh = target.closest('.teacher-student');
+      const cellTd = target.closest('.teacher-cell');
+
+      if (studentTh) {
+        const tr = studentTh.closest('tr');
+        const wasSelected = tr.classList.contains('row-selected') && !table.querySelector('.cell-selected');
+        table.querySelectorAll('.row-selected').forEach((el) => el.classList.remove('row-selected'));
+        table.querySelectorAll('.col-selected').forEach((el) => el.classList.remove('col-selected'));
+        table.querySelectorAll('.cell-selected').forEach((el) => el.classList.remove('cell-selected'));
+        if (!wasSelected) {
+          tr.classList.add('row-selected');
+        }
+        return;
+      }
+
+      if (cellTd) {
+        const tr = cellTd.closest('tr');
+        const col = cellTd.dataset.col;
+        const headerTh = table.querySelector('thead th[data-col="' + col + '"]');
+        const wasSelected = cellTd.classList.contains('cell-selected');
+
+        table.querySelectorAll('.row-selected').forEach((el) => el.classList.remove('row-selected'));
+        table.querySelectorAll('.col-selected').forEach((el) => el.classList.remove('col-selected'));
+        table.querySelectorAll('.cell-selected').forEach((el) => el.classList.remove('cell-selected'));
+
+        if (!wasSelected) {
+          tr.classList.add('row-selected');
+          cellTd.classList.add('cell-selected');
+          if (headerTh) headerTh.classList.add('col-selected');
+        }
+        return;
+      }
+    });
+  }
 }
 
 async function loadJournal() {

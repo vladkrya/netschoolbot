@@ -92,6 +92,29 @@ document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') clearNotifications();
 });
 
+function syncTopTitle(name) {
+  const topName = $('topName');
+  const titleSwitch = $('titleSwitch');
+  const topTitle = $('topTitle');
+  if (!topName) return;
+  if (name === 'teacher') {
+    if (!topName.dataset.studentName && topName.textContent !== 'Журнал') {
+      topName.dataset.studentName = topName.textContent;
+    }
+    topName.textContent = 'Журнал';
+    if (titleSwitch) titleSwitch.hidden = true;
+    if (topTitle) topTitle.style.pointerEvents = 'none';
+  } else {
+    if (topName.dataset.studentName) {
+      topName.textContent = topName.dataset.studentName;
+    }
+    if (titleSwitch && topTitle?.classList.contains('switchable')) {
+      titleSwitch.hidden = false;
+    }
+    if (topTitle) topTitle.style.pointerEvents = '';
+  }
+}
+
 function switchTab(name) {
   state.tab = name;
   clearNotifications(name);
@@ -100,6 +123,7 @@ function switchTab(name) {
     panel.classList.toggle('active', panel.id === `panel-${name}`);
   });
   syncNav();
+  syncTopTitle(name);
   // Полоса под шапкой (дата, поиск) — своя у каждой вкладки.
   document.querySelectorAll('.subbar').forEach((bar) => {
     bar.hidden = bar.dataset.for !== name;
@@ -997,7 +1021,12 @@ async function start() {
     setUnityAccess(profile?.unity);
     setHalloweenAccess(profile?.halloween);
     if (profile?.name) {
-      $('topName').textContent = studentFirstName(profile.name);
+      const fName = studentFirstName(profile.name);
+      if (state.tab === 'teacher') {
+        $('topName').dataset.studentName = fName;
+      } else {
+        $('topName').textContent = fName;
+      }
       try { localStorage.setItem(NAME_KEY, profile.name); } catch { /* приватный режим */ }
     }
     initStudentSwitch(profile);
