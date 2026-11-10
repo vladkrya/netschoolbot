@@ -81,6 +81,63 @@ class TokenCheck:
     expires_at: dt.datetime  # UTC
 
 
+def _normalize_teacher_filter(raw: dict[str, Any], year_id: int | None = None) -> dict[str, Any]:
+    if not isinstance(raw, dict):
+        return {}
+    if "classes" in raw or "classGroups" in raw or "classList" in raw:
+        return raw
+    sources = raw.get("filterSources")
+    if not isinstance(sources, list):
+        return raw
+    by_id = {s.get("filterId"): s for s in sources if isinstance(s, dict) and "filterId" in s}
+
+    pclid = by_id.get("PCLID_IUP") or by_id.get("PCLID") or {}
+    classes = []
+    for item in pclid.get("items") or []:
+        val = str(item.get("value") or "")
+        cid_str = val.split("_")[0] if "_" in val else val
+        cid = int(cid_str) if cid_str.isdigit() else 0
+        if cid:
+            classes.append({"id": cid, "name": item.get("title", str(cid)), "value": val})
+
+    sgid = by_id.get("SGID") or by_id.get("SBJID") or {}
+    subjects = []
+    for item in sgid.get("items") or []:
+        val = str(item.get("value") or "")
+        sid = int(val) if val.isdigit() else 0
+        if sid:
+            subjects.append({"id": sid, "name": item.get("title", str(sid))})
+
+    termid = by_id.get("TERMID") or {}
+    terms = []
+    for item in termid.get("items") or []:
+        val = str(item.get("value") or "")
+        tid = int(val) if val.isdigit() else 0
+        if tid:
+            terms.append({"id": tid, "name": item.get("title", str(tid))})
+
+    default_class = pclid.get("defaultValue")
+    default_cid = int(str(default_class).split("_")[0]) if default_class and str(default_class).split("_")[0].isdigit() else (classes[0]["id"] if classes else None)
+
+    default_subject = sgid.get("defaultValue")
+    default_sid = int(str(default_subject)) if default_subject and str(default_subject).isdigit() else (subjects[0]["id"] if subjects else None)
+
+    default_term = termid.get("defaultValue")
+    default_tid = int(str(default_term)) if default_term and str(default_term).isdigit() else (terms[0]["id"] if terms else None)
+
+    return {
+        "classes": classes,
+        "subjects": subjects,
+        "terms": terms,
+        "yearId": year_id or raw.get("yearId"),
+        "defaults": {
+            "classId": default_cid,
+            "subjectId": default_sid,
+            "termId": default_tid,
+        },
+    }
+
+
 class DiaryService:
     def __init__(self, pool: SessionPool, users: UserRepository) -> None:
         self._pool = pool
@@ -283,34 +340,53 @@ class DiaryService:
 
     async def fetch_teacher_journal_filter(self, user: User) -> dict[str, Any]:
         """Классы, предметы и периоды учительского журнала (только чтение)."""
+        if not user.credentials.can_relogin and user.effective_api_mode is not ApiMode.WEB:
+            return {}
+
         async def call(client: Any) -> dict[str, Any]:
             if hasattr(client, "teacher_journal_filter"):
-                return await client.teacher_journal_filter()
-            response = await client._authed_get("grade/journal/filter")
-            return response.json()
+                raw = await client.teacher_journal_filter()
+            else:
+                response = await client._authed_get("grade/journal/filter")
+                raw = response.json()
+            return _normalize_teacher_filter(raw, getattr(client, "_year_id", None))
 
-        payload = await self._with_session(user, call)
-        return payload if isinstance(payload, dict) else {}
+        try:
+            acquire = getattr(self._pool, "acquire_teacher", self._pool.acquire)
+            async with acquire(user) as client:
+                payload = await call(client)
+                return payload if isinstance(payload, dict) else {}
+        except NetSchoolError:
+            raise
+        except Exception as exc:
+            logger.info("Учительский журнал недоступен для %s: %s", user.telegram_id, exc)
+            return {}
 
     async def fetch_teacher_journal(
         self, user: User, *, class_id: int, subject_group_id: int, term_id: int,
         year_id: int, grade: int = -1,
     ) -> dict[str, Any]:
         """Снимок журнала учителя без каких-либо операций записи."""
+        if not user.credentials.can_relogin and user.effective_api_mode is not ApiMode.WEB:
+            return {}
+
         async def call(client: Any) -> dict[str, Any]:
+            y_id = year_id or getattr(client, "_year_id", 0)
             if hasattr(client, "teacher_journal"):
                 return await client.teacher_journal(
-                    class_id, subject_group_id, term_id, year_id, grade=grade,
+                    class_id, subject_group_id, term_id, y_id, grade=grade,
                 )
             response = await client._authed_get(
                 "grade/journal",
                 params={"classId": class_id, "grade": grade, "sgId": subject_group_id,
-                        "termId": term_id, "v": 1, "yearId": year_id},
+                        "termId": term_id, "v": 1, "yearId": y_id},
             )
             return response.json()
 
-        payload = await self._with_session(user, call)
-        return payload if isinstance(payload, dict) else {}
+        acquire = getattr(self._pool, "acquire_teacher", self._pool.acquire)
+        async with acquire(user) as client:
+            payload = await call(client)
+            return payload if isinstance(payload, dict) else {}
 
     async def fetch_bells(self, user: User) -> list[dict[str, Any]] | None:
         """Расписание звонков школы (веб-API ``schedule/times``).

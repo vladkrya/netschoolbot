@@ -462,6 +462,7 @@ function render() {
       </div>
       <div class="drawer-sub">Полезное</div>`}
       <div class="tool-grid">
+      ${data.teacher_journal ? toolTile('drawerTeacher', 'book', 'Классный журнал') : ''}
       ${data.assistant && !demo && !readonly && !navTabs().includes('assistant') ? toolTile('drawerAssistant', 'sparkles', 'ИИ-помощник') : ''}
       ${navTabs().includes('games') ? '' : toolTile('drawerGames', 'game', 'Игры')}
       ${toolTile('drawerSearch', 'search', 'Поиск за год')}
@@ -914,6 +915,10 @@ function bindDrawer() {
   $('drawerGames')?.addEventListener('click', () => {
     closeDrawer();
     window.dispatchEvent(new CustomEvent('netschool:tab', { detail: 'games' }));
+  });
+  $('drawerTeacher')?.addEventListener('click', () => {
+    closeDrawer();
+    window.dispatchEvent(new CustomEvent('netschool:tab', { detail: 'teacher' }));
   });
   $('drawerHistory').addEventListener('click', () => { tap(); openHistory(); });
   $('drawerStatus').addEventListener('click', async () => {

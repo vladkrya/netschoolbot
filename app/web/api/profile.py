@@ -30,7 +30,7 @@ async def _teacher_journal_info(app: AppContext, user: User) -> bool:
         data = await app.diary.fetch_teacher_journal_filter(user)
     except NetSchoolError:
         return False
-    return bool(data.get("classes") or data.get("classGroups") or data.get("classList"))
+    return bool(data.get("classes") or data.get("classGroups") or data.get("classList") or data.get("filterSources"))
 
 
 async def _keep_signed_in_info(app: AppContext, user: User) -> dict:

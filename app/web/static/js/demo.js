@@ -293,7 +293,7 @@ export async function demoApi(path, options = {}) {
   if (route === '/api/teacher/journal/filter') {
     return ok({
       classes: [{ id: 1, name: '5а' }, { id: 2, name: '5б' }],
-      subjectGroups: [{ id: 10, name: 'География' }, { id: 11, name: 'История' }],
+      subjectGroups: [{ id: 10, name: 'Алгебра' }, { id: 11, name: 'Геометрия' }],
       terms: [{ id: 101, name: '1 четверть' }, { id: 102, name: '2 четверть' },
         { id: 103, name: '3 четверть' }, { id: 104, name: '4 четверть' }],
       yearId: 2026,
@@ -303,10 +303,10 @@ export async function demoApi(path, options = {}) {
     const students = ['Алексей Воронов', 'Мария Ильина', 'София Петрова'].map((fullName, index) => ({ id: index + 1, fullName }));
     return ok({ journals: [{
       className: url.searchParams.get('class_id') === '2' ? '5б' : '5а',
-      subjectGroupName: url.searchParams.get('subject_group_id') === '11' ? 'История' : 'География',
+      subjectGroupName: url.searchParams.get('subject_group_id') === '11' ? 'Геометрия' : 'Алгебра',
       students,
-      classMeeting: [{ id: 1, date: '2026-09-05' }, { id: 2, date: '2026-09-19' }, { id: 3, date: '2026-10-03' }],
-      assignments: [{ id: 1, classMeetingId: 1, assignmentName: 'Ответ у карты' },
+      classMeeting: [{ id: 1, date: '2026-11-01' }, { id: 2, date: '2026-11-08' }, { id: 3, date: '2026-11-15' }],
+      assignments: [{ id: 1, classMeetingId: 1, assignmentName: 'Самостоятельная работа' },
         { id: 2, classMeetingId: 2, assignmentName: 'Контрольная работа' }, { id: 3, classMeetingId: 3, assignmentName: 'Тест' }],
       marks: [{ studentId: 1, assignmentId: 1, mark: '5' }, { studentId: 1, assignmentId: 2, mark: '4' },
         { studentId: 2, assignmentId: 1, mark: '4' }, { studentId: 2, assignmentId: 3, mark: '5' },

@@ -60,6 +60,7 @@ class SessionPool:
         self._settings = settings
         self._sessions = sessions
         self._entries: dict[int, _Entry] = {}
+        self._teacher_entries: dict[int, _Entry] = {}
         # Блокировка на сам словарь: создание записи должно быть атомарным,
         # иначе два одновременных запроса заведут два клиента.
         self._registry_lock = asyncio.Lock()
@@ -87,13 +88,59 @@ class SessionPool:
             finally:
                 await self._persist(user.telegram_id, client)
 
+    @asynccontextmanager
+    async def acquire_teacher(self, user: User) -> AsyncIterator[Any]:
+        """Выдать вошедший клиент для учительского журнала (только веб-API с ролью сотрудника)."""
+        if not user.credentials.can_relogin:
+            raise NetSchoolError(Reason.AUTH, "Для учительского журнала требуется вход по логину и паролю.")
+        entry = await self._teacher_entry_for(user.telegram_id)
+        async with entry.lock:
+            client = await self._ensure_logged_in_teacher(user, entry)
+            entry.last_used = dt.datetime.now()
+            try:
+                yield client
+            finally:
+                pass
+
+    async def _teacher_entry_for(self, telegram_id: int) -> _Entry:
+        async with self._registry_lock:
+            entry = self._teacher_entries.get(telegram_id)
+            if entry is None:
+                entry = _Entry(client=None, last_used=dt.datetime.now(), lock=asyncio.Lock())
+                self._teacher_entries[telegram_id] = entry
+            return entry
+
+    async def _ensure_logged_in_teacher(self, user: User, entry: _Entry) -> Any:
+        if entry.client is not None:
+            try:
+                await entry.client._authed_get("years/current")
+                return entry.client
+            except Exception:
+                await _close_client(entry.client)
+                entry.client = None
+
+        web_user = replace(user, api_mode=ApiMode.WEB)
+        client = self._new_client(web_user, ApiMode.WEB)
+        client._prefer_teacher_role = True
+        try:
+            await client.login(user.credentials.login, user.credentials.password, user.school.name)
+            entry.client = client
+            return client
+        except BaseException as exc:
+            await _close_client(client)
+            raise wrap(exc, context=f"вход учителя {user.telegram_id}") from exc
+
     async def invalidate(self, telegram_id: int, *, forget_saved: bool = False) -> None:
         """Закрыть сессию пользователя. `forget_saved` — стереть и сохранённую."""
         async with self._registry_lock:
             entry = self._entries.pop(telegram_id, None)
+            t_entry = self._teacher_entries.pop(telegram_id, None)
         if entry is not None:
             async with entry.lock:
                 await _close_client(entry.client)
+        if t_entry is not None:
+            async with t_entry.lock:
+                await _close_client(t_entry.client)
         if forget_saved:
             await self._sessions.drop(telegram_id)
 
@@ -101,11 +148,17 @@ class SessionPool:
         async with self._registry_lock:
             entries = list(self._entries.items())
             self._entries.clear()
+            t_entries = list(self._teacher_entries.items())
+            self._teacher_entries.clear()
         for telegram_id, entry in entries:
             async with entry.lock:
                 if entry.client is not None:
                     await self._persist(telegram_id, entry.client)
                     await _close_client(entry.client)
+        for _, t_entry in t_entries:
+            async with t_entry.lock:
+                if t_entry.client is not None:
+                    await _close_client(t_entry.client)
 
     async def checkpoint_all(self) -> None:
         """Сохранить текущие cookies живых клиентов на случай внезапного рестарта."""
