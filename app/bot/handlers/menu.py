@@ -18,19 +18,22 @@ from ...notifications.outbox import mark_from_dict
 from ...netschool.errors import NetSchoolError
 from ...web import sync, viewing
 from .. import keyboards
-from ..widgets import widget_api_status, beta_reply, homework_card_html
+from ..widgets import widget_api_status, beta_reply, homework_card_html, homework_widget_parts, grades_card_html, grade_detail_pages
 from .common import reply, report_error, require_school
 
 logger = logging.getLogger("netschoolbot.bot")
 router = Router(name="menu")
 
 
-async def diary_reply(message: Message, user: User, app: AppContext, text: str, *, reply_markup=None, source_html: str | None = None) -> None:
+async def diary_reply(message: Message, user: User, app: AppContext, text: str, *, reply_markup=None,
+                      source_html: str | None = None, widget_meta: dict | None = None,
+                      widget_parts: list[tuple[str, dict]] | None = None) -> None:
     if await app.users.beta_widgets(user.telegram_id):
         unavailable = await widget_api_status(message.bot)
         if unavailable:
             text = f"🧪 {formatting.esc(unavailable)}\n\n{text}"
-        elif await beta_reply(message, user.telegram_id, app, message.bot, text, reply_markup=reply_markup, source_html=source_html):
+        elif await beta_reply(message, user.telegram_id, app, message.bot, text, reply_markup=reply_markup,
+                              source_html=source_html, widget_meta=widget_meta, widget_parts=widget_parts):
             return
         else:
             text = f"🧪 Карточка не отправилась — показываю обычный ответ.\n\n{text}"
@@ -134,8 +137,13 @@ async def homework(message: Message, user: User, app: AppContext) -> None:
     )
     done = await app.state.done_homework(user.telegram_id)
     text = formatting.homework_list(relevant, "📚 <b>Домашние задания</b>", tz=user.tz, done=done)
+    chunks = homework_widget_parts(relevant, done)
+    widget_parts = [(homework_card_html(chunk, done),
+                     {"kind": "homework", "keys": [item.key for item in chunk if not item.nothing_to_do],
+                      "done": [item.key for item in chunk if item.key in done],
+                      "student_id": user.selected_student_id}) for chunk in chunks]
     await diary_reply(message, user, app, text, reply_markup=keyboards.homework_done(relevant, done),
-                      source_html=homework_card_html(relevant, done))
+                      widget_parts=widget_parts)
 
 
 @router.callback_query(F.data.startswith("hwdone:"))
@@ -194,7 +202,11 @@ async def grades(message: Message, user: User, app: AppContext) -> None:
 
     subjects = sorted({record.subject for record in records})
     await app.cache.put(user.telegram_id, "subjects", subjects)
-    await diary_reply(message, user, app, "📊 Выберите предмет:", reply_markup=keyboards.subjects(subjects))
+    await diary_reply(message, user, app, "📊 Выберите предмет:", reply_markup=keyboards.subjects(subjects),
+                      source_html=grades_card_html(subjects),
+                      widget_meta={"kind": "grades", "pages": [grade_detail_pages(subject,
+                                   [r for r in records if normalize(r.subject) == normalize(subject)]) for subject in subjects],
+                                   "student_id": user.selected_student_id})
 
 
 @router.callback_query(F.data.startswith("subject:"))

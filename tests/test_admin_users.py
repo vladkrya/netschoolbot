@@ -232,7 +232,7 @@ async def test_owner_commands_are_only_in_owner_chat_menu():
     from app.bot.app import run_bot
     bot = SimpleNamespace(delete_my_commands=AsyncMock(), set_my_commands=AsyncMock(),
                           set_chat_menu_button=AsyncMock(), get_me=AsyncMock(return_value=SimpleNamespace(username='bot')))
-    await run_bot(bot, SimpleNamespace(start_polling=AsyncMock()), '', admin_id=123)
+    await run_bot(bot, SimpleNamespace(start_polling=AsyncMock(), resolve_used_update_types=lambda: ["message"]), '', admin_id=123)
     public, private = bot.set_my_commands.await_args_list
     assert 'user' not in {command.command for command in public.args[0]}
     assert {'user', 'userid', 'id'} <= {command.command for command in private.args[0]}
