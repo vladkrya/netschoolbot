@@ -417,6 +417,14 @@ export async function unlockApp() {
     }
     const root = panel('Вход в дневник');
     root.querySelector('.lock-error').textContent = '';
+    // Нижние действия занимают своё место с первого кадра, пока сервер
+    // уточняет способ восстановления PIN.
+    const forgot = document.createElement('button');
+    forgot.type = 'button'; forgot.className = 'pin-forgot';
+    forgot.dataset.forgot = ''; forgot.textContent = 'Забыли PIN?';
+    forgot.onclick = () => { root.querySelector('.lock-error').textContent = FORGOT_TELEGRAM; };
+    root.querySelector('.lock-fields').after(forgot);
+    addSignOut(root);
     // Проверка PIN не должна ждать ответ Telegram о биометрии (до 5 с).
     const nativeReady = nativeManager();
     const known = rememberedRequired();
@@ -477,6 +485,7 @@ export async function unlockApp() {
     if (Array.isArray(status.passkey_ids)) savePasskeys(status.passkey_ids);
     root.querySelector('.lock-error').textContent = '';
     root.querySelector('.lock-actions').innerHTML = '';
+    root.querySelector('[data-forgot]')?.remove();
     const biometricReady = (async () => {
       if (status.offline) {
         // Без сети — только ключ доступа, которым уже входили на этом устройстве.

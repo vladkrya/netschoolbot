@@ -37,8 +37,8 @@ _touched: dict[str, float] = {}
 
 
 def masked_ip(request: web.Request) -> str:
-    """Примерный адрес — «95.24.*.*»: узнать чужое устройство хватает, а
-    точный адрес не хранится."""
+    """Примерный адрес браузера — «95.24.*.*». Нативные приложения показывают
+    точный IP, чтобы владелец мог узнать свой сеанс."""
     return mask_ip(request.headers.get("X-Real-IP") or request.remote or "")
 
 
@@ -52,9 +52,18 @@ def mask_ip(ip: str) -> str:
 async def touch(request: web.Request, token: str) -> None:
     ua = request.headers.get("User-Agent", "")
     label, model = describe_browser(ua), device_model(ua)
-    if request.headers.get('X-Netschool-Client') == 'pwa':
+    client = request.headers.get('X-Netschool-Client', '').lower()
+    if client in ('ios', 'android'):
+        label = 'Приложение на iOS' if client == 'ios' else 'Приложение на Android'
+    elif client == 'pwa':
         label = 'Веб-приложение · ' + label
     version = system_version(ua)
+    app_version = request.headers.get('X-Netschool-App-Version', '')[:32] if client in ('ios', 'android') else ''
+    device = request.headers.get('X-Netschool-Device', '')[:80] if client in ('ios', 'android') else ''
+    if device:
+        model = device
+    if app_version:
+        version = 'версия приложения ' + app_version
     key = f"{token}|{label}|{model}"
     now = time.monotonic()
     if now - _touched.get(key, -TOUCH_EVERY) < TOUCH_EVERY:
@@ -63,8 +72,9 @@ async def touch(request: web.Request, token: str) -> None:
     if len(_touched) > 50_000:
         _touched.clear()
     app = context(request)
+    ip = (request.headers.get("X-Real-IP") or request.remote or "")[:64] if client in ('ios', 'android') else masked_ip(request)
     owner = await app.miniapp.touch_token(
-        token, label, model=" · ".join(part for part in (model, version) if part), ip=masked_ip(request))
+        token, label, model=" · ".join(part for part in (model, version) if part), ip=ip)
     # «Активность» и название устройства — сразу на открытых «Устройствах».
     if owner is not None:
         await app.hub.publish_user(owner, {"t": "sync", "topic": "devices"})

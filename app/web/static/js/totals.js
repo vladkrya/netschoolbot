@@ -895,6 +895,19 @@ function openSubject(subject, key, existingBody = null, data = state.totals) {
   const official = subject.totals?.terms?.[key]?.mark;
   const yearMark = subject.totals?.year;
   const finalMark = subject.totals?.final;
+  const periodIndex = (data.quarters || []).findIndex((q) => q.key === key);
+  const previous = periodIndex > 0 ? data.quarters[periodIndex - 1] : null;
+  const previousMarks = previous ? quarterMarks(subject, previous.key).filter((mark) => !isAttendance(mark)) : [];
+  const carryKey = `ns-carry-${data.year_id || data.year || 'current'}-${subject.subject}-${key}`;
+  const savedCarry = readLocal(carryKey, 'none');
+  const arithmetic = (entries) => {
+    const values = entries.map((mark) => markValue(mark.mark)).filter((value) => value >= 1 && value <= 5);
+    return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
+  };
+  const carryAverage = savedCarry === 'all' ? arithmetic([...previousMarks, ...marks.filter((mark) => !isAttendance(mark))])
+    : savedCarry === 'periods' && avg != null && weightedAverage(previousMarks) != null
+      ? (avg + weightedAverage(previousMarks)) / 2 : null;
+  const carryGrade = carryAverage == null ? null : [5, 4, 3].find((grade) => carryAverage >= thresholdsFor(subject.subject)[grade]) || 2;
 
   const segments = `<div data-lessons>${lessonsHtml(lessons, quarter, key, data.archived)}</div>`;
 
@@ -919,6 +932,9 @@ function openSubject(subject, key, existingBody = null, data = state.totals) {
     <div class="card">
       <div class="avg-line"><span>Средний балл ученика:</span><strong data-avg ${avg == null ? '' : `data-count="${esc(`${subject.subject}|${key}`)}" data-odo-trend`} class="${avg == null ? '' : avgClass(avg, thresholdsFor(subject.subject))}">${formatAverage(avg)}</strong></div>
       <div class="muted small class-avg" data-class-avg hidden></div>
+      ${!data.archived && previous && previousMarks.length && !subject.totals?.terms?.[previous.key]?.mark ? `<label class="muted small">С учётом ${esc(previous.label)}
+        <select class="field" data-carry><option value="none">Не учитывать</option><option value="all" ${savedCarry === 'all' ? 'selected' : ''}>Среднее всех оценок</option><option value="periods" ${savedCarry === 'periods' ? 'selected' : ''}>Среднее двух периодов</option></select></label>
+        ${carryGrade ? `<div class="muted small">Выходит: <strong>${carryGrade}</strong> (с учётом прошлого периода, средний ${formatAverage(carryAverage)})</div>` : ''}` : ''}
       ${official || yearMark || finalMark ? `<div class="muted small">${[
         official ? `Оценка за ${esc((quarter?.label || 'период').replace(/^\d+\s*/, ''))}: <strong>${esc(official)}</strong>` : '',
         yearMark ? `Годовая: <strong>${esc(yearMark)}</strong>` : '',
@@ -986,6 +1002,10 @@ function openSubject(subject, key, existingBody = null, data = state.totals) {
       </div>
     </div>`;
   playAverages(body);
+  body.querySelector('[data-carry]')?.addEventListener('change', (event) => {
+    writeLocal(carryKey, event.target.value);
+    openSubject(subject, key, body, data);
+  });
 
   body.querySelectorAll('[data-mark]').forEach((tile) =>
     tile.addEventListener('click', () => openMark(marks[Number(tile.dataset.mark)], subject.subject))

@@ -497,8 +497,8 @@ function render() {
       </div>
       ${spooky || unity ? '' : customAccent ? '<button class="link accent-action" id="accentRemember">Сохранить этот цвет</button>'
         : saved.includes(accent) ? '<button class="link accent-action" id="accentForget">Убрать из сохранённых</button>' : ''}
-      ${tabsMore()}
       ${demo ? '' : `<button class="drawer-link" id="drawerAppIcon">${ICONS.install} Иконка приложения</button>`}
+      ${tabsMore()}
       ${more('home', 'Главная и расписание', `
       <label class="switch-row"><span>Подсвечивать Д/З на главной<span class="muted small switch-note">красным — не сделано, зелёным — сделано</span></span>
         <input type="checkbox" switch class="switch" id="hwStatusShow" ${showHomeworkStatus() ? 'checked' : ''}></label>
@@ -525,8 +525,8 @@ function render() {
         <input type="checkbox" switch class="switch" id="swipeRight" ${swipeFromRight() ? 'checked' : ''}></label>
       `)}
       ${more('look', 'Другой вид', `
-      <label class="switch-row design-row"><span>design</span>
-        <select class="field reminder-hour" id="designMode" aria-label="design">
+      <label class="switch-row design-row"><span>Дизайн</span>
+        <select class="field reminder-hour" id="designMode" aria-label="Дизайн">
           ${data.admin || ['min', 'v3'].includes(getPref('design')) ? `<option value="min" ${['min', 'v3'].includes(getPref('design')) ? 'selected' : ''}>min</option>` : ''}
           <option value="new" ${!['min', 'v3'].includes(getPref('design')) && isNewDesign() ? 'selected' : ''}>новый</option>
           <option value="classic" ${isNewDesign() ? '' : 'selected'}>старый</option>

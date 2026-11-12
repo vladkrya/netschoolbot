@@ -148,6 +148,21 @@ async def test_pwa_and_safari_are_distinct_clients_of_legacy_link(client, token,
     assert {row["client"] for row in clients} == {"Safari на iPhone", "Веб-приложение · Safari на iPhone"}
 
 
+async def test_native_app_shows_platform_model_and_version(client, token, app_context):
+    from app.web import devices as devices_web
+    devices_web._touched.clear()
+    device = await app_context.miniapp.issue_token(1, device=True)
+    response = await client.get(f"{BASE}/api/devices", headers={
+        "X-Netschool-Token": device, "X-Netschool-Client": "ios",
+        "X-Netschool-Device": "iPhone17,2", "X-Netschool-App-Version": "1.1.7",
+        "X-Real-IP": "95.24.10.20"})
+    assert response.status == 200
+    current = next(row for row in (await response.json())["data"]["items"] if row["current"])
+    assert current["label"] == "Приложение на iOS"
+    assert current["details"] == "iPhone17,2 · версия приложения 1.1.7"
+    assert current["ip"] == "95.24.10.20"
+
+
 async def test_new_telegram_button_does_not_create_legacy_links(client, app_context, users):
     from app.bot.handlers.menu import miniapp_url
     from tests.test_repositories import make_user
