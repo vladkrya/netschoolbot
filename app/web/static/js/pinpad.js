@@ -10,6 +10,7 @@ const FINGER = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strok
 
 // Один пинпад для входа, задания и подтверждения PIN. Цифры только в памяти.
 export function mountPinpad(root, complete, { hint = 'Введите 4 цифры', biometric = null, forgot = '' } = {}) {
+  let onComplete = complete;
   root.classList.add('pin-screen');
   const field = root.querySelector('.lock-fields');
   field.innerHTML = `<div class="pin-emblem">${LOCK}</div>
@@ -94,7 +95,7 @@ export function mountPinpad(root, complete, { hint = 'Введите 4 цифр�
     if (value.length !== 4) return;
     busy = true; paint(); setWaiting(true);
     const submitted = value;
-    try { await complete(submitted, {reset, failure, success}); }
+    try { await onComplete(submitted, {reset, failure, success}); }
     catch (error) {
       root.querySelector('.lock-error').textContent = error.message;
       failure(); value = '';
@@ -154,7 +155,7 @@ export function mountPinpad(root, complete, { hint = 'Введите 4 цифр�
   if (!window.webkit?.messageHandlers?.sgoshkaFaceId && !reduced()) field.querySelectorAll('.pin-key').forEach((key, i) => key.animate([
     { opacity: 0, transform: 'translateY(14px) scale(.92)' }, { opacity: 1, transform: 'none' },
   ], { duration: 360, delay: 40 + Math.floor(i / 3) * 45 + (i % 3) * 15, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'backwards' }));
-  return { reset, setBiometric, success, destroy() {
+  return { reset, setBiometric, success, setComplete(action) { onComplete = action; }, destroy() {
     setWaiting(false); delete root.submitNativePin; delete root.getPinValue; value = ''; disposed = true;
     root.removeEventListener('keydown', keydown); root.removeEventListener('paste', paste);
   }};

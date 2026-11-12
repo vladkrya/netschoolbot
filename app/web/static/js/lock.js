@@ -476,8 +476,10 @@ export async function unlockApp() {
         root.querySelector('.lock-actions').innerHTML = '';
       }
     }
-    const submittedEarly = earlyPin?.pin || root.getPinValue?.();
-    clearEarly();
+    const submittedEarly = earlyPin?.pin;
+    const reuseEarly = Boolean(earlyPad && status.required && status.pin);
+    if (reuseEarly) earlyPin?.resolve();
+    else clearEarly();
     setActive(status.required);
     if (!active) { forgetPin(); root.close(); return; }
     // Список ключей с сервера: вход без сети по ключу доступа не зависит от
@@ -485,7 +487,10 @@ export async function unlockApp() {
     if (Array.isArray(status.passkey_ids)) savePasskeys(status.passkey_ids);
     root.querySelector('.lock-error').textContent = '';
     root.querySelector('.lock-actions').innerHTML = '';
-    root.querySelector('[data-forgot]')?.remove();
+    if (reuseEarly) {
+      forgot.onclick = () => { root.querySelector('.lock-error').textContent =
+        status.password_reset && !tg?.initData ? FORGOT_PASSWORD : FORGOT_TELEGRAM; };
+    } else root.querySelector('[data-forgot]')?.remove();
     const biometricReady = (async () => {
       if (status.offline) {
         // Без сети — только ключ доступа, которым уже входили на этом устройстве.
@@ -518,7 +523,7 @@ export async function unlockApp() {
         resolve();
       };
       if (status.pin) {
-        pad = mountPinpad(root, async (pin, controls) => {
+        const verifyPin = async (pin, controls) => {
           let result = null;
           if (!status.offline) {
             try { result = await post('unlock', { pin }); }
@@ -536,8 +541,13 @@ export async function unlockApp() {
           }
           await controls.success(); await finish();
           if (offlinePin && navigator.onLine !== false) resync();
-        }, { forgot: status.password_reset && !tg?.initData ? FORGOT_PASSWORD : FORGOT_TELEGRAM });
-        if (submittedEarly) root.submitNativePin(submittedEarly);
+        };
+        if (reuseEarly) {
+          pad = earlyPad;
+          pad.setComplete(verifyPin);
+        } else pad = mountPinpad(root, verifyPin,
+          { forgot: status.password_reset && !tg?.initData ? FORGOT_PASSWORD : FORGOT_TELEGRAM });
+        if (submittedEarly) setTimeout(() => root.submitNativePin?.(submittedEarly), 0);
         addSignOut(root);
         biometricReady.then(config => {
           if (!config || !root.isConnected) return;

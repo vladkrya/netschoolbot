@@ -42,8 +42,9 @@ test('Native Face ID submits PIN without animating digit keys, and cleans up loa
 });
 test('Partial PIN survives status handoff and is submitted only at four digits', async () => {
   const t = setup(); let submitted;
-  t.mount(t.root, async pin => {submitted = pin;});
+  const pad = t.mount(t.root, async () => { throw new Error('temporary callback should be replaced'); });
   await t.root.submitNativePin('12');
+  pad.setComplete(async pin => { submitted = pin; });
   assert.equal(submitted, undefined); assert.equal(t.root.getPinValue(), '12');
   t.buttons[3].onclick(); t.buttons[4].onclick();
   await new Promise(resolve => setImmediate(resolve));
