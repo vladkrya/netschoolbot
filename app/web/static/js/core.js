@@ -290,9 +290,15 @@ function fitOfflinePill(pill) {
   if (!pill.classList.contains('open')) { pill.style.width = ''; return; }
   const textEl = pill.querySelector('.net-pill-text');
   if (!textEl) return;
+  const limit = Math.min(390, window.innerWidth - 24);
+  // Подсказка про VPN переносится. Её scrollWidth зависит от текущей ширины
+  // плашки, поэтому повторные касания иначе расширяют её снова и снова.
+  if (textEl.querySelector('.vpn-hint')) {
+    pill.style.width = `${limit}px`;
+    return;
+  }
   const lines = [...textEl.children].filter((line) => line.offsetParent);
   const text = Math.max(0, ...lines.map((line) => line.scrollWidth));
-  const limit = Math.min(390, window.innerWidth - 24);
   const target = Math.min(limit, Math.max(220, 6 + 40 + 8 + text + 20));
   pill.style.width = `${target}px`;
 }
