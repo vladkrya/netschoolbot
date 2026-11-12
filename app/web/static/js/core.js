@@ -237,6 +237,28 @@ const ONLINE_ONLY = [
 ].join(', ');
 const PROBE_EVERY_MS = 8000;
 const PROBE_LIMIT_MS = 5000;
+const ALTERNATE_ORIGIN = location.hostname === 'sgoshka.ru' ? 'https://alt.sgoshka.ru' : '';
+let alternateActive = false;
+
+async function alternateFetch(path, init = {}) {
+  if (!ALTERNATE_ORIGIN || navigator.onLine === false) return null;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8000);
+  try {
+    const response = await fetch(`${ALTERNATE_ORIGIN}${base}${path}`, {
+      ...init, cache: 'no-store', credentials: 'omit', signal: controller.signal,
+    });
+    const type = response.headers.get('Content-Type') || '';
+    if (appDown(response) || response.headers.get('X-Netschool-Offline')
+        || (path.includes('/api/') && !type.includes('application/json') && !type.includes('application/x-ndjson'))
+        || (path.endsWith('/sw.js') && (!response.ok || !type.includes('javascript')))) return null;
+    alternateActive = true;
+    clearTimeout(probeTimer);
+    probeTimer = setTimeout(probe, PROBE_EVERY_MS);
+    return response;
+  } catch { return null; }
+  finally { clearTimeout(timer); }
+}
 
 let offline = !demo && navigator.onLine === false;
 let outboxCount = 0;
@@ -359,7 +381,7 @@ function paintOfflinePill() {
 export function setOffline(value) {
   if (demo) return;
   clearTimeout(probeTimer);
-  if (value) probeTimer = setTimeout(probe, PROBE_EVERY_MS);
+  if (value || alternateActive) probeTimer = setTimeout(probe, PROBE_EVERY_MS);
   if (!value) updating = false;
   if (offline === value) return;
   offline = value;
@@ -384,8 +406,17 @@ export function probe() {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), PROBE_LIMIT_MS);
   probing = fetch(`${base}/sw.js`, { method: 'HEAD', cache: 'no-store', signal: controller.signal })
-    .then((response) => {
-      if (appDown(response)) { serverDown(); return false; }
+    .then(async (response) => {
+      if (appDown(response)) {
+        if (await alternateFetch('/sw.js', { method: 'HEAD' })) {
+          setOffline(false);
+          return true;
+        }
+        if (response.status >= 520) setOffline(true);
+        else serverDown();
+        return false;
+      }
+      alternateActive = false;
       const wasOffline = offline;
       setOffline(false);
       // Сеть есть, а показана копия worker (при запуске сеть проснулась позже
@@ -398,7 +429,13 @@ export function probe() {
       }
       servedCached = false;
       return true;
-    }, () => { setOffline(true); return false; })
+    }, async () => {
+      if (await alternateFetch('/sw.js', { method: 'HEAD' })) {
+        setOffline(false);
+        return true;
+      }
+      setOffline(true); return false;
+    })
     .finally(() => { clearTimeout(timer); probing = null; });
   return probing;
 }
@@ -681,45 +718,53 @@ async function request(path, options = {}) {
   if (watched && path.includes('refresh=1')) sgoDownUntil = 0;
   const down = watched && sgoDown();
   if (down) path = withoutRefresh(path);
+  const canAlternate = ALTERNATE_ORIGIN && (!options.method || options.method === 'GET');
   const timer = setTimeout(() => {
     if (down) controller.sgoDown = true;
     controller.abort();
-  }, path.startsWith('/api/lock/') ? 10000 : down ? SGO_DOWN_WAIT_MS : REQUEST_TIMEOUT_MS);
+  }, path.startsWith('/api/lock/') ? 10000 : down ? SGO_DOWN_WAIT_MS
+    : canAlternate && !alternateActive ? 8000 : REQUEST_TIMEOUT_MS);
   if (watched) sgoRequests.add(controller);
   const slow = watched && !down ? setTimeout(sgoHint, SGO_SLOW_MS) : 0;
   const stuck = watched && !down ? setTimeout(() => sgoHint(true, true), SGO_STUCK_MS) : 0;
   const { onFresh, onDelta, streamTimeout, retried, networkRetried, ...init } = options;
   let response;
   try {
-    response = await fetch(base + path, {
+    if (canAlternate && alternateActive) response = await alternateFetch(path, { ...init, headers });
+    if (!response) response = await fetch(base + path, {
       ...init, headers, cache: 'no-store', signal: controller.signal,
     });
+    if (canAlternate && (appDown(response) || response.headers.get('X-Netschool-Offline'))) {
+      response = await alternateFetch(path, { ...init, headers }) || response;
+    }
   } catch (error) {
-    if (controller.sgoDown) {
-      throw Object.assign(new Error('«Сетевой город» сейчас не отвечает — попробуйте позже.'),
-        { reason: 'server', sgoDown: true });
+    if (canAlternate) response = await alternateFetch(path, { ...init, headers });
+    if (response) setOffline(false);
+    else {
+      if (controller.sgoDown) {
+        throw Object.assign(new Error('«Сетевой город» сейчас не отвечает — попробуйте позже.'),
+          { reason: 'server', sgoDown: true });
+      }
+      // Соединение оборвалось сразу (iPhone после сна, смена сети) — чтение
+      // повторяем один раз, прежде чем говорить, что сервер недоступен.
+      // Уже известно, что связи нет, — не ждём зря: показываем сохранённое.
+      if (error.name !== 'AbortError' && !init.method && !networkRetried && !offline) {
+        clearTimeout(timer);
+        await new Promise((resolve) => setTimeout(resolve, 700));
+        return request(path, { ...options, networkRetried: true });
+      }
+      // Оба адреса недоступны — показываем сохранённое и совет про VPN.
+      if (canAlternate || error.name !== 'AbortError' || navigator.onLine === false) setOffline(true);
+      if (offline && !updating && navigator.onLine !== false) probe();
+      const failure = new Error(offline ? noConnectionText()
+        : error.name === 'AbortError'
+          ? 'Сервер приложения не ответил вовремя. Проверьте интернет и повторите попытку.'
+          : 'Не удалось подключиться к серверу приложения. Проверьте интернет и повторите попытку.');
+      failure.reason = 'server';
+      failure.source = 'app';
+      failure.offline = offline;
+      throw failure;
     }
-    // Соединение оборвалось сразу (iPhone после сна, смена сети) — чтение
-    // повторяем один раз, прежде чем говорить, что сервер недоступен.
-    // Уже известно, что связи нет, — не ждём зря: показываем сохранённое.
-    if (error.name !== 'AbortError' && !init.method && !networkRetried && !offline) {
-      clearTimeout(timer);
-      await new Promise((resolve) => setTimeout(resolve, 700));
-      return request(path, { ...options, networkRetried: true });
-    }
-    // До сервера не достучались совсем — это «нет сети», одна плашка на всё.
-    if (error.name !== 'AbortError' || navigator.onLine === false) setOffline(true);
-    // Сеть у телефона есть — сразу узнаём, не перезапускается ли сервер, чтобы
-    // писать «Приложение обновляется», а не «нет интернета».
-    if (offline && !updating && navigator.onLine !== false) probe();
-    const failure = new Error(offline ? noConnectionText()
-      : error.name === 'AbortError'
-        ? 'Сервер приложения не ответил вовремя. Проверьте интернет и повторите попытку.'
-        : 'Не удалось подключиться к серверу приложения. Проверьте интернет и повторите попытку.');
-    failure.reason = 'server';
-    failure.source = 'app';
-    failure.offline = offline;
-    throw failure;
   } finally {
     sgoRequests.delete(controller);
     clearTimeout(timer);
@@ -728,6 +773,11 @@ async function request(path, options = {}) {
   }
 
   if (appDown(response)) {
+    if (canAlternate && response.status >= 520) {
+      setOffline(true);
+      throw Object.assign(new Error(noConnectionText()),
+        { reason: 'server', source: 'app', offline: true });
+    }
     // Перезапуск длится секунды — чтение повторяем один раз, прежде чем сказать.
     if (!init.method && !networkRetried && !offline) {
       await new Promise((resolve) => setTimeout(resolve, 2000));
@@ -737,6 +787,7 @@ async function request(path, options = {}) {
     // source 'app' — изменение встанет в очередь и уйдёт, когда сервер поднимется.
     throw Object.assign(new Error(UPDATING_TEXT), { reason: 'server', source: 'app', offline: true, updating: true });
   }
+  if (!response.url.startsWith(ALTERNATE_ORIGIN) && alternateActive) alternateActive = false;
 
   let payload;
   try {

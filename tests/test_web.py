@@ -1776,6 +1776,24 @@ class TestSecurityHeaders:
         api = await client.get(f'{BASE}/api/profile')
         assert api.headers['Cache-Control'] == 'no-store'
 
+    async def test_alternate_host_allows_only_main_site_reads(self, client, token):
+        headers = {'Host': 'alt.sgoshka.ru', 'Origin': 'https://sgoshka.ru',
+                   'X-Netschool-Token': token}
+        preflight = await client.options(f'{BASE}/api/profile', headers={
+            **headers, 'Access-Control-Request-Method': 'GET',
+            'Access-Control-Request-Headers': 'X-Netschool-Token'})
+        assert preflight.status == 204
+        assert preflight.headers['Access-Control-Allow-Origin'] == 'https://sgoshka.ru'
+        response = await client.get(f'{BASE}/api/profile', headers=headers)
+        assert response.headers['Access-Control-Allow-Origin'] == 'https://sgoshka.ru'
+        assert 'X-Netschool-Version' in response.headers['Access-Control-Expose-Headers']
+        other = await client.get(f'{BASE}/api/profile', headers={**headers, 'Origin': 'https://evil.test'})
+        assert 'Access-Control-Allow-Origin' not in other.headers
+        write = await client.post(f'{BASE}/api/profile', headers=headers)
+        assert 'Access-Control-Allow-Origin' not in write.headers
+        page = await (await client.get(f'{BASE}/', headers={'Host': 'alt.sgoshka.ru'})).text()
+        assert 'moved.js' not in page
+
 
 class TestStudentClass:
     async def test_class_is_cached_and_survives_school_outage(self, client, token, app_context, monkeypatch):

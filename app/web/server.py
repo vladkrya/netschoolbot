@@ -157,10 +157,36 @@ async def security_headers(request: web.Request, handler):
     return response
 
 
+@web.middleware
+async def alternate_read_cors(request: web.Request, handler):
+    """Дать основному сайту читать данные через резервный адрес при сбое сети."""
+    origin = request.headers.get("Origin", "")
+    allowed = (request.host.split(":")[0] == "alt.sgoshka.ru"
+               and origin == "https://sgoshka.ru"
+               and ("/api/" in request.path or request.path.endswith("/sw.js")))
+    if not allowed:
+        return await handler(request)
+    if request.method == "OPTIONS":
+        response = web.Response(status=204)
+        response.headers["Access-Control-Allow-Methods"] = "GET, HEAD, OPTIONS"
+        response.headers["Access-Control-Allow-Headers"] = (
+            "Content-Type, X-Netschool-Client, X-Netschool-Token, "
+            "X-Netschool-Unlock, X-Netschool-Tab, X-Telegram-Init-Data")
+    elif request.method in ("GET", "HEAD"):
+        response = await handler(request)
+    else:
+        return await handler(request)
+    response.headers["Access-Control-Allow-Origin"] = origin
+    response.headers["Access-Control-Expose-Headers"] = "X-Netschool-Version, X-Netschool-Offline"
+    vary = response.headers.get("Vary", "")
+    response.headers["Vary"] = f"{vary}, Origin" if vary else "Origin"
+    return response
+
+
 def create_app(context: AppContext, bot=None) -> web.Application:
     """Собрать сервер: подприложение под префиксом плюс проверка живости."""
     # Неделя может состоять из семи фото: base64 в JSON заметно больше файлов.
-    inner = web.Application(client_max_size=8 * 1024 * 1024, middlewares=[security_headers, caldav.root_discovery, compress_static, public_api.readable_json, api.error_middleware, public_api.authenticate, api.auth_middleware, access_middleware, sync.sync_middleware])
+    inner = web.Application(client_max_size=8 * 1024 * 1024, middlewares=[security_headers, alternate_read_cors, caldav.root_discovery, compress_static, public_api.readable_json, api.error_middleware, public_api.authenticate, api.auth_middleware, access_middleware, sync.sync_middleware])
     inner[CONTEXT] = context
     inner[BOT] = bot
     inner[live.HUB] = context.hub
@@ -420,6 +446,8 @@ def _moved_to(request: web.Request) -> str:
     """
     public = request.app[CONTEXT].settings.web.public_url
     current = request.host.split(":")[0].lower()
+    if current == "alt.sgoshka.ru":
+        return ""
     if current in ("localhost", "127.0.0.1", "[::1]") or current.endswith((".localhost", ".test")):
         return ""
     return public if current != public.split("//")[-1].lower() else ""
