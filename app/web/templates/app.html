@@ -308,9 +308,16 @@
 
 <!-- Пункты собирает tabs.js: в новом дизайне набор и порядок настраиваются. -->
 <nav class="bottom-nav" id="bottomNav">
+  <div class="side-top" id="sideTop">
+    <span class="side-logo-wrap"><img class="side-logo" src="{{ base }}/static/icon-192.png" alt="СГОшка" width="28" height="28"></span>
+    <span class="lb side-brand">СГОшка</span>
+    <button class="side-col" id="sideCol" type="button" aria-label="Свернуть панель" aria-expanded="true" title="Свернуть панель">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 6.5 9 12l5.5 5.5"/></svg>
+    </button>
+  </div>
   <span class="nav-glider" aria-hidden="true"></span>
   <!-- Меню ☰ в боковой панели: только на компьютере в классическом дизайне (wide.css). -->
-  <button class="nav-menu" id="navMenuBtn" type="button"><span class="ico" data-icon="menu"></span><span>Меню</span></button>
+  <button class="nav-menu" id="navMenuBtn" type="button"><span class="ico" data-icon="menu"></span><span class="lb">Меню</span></button>
 </nav>
 
 <aside class="drawer" id="drawer">

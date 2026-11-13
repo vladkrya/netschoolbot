@@ -2,7 +2,10 @@
 // pop 520/16 and panel 260/24. They are expressed in CSS below.
 'use strict';
 
+import { base } from './core.js';
+
 const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches || document.documentElement.classList.contains('no-motion');
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
 export function enhanceAuthMotion(root) {
   if (!root || root.dataset.motionReady) return;
@@ -167,15 +170,271 @@ function passwordMeter(input) {
   input.addEventListener('input', update); update();
 }
 
+// Designbookmark Motion Studies: Sidebar Collapse component
+// Shared spring engine: W (260/24), R (300/22), Y (380/28), labels (300/26 with 40ms stagger)
+let updateSidebarGliderTarget = null;
+
+export function syncSidebarGlider() {
+  updateSidebarGliderTarget?.();
+}
+
 export function initSidebarCollapse() {
   const nav = document.getElementById('bottomNav');
-  if (!nav || nav.querySelector('.nav-collapse')) return;
-  const button = document.createElement('button');
-  button.className = 'nav-collapse'; button.type = 'button'; button.innerHTML = '<span aria-hidden="true">‹</span>';
-  const sync = (closed) => { document.documentElement.classList.toggle('sidebar-collapsed', closed); button.setAttribute('aria-expanded', String(!closed)); button.title = closed ? 'Развернуть панель' : 'Свернуть панель'; button.setAttribute('aria-label', button.title); };
-  sync(localStorage.getItem('ns-sidebar-collapsed') === '1');
-  button.addEventListener('click', () => { const closed = !document.documentElement.classList.contains('sidebar-collapsed'); try { localStorage.setItem('ns-sidebar-collapsed', closed ? '1' : '0'); } catch {} sync(closed); });
-  nav.append(button);
+  if (!nav) return;
+
+  const desktopQuery = matchMedia('(min-width: 1024px)');
+
+  // 1. Ensure the header (.side-top) exists
+  let top = nav.querySelector('.side-top');
+  if (!top) {
+    top = document.createElement('div');
+    top.className = 'side-top';
+    top.id = 'sideTop';
+    top.innerHTML = `
+      <span class="side-logo-wrap"><img class="side-logo" src="${base}/static/icon-192.png" alt="СГОшка" width="28" height="28"></span>
+      <span class="lb side-brand">СГОшка</span>
+      <button class="side-col" id="sideCol" type="button" aria-label="Свернуть панель" aria-expanded="true" title="Свернуть панель">
+        <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14.5 6.5 9 12l5.5 5.5"/>
+        </svg>
+      </button>
+    `;
+    nav.prepend(top);
+  }
+
+  const col = top.querySelector('.side-col') || nav.querySelector('#sideCol');
+  const logo = top.querySelector('.side-logo-wrap');
+  const colSvg = col?.querySelector('svg');
+  const glider = nav.querySelector('.nav-glider');
+
+  if (nav.dataset.collapseReady) {
+    updateSidebarGliderTarget?.();
+    return;
+  }
+  nav.dataset.collapseReady = '1';
+
+  const OPEN_WIDTH = 212;
+  const COLLAPSED_WIDTH = 64;
+
+  let open = localStorage.getItem('ns-sidebar-collapsed') !== '1';
+  const W = { x: open ? OPEN_WIDTH : COLLAPSED_WIDTH, v: 0, t: open ? OPEN_WIDTH : COLLAPSED_WIDTH, k: 260, c: 24 };
+  const R = { x: open ? 0 : 1, v: 0, t: open ? 0 : 1, k: 300, c: 22 };
+  const Y = { x: 0, v: 0, t: 0, k: 380, c: 28 };
+
+  let labels = [];
+
+  function collectLabels() {
+    const list = [];
+    const brand = top.querySelector('.side-brand');
+    if (brand) list.push({ el: brand, s: { x: open ? 1 : 0, v: 0, t: open ? 1 : 0, k: 300, c: 26 } });
+
+    nav.querySelectorAll('.nav-item').forEach((item) => {
+      // Pick the currently visible label span
+      const lb = item.querySelector('.lbl-new:not([style*="display: none"]), .lbl-old:not([style*="display: none"]), .lb');
+      if (lb) {
+        list.push({ el: lb, s: { x: open ? 1 : 0, v: 0, t: open ? 1 : 0, k: 300, c: 26 } });
+      }
+    });
+
+    const menuLb = nav.querySelector('.nav-menu .lb, .nav-menu span:last-child');
+    if (menuLb) {
+      list.push({ el: menuLb, s: { x: open ? 1 : 0, v: 0, t: open ? 1 : 0, k: 300, c: 26 } });
+    }
+    labels = list;
+  }
+
+  function syncGliderTarget(immediate = false) {
+    const active = nav.querySelector('.nav-item.active');
+    if (active) {
+      Y.t = active.offsetTop;
+      if (immediate) {
+        Y.x = Y.t;
+        Y.v = 0;
+      }
+      wake();
+    }
+  }
+  updateSidebarGliderTarget = () => {
+    collectLabels();
+    syncGliderTarget(false);
+  };
+
+  const timers = [];
+  function after(sec, fn) {
+    const t = { t: sec, fn };
+    timers.push(t);
+    wake();
+    return t;
+  }
+
+  function setOpen(o) {
+    open = o;
+    document.documentElement.classList.toggle('sidebar-collapsed', !o);
+    if (col) {
+      col.setAttribute('aria-expanded', String(o));
+      col.setAttribute('aria-label', o ? 'Свернуть панель' : 'Развернуть панель');
+      col.title = o ? 'Свернуть панель' : 'Развернуть панель';
+    }
+    W.t = o ? OPEN_WIDTH : COLLAPSED_WIDTH;
+    R.t = o ? 0 : 1;
+    try {
+      localStorage.setItem('ns-sidebar-collapsed', o ? '0' : '1');
+    } catch {}
+
+    // Clear pending cascade timers
+    timers.length = 0;
+
+    labels.forEach((l, i) => {
+      if (o) {
+        after(0.06 + i * 0.04, () => {
+          if (open) l.s.t = 1;
+        });
+      } else {
+        l.s.t = 0;
+      }
+    });
+    wake();
+  }
+
+  col?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    setOpen(!open);
+  });
+
+  nav.addEventListener('click', (e) => {
+    const item = e.target.closest('.nav-item');
+    if (item) {
+      Y.t = item.offsetTop;
+      wake();
+    }
+  });
+
+  window.addEventListener('netschool:nav', () => {
+    collectLabels();
+    syncGliderTarget(false);
+  });
+
+  function step(s, dt, instant) {
+    if (instant) {
+      s.x = s.t;
+      s.v = 0;
+      return;
+    }
+    const a = -s.k * (s.x - s.t) - s.c * s.v;
+    s.v += a * dt;
+    s.x += s.v * dt;
+  }
+
+  function render() {
+    if (!desktopQuery.matches) return;
+
+    const rx = clamp(R.x, 0, 1);
+    const wx = W.x;
+
+    nav.style.width = `${wx.toFixed(2)}px`;
+    document.documentElement.style.setProperty('--rail', `${(wx + 24).toFixed(2)}px`);
+
+    if (col) {
+      const rightPx = 2 + rx * 4;
+      col.style.right = `${rightPx.toFixed(2)}px`;
+    }
+    if (colSvg) {
+      colSvg.style.transform = `rotate(${(180 * rx).toFixed(2)}deg)`;
+    }
+
+    if (logo) {
+      logo.style.opacity = clamp(1 - rx * 2, 0, 1).toFixed(3);
+    }
+
+    labels.forEach((l) => {
+      const o = clamp(l.s.x, 0, 1);
+      l.el.style.opacity = o.toFixed(3);
+      l.el.style.transform = `translateX(${((1 - o) * -10).toFixed(2)}px)`;
+      l.el.style.visibility = o < 0.02 ? 'hidden' : '';
+    });
+
+    if (glider && Y.x > 0) {
+      glider.style.transform = `translateY(${Y.x.toFixed(2)}px)`;
+    }
+  }
+
+  let raf = 0;
+  let lastTime = performance.now();
+
+  function wake() {
+    if (!raf) {
+      lastTime = performance.now();
+      raf = requestAnimationFrame(loop);
+    }
+  }
+
+  function loop(now) {
+    const dt = Math.min((now - lastTime) / 1000, 1 / 30);
+    lastTime = now;
+
+    for (let i = timers.length - 1; i >= 0; i--) {
+      timers[i].t -= dt;
+      if (timers[i].t <= 0) {
+        const fn = timers.splice(i, 1)[0].fn;
+        fn();
+      }
+    }
+
+    const isReduced = reduced();
+    const sub = 4;
+    for (let k = 0; k < sub; k++) {
+      [W, R, Y].forEach((s) => step(s, dt / sub, isReduced));
+      labels.forEach((l) => step(l.s, dt / sub, isReduced));
+    }
+
+    render();
+
+    const springs = [W, R, Y, ...labels.map((l) => l.s)];
+    const isMoving = springs.some((s) => Math.abs(s.x - s.t) > 0.05 || Math.abs(s.v) > 0.05);
+
+    if (isMoving || timers.length > 0) {
+      raf = requestAnimationFrame(loop);
+    } else {
+      springs.forEach((s) => {
+        s.x = s.t;
+        s.v = 0;
+      });
+      render();
+      raf = 0;
+    }
+  }
+
+  function cleanupMobile() {
+    nav.style.removeProperty('width');
+    document.documentElement.style.removeProperty('--rail');
+    if (col) col.style.removeProperty('right');
+    if (colSvg) colSvg.style.removeProperty('transform');
+    if (logo) logo.style.removeProperty('opacity');
+    if (glider) glider.style.removeProperty('transform');
+    labels.forEach((l) => {
+      l.el.style.removeProperty('opacity');
+      l.el.style.removeProperty('transform');
+      l.el.style.removeProperty('visibility');
+    });
+  }
+
+  desktopQuery.addEventListener('change', (e) => {
+    if (e.matches) {
+      syncGliderTarget(true);
+      render();
+    } else {
+      cancelAnimationFrame(raf);
+      raf = 0;
+      cleanupMobile();
+    }
+  });
+
+  collectLabels();
+  syncGliderTarget(true);
+  document.documentElement.classList.toggle('sidebar-collapsed', !open);
+  if (desktopQuery.matches) {
+    render();
+  }
 }
 
 export function typewrite(element, text) {

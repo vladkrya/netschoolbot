@@ -38,7 +38,7 @@ import { loadNotes } from './notes.js';
 import { loadGames, warmGames } from './games.js';
 import { initRepin } from './repin.js';
 import { initTapWaves } from './motion.js';
-import { initSidebarCollapse } from './ui-motion.js';
+import { initSidebarCollapse, syncSidebarGlider } from './ui-motion.js';
 
 const TABS = {
   day: loadDay,
@@ -143,6 +143,7 @@ function syncNav() {
   const index = items.findIndex((item) => item.dataset.tab === state.tab);
   $('bottomNav').classList.toggle('no-lens', index < 0);
   if (index >= 0) moveLens(index);
+  syncSidebarGlider();
 }
 
 /** «Назад» вне стека экранов: закрыть шторку, меню, вернуться на первую вкладку. */

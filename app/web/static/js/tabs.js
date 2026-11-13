@@ -129,9 +129,9 @@ export function renderNav(activeTab = '') {
   nav.querySelectorAll('.nav-item').forEach((item) => item.remove());
   nav.insertAdjacentHTML('beforeend', tabs.map((tab) => {
     const def = TAB_DEFS[tab];
-    return `<button class="nav-item${tab === activeTab ? ' active' : ''}" data-tab="${tab}" aria-label="${def.fresh}">
+    return `<button class="nav-item${tab === activeTab ? ' active' : ''}" data-tab="${tab}" aria-label="${def.fresh}" title="${def.fresh}">
         <span class="ico" data-icon="${def.icon}">${navIcon(def.icon)}${badgeHtml(tab)}</span>
-        <span class="lbl-old">${def.old}</span><span class="lbl-new">${def.fresh}</span></button>`;
+        <span class="lbl-old lb">${def.old}</span><span class="lbl-new lb">${def.fresh}</span></button>`;
   }).join(''));
   nav.style.setProperty('--n', tabs.length);
   nav.dataset.count = tabs.length;

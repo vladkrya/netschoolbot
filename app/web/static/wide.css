@@ -9,6 +9,8 @@
 
 /* Пункт «Меню» в боковой панели — только на компьютере (ниже). */
 .nav-menu { display: none; }
+/* Шапка боковой панели — только на компьютере (ниже). */
+.side-top { display: none; }
 /* Колонка справа от уроков — только на широком экране (ниже). */
 .day-side { display: none; }
 
@@ -85,7 +87,7 @@
 
 @media (min-width: 1024px) {
   :root {
-    --rail: 232px;
+    --rail: 236px;
     --col: 880px;
     /* Снизу панели больше нет: всё, что от неё отступало, встаёт к краю. */
     --nav-h: 0px;
@@ -108,6 +110,79 @@
     bottom: 24px;
   }
 
+  /* Шапка боковой панели: логотип, бренд и кнопка сворачивания */
+  .side-top {
+    position: relative;
+    display: flex;
+    align-items: center;
+    height: 44px;
+    padding: 0 4px;
+    margin-bottom: 6px;
+    flex: none;
+    order: -1;
+  }
+  .side-logo-wrap {
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    border-radius: 9px;
+    overflow: hidden;
+    will-change: opacity;
+  }
+  .side-logo {
+    width: 28px;
+    height: 28px;
+    border-radius: 9px;
+    display: block;
+    object-fit: cover;
+  }
+  .side-brand {
+    margin-left: 10px;
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text);
+    white-space: nowrap;
+    will-change: transform, opacity;
+  }
+  .side-col {
+    position: absolute;
+    right: 2px;
+    top: 4px;
+    width: 36px;
+    height: 36px;
+    border: 0;
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--text) 8%, transparent);
+    color: var(--text);
+    cursor: pointer;
+    display: grid;
+    place-items: center;
+    padding: 0;
+    transition: background .2s, color .2s;
+    will-change: transform;
+    z-index: 2;
+  }
+  .side-col:hover {
+    background: color-mix(in srgb, var(--text) 14%, transparent);
+  }
+  .side-col:active {
+    transform: scale(.95);
+  }
+  .side-col svg {
+    width: 18px;
+    height: 18px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    will-change: transform;
+    transition: none;
+  }
+
   /* Панель вкладок — колонка во всю высоту: иконка и подпись в строку. */
   .bottom-nav {
     top: calc(12px + var(--safe-top));
@@ -121,17 +196,19 @@
     gap: 4px;
     border-radius: 26px;
     touch-action: auto;
+    overflow: hidden;
   }
   .nav-glider {
-    top: 8px;
+    top: 0;
     left: 8px;
     right: 8px;
     bottom: auto;
     width: auto;
     height: 46px;
     border-radius: 16px;
-    /* Шаг — высота пункта и зазор между пунктами. */
-    translate: 0 calc(var(--i, 0) * 50px);
+    translate: none;
+    transition: background-color .25s, box-shadow .25s;
+    will-change: transform;
   }
   .nav-item {
     flex: none;
@@ -139,9 +216,21 @@
     flex-direction: row;
     justify-content: flex-start;
     gap: 12px;
-    padding: 0 14px;
+    padding: 0 12px;
     border-radius: 16px;
     font-size: 15px;
+    white-space: nowrap;
+    position: relative;
+    z-index: 1;
+  }
+  .nav-item .ico {
+    width: 24px;
+    height: 24px;
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transform: none;
   }
   .nav-item .lbl-old, .nav-item .lbl-new,
   :root[data-design="new"] .bottom-nav[data-count="6"] .nav-item .lbl-new {
@@ -150,7 +239,6 @@
     line-height: 1.2;
     letter-spacing: -.01em;
   }
-  .nav-item .ico { transform: none; }
   .nav-item.active .ico { animation: none; }
   .nav-item:hover { opacity: 1; }
   .nav-item:not(.active):hover { background: color-mix(in srgb, var(--text) 6%, transparent); }

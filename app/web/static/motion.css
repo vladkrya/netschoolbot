@@ -209,20 +209,4 @@
 @keyframes type-caret { 50% { opacity: 0; } }
 .streaming-reply::after { content: ''; display: inline-block; height: 1em; margin-left: 2px; border-left: 2px solid var(--primary); vertical-align: -.14em; animation: type-caret .7s step-end infinite; }
 
-.nav-collapse { display: none; }
-@media (min-width: 1024px) {
-  .nav-collapse { display: grid; }
-  .nav-collapse { position: absolute; z-index: 3; right: 8px; top: 8px; display: grid; place-items: center; width: 46px; height: 46px; border-radius: 16px; background: color-mix(in srgb, var(--text) 8%, transparent); color: var(--text2); font-size: 30px; line-height: 1; transition: transform .26s cubic-bezier(.34, 1.26, .64, 1), background .2s; }
-  /* The original control belongs to the first sidebar row. Reserve its slot;
-     it must never sit on top of the first label. */
-  .bottom-nav .nav-item:first-of-type { padding-right: 62px; }
-  .nav-collapse:hover { background: color-mix(in srgb, var(--text) 14%, transparent); }
-  .nav-collapse span { transform: translateY(-2px); }
-  :root.sidebar-collapsed { --rail: 76px; }
-  :root.sidebar-collapsed .bottom-nav { padding: 8px; }
-  :root.sidebar-collapsed .nav-item { justify-content: center; padding: 0; gap: 0; }
-  :root.sidebar-collapsed :is(.nav-item .lbl-old, .nav-item .lbl-new, .nav-menu > span:last-child) { max-width: 0; opacity: 0; overflow: hidden; }
-  :root.sidebar-collapsed .nav-menu { justify-content: center; padding: 0; gap: 0; }
-  :root.sidebar-collapsed .nav-collapse { transform: rotate(180deg); }
-}
-@media (prefers-reduced-motion: reduce) { .spring-field, .password-bars i, .file-drop-zone, .file-drop-zone::after, .nav-collapse { transition: none; } .otp-field.otp-complete { animation: none; } .typewriter::after, .streaming-reply::after { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .spring-field, .password-bars i, .file-drop-zone, .file-drop-zone::after, .side-col { transition: none; } .otp-field.otp-complete { animation: none; } .typewriter::after, .streaming-reply::after { animation: none; } }
