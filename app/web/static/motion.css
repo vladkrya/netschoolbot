@@ -162,8 +162,8 @@
 .spring-field { transition: transform .3s cubic-bezier(.34, 1.26, .64, 1), box-shadow .3s cubic-bezier(.34, 1.26, .64, 1), border-color .2s ease; }
 .spring-field.spring-focus { transform: scale(1.012); box-shadow: 0 0 0 4px color-mix(in srgb, var(--primary) 17%, transparent); }
 .spring-field.spring-invalid { border-color: var(--g2, #d33) !important; box-shadow: 0 0 0 4px color-mix(in srgb, var(--g2, #d33) 16%, transparent); }
-.springy-email { position: relative; display: block; isolation: isolate; background: var(--card-2); border-radius: 10px; }
-.springy-email > .field { position: relative; z-index: 2; background: transparent; color: transparent; caret-color: transparent; }
+.springy-email { position: relative; display: block; isolation: isolate; margin: 4px 0 10px; background: var(--card-2); border-radius: 10px; }
+.springy-email > .field { position: relative; z-index: 2; margin: 0; background: transparent; color: transparent; caret-color: transparent; }
 .springy-email > .field::selection { color: transparent; background: color-mix(in srgb, var(--primary) 26%, transparent); }
 .springy-email-layer { position: absolute; z-index: 3; inset: 0; display: block; overflow: hidden; padding: 11px 12px; pointer-events: none; white-space: pre; color: var(--text); font: inherit; line-height: normal; }
 .springy-char { display: inline-block; transform-origin: 50% 80%; }

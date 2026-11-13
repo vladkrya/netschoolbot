@@ -9,7 +9,7 @@ export function enhanceAuthMotion(root) {
   root.dataset.motionReady = '1';
   root.querySelectorAll('input.field').forEach((input) => {
     input.classList.add('spring-field');
-    if (input.type === 'email' || input.type === 'password') {
+    if (input.type === 'email' || input.type === 'password' || input.autocomplete === 'username') {
       springyInput(input);
     } else {
       input.addEventListener('focus', () => input.classList.add('spring-focus'));
@@ -136,11 +136,12 @@ export function setOtpResult(input, accepted) {
 }
 
 function passwordMeter(input) {
-  if (input.nextElementSibling?.classList.contains('password-meter')) return;
+  const anchor = input.closest('.springy-email') || input;
+  if (anchor.nextElementSibling?.classList.contains('password-meter')) return;
   const meter = document.createElement('div');
   meter.className = 'password-meter';
   meter.innerHTML = '<span class="password-bars"><i></i><i></i><i></i><i></i></span><span class="password-word" aria-live="polite">Введите не менее 8 символов</span>';
-  input.insertAdjacentElement('afterend', meter);
+  anchor.insertAdjacentElement('afterend', meter);
   const update = () => {
     const value = input.value;
     const score = [value.length >= 8, /[a-zа-я]/i.test(value) && /[A-ZА-Я]/.test(value), /\\d/.test(value), /[^\\w\\s]/.test(value)].filter(Boolean).length;
