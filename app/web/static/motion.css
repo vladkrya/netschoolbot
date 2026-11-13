@@ -165,12 +165,12 @@
 .springy-email { position: relative; display: block; isolation: isolate; margin: 4px 0 10px; background: var(--card-2); border-radius: 10px; }
 .springy-email > .field { position: relative; z-index: 2; margin: 0; background: transparent; color: transparent; caret-color: transparent; }
 .springy-email > .field::selection { color: transparent; background: color-mix(in srgb, var(--primary) 26%, transparent); }
-.springy-email-layer { position: absolute; z-index: 3; inset: 0; display: block; overflow: hidden; padding: 11px 12px; pointer-events: none; white-space: pre; color: var(--text); font: inherit; line-height: normal; }
+.springy-email-layer { position: absolute; z-index: 3; inset: 0; display: block; overflow: hidden; padding: 14px 12px 8px; pointer-events: none; white-space: pre; color: var(--text); font: inherit; line-height: normal; }
 .springy-char { display: inline-block; transform-origin: 50% 80%; }
 .springy-char.entering { animation: springy-char-in .5s cubic-bezier(.2,.8,.2,1) both; animation-delay: var(--delay, 0ms); }
 .springy-char.leaving { position: absolute; animation: springy-char-out .34s cubic-bezier(.5,0,.75,0) forwards; }
 .springy-char.reject { animation: springy-char-reject .46s ease both; animation-delay: var(--delay, 0ms); }
-.springy-email-caret { position: absolute; z-index: 4; left: 12px; top: 12px; width: 2px; height: 1.15em; border-radius: 2px; background: var(--text); pointer-events: none; transform-origin: left center; opacity: 0; }
+.springy-email-caret { position: absolute; z-index: 4; left: 12px; top: 15px; width: 2px; height: 1.15em; border-radius: 2px; background: var(--text); pointer-events: none; transform-origin: left center; opacity: 0; }
 .springy-email:focus-within .springy-email-caret { opacity: 1; }
 .springy-email-caret.blink { animation: springy-caret-blink 1s steps(1) infinite; }
 @keyframes springy-char-in { 0% { transform: translateY(14px) rotate(-16deg) scale(.5); opacity: 0; filter: blur(3px); } 55% { transform: translateY(-3px) rotate(4deg) scale(1.1); opacity: 1; filter: none; } 80% { transform: translateY(1px) rotate(-1deg) scale(.98); } 100% { transform: none; } }
