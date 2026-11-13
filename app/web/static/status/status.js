@@ -263,6 +263,15 @@ function matches(host) {
 }
 
 const BLOCKED_TEXT = 'Сервер не отвечает на запросы с наших серверов, поэтому бот не может его проверить и работать с ним. Это не обязательно сбой: из других сетей сайт может открываться.';
+// Временно отключённый маршрут СГОшки. Это именно проблема нашего доступа, а
+// не подтверждённый сбой школьных серверов. Удалить список после восстановления
+// прокси, чтобы обычные региональные сбои снова описывались как обычно.
+const ROUTE_OUTAGE_HOSTS = new Set([
+  'sgo.volganet.ru', 'netschool.eduportal44.ru', 'sgo.prim-edu.ru', 'deti.obr03.ru',
+  'giseo.rkomi.ru', 'sgo.mari-el.gov.ru', 'sgo.e-yakutia.ru', 'e-school.ryazan.gov.ru',
+  'asurso.ru', 'netcity.admsakhalin.ru', 'sgo.tomedu.ru', 'sgo.edu-74.ru', 'sgo.yanao.ru',
+]);
+const routeOutage = (host) => ROUTE_OUTAGE_HOSTS.has(host.host) && availability(host, serverNow()).state === 'down';
 
 function hostDetails(host) {
   const incidents = data.incidents.filter((i) => i.host === host.host).slice(0, 5);
@@ -274,7 +283,10 @@ function hostDetails(host) {
       el('b', {}, host.diary_issues && host.state !== 'down' ? 'Проблемы с дневниками. ' : 'Проверки дневников. '),
       `За последние 30 минут: ${host.account_checks.good} успешных, ${host.account_checks.total - host.account_checks.good} с ошибкой. `,
       'Это обезличенные загрузки дневников ботом и в приложении. Неверный пароль и подтверждение входа не учитываются.') : '',
-    host.error === 'maintenance' ? el('div', { class: 'notice' },
+    routeOutage(host) ? el('div', { class: 'notice' },
+      el('b', {}, 'Проблема на стороне СГОшки. '),
+      'У нас временно не работает сетевой маршрут к этому региону. Поэтому бот не может проверить сервер или загрузить дневник; это не означает, что сервер региона недоступен у вас.')
+      : host.error === 'maintenance' ? el('div', { class: 'notice' },
       el('b', {}, 'Технические работы. '), 'Сервер показывает объявление о техническом обслуживании. Срок завершения неизвестен.')
       : availability(host, serverNow()).state === 'down' ? el('div', { class: 'notice' },
         'Сервер временно недоступен. Возможны технические работы или сбой; причина не подтверждена.') : '',
@@ -452,7 +464,10 @@ function renderBanner() {
   if (down.length) {
     cls = 'critical'; icon = '!';
     title = `${down.length} ${plural(down.length, 'сервер недоступен', 'сервера недоступны', 'серверов недоступны')}`;
-    sub = down.map(name).join(', ');
+    const routed = down.filter(routeOutage);
+    sub = routed.length
+      ? `У СГОшки проблема с маршрутом проверки: статус ${routed.length === down.length ? 'этих регионов' : 'части регионов'} может быть неточным. Откройте регион — там есть пояснение.`
+      : down.map(name).join(', ');
   } else if (issues.length) {
     cls = 'warning'; icon = '!';
     title = `${issues.length} ${plural(issues.length, 'регион с проблемами', 'региона с проблемами', 'регионов с проблемами')}`;
