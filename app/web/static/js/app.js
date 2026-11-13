@@ -38,6 +38,7 @@ import { loadNotes } from './notes.js';
 import { loadGames, warmGames } from './games.js';
 import { initRepin } from './repin.js';
 import { initTapWaves } from './motion.js';
+import { initSidebarCollapse } from './ui-motion.js';
 
 const TABS = {
   day: loadDay,
@@ -520,6 +521,7 @@ function applySyncedPrefs() {
   applyAccent();
   applyDesign();
   renderNav();
+  initSidebarCollapse();
   window.dispatchEvent(new CustomEvent('netschool:design'));
   // Правки расписания могли прийти с другого устройства.
   window.dispatchEvent(new CustomEvent('netschool:edits'));
@@ -971,6 +973,7 @@ async function start() {
   initInstallPrompt();
   openRequestedInstall();
   renderNav();
+  initSidebarCollapse();
   renderIcons();
   applyScheduleTab();
   initFullscreen();

@@ -333,7 +333,7 @@ function mount(body, { tab = false } = {}) {
     const live = textStream((text) => {
       typing.classList.remove('typing');
       const content = document.createElement('div');
-      content.className = 'ai-text';
+      content.className = 'ai-text streaming-reply';
       content.textContent = text;
       typing.replaceChildren(content);
       scroll();
@@ -352,6 +352,7 @@ function mount(body, { tab = false } = {}) {
         }),
       });
       await live.finish();
+      typing.querySelector('.streaming-reply')?.classList.remove('streaming-reply');
       const reply = { role: 'assistant', content: data.reply };
       chat.messages.push(reply);
       chat.left = data.left;

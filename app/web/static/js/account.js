@@ -10,6 +10,7 @@ import { notify } from './haptics.js';
 import { ICONS } from './icons.js';
 import { pushScreen } from './screens.js';
 import { setHalloweenAccess } from './appearance.js';
+import { enhanceAuthMotion, typewrite } from './ui-motion.js';
 
 /** Подпись под кнопкой входа: согласие с политикой. Ссылка — в новой
  * вкладке, чтобы не потерять заполненную форму. */
@@ -28,7 +29,9 @@ function screen(html) {
   root.innerHTML = `<div class="app-lock-card account-card">${html}</div>`;
   document.body.appendChild(root);
   document.documentElement.classList.add('app-locked');
-  return root.querySelector('.account-card');
+  const card = root.querySelector('.account-card');
+  enhanceAuthMotion(card);
+  return card;
 }
 
 /* ───────────────────────────── Главный экран ───────────────────────────── */
@@ -67,7 +70,7 @@ function heroHtml() {
   return `
     <section class="ld-hero">
       <div class="ld-brand"><img src="${base}/static/icon-192.png" alt="" width="36" height="36"> СГОшка</div>
-      <h1>«Сетевой город» —<br><span class="ld-grad">удобно и быстро</span></h1>
+      <h1>«Сетевой город» —<br><span class="ld-grad" data-typewriter="удобно и быстро">удобно и быстро</span></h1>
       <p class="ld-lead">Оценки, домашние задания и расписание из вашего электронного дневника
         в одном красивом приложении. Работает в Telegram, в браузере и на домашнем экране телефона.</p>
       <p class="ld-note">Неофициальное приложение — не сайт «Сетевого города» и не ИРТех.</p>
@@ -113,6 +116,7 @@ function landing(html) {
     document.body.appendChild(root);
     document.documentElement.classList.add('app-locked');
     bindLanding(root);
+    root.querySelectorAll('[data-typewriter]').forEach((element) => typewrite(element, element.dataset.typewriter));
   }
   const card = root.querySelector('.account-card');
   card.innerHTML = html;
@@ -120,6 +124,7 @@ function landing(html) {
   card.classList.remove('ld-swap');
   void card.offsetWidth; // перезапуск анимации смены карточки
   card.classList.add('ld-swap');
+  enhanceAuthMotion(card);
   return card;
 }
 

@@ -519,22 +519,30 @@ export async function openCompose(draft = {}) {
     );
   };
 
-  $('composeFile')?.addEventListener('change', (event) => {
-    for (const file of event.target.files) {
+  // Один путь для выбора и drop: ограничения остаются теми же, а зона
+  // получает «пружинный» отклик до реальной отправки multipart-запроса.
+  const addFiles = (picked) => {
+    for (const file of picked) {
       const total = files.reduce((sum, item) => sum + item.size, 0) + file.size;
       const problem = files.length >= MAX_FILES ? `Не больше ${MAX_FILES} файлов`
         : file.size === 0 ? `«${file.name}» пустой`
         : file.size > MAX_FILE_BYTES ? `«${file.name}» больше ${MAX_FILE_BYTES / 1024 / 1024} МБ`
         : total > MAX_TOTAL_BYTES ? `Файлы больше ${MAX_TOTAL_BYTES / 1024 / 1024} МБ в сумме` : '';
-      if (problem) {
-        notify('error');
-        banner(problem, true);
-        continue;
-      }
+      if (problem) { notify('error'); banner(problem, true); continue; }
       files.push(file);
     }
-    event.target.value = '';
     renderFiles();
+  };
+
+  const dropZone = $('composeFile')?.closest('label');
+  dropZone?.classList.add('file-drop-zone');
+  dropZone?.setAttribute('data-drop-hint', 'Перетащите файлы сюда');
+  ['dragenter', 'dragover'].forEach((name) => dropZone?.addEventListener(name, (event) => { event.preventDefault(); dropZone.classList.add('dragging'); }));
+  ['dragleave', 'drop'].forEach((name) => dropZone?.addEventListener(name, (event) => { event.preventDefault(); dropZone.classList.remove('dragging'); }));
+  dropZone?.addEventListener('drop', (event) => addFiles(event.dataTransfer?.files || []));
+  $('composeFile')?.addEventListener('change', (event) => {
+    addFiles(event.target.files);
+    event.target.value = '';
   });
 
   $('composeTo').addEventListener('click', () => chooseRecipients(chosen, renderTo));
