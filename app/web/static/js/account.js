@@ -120,6 +120,9 @@ function landing(html) {
   }
   const card = root.querySelector('.account-card');
   card.innerHTML = html;
+  // Карточка остаётся той же при переходе «вход → регистрация → сброс»,
+  // но поля каждый раз новые. Разрешаем заново навесить motion на них.
+  delete card.dataset.motionReady;
   showBotLinks(root);
   card.classList.remove('ld-swap');
   void card.offsetWidth; // перезапуск анимации смены карточки
