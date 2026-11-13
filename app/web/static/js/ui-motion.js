@@ -137,6 +137,19 @@ export function setOtpResult(input, accepted) {
   }, 430);
 }
 
+// Same rejection as the source Springy Input: the actual input remains intact,
+// while its visible glyphs shake in a short wave and the field turns red.
+export function rejectSpringyInput(input) {
+  if (!(input instanceof HTMLInputElement)) return;
+  input.classList.add('spring-invalid');
+  const shell = input.closest('.springy-email');
+  shell?.querySelectorAll('.springy-char:not(.leaving)').forEach((span, index) => {
+    span.style.setProperty('--delay', `${index * 14}ms`);
+    span.classList.remove('reject'); void span.offsetWidth; span.classList.add('reject');
+  });
+  input.focus();
+}
+
 function passwordMeter(input) {
   const anchor = input.closest('.springy-email') || input;
   if (anchor.nextElementSibling?.classList.contains('password-meter')) return;

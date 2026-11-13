@@ -10,7 +10,7 @@ import { notify } from './haptics.js';
 import { ICONS } from './icons.js';
 import { pushScreen } from './screens.js';
 import { setHalloweenAccess } from './appearance.js';
-import { cycleTypewriter, enhanceAuthMotion, setOtpResult } from './ui-motion.js';
+import { cycleTypewriter, enhanceAuthMotion, rejectSpringyInput, setOtpResult } from './ui-motion.js';
 
 /** Подпись под кнопкой входа: согласие с политикой. Ссылка — в новой
  * вкладке, чтобы не потерять заполненную форму. */
@@ -272,6 +272,9 @@ function renderLogin(email = '') {
         await post('/api/account/login', { email: form.email.value, password: form.password.value });
         signedIn();
       } catch (error) {
+        // Deliberately animate only the password: the server must not disclose
+        // whether this email exists, while the user still gets clear feedback.
+        rejectSpringyInput(form.password);
         showError(card, error.message);
       }
     });
