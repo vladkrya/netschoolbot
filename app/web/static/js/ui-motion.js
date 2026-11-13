@@ -17,11 +17,7 @@ export function enhanceAuthMotion(root) {
     }
   });
   root.querySelectorAll('input[type="password"][autocomplete="new-password"]').forEach(passwordMeter);
-  root.querySelectorAll('input[autocomplete="one-time-code"]').forEach((input) => {
-    input.classList.add('otp-field');
-    input.setAttribute('aria-label', input.getAttribute('aria-label') || 'Код подтверждения');
-    input.addEventListener('input', () => input.classList.toggle('otp-complete', Boolean(input.maxLength > 0 && input.value.length >= input.maxLength)));
-  });
+  root.querySelectorAll('input[autocomplete="one-time-code"]').forEach(otpBoxes);
   root.querySelectorAll('form').forEach((form) => form.addEventListener('invalid', (event) => {
     const field = event.target;
     if (field instanceof HTMLInputElement) {
@@ -29,6 +25,28 @@ export function enhanceAuthMotion(root) {
       field.animate?.([{ transform: 'translateX(0)' }, { transform: 'translateX(-7px)' }, { transform: 'translateX(6px)' }, { transform: 'translateX(0)' }], { duration: 360, easing: 'cubic-bezier(.34,1.56,.64,1)' });
     }
   }, true));
+}
+
+// Exact OTP interaction model: one real input remains the source of truth;
+// boxes are visual only, so paste, autofill and backspace can never lose code.
+function otpBoxes(input) {
+  if (input.parentElement?.classList.contains('motion-otp')) return;
+  const count = Number(input.maxLength) || 6;
+  const wrap = document.createElement('div'); wrap.className = 'motion-otp'; wrap.style.setProperty('--otp-count', count);
+  input.before(wrap); wrap.append(input); input.classList.add('motion-otp-input');
+  const boxes = Array.from({ length: count }, () => { const box = document.createElement('span'); box.className = 'motion-otp-box'; box.setAttribute('aria-hidden', 'true'); wrap.append(box); return box; });
+  const sync = () => {
+    const value = input.value.replace(/\D/g, '').slice(0, count);
+    if (input.value !== value) input.value = value;
+    boxes.forEach((box, index) => {
+      const next = value[index] || '';
+      if (box.textContent !== next && next) { box.textContent = next; box.animate?.([{ transform: 'translateY(-14px)', opacity: 0 }, { transform: 'translateY(0)', opacity: 1 }], { duration: 380, easing: 'cubic-bezier(.34,1.56,.64,1)' }); }
+      else if (!next) box.textContent = '';
+      box.classList.toggle('active', index === Math.min(value.length, count - 1) && value.length < count);
+    });
+    wrap.classList.toggle('complete', value.length === count);
+  };
+  input.addEventListener('input', sync); input.addEventListener('focus', sync); wrap.addEventListener('click', () => input.focus()); sync();
 }
 
 function passwordMeter(input) {

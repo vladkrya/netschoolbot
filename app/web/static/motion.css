@@ -168,10 +168,14 @@
 .password-meter[data-level="1"] i:nth-child(1), .password-meter[data-level="2"] i:nth-child(-n+2) { background: var(--g2, #d33); transform: scaleX(1.08); }
 .password-meter[data-level="3"] i:nth-child(-n+3) { background: #e99d25; transform: scaleX(1.08); }
 .password-meter[data-level="4"] i { background: var(--g5, #24984b); transform: scaleX(1.08); }
-.otp-field { text-align: center; letter-spacing: .52em; font-variant-numeric: tabular-nums; background-image: linear-gradient(90deg, transparent 0 14%, var(--border) 14% 15%, transparent 15% 31%, var(--border) 31% 32%, transparent 32% 48%, var(--border) 48% 49%, transparent 49% 65%, var(--border) 65% 66%, transparent 66% 82%, var(--border) 82% 83%, transparent 83%) !important; background-size: 100% calc(100% - 12px); background-repeat: no-repeat; background-position: center; }
-.otp-field:focus { letter-spacing: .57em; }
-.otp-field.otp-complete { animation: otp-pop .38s cubic-bezier(.34, 1.56, .64, 1); }
-@keyframes otp-pop { 50% { transform: scale(1.035); } }
+.motion-otp { position: relative; display: grid; grid-template-columns: repeat(var(--otp-count, 6), 1fr); gap: 8px; height: 56px; margin: 0 0 10px; }
+.motion-otp-box { display: grid; place-items: center; min-width: 0; border-radius: 14px; background: var(--card-2); color: var(--text); font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; transition: background .26s cubic-bezier(.34,1.26,.64,1), transform .26s cubic-bezier(.34,1.26,.64,1); }
+.motion-otp-box.active { background: color-mix(in srgb, var(--primary) 16%, var(--card-2)); box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 55%, transparent); }
+.motion-otp.complete { gap: 0; }
+.motion-otp.complete .motion-otp-box { border-radius: 0; background: color-mix(in srgb, var(--g5, #24984b) 75%, var(--card-2)); color: #fff; }
+.motion-otp.complete .motion-otp-box:first-of-type { border-radius: 14px 0 0 14px; }
+.motion-otp.complete .motion-otp-box:last-of-type { border-radius: 0 14px 14px 0; }
+.motion-otp-input { position: absolute !important; inset: 0; z-index: 2; opacity: 0; width: 100% !important; height: 100%; margin: 0 !important; caret-color: transparent; }
 
 /* file drop: follow 900/50, settle 280/22 */
 .file-drop-zone { position: relative; overflow: hidden; isolation: isolate; transition: transform .28s cubic-bezier(.34, 1.18, .64, 1), background .2s ease, color .2s ease; }
