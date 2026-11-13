@@ -40,7 +40,7 @@ function springyInput(input) {
   const caret = document.createElement('span'); caret.className = 'springy-email-caret';
   input.before(shell); shell.append(input, layer, caret);
   let previous = input.value, focused = document.activeElement === input;
-  let x = 0, velocity = 0, target = 0, frame = 0, lastMove = performance.now();
+  let x = 0, velocity = 0, target = 0, frame = 0, blinkTimer = 0;
   const glyph = (char) => input.type === 'password' ? '•' : (char === ' ' ? '\u00a0' : char);
 
   const spans = () => [...layer.querySelectorAll('.springy-char:not(.leaving)')];
@@ -60,11 +60,13 @@ function springyInput(input) {
     const stretch = Math.min(Math.abs(velocity) / 80, 7);
     caret.style.width = `${2 + stretch}px`;
     caret.style.transform = `translateX(${x - (velocity > 0 ? stretch : 0)}px)`;
-    const idle = performance.now() - lastMove > 550 && Math.abs(velocity) < 5;
-    caret.classList.toggle('blink', focused && idle);
     if (Math.abs(target - x) > .15 || Math.abs(velocity) > .15) frame = requestAnimationFrame(render);
   };
-  const moveCaret = () => { lastMove = performance.now(); if (!frame) frame = requestAnimationFrame(render); };
+  const moveCaret = () => {
+    clearTimeout(blinkTimer); caret.classList.remove('blink');
+    if (focused) blinkTimer = setTimeout(() => caret.classList.add('blink'), 550);
+    if (!frame) frame = requestAnimationFrame(render);
+  };
   const sync = () => {
     const next = input.value;
     let start = 0; while (start < previous.length && start < next.length && previous[start] === next[start]) start++;
@@ -87,7 +89,7 @@ function springyInput(input) {
   };
   input.addEventListener('input', sync);
   input.addEventListener('focus', () => { focused = true; input.classList.add('spring-focus'); moveCaret(); });
-  input.addEventListener('blur', () => { focused = false; input.classList.remove('spring-focus'); moveCaret(); });
+  input.addEventListener('blur', () => { focused = false; clearTimeout(blinkTimer); caret.classList.remove('blink'); input.classList.remove('spring-focus'); moveCaret(); });
   ['keydown', 'keyup', 'click', 'select'].forEach((event) => input.addEventListener(event, moveCaret));
   input.form?.addEventListener('submit', () => {
     if (input.validity.valid) return;
