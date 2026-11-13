@@ -1069,7 +1069,7 @@ export function showSgoLogin(info = {}) {
       const card = screen(`<h2>${esc(data.otp.label)}</h2>
         <p class="muted">${data.otp.phone ? `Отправлен на ${esc(data.otp.phone)}. ` : ''}${data.otp.length} цифр.</p>
         <form class="account-form">
-          <input class="field" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="8" required>
+          <input class="field" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="${Number(data.otp.length) || 6}" required>
           <p class="account-error" hidden></p>
           <button class="btn" type="submit">Подтвердить</button>
         </form>
