@@ -114,6 +114,7 @@ def _clean_periods(value: Any) -> dict[str, Any] | None:
 _VERSION = re.compile(r"^\d{1,3}\.\d{1,3}\.\d{1,3}$")
 # Цели на четверть по предметам: {предмет: "5" | "4" | "3"}.
 MAX_GOALS = 60
+MAX_CARRY_AVERAGES = 200
 
 
 def _clean_goals(value: Any) -> dict[str, str] | None:
@@ -125,6 +126,16 @@ def _clean_goals(value: Any) -> dict[str, str] | None:
             return None
         goals[subject] = grade
     return goals
+
+
+def _clean_carry_averages(value: Any) -> dict[str, str] | None:
+    """Как предмет считает средний с незакрытым прошлым периодом."""
+    if not isinstance(value, dict) or len(value) > MAX_CARRY_AVERAGES:
+        return None
+    if any(not isinstance(key, str) or not 0 < len(key) <= 300 or mode not in ("periods", "marks")
+           for key, mode in value.items()):
+        return None
+    return value
 
 
 _ISO_DAY = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -457,6 +468,11 @@ async def save_prefs(request: web.Request) -> web.Response:
         if goals is None:
             return json_error("Некорректные цели")
         changes["goals"] = goals
+    if "carryAverages" in body:
+        carry = _clean_carry_averages(body["carryAverages"])
+        if carry is None:
+            return json_error("Некорректный способ расчёта среднего")
+        changes["carryAverages"] = carry
     if "whatsNew" in body:
         # Какую версию «Что нового» уже открывали — точка у строки в настройках.
         if not isinstance(body["whatsNew"], str) or not _VERSION.match(body["whatsNew"]):

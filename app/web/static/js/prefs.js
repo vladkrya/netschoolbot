@@ -19,6 +19,7 @@ const KEYS = {
   countdown: 'ns-countdown',
   // Цели на четверть: {предмет: '5' | '4' | '3'} (totals.js).
   goals: 'ns-goals',
+  carryAverages: 'ns-carry-averages',
   // С какого дня «Должен сдать» считает несделанные задания (ГГГГ-ММ-ДД), due.js.
   dueFrom: 'ns-due-from',
   // Какую версию «Что нового» уже открывали (whatsnew.js).
@@ -30,7 +31,7 @@ const KEYS = {
   swipeBack: 'ns-swipe-back', swipeRight: 'ns-swipe-right',
 };
 // Тема, дизайн и цвет лежат строкой (их читает скрипт в <head>), остальное — JSON.
-const JSON_PREFS = new Set(['weights', 'thresholds', 'tabs', 'pins', 'accents', 'lessonEdits', 'goals', 'keepSignedIn']);
+const JSON_PREFS = new Set(['weights', 'thresholds', 'tabs', 'pins', 'accents', 'lessonEdits', 'goals', 'carryAverages', 'keepSignedIn']);
 
 function readLocal(name) {
   try {
