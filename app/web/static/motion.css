@@ -161,6 +161,7 @@
 /* springy input: caret 700/32, morph 300/20 */
 .spring-field { transition: transform .3s cubic-bezier(.34, 1.26, .64, 1), box-shadow .3s cubic-bezier(.34, 1.26, .64, 1), border-color .2s ease; }
 .spring-field.spring-focus { transform: scale(1.012); box-shadow: 0 0 0 4px color-mix(in srgb, var(--primary) 17%, transparent); }
+.spring-field.spring-invalid { border-color: var(--g2, #d33) !important; box-shadow: 0 0 0 4px color-mix(in srgb, var(--g2, #d33) 16%, transparent); }
 .password-meter { display: flex; align-items: center; gap: 9px; min-height: 18px; margin: -2px 2px 6px; color: var(--text2); font-size: 12px; }
 .password-bars { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3px; width: 72px; }
 .password-bars i { height: 4px; border-radius: 99px; background: var(--border); transform-origin: left; transition: background .26s cubic-bezier(.34, 1.26, .64, 1), transform .26s cubic-bezier(.34, 1.26, .64, 1); }
