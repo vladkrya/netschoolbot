@@ -49,6 +49,45 @@ async def register(client, email="kid@example.com", password="длинный-п�
 
 
 class TestRegisterAndLogin:
+    async def test_browser_session_is_shared_between_primary_and_alt(self, client, app_context):
+        await app_context.users.save(make_user(501))
+        await app_context.users.save(make_user(502))
+        primary = await app_context.miniapp.issue_token(501, device=True, method="email")
+        stale_alt = await app_context.miniapp.issue_token(502, device=True, method="email")
+        response = await client.post(f"{BASE}/api/account/shared-session", headers={
+            "Host": "alt.sgoshka.ru",
+            "Cookie": f"netschool_browser_token={primary}; netschool_token={stale_alt}",
+        })
+        assert (await response.json())["data"]["changed"] is True
+        assert response.cookies["netschool_token"].value == primary
+
+        response = await client.post(f"{BASE}/api/account/shared-session", headers={
+            "Host": "sgoshka.ru", "Cookie": f"netschool_token={primary}",
+        })
+        assert response.cookies["netschool_browser_token"].value == primary
+        assert response.cookies["netschool_browser_token"]["domain"] == "sgoshka.ru"
+
+        login = await client.post(f"{BASE}/api/account/register", json={
+            "email": "shared@example.com", "password": "длинный-пароль",
+        }, headers={"Host": "alt.sgoshka.ru", "X-Netschool-Client": "web"})
+        assert login.status == 200
+        assert login.cookies["netschool_browser_token"].value == login.cookies["netschool_token"].value
+
+        pwa = await client.post(f"{BASE}/api/account/register", json={
+            "email": "pwa@example.com", "password": "длинный-пароль",
+        }, headers={"Host": "alt.sgoshka.ru", "X-Netschool-Client": "pwa"})
+        assert pwa.status == 200
+        assert "netschool_browser_token" not in pwa.cookies
+
+        bridge = await client.post(f"{BASE}/api/account/shared-session", headers={
+            "Host": "alt.sgoshka.ru", "Origin": "https://sgoshka.ru",
+            "X-Netschool-Token": primary,
+        })
+        assert bridge.cookies["netschool_browser_token"].value == primary
+        assert bridge.cookies["netschool_token"].value == primary
+        assert bridge.headers["Access-Control-Allow-Origin"] == "https://sgoshka.ru"
+        assert bridge.headers["Access-Control-Allow-Credentials"] == "true"
+
     async def test_register_gives_token_for_web_user(self, client, app_context):
         status, body, response = await register(client)
         assert status == 200 and "netschool_token" in response.cookies

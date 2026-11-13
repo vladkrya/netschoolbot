@@ -44,13 +44,15 @@ logger = logging.getLogger("netschoolbot.web")
 
 EMAIL = re.compile(r"^[^@\s]{1,64}@[^@\s]{1,190}\.[^@\s]{2,24}$")
 COOKIE = "netschool_token"
+SHARED_COOKIE = "netschool_browser_token"
+SHARED_HOSTS = frozenset({"sgoshka.ru", "alt.sgoshka.ru"})
 # Ставит страница входа, если «Запомнить меня» снято: вход тогда живёт до закрытия браузера.
 SESSION_ONLY_COOKIE = "ns_session_only"
 OTP_TIMEOUT_S = 300
 MAX_SCHOOLS = 30
 
 # Без входа доступны только эти адреса.
-PUBLIC_PATHS = ("/api/account/register", "/api/account/login", "/api/account/reset/request",
+PUBLIC_PATHS = ("/api/account/shared-session", "/api/account/register", "/api/account/login", "/api/account/reset/request",
                 "/api/account/reset/confirm", "/api/account/reset/check", "/api/account/config", "/api/family/invite-info",
                 "/api/account/tg-login", "/api/account/tg-widget", "/api/account/qr-login",
                 "/api/account/passkey/options", "/api/account/passkey/login",
@@ -122,6 +124,47 @@ async def _signed_in(request: web.Request, telegram_id: int, method: str) -> web
     session_only = request.cookies.get(SESSION_ONLY_COOKIE) == "1"
     response.set_cookie(COOKIE, token, max_age=None if session_only else 365 * 24 * 3600, httponly=True,
                         samesite="Lax", secure=request.url.scheme == "https")
+    if (request.host.split(":")[0] in SHARED_HOSTS
+            and request.headers.get("X-Netschool-Client", "web") == "web"):
+        response.set_cookie(SHARED_COOKIE, token, domain="sgoshka.ru",
+                            max_age=None if session_only else 365 * 24 * 3600,
+                            httponly=True, samesite="Lax", secure=True)
+    return response
+
+
+@routes.post("/api/account/shared-session")
+async def shared_session(request: web.Request) -> web.Response:
+    """Обычная вкладка браузера использует один вход на основном и запасном адресе."""
+    if request.host.split(":")[0] not in SHARED_HOSTS:
+        return web.json_response({"ok": True, "data": {"changed": False}})
+    app = context(request)
+    shared = request.cookies.get(SHARED_COOKIE, "")
+    local = request.cookies.get(COOKIE, "")
+    from_main = (request.host.split(":")[0] == "alt.sgoshka.ru"
+                 and request.headers.get("Origin") == "https://sgoshka.ru")
+    forwarded = request.headers.get("X-Netschool-Token", "") if from_main else ""
+    if forwarded and await app.miniapp.resolve_token(forwarded):
+        response = web.json_response({"ok": True, "data": {"changed": False}})
+        response.set_cookie(COOKIE, forwarded, httponly=True, samesite="Lax", secure=True)
+        response.set_cookie(SHARED_COOKIE, forwarded, domain="sgoshka.ru",
+                            max_age=365 * 24 * 3600, httponly=True, samesite="Lax", secure=True)
+        return response
+    if (request.query.get("prefer_local") == "1" and local
+            and await app.miniapp.resolve_token(local)):
+        response = web.json_response({"ok": True, "data": {"changed": False}})
+        response.set_cookie(SHARED_COOKIE, local, domain="sgoshka.ru",
+                            max_age=365 * 24 * 3600, httponly=True, samesite="Lax", secure=True)
+        return response
+    if shared and await app.miniapp.resolve_token(shared):
+        changed = shared != local
+        response = web.json_response({"ok": True, "data": {"changed": changed}})
+        if changed:
+            response.set_cookie(COOKIE, shared, httponly=True, samesite="Lax", secure=True)
+        return response
+    response = web.json_response({"ok": True, "data": {"changed": False}})
+    if local and await app.miniapp.resolve_token(local):
+        response.set_cookie(SHARED_COOKIE, local, domain="sgoshka.ru",
+                            max_age=365 * 24 * 3600, httponly=True, samesite="Lax", secure=True)
     return response
 
 
@@ -841,6 +884,8 @@ async def logout(request: web.Request) -> web.Response:
     revoked = await context(request).miniapp.revoke_device_token(token)
     response = web.json_response({"ok": True, "data": {"revoked": revoked}})
     response.del_cookie(COOKIE)
+    if request.headers.get("X-Netschool-Client", "web") == "web":
+        response.del_cookie(SHARED_COOKIE, domain="sgoshka.ru")
     return response
 
 
@@ -862,6 +907,8 @@ async def delete_account(request: web.Request) -> web.Response:
     LOGIN_FAILURES.reset(key)
     response = web.json_response({"ok": True})
     response.del_cookie(COOKIE)
+    if request.headers.get("X-Netschool-Client", "web") == "web":
+        response.del_cookie(SHARED_COOKIE, domain="sgoshka.ru")
     return response
 
 

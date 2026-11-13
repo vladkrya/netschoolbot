@@ -161,6 +161,7 @@ async def security_headers(request: web.Request, handler):
 async def alternate_read_cors(request: web.Request, handler):
     """Дать основному сайту читать данные через резервный адрес при сбое сети."""
     origin = request.headers.get("Origin", "")
+    session_bridge = request.path.endswith("/api/account/shared-session")
     allowed = (request.host.split(":")[0] == "alt.sgoshka.ru"
                and origin == "https://sgoshka.ru"
                and ("/api/" in request.path or request.path.endswith("/sw.js")))
@@ -168,15 +169,18 @@ async def alternate_read_cors(request: web.Request, handler):
         return await handler(request)
     if request.method == "OPTIONS":
         response = web.Response(status=204)
-        response.headers["Access-Control-Allow-Methods"] = "GET, HEAD, OPTIONS"
+        response.headers["Access-Control-Allow-Methods"] = (
+            "GET, HEAD, POST, OPTIONS" if session_bridge else "GET, HEAD, OPTIONS")
         response.headers["Access-Control-Allow-Headers"] = (
             "Content-Type, X-Netschool-Client, X-Netschool-Token, "
             "X-Netschool-Unlock, X-Netschool-Tab, X-Telegram-Init-Data")
-    elif request.method in ("GET", "HEAD"):
+    elif request.method in ("GET", "HEAD") or (session_bridge and request.method == "POST"):
         response = await handler(request)
     else:
         return await handler(request)
     response.headers["Access-Control-Allow-Origin"] = origin
+    if session_bridge:
+        response.headers["Access-Control-Allow-Credentials"] = "true"
     response.headers["Access-Control-Expose-Headers"] = "X-Netschool-Version, X-Netschool-Offline"
     vary = response.headers.get("Vary", "")
     response.headers["Vary"] = f"{vary}, Origin" if vary else "Origin"

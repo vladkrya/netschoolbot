@@ -1793,6 +1793,13 @@ class TestSecurityHeaders:
         assert 'Access-Control-Allow-Origin' not in write.headers
         page = await (await client.get(f'{BASE}/', headers={'Host': 'alt.sgoshka.ru'})).text()
         assert 'moved.js' not in page
+        bridge = await client.options(f'{BASE}/api/account/shared-session', headers={
+            'Host': 'alt.sgoshka.ru', 'Origin': 'https://sgoshka.ru',
+            'Access-Control-Request-Method': 'POST',
+            'Access-Control-Request-Headers': 'X-Netschool-Token',
+        })
+        assert bridge.headers['Access-Control-Allow-Credentials'] == 'true'
+        assert 'POST' in bridge.headers['Access-Control-Allow-Methods']
 
 
 class TestStudentClass:

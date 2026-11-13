@@ -306,8 +306,8 @@ const PILL_OPEN_MS = 3000;
 const PILL_BRIEF_MS = 2000;
 let pillTimer = 0;
 
-// Ширина плашки — по тексту, а не max-width с запасом: иначе закрытие
-// сначала «съедало» пустой запас и только потом заметно сжималось.
+// Ширина плашки — по тексту, а не по текущей ширине переносимых строк:
+// иначе каждое касание растягивало её ещё немного.
 function fitOfflinePill(pill) {
   if (!pill.classList.contains('open')) { pill.style.width = ''; return; }
   const textEl = pill.querySelector('.net-pill-text');
@@ -317,12 +317,20 @@ function fitOfflinePill(pill) {
   // плашки, поэтому повторные касания иначе расширяют её снова и снова.
   if (textEl.querySelector('.vpn-hint')) {
     pill.style.width = `${limit}px`;
+    textEl.style.width = `${limit - 68}px`;
     return;
   }
   const lines = [...textEl.children].filter((line) => line.offsetParent);
-  const text = Math.max(0, ...lines.map((line) => line.scrollWidth));
-  const target = Math.min(limit, Math.max(220, 6 + 40 + 8 + text + 20));
+  const canvas = document.createElement('canvas');
+  const measure = canvas.getContext('2d');
+  const text = Math.max(0, ...lines.map((line) => {
+    if (!measure) return line.scrollWidth;
+    measure.font = getComputedStyle(line).font;
+    return measure.measureText(line.textContent).width;
+  }));
+  const target = Math.min(limit, Math.max(220, Math.ceil(68 + text + 6)));
   pill.style.width = `${target}px`;
+  textEl.style.width = `${target - 68}px`;
 }
 
 function openOfflinePill(brief = false) {
@@ -375,7 +383,7 @@ function paintOfflinePill() {
     + `<span class="net-pill-text"><b>${offlineTitle()}</b><small>${waiting}</small>${vpnHint ? `<small class="vpn-hint">${vpnHint}</small>` : ''}</span>`
     + (outboxCount ? `<span class="net-pill-count">${outboxCount}</span>` : '');
   if (fresh) requestAnimationFrame(() => openOfflinePill());
-  else requestAnimationFrame(() => fitOfflinePill(pill));
+  else fitOfflinePill(pill);
 }
 
 export function setOffline(value) {
@@ -1002,7 +1010,7 @@ export function attachmentUrl(id, name = '') {
 
 /** Android-клиент для владельца (admin.py): прямая ссылка на файл с билетом вложений. */
 export function androidApkUrl() {
-  return `${base}/api/admin/android.apk?ticket=${encodeURIComponent(attachmentTicket)}`;
+  return `${alternateActive ? ALTERNATE_ORIGIN : ''}${base}/api/admin/android.apk?ticket=${encodeURIComponent(attachmentTicket)}`;
 }
 
 /** Отчёты в Excel: та же страница ожидания и тот же билет, что у вложений. */
@@ -1019,7 +1027,7 @@ function fileUrl(path, extra) {
       : `token=${encodeURIComponent(token)}`;
   // Страница ожидания, а не сам файл: она показывает загрузку и ошибку,
   // пока перегруженный сервер школы отдаёт вложение.
-  const host = attachmentHost();
+  const host = alternateActive ? ALTERNATE_ORIGIN : attachmentHost();
   // via=pwa: страница вложения подскажет нажать компас «Открыть в Safari».
   const via = host ? '&via=pwa' : '';
   return `${host}${base}/${path}?${credential}${extra}${via}`;

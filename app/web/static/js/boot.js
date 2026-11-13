@@ -1,5 +1,5 @@
 // Быстрый старт: PIN и проверка доступа не ждут загрузки всех экранов приложения.
-import { api, demo, setToken, state, tg, token } from './core.js';
+import { api, base, demo, setToken, state, tg, token } from './core.js';
 import { unlockApp } from './lock.js';
 import { initIosHaptics } from './haptics.js';
 
@@ -29,6 +29,36 @@ const MYSCHOOL_KEY = 'ns-myschool';
 // без предела заставка «Открываем дневник…» стояла больше минуты, хотя
 // сохранённый дневник показать можно.
 const ACCOUNT_WAIT_MS = 4000;
+
+async function syncBrowserSession() {
+  if (demo || tg?.initData || signedOut() || !['sgoshka.ru', 'alt.sgoshka.ru'].includes(location.hostname)
+      || window.matchMedia?.('(display-mode: standalone)').matches || navigator.standalone === true) return false;
+  const query = new URLSearchParams(location.search);
+  const preferLocal = ['enter', 'device', 'token'].some((key) => query.has(key));
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 2500);
+  try {
+    const response = await fetch(`${base}/api/account/shared-session${preferLocal ? '?prefer_local=1' : ''}`, {
+      method: 'POST', credentials: 'same-origin', cache: 'no-store', signal: controller.signal,
+    });
+    if ((await response.json()).data?.changed) { location.reload(); return true; }
+  } catch {
+    if (location.hostname === 'sgoshka.ru' && token && navigator.onLine !== false) {
+      const alternateController = new AbortController();
+      const alternateTimer = setTimeout(() => alternateController.abort(), 5000);
+      try {
+        await fetch('https://alt.sgoshka.ru/api/account/shared-session', {
+          method: 'POST', credentials: 'include', cache: 'no-store',
+          headers: { 'X-Netschool-Token': token },
+          signal: alternateController.signal,
+        });
+      } catch { /* оба пути недоступны — продолжаем с сохранённым входом */ }
+      finally { clearTimeout(alternateTimer); }
+    }
+  }
+  finally { clearTimeout(timer); }
+  return false;
+}
 
 /** Аккаунт для старта; сервер медлит — прошлый признак просмотра, без входа в СГО. */
 async function accountInfo() {
@@ -123,6 +153,7 @@ async function boot() {
   tg?.expand();
   initIosHaptics();
   rememberInvite();
+  if (await syncBrowserSession()) return;
   // Ссылка из письма «Сброс пароля» — открывается и без входа, и поверх входа.
   const reset = !demo && !tg?.initData && new URLSearchParams(location.hash.slice(1)).get('reset');
   if (reset) {
