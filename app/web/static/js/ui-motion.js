@@ -9,8 +9,8 @@ export function enhanceAuthMotion(root) {
   root.dataset.motionReady = '1';
   root.querySelectorAll('input.field').forEach((input) => {
     input.classList.add('spring-field');
-    if (input.type === 'email') {
-      springyEmail(input);
+    if (input.type === 'email' || input.type === 'password') {
+      springyInput(input);
     } else {
       input.addEventListener('focus', () => input.classList.add('spring-focus'));
       input.addEventListener('blur', () => input.classList.remove('spring-focus'));
@@ -31,7 +31,7 @@ export function enhanceAuthMotion(root) {
 // The native input is never replaced: it still owns focus, selection, paste,
 // password managers and form submission.  The transparent text is redrawn by
 // a mirror solely to give every arriving character and the caret its spring.
-function springyEmail(input) {
+function springyInput(input) {
   if (input.dataset.springyReady) return;
   input.dataset.springyReady = '1';
   const shell = document.createElement('span');
@@ -41,7 +41,7 @@ function springyEmail(input) {
   input.before(shell); shell.append(input, layer, caret);
   let previous = input.value, focused = document.activeElement === input;
   let x = 0, velocity = 0, target = 0, frame = 0, lastMove = performance.now();
-  const glyph = (char) => char === ' ' ? '\u00a0' : char;
+  const glyph = (char) => input.type === 'password' ? '•' : (char === ' ' ? '\u00a0' : char);
 
   const spans = () => [...layer.querySelectorAll('.springy-char:not(.leaving)')];
   const positionCaret = () => {
@@ -82,7 +82,7 @@ function springyEmail(input) {
       layer.insertBefore(span, before);
     });
     previous = next;
-    input.classList.toggle('spring-invalid', next.length > 0 && !input.validity.valid);
+    if (input.type === 'email') input.classList.toggle('spring-invalid', next.length > 0 && !input.validity.valid);
     moveCaret();
   };
   input.addEventListener('input', sync);

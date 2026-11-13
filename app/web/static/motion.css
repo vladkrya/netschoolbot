@@ -200,7 +200,10 @@
 .file-drop-zone.dragging::after { transform: translateY(-4px) scale(1.18); }
 .file-drop-zone.dragging::before { content: attr(data-drop-hint); position: absolute; inset: 0; z-index: 1; display: grid; place-items: center; background: var(--primary); color: #fff; font-weight: 600; }
 
-.typewriter::after { content: ''; display: inline-block; height: .95em; margin-left: .08em; border-left: .1em solid currentColor; vertical-align: -.08em; animation: type-caret .7s step-end infinite; }
+.typewriter::after { content: ''; display: inline-block; height: .95em; width: 0; margin-left: 0; border-left: .1em solid currentColor; vertical-align: -.08em; animation: type-caret .7s step-end infinite; }
+/* The landing headline is gradient text (and therefore transparent); give its
+   cursor an explicit ink colour so it remains visible and blinks. */
+.ld-grad.typewriter::after { color: var(--head); border-color: var(--head); -webkit-text-fill-color: var(--head); }
 @keyframes type-caret { 50% { opacity: 0; } }
 .streaming-reply::after { content: ''; display: inline-block; height: 1em; margin-left: 2px; border-left: 2px solid var(--primary); vertical-align: -.14em; animation: type-caret .7s step-end infinite; }
 
