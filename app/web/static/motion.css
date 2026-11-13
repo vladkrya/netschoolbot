@@ -184,7 +184,9 @@
 @keyframes type-caret { 50% { opacity: 0; } }
 .streaming-reply::after { content: ''; display: inline-block; height: 1em; margin-left: 2px; border-left: 2px solid var(--primary); vertical-align: -.14em; animation: type-caret .7s step-end infinite; }
 
+.nav-collapse { display: none; }
 @media (min-width: 1024px) {
+  .nav-collapse { display: grid; }
   .nav-collapse { position: absolute; z-index: 2; right: 10px; top: 12px; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 10px; background: color-mix(in srgb, var(--text) 8%, transparent); color: var(--text2); font-size: 26px; line-height: 1; transition: transform .26s cubic-bezier(.34, 1.26, .64, 1), background .2s; }
   .nav-collapse:hover { background: color-mix(in srgb, var(--text) 14%, transparent); }
   .nav-collapse span { transform: translateY(-2px); }
