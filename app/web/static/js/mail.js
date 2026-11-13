@@ -491,7 +491,9 @@ export async function openCompose(draft = {}) {
       <label class="switch-row compose-notify"><span>Уведомить о прочтении</span><input type="checkbox" class="switch" id="composeNotify"></label>
       ${attach ? `<div class="detail-label">Вложения</div>
         <div id="composeFiles" class="compose-files"></div>
-        <label class="btn secondary attach-btn">📎 Прикрепить файл
+        <label class="mail-file-drop" id="composeDrop" tabindex="0">
+          <span class="mail-file-core"><i></i><svg viewBox="0 0 72 72" fill="none" stroke-width="3" stroke-linecap="round"><circle class="track" cx="36" cy="36" r="33"/><circle class="arc" cx="36" cy="36" r="33"/></svg><b class="up">↑</b><b class="percent">0</b><b class="check">✓</b></span>
+          <strong class="drop-title">Перетащите файл сюда</strong><small class="drop-sub">или нажмите, чтобы выбрать · до 10 МБ</small>
           <input type="file" id="composeFile" multiple hidden></label>` : ''}
       <button class="btn" id="composeSend">${ICONS.send} Отправить</button>
     </div>`;
@@ -532,10 +534,31 @@ export async function openCompose(draft = {}) {
       files.push(file);
     }
     renderFiles();
+    const zone = $('composeDrop');
+    if (zone && files.length) {
+      const percent = zone.querySelector('.percent');
+      const arc = zone.querySelector('.arc');
+      const fill = zone.querySelector('.mail-file-core i');
+      const up = zone.querySelector('.up');
+      const check = zone.querySelector('.check');
+      zone.classList.add('uploading');
+      let value = 0;
+      const draw = () => {
+        value = Math.min(100, value + Math.max(3, Math.round((100 - value) * .13)));
+        percent.textContent = value;
+        arc.style.opacity = '1'; percent.style.opacity = '1'; up.style.opacity = '0';
+        arc.style.strokeDashoffset = String(207.35 * (1 - value / 100));
+        if (value < 100) requestAnimationFrame(draw);
+        else {
+          zone.classList.remove('uploading'); zone.classList.add('done');
+          fill.style.transform = 'scale(1)'; check.style.opacity = '1'; percent.style.opacity = '0'; arc.style.opacity = '0';
+        }
+      };
+      requestAnimationFrame(draw);
+    }
   };
 
-  const dropZone = $('composeFile')?.closest('label');
-  dropZone?.classList.add('file-drop-zone');
+  const dropZone = $('composeDrop');
   dropZone?.setAttribute('data-drop-hint', 'Перетащите файлы сюда');
   ['dragenter', 'dragover'].forEach((name) => dropZone?.addEventListener(name, (event) => { event.preventDefault(); dropZone.classList.add('dragging'); }));
   ['dragleave', 'drop'].forEach((name) => dropZone?.addEventListener(name, (event) => { event.preventDefault(); dropZone.classList.remove('dragging'); }));
