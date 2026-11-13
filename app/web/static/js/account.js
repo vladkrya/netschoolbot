@@ -10,7 +10,7 @@ import { notify } from './haptics.js';
 import { ICONS } from './icons.js';
 import { pushScreen } from './screens.js';
 import { setHalloweenAccess } from './appearance.js';
-import { cycleTypewriter, enhanceAuthMotion } from './ui-motion.js';
+import { cycleTypewriter, enhanceAuthMotion, setOtpResult } from './ui-motion.js';
 
 /** Подпись под кнопкой входа: согласие с политикой. Ссылка — в новой
  * вкладке, чтобы не потерять заполненную форму. */
@@ -846,9 +846,12 @@ export function showVerify(info = {}) {
     busy(form.querySelector('button'), async () => {
       try {
         await post('/api/account/verify', { code: form.code.value.trim() });
+        setOtpResult(form.code, true);
+        await new Promise((resolve) => setTimeout(resolve, 220));
         notify('success');
         reload();
       } catch (error) {
+        setOtpResult(form.code, false);
         notify('error');
         showError(card, error.message);
       }
@@ -1082,8 +1085,11 @@ export function showSgoLogin(info = {}) {
         busy(form.querySelector('button'), async () => {
           try {
             await post('/api/sgo/login/otp', { code: form.code.value });
+            setOtpResult(form.code, true);
+            await new Promise((resolve) => setTimeout(resolve, 220));
             shown = '';
           } catch (error) {
+            setOtpResult(form.code, false);
             showError(card, error.message);
           }
         });

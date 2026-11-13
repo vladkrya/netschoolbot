@@ -115,8 +115,24 @@ function otpBoxes(input) {
       box.classList.toggle('active', index === Math.min(value.length, count - 1) && value.length < count);
     });
     wrap.classList.toggle('complete', value.length === count);
+    if (value.length < count) wrap.classList.remove('verified', 'rejected');
   };
   input.addEventListener('input', sync); input.addEventListener('focus', sync); wrap.addEventListener('click', () => input.focus()); sync();
+}
+
+// OTP is not green merely because all cells are filled: only the server can
+// accept it. On rejection we visibly clear the code, ready for a new attempt.
+export function setOtpResult(input, accepted) {
+  const wrap = input?.closest?.('.motion-otp');
+  if (!wrap) return;
+  if (accepted) { wrap.classList.remove('rejected'); wrap.classList.add('verified'); return; }
+  wrap.classList.remove('verified'); wrap.classList.add('rejected');
+  setTimeout(() => {
+    input.value = '';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    wrap.classList.remove('rejected');
+    input.focus();
+  }, 430);
 }
 
 function passwordMeter(input) {

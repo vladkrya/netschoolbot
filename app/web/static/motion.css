@@ -186,10 +186,12 @@
 .motion-otp { position: relative; display: grid; grid-template-columns: repeat(var(--otp-count, 6), 1fr); gap: 8px; height: 56px; margin: 0 0 10px; }
 .motion-otp-box { display: grid; place-items: center; min-width: 0; border-radius: 14px; background: var(--card-2); color: var(--text); font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; transition: background .26s cubic-bezier(.34,1.26,.64,1), transform .26s cubic-bezier(.34,1.26,.64,1); }
 .motion-otp-box.active { background: color-mix(in srgb, var(--primary) 16%, var(--card-2)); box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 55%, transparent); }
-.motion-otp.complete { gap: 0; }
-.motion-otp.complete .motion-otp-box { border-radius: 0; background: color-mix(in srgb, var(--g5, #24984b) 75%, var(--card-2)); color: #fff; }
-.motion-otp.complete .motion-otp-box:first-of-type { border-radius: 14px 0 0 14px; }
-.motion-otp.complete .motion-otp-box:last-of-type { border-radius: 0 14px 14px 0; }
+.motion-otp.verified { gap: 0; }
+.motion-otp.verified .motion-otp-box { border-radius: 0; background: color-mix(in srgb, var(--g5, #24984b) 75%, var(--card-2)); color: #fff; }
+.motion-otp.verified .motion-otp-box:first-of-type { border-radius: 14px 0 0 14px; }
+.motion-otp.verified .motion-otp-box:last-of-type { border-radius: 0 14px 14px 0; }
+.motion-otp.rejected .motion-otp-box { background: color-mix(in srgb, var(--g2, #d33) 72%, var(--card-2)); color: #fff; animation: otp-reject .38s cubic-bezier(.34,1.56,.64,1); }
+@keyframes otp-reject { 30% { transform: translateX(-5px); } 65% { transform: translateX(4px); } }
 .motion-otp-input { position: absolute !important; inset: 0; z-index: 2; opacity: 0; width: 100% !important; height: 100%; margin: 0 !important; caret-color: transparent; }
 
 /* file drop: follow 900/50, settle 280/22 */
