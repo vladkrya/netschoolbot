@@ -9,11 +9,11 @@ export function enhanceAuthMotion(root) {
   root.dataset.motionReady = '1';
   root.querySelectorAll('input.field').forEach((input) => {
     input.classList.add('spring-field');
-    input.addEventListener('focus', () => input.classList.add('spring-focus'));
-    input.addEventListener('blur', () => input.classList.remove('spring-focus'));
     if (input.type === 'email') {
-      const validate = () => input.classList.toggle('spring-invalid', input.value.length > 0 && !input.validity.valid);
-      input.addEventListener('input', validate); input.addEventListener('blur', validate); validate();
+      springyEmail(input);
+    } else {
+      input.addEventListener('focus', () => input.classList.add('spring-focus'));
+      input.addEventListener('blur', () => input.classList.remove('spring-focus'));
     }
   });
   root.querySelectorAll('input[type="password"][autocomplete="new-password"]').forEach(passwordMeter);
@@ -25,6 +25,76 @@ export function enhanceAuthMotion(root) {
       field.animate?.([{ transform: 'translateX(0)' }, { transform: 'translateX(-7px)' }, { transform: 'translateX(6px)' }, { transform: 'translateX(0)' }], { duration: 360, easing: 'cubic-bezier(.34,1.56,.64,1)' });
     }
   }, true));
+}
+
+// Designbookmark's Springy Input, adapted around our existing real email field.
+// The native input is never replaced: it still owns focus, selection, paste,
+// password managers and form submission.  The transparent text is redrawn by
+// a mirror solely to give every arriving character and the caret its spring.
+function springyEmail(input) {
+  if (input.dataset.springyReady) return;
+  input.dataset.springyReady = '1';
+  const shell = document.createElement('span');
+  shell.className = 'springy-email';
+  const layer = document.createElement('span'); layer.className = 'springy-email-layer';
+  const caret = document.createElement('span'); caret.className = 'springy-email-caret';
+  input.before(shell); shell.append(input, layer, caret);
+  let previous = input.value, focused = document.activeElement === input;
+  let x = 0, velocity = 0, target = 0, frame = 0, lastMove = performance.now();
+  const glyph = (char) => char === ' ' ? '\u00a0' : char;
+
+  const spans = () => [...layer.querySelectorAll('.springy-char:not(.leaving)')];
+  const positionCaret = () => {
+    const chars = spans(); const position = input.selectionEnd ?? chars.length;
+    if (!chars.length) return 0;
+    if (position < chars.length) return chars[position].offsetLeft;
+    const last = chars[chars.length - 1]; return last.offsetLeft + last.offsetWidth;
+  };
+  const render = () => {
+    frame = 0;
+    target = positionCaret();
+    // The same --input-caret 700/32 spring from the source token file.
+    const stiffness = 700, damping = 32, dt = 1 / 60;
+    const acceleration = -stiffness * (x - target) - damping * velocity;
+    velocity += acceleration * dt; x += velocity * dt;
+    const stretch = Math.min(Math.abs(velocity) / 80, 7);
+    caret.style.width = `${2 + stretch}px`;
+    caret.style.transform = `translateX(${x - (velocity > 0 ? stretch : 0)}px)`;
+    const idle = performance.now() - lastMove > 550 && Math.abs(velocity) < 5;
+    caret.classList.toggle('blink', focused && idle);
+    if (Math.abs(target - x) > .15 || Math.abs(velocity) > .15) frame = requestAnimationFrame(render);
+  };
+  const moveCaret = () => { lastMove = performance.now(); if (!frame) frame = requestAnimationFrame(render); };
+  const sync = () => {
+    const next = input.value;
+    let start = 0; while (start < previous.length && start < next.length && previous[start] === next[start]) start++;
+    let end = 0; while (end < previous.length - start && end < next.length - start && previous.at(-1 - end) === next.at(-1 - end)) end++;
+    const current = spans();
+    current.slice(start, current.length - end).forEach((span) => {
+      span.classList.add('leaving');
+      setTimeout(() => span.remove(), 340);
+    });
+    const before = current[start] || null;
+    [...next.slice(start, next.length - end)].forEach((char, index) => {
+      const span = document.createElement('span');
+      span.className = 'springy-char entering'; span.textContent = glyph(char);
+      span.style.setProperty('--delay', `${Math.min(index, 30) * 18}ms`);
+      layer.insertBefore(span, before);
+    });
+    previous = next;
+    input.classList.toggle('spring-invalid', next.length > 0 && !input.validity.valid);
+    moveCaret();
+  };
+  input.addEventListener('input', sync);
+  input.addEventListener('focus', () => { focused = true; input.classList.add('spring-focus'); moveCaret(); });
+  input.addEventListener('blur', () => { focused = false; input.classList.remove('spring-focus'); moveCaret(); });
+  ['keydown', 'keyup', 'click', 'select'].forEach((event) => input.addEventListener(event, moveCaret));
+  input.form?.addEventListener('submit', () => {
+    if (input.validity.valid) return;
+    input.classList.add('spring-invalid');
+    spans().forEach((span, index) => { span.style.setProperty('--delay', `${index * 14}ms`); span.classList.remove('reject'); void span.offsetWidth; span.classList.add('reject'); });
+  }, true);
+  sync();
 }
 
 // Exact OTP interaction model: one real input remains the source of truth;

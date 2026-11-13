@@ -162,6 +162,21 @@
 .spring-field { transition: transform .3s cubic-bezier(.34, 1.26, .64, 1), box-shadow .3s cubic-bezier(.34, 1.26, .64, 1), border-color .2s ease; }
 .spring-field.spring-focus { transform: scale(1.012); box-shadow: 0 0 0 4px color-mix(in srgb, var(--primary) 17%, transparent); }
 .spring-field.spring-invalid { border-color: var(--g2, #d33) !important; box-shadow: 0 0 0 4px color-mix(in srgb, var(--g2, #d33) 16%, transparent); }
+.springy-email { position: relative; display: block; isolation: isolate; }
+.springy-email > .field { position: relative; z-index: 2; color: transparent; caret-color: transparent; }
+.springy-email > .field::selection { color: transparent; background: color-mix(in srgb, var(--primary) 26%, transparent); }
+.springy-email-layer { position: absolute; z-index: 1; inset: 0; display: block; overflow: hidden; padding: 11px 12px; pointer-events: none; white-space: pre; color: var(--text); font: inherit; line-height: normal; }
+.springy-char { display: inline-block; transform-origin: 50% 80%; }
+.springy-char.entering { animation: springy-char-in .5s cubic-bezier(.2,.8,.2,1) both; animation-delay: var(--delay, 0ms); }
+.springy-char.leaving { position: absolute; animation: springy-char-out .34s cubic-bezier(.5,0,.75,0) forwards; }
+.springy-char.reject { animation: springy-char-reject .46s ease both; animation-delay: var(--delay, 0ms); }
+.springy-email-caret { position: absolute; z-index: 1; left: 12px; top: 12px; width: 2px; height: 1.15em; border-radius: 2px; background: var(--text); pointer-events: none; transform-origin: left center; opacity: 0; }
+.springy-email:focus-within .springy-email-caret { opacity: 1; }
+.springy-email-caret.blink { animation: springy-caret-blink 1s steps(1) infinite; }
+@keyframes springy-char-in { 0% { transform: translateY(14px) rotate(-16deg) scale(.5); opacity: 0; filter: blur(3px); } 55% { transform: translateY(-3px) rotate(4deg) scale(1.1); opacity: 1; filter: none; } 80% { transform: translateY(1px) rotate(-1deg) scale(.98); } 100% { transform: none; } }
+@keyframes springy-char-out { to { transform: translateY(-18px) rotate(20deg) scale(.5); opacity: 0; filter: blur(3px); } }
+@keyframes springy-char-reject { 0%,100% { transform: none; } 20% { transform: translateX(-4px) rotate(-8deg); } 40% { transform: translateX(4px) rotate(6deg); } 60% { transform: translateX(-2px); } 80% { transform: translateX(1px); } }
+@keyframes springy-caret-blink { 50% { opacity: 0; } }
 .password-meter { display: flex; align-items: center; gap: 9px; min-height: 18px; margin: -2px 2px 6px; color: var(--text2); font-size: 12px; }
 .password-bars { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3px; width: 72px; }
 .password-bars i { height: 4px; border-radius: 99px; background: var(--border); transform-origin: left; transition: background .26s cubic-bezier(.34, 1.26, .64, 1), transform .26s cubic-bezier(.34, 1.26, .64, 1); }
