@@ -108,8 +108,9 @@ function otpBoxes(input) {
   input.before(wrap); wrap.append(input); input.classList.add('motion-otp-input');
   const boxes = Array.from({ length: count }, () => { const box = document.createElement('span'); box.className = 'motion-otp-box'; box.setAttribute('aria-hidden', 'true'); wrap.append(box); return box; });
   const sync = () => {
+    // Do not write back to input.value while iOS is composing a keypress.
+    // Reassigning it here was the reason later digits could disappear.
     const value = input.value.replace(/\D/g, '').slice(0, count);
-    if (input.value !== value) input.value = value;
     boxes.forEach((box, index) => {
       const next = value[index] || '';
       if (box.textContent !== next && next) { box.textContent = next; box.animate?.([{ transform: 'translateY(-14px)', opacity: 0 }, { transform: 'translateY(0)', opacity: 1 }], { duration: 380, easing: 'cubic-bezier(.34,1.56,.64,1)' }); }

@@ -1053,6 +1053,7 @@ export function showSgoLogin(info = {}) {
   };
 
   let shown = '';
+  let otpAccepted = false;
   const progress = (data) => {
     const key = `${data.status}:${data.qr ? data.qr.length : ''}`;
     if (data.status === 'qr' && shown === key) {
@@ -1062,6 +1063,8 @@ export function showSgoLogin(info = {}) {
     }
     shown = key;
     if (data.status === 'running') {
+      // Keep the accepted code visible long enough to communicate success.
+      if (otpAccepted) return;
       screen('<h2>Входим…</h2><div class="account-wait"><span class="boot-spinner"></span></div><p class="muted">Это может занять до минуты.</p>');
     } else if (data.status === 'qr') {
       const image = data.qr.startsWith('data:image') ? `<img class="account-qr" src="${data.qr}" alt="QR-код Госуслуг">`
@@ -1075,7 +1078,7 @@ export function showSgoLogin(info = {}) {
       const card = screen(`<h2>${esc(data.otp.label)}</h2>
         <p class="muted">${data.otp.phone ? `Отправлен на ${esc(data.otp.phone)}. ` : ''}${data.otp.length} цифр.</p>
         <form class="account-form">
-          <input class="field" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="${Number(data.otp.length) || 6}" required>
+          <input class="field" name="code" type="tel" inputmode="numeric" pattern="[0-9]*" autocomplete="one-time-code" maxlength="${Number(data.otp.length) || 6}" required>
           <p class="account-error" hidden></p>
           <button class="btn" type="submit">Подтвердить</button>
         </form>
@@ -1087,9 +1090,11 @@ export function showSgoLogin(info = {}) {
         event.preventDefault();
         busy(form.querySelector('button'), async () => {
           try {
-            await post('/api/sgo/login/otp', { code: form.code.value });
+            await post('/api/sgo/login/otp', { code: form.code.value.replace(/\D/g, '') });
             setOtpResult(form.code, true);
-            await new Promise((resolve) => setTimeout(resolve, 220));
+            otpAccepted = true;
+            await new Promise((resolve) => setTimeout(resolve, 650));
+            otpAccepted = false;
             shown = '';
           } catch (error) {
             setOtpResult(form.code, false);
