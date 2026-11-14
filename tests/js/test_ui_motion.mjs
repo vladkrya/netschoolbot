@@ -480,7 +480,7 @@ test('Kokonut UI typewriter renders structure and screen reader text', () => {
     assert.ok(el.dataset.cycling, 'cycling marked');
     assert.ok(el.querySelector('.typewriter-screen'), 'screen created');
     assert.ok(el.querySelector('.typewriter-caret'), 'caret created');
-    assert.equal(el.querySelector('.sr-only').textContent, 'удобно и быстро, всё нужное — рядом');
+    assert.equal(el.getAttribute('aria-label'), 'удобно и быстро, всё нужное — рядом');
     controller.stop();
   } finally {
     cleanup();

@@ -167,12 +167,15 @@
   position: relative;
   display: block;
   isolation: isolate;
+  min-width: 0;
+  --springy-end: 12px;
   margin: 4px 0 10px;
   background: var(--card-2);
   border: 1px solid var(--border);
   border-radius: 10px;
   transition: border-color .2s, box-shadow .2s;
 }
+.springy-email.springy-with-eye { --springy-end: 40px; }
 .springy-email.spring-focus,
 .springy-email:focus-within {
   border-color: var(--primary);
@@ -187,11 +190,12 @@
   z-index: 2;
   width: 100%;
   margin: 0;
-  padding: 11px 40px 11px 12px;
+  padding: 11px var(--springy-end) 11px 12px;
   border: none;
   background: transparent;
   color: transparent;
   caret-color: transparent;
+  transform: none;
   outline: none;
 }
 .springy-email > .field::placeholder { color: var(--text2); opacity: .7; }
@@ -200,25 +204,24 @@
 .springy-email-layer {
   position: absolute;
   z-index: 3;
-  inset: 0;
+  inset: 0 var(--springy-end) 0 12px;
   display: flex;
   align-items: center;
   overflow: hidden;
-  padding: 0 40px 0 12px;
   pointer-events: none;
   white-space: pre;
   color: var(--text);
   font: inherit;
   line-height: normal;
 }
-.springy-char { display: inline-block; transform-origin: 50% 80%; }
+.springy-char { flex: none; display: inline-block; transform-origin: 50% 80%; }
 .springy-char.entering { animation: springy-char-in .5s cubic-bezier(.2,.8,.2,1) both; animation-delay: var(--delay, 0ms); }
 .springy-char.leaving { position: absolute; animation: springy-char-out .34s cubic-bezier(.5,0,.75,0) forwards; }
 .springy-char.reject { animation: springy-char-reject .46s ease both; animation-delay: var(--delay, 0ms); }
 .springy-email-caret {
   position: absolute;
   z-index: 4;
-  left: 12px;
+  left: 0;
   top: 50%;
   transform: translateY(-50%);
   width: 2px;
@@ -231,6 +234,10 @@
 }
 .springy-email:focus-within .springy-email-caret { opacity: 1; }
 .springy-email-caret.blink { animation: springy-caret-blink 1s steps(1) infinite; }
+
+.springy-overflow > .field { color: var(--text); caret-color: auto; }
+.springy-overflow > .field::selection { color: var(--text); }
+.springy-overflow > .springy-email-layer { visibility: hidden; }
 
 .springy-eye {
   position: absolute;
@@ -551,6 +558,21 @@
 }
 
 /* 6. Kokonut UI Typewriter */
+.typewriter-cycle {
+  position: relative;
+  overflow-anchor: none;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+.typewriter-cycle > .typewriter-screen:not(.typewriter-measure) {
+  position: absolute;
+  inset: 0;
+}
+.typewriter-cycle > .typewriter-measure {
+  grid-area: 1 / 1;
+  visibility: hidden;
+}
+
 .typewriter-screen {
   display: inline;
   align-items: baseline;

@@ -378,7 +378,7 @@ export function initFileDrop(zone, onFiles) {
 // Designbookmark's Springy Input:
 // Caret spring 700/32 with velocity stretching, idle blinking,
 // entering/leaving/rejection character physics, eye password toggle,
-// and horizontal scrolling keeping text in view.
+// with native editing when the animated text no longer fits.
 
 export function springyInput(input) {
   if (!input || input.dataset.springyReady) return;
@@ -389,12 +389,14 @@ export function springyInput(input) {
 
   const layer = document.createElement('span');
   layer.className = 'springy-email-layer';
+  layer.setAttribute('aria-hidden', 'true');
 
   const caret = document.createElement('span');
   caret.className = 'springy-email-caret';
 
   input.before(shell);
-  shell.append(input, layer, caret);
+  shell.append(input, layer);
+  layer.appendChild(caret);
 
   let eyeBtn = null;
   if (input.type === 'password' || input.dataset.eyeToggle) {
@@ -411,30 +413,36 @@ export function springyInput(input) {
         <path class="eye-slash" d="M4.5 4.5l15 15"/>
       </svg>
     `;
+    shell.classList.add('springy-with-eye');
     shell.appendChild(eyeBtn);
   }
 
   let previous = '';
   let focused = document.activeElement === input;
-  let x = 0, velocity = 0, target = 0, frame = 0, blinkTimer = 0, scroll = 0;
+  let x = 0, velocity = 0, frame = 0, blinkTimer = 0;
   let lastMove = performance.now();
 
   const glyph = (char) => (input.type === 'password' ? '•' : (char === ' ' ? '\u00a0' : char));
 
   const spans = () => [...layer.querySelectorAll('.springy-char:not(.leaving)')];
 
-  const positionCaret = () => {
-    const chars = spans();
-    const position = input.selectionEnd ?? chars.length;
-    if (!chars.length) return 0;
-    if (position < chars.length) return chars[position].offsetLeft;
-    const last = chars[chars.length - 1];
-    return last.offsetLeft + last.offsetWidth;
-  };
-
   const render = () => {
     frame = 0;
-    target = positionCaret();
+    const chars = spans();
+    const last = chars.at(-1);
+    const width = last ? last.offsetLeft + last.offsetWidth : 0;
+    const overflowing = Boolean(last) && width + 2 > layer.clientWidth;
+    const wasOverflowing = shell.classList.contains('springy-overflow');
+    shell.classList.toggle('springy-overflow', overflowing);
+
+    if (overflowing) {
+      velocity = 0;
+      return;
+    }
+
+    const position = input.selectionEnd ?? chars.length;
+    const target = chars[position]?.offsetLeft ?? width;
+    if (wasOverflowing) x = target;
 
     // Source tokens: --input-caret 700 32
     const stiffness = 700, damping = 32, dt = 1 / 60;
@@ -442,23 +450,15 @@ export function springyInput(input) {
     velocity += acceleration * dt;
     x += velocity * dt;
 
-    // Horizontal scrolling when text is wide
-    const box = Math.max(120, (layer.parentElement?.clientWidth || 280) - (eyeBtn ? 48 : 28));
-    const want = Math.max(0, target - box + 12);
-    scroll += (want - scroll) * 0.25;
-    if (Math.abs(want - scroll) < 0.3) scroll = want;
-    layer.style.transform = `translateX(${-scroll.toFixed(2)}px)`;
-    input.scrollLeft = scroll;
-
     const speed = Math.abs(velocity);
     const stretch = Math.min(speed / 80, 7);
     caret.style.width = `${(2 + stretch).toFixed(2)}px`;
-    caret.style.transform = `translateY(-50%) translateX(${(x - scroll - (velocity > 0 ? stretch : 0)).toFixed(2)}px)`;
+    caret.style.transform = `translateY(-50%) translateX(${(x - (velocity > 0 ? stretch : 0)).toFixed(2)}px)`;
 
     const isIdle = performance.now() - lastMove > 550 && speed < 5;
     caret.classList.toggle('blink', focused && isIdle);
 
-    if (Math.abs(target - x) > 0.15 || speed > 0.15 || Math.abs(want - scroll) > 0.3) {
+    if (Math.abs(target - x) > 0.15 || speed > 0.15) {
       frame = requestAnimationFrame(render);
     }
   };
@@ -553,6 +553,14 @@ export function springyInput(input) {
       input.focus();
     });
     stepEye();
+  }
+
+  if (typeof ResizeObserver === 'function') {
+    const observer = new ResizeObserver(() => {
+      if (shell.isConnected) moveCaret();
+      else observer.disconnect();
+    });
+    observer.observe(layer);
   }
 
   input.addEventListener('input', sync);
@@ -1117,11 +1125,22 @@ export function cycleTypewriter(element, phrases, options = {}) {
   element.setAttribute('aria-label', phrases.join(', '));
   element.innerHTML = `
     <span class="typewriter-screen" aria-hidden="true">
-      <span class="typewriter-kept"></span>
-      <span class="typewriter-caret" data-idle="false"></span>
-      <span class="typewriter-selected"></span>
+      <span class="typewriter-kept"></span><span class="typewriter-caret" data-idle="false"></span><span class="typewriter-selected"></span>
     </span>
   `;
+
+  element.classList.add('typewriter-cycle');
+  // Size the heading from the wrapped phrases, independent of the typing frame.
+  for (const phrase of phrases) {
+    const measure = document.createElement('span');
+    measure.className = 'typewriter-screen typewriter-measure';
+    measure.setAttribute('aria-hidden', 'true');
+    const cursor = document.createElement('span');
+    cursor.className = 'typewriter-caret';
+    measure.textContent = phrase;
+    measure.appendChild(cursor);
+    element.appendChild(measure);
+  }
 
   const keptEl = element.querySelector('.typewriter-kept');
   const caretEl = element.querySelector('.typewriter-caret');
