@@ -1107,9 +1107,11 @@ export function cycleTypewriter(element, phrases, options = {}) {
     deleteSpeed = 26,
     pauseBeforeDelete = 1800,
     loopDelay = 1200,
-    naturalVariance = true,
-    typos = true,
-    deleteMode = 'select', // 'select' | 'backspace'
+    naturalVariance = false,
+    typos = false,
+    // A normal backspace is clearer than the selection sweep on a large
+    // headline and always reads left-to-right while typing.
+    deleteMode = 'backspace', // 'select' | 'backspace'
   } = options;
 
   element.setAttribute('aria-label', phrases.join(', '));
