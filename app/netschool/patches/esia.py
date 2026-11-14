@@ -21,10 +21,16 @@ from __future__ import annotations
 
 import json
 import logging
+from contextvars import ContextVar
 
 logger = logging.getLogger("netschoolbot.netschool")
 
 ESIA_LOGIN_API = "https://esia.gosuslugi.ru/aas/oauth2/api/login"
+_MFA_PATHS = {"SMS": "otp", "TOTP": "totp", "TTP": "totp", "MAX": "otp-max"}
+_LEGACY_VERIFY_URLS = {
+    f"{ESIA_LOGIN_API}/{path}/verify" for path in (*_MFA_PATHS.values(), "mfa")
+}
+_mfa_path: ContextVar[str | None] = ContextVar("esia_mfa_path", default=None)
 
 _applied = False
 
@@ -50,6 +56,14 @@ def _patch_httpx_202() -> None:
     original_post = httpx.AsyncClient.post
 
     async def post(self, url, *args, **kwargs):
+        path = _mfa_path.get()
+        if path and str(url) in _LEGACY_VERIFY_URLS:
+            verify_url = f"{ESIA_LOGIN_API}/{path}/verify"
+            # В 10.0.0 библиотека перебирает адреса при 404. Отправляем
+            # код только на первом шаге перебора и только на адрес его типа.
+            if str(url) != f"{ESIA_LOGIN_API}/otp/verify":
+                return httpx.Response(404)
+            url = verify_url
         # На шаге проверки кода (/otp/verify, /totp/verify) netschoolpy передаёт
         # code только в query params, а в заголовках шлёт Content-Type: application/json.
         # WAF ЕСИА при пустом теле и заголовке json может возвращать 403.
@@ -72,8 +86,7 @@ def _patch_httpx_202() -> None:
             response.status_code = 200
         elif (
             response.status_code in (400, 401, 403)
-            and str(url).startswith(ESIA_LOGIN_API)
-            and str(url).endswith("/verify")
+            and str(url) in _LEGACY_VERIFY_URLS
         ):
             try:
                 data = response.json()
@@ -88,6 +101,27 @@ def _patch_httpx_202() -> None:
 
     post.__netschoolbot_patched__ = True
     httpx.AsyncClient.post = post
+
+
+def _patch_mfa_paths() -> None:
+    from netschoolpy import client as ns_client
+
+    if hasattr(ns_client, "_ESIA_MFA_VERIFY_PATHS"):
+        return
+    original = ns_client.NetSchool._handle_esia_mfa
+    if getattr(original, "__netschoolbot_patched__", False):
+        return
+
+    async def handle_esia_mfa(self, esia_client, data, otp_callback=None):
+        mfa_type = str(data.get("mfa_details", {}).get("type", "")).upper()
+        token = _mfa_path.set(_MFA_PATHS.get(mfa_type))
+        try:
+            return await original(self, esia_client, data, otp_callback=otp_callback)
+        finally:
+            _mfa_path.reset(token)
+
+    handle_esia_mfa.__netschoolbot_patched__ = True
+    ns_client.NetSchool._handle_esia_mfa = handle_esia_mfa
 
 
 def _patch_max_quiz() -> None:
@@ -136,6 +170,7 @@ def apply() -> None:
         return
     try:
         _patch_httpx_202()
+        _patch_mfa_paths()
         _patch_max_quiz()
     except (ImportError, AttributeError) as exc:
         logger.warning("Не удалось пропатчить ЕСИА-вход netschoolpy: %s", exc)

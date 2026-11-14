@@ -251,7 +251,7 @@ function renderLogin(email = '') {
     </div>
     <p class="ld-or"><span>или по почте</span></p>
     <form class="account-form">
-      <input class="field" type="email" name="email" autocomplete="username" placeholder="Почта" required>
+      <input class="field" type="email" name="email" autocomplete="username" placeholder="Почта" value="${esc(email)}" required>
       <input class="field" type="password" name="password" autocomplete="current-password" placeholder="Пароль" required>
       <p class="account-error" hidden></p>
       <button class="btn" type="submit">Войти</button>
@@ -263,7 +263,6 @@ function renderLogin(email = '') {
     </div>
     <a class="ld-demo-link" href="${base}/demo">Без входа — <b>попробовать демо-режим</b> на выдуманном ученике</a>`);
   bindLinks(card);
-  fillEmail(card, email);
   card.querySelector('[data-landing-bot]').addEventListener('click', (event) => startBotLogin(event.currentTarget));
   card.querySelector('[data-landing-widget]').addEventListener('click', startWidgetLogin);
   card.querySelector('[data-qr-login]').addEventListener('click', (event) => busy(event.currentTarget, startQrLogin));
@@ -292,7 +291,7 @@ function renderRegister(email = '') {
     <p class="muted">${hasInvite() ? 'Аккаунт, чтобы принять приглашение. Пароль от «Сетевого города» не понадобится.'
       : 'Аккаунт для входа на сайт без Telegram. Потом войдёте в «Сетевой город» — как в боте.'}</p>
     <form class="account-form">
-      <input class="field" type="email" name="email" autocomplete="username" placeholder="Почта" required>
+      <input class="field" type="email" name="email" autocomplete="username" placeholder="Почта" value="${esc(email)}" required>
       <input class="field" type="password" name="password" autocomplete="new-password" placeholder="Пароль (от 8 символов)" required>
       <input class="field" type="password" name="again" autocomplete="new-password" placeholder="Пароль ещё раз" required>
       <p class="account-error" hidden></p>
@@ -301,7 +300,6 @@ function renderRegister(email = '') {
     </form>
     <div class="account-links"><button class="link" data-go="login">Уже есть аккаунт</button></div>`);
   bindLinks(card);
-  fillEmail(card, email);
   const form = card.querySelector('form');
   form.addEventListener('submit', (event) => {
     event.preventDefault();
@@ -325,13 +323,12 @@ function renderReset(email = '') {
     <h2>Сброс пароля</h2>
     <p class="muted">Пришлём ссылку на почту — или в Telegram, если он привязан. По ней можно задать новый пароль.</p>
     <form class="account-form">
-      <input class="field" type="email" name="email" autocomplete="username" placeholder="Почта" required>
+      <input class="field" type="email" name="email" autocomplete="username" placeholder="Почта" value="${esc(email)}" required>
       <p class="account-error" hidden></p>
       <button class="btn" type="submit">Прислать ссылку</button>
     </form>
     <div class="account-links"><button class="link" data-go="login">Назад ко входу</button></div>`);
   bindLinks(card);
-  fillEmail(card, email);
   const form = card.querySelector('form');
   const button = form.querySelector('button');
   form.addEventListener('submit', (event) => {
@@ -703,11 +700,6 @@ export async function showQrWithoutSignIn(code) {
 function bindLinks(card) {
   card.querySelectorAll('[data-go]').forEach((link) => link.addEventListener('click', () =>
     showAuth(link.dataset.go, card.querySelector('input[name="email"]')?.value.trim() || '')));
-}
-
-function fillEmail(card, email) {
-  const field = card.querySelector('input[name="email"]');
-  if (field && email) field.value = email;
 }
 
 /* ─────────────────────── Приглашение от ученика ─────────────────────── */

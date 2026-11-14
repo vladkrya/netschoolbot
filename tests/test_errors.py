@@ -77,7 +77,7 @@ class TestWrap:
         from netschoolpy.exceptions import MFAError
         error = wrap(MFAError("Ошибка подтверждения кода: 403 Forbidden"))
         assert "403" not in error.user_message
-        assert "Неверный код подтверждения" in error.user_message
+        assert "Госуслуги не смогли проверить код" in error.user_message
 
 
 @pytest.mark.parametrize('text', ['Технические работы', 'Maintenance', 'Expecting value: line 1 column 1 (char 0)'])
@@ -162,5 +162,5 @@ class TestLoginRefusalWithoutPasswordWords:
 
         error = wrap(ns.MFAError("Ошибка подтверждения кода: 403 Forbidden"))
         assert error.reason is Reason.MFA
-        assert "Неверный код подтверждения" in error.user_message
+        assert "Госуслуги не смогли проверить код" in error.user_message
 

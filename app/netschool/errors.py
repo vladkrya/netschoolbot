@@ -236,8 +236,8 @@ def wrap(exc: Exception, *, context: str = "", myschool: bool = False) -> NetSch
     message = _special_message(exc, reason) or default
     if reason is Reason.MFA and str(exc):
         text = str(exc)
-        if "403" in text or "Ошибка подтверждения кода" in text:
-            message = "Неверный код подтверждения Госуслуг или время его действия истекло."
+        if text.startswith("Ошибка подтверждения кода"):
+            message = "Госуслуги не смогли проверить код. Начните вход заново или войдите по QR-коду."
         else:
             message = text
     if reason is Reason.UNKNOWN:
