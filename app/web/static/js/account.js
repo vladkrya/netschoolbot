@@ -70,10 +70,10 @@ function heroHtml() {
   return `
     <section class="ld-hero">
       <div class="ld-brand"><img src="${base}/static/icon-192.png" alt="" width="36" height="36"> СГОшка</div>
-      <h1>«Сетевой город» —<br><span class="ld-grad" data-typewriter="оценки, задания и расписание — рядом|дневник всегда под рукой|всё важное для учёбы — в одном месте|в Telegram, браузере и на телефоне">дневник всегда под рукой</span></h1>
+      <h1>«СГОшка» —<br><span class="ld-grad" data-typewriter="клиент для Сетевого города и Моей школы|оценки, задания и расписание — рядом|дневник всегда под рукой|всё важное для учёбы — в одном месте">клиент для Сетевого города и Моей школы</span></h1>
       <p class="ld-lead">Оценки, домашние задания и расписание из вашего электронного дневника
         в одном красивом приложении. Работает в Telegram, в браузере и на домашнем экране телефона.</p>
-      <p class="ld-note">Неофициальное приложение — не сайт «Сетевого города» и не ИРТех.</p>
+      <p class="ld-note">Неофициальное приложение. Не связано с «Сетевым городом», «Моей школой», Госуслугами, ИРТехом, школами и органами образования.</p>
       <div class="ld-actions">
         <button class="btn ld-demo" type="button" data-landing-route="demo">▶ Демо-режим</button>
         <button class="btn outline ld-status" type="button" data-landing-route="status"><i class="ld-status-dot" aria-hidden="true"></i>Статус серверов</button>

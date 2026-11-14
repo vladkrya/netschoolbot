@@ -1028,8 +1028,9 @@ async function bindDemo() {
  * Telegram, там остаётся только «Сетевой город»; при просмотре чужого
  * дневника своего входа в школу нет — только приложение. */
 function chooseSignOut(readonly) {
+  const diary = state.profile?.api_mode === 'myschool' ? '«Моей школы»' : '«Сетевого города»';
   const options = [
-    !readonly && ['netschool', 'Из «Сетевого города»',
+    !readonly && ['netschool', `Из ${diary}`,
       'Сменили пароль или школу — войдёте заново, приложение и настройки останутся'],
     !initData && ['app', 'Из приложения', 'На этом устройстве: дневник закроется, уведомления сюда приходить перестанут'],
   ].filter(Boolean);
@@ -1044,7 +1045,8 @@ function chooseSignOut(readonly) {
 /** Выйти из «Сетевого города», оставшись в приложении (как /logout в боте):
  * после перезагрузки приложение само откроет вход в школу. */
 async function signOutNetschool() {
-  if (!window.confirm('Выйти из «Сетевого города»? Школу и вход придётся выбрать заново. '
+  const diary = state.profile?.api_mode === 'myschool' ? '«Моей школы»' : '«Сетевого города»';
+  if (!window.confirm(`Выйти из ${diary}? Школу и вход придётся выбрать заново. `
     + 'Настройки, отметки о сделанных заданиях и история оценок вернутся, если войти в тот же дневник.')) return;
   try {
     await api('/api/account/netschool-logout', { method: 'POST', body: '{}' });
