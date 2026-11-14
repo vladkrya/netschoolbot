@@ -579,6 +579,14 @@
   background: var(--head);
   -webkit-text-fill-color: var(--head);
 }
+.ld-grad .typewriter-kept {
+  background: linear-gradient(90deg, var(--head, #4a6fae), #8b5cf6, #ec4899, var(--head, #4a6fae));
+  background-size: 300% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+}
 .typewriter-caret[data-idle="true"] {
   animation: kokonutui-typewriter-caret 1s linear infinite;
 }
