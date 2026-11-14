@@ -10,7 +10,7 @@ import { notify } from './haptics.js';
 import { ICONS } from './icons.js';
 import { pushScreen } from './screens.js';
 import { setHalloweenAccess } from './appearance.js';
-import { enhanceAuthMotion, rejectSpringyInput, setOtpResult } from './ui-motion.js';
+import { cycleTypewriter, enhanceAuthMotion, rejectSpringyInput, setOtpResult } from './ui-motion.js';
 
 /** Подпись под кнопкой входа: согласие с политикой. Ссылка — в новой
  * вкладке, чтобы не потерять заполненную форму. */
@@ -70,14 +70,14 @@ function heroHtml() {
   return `
     <section class="ld-hero">
       <div class="ld-brand"><img src="${base}/static/icon-192.png" alt="" width="36" height="36"> СГОшка</div>
-      <h1>Дневник всегда<br><span class="ld-grad">под рукой</span></h1>
-      <p class="ld-lead">Оценки, задания и расписание — в Telegram, браузере и на домашнем экране телефона.</p>
-      <div class="ld-services" aria-label="Поддерживаемые дневники"><span>Сетевой город</span><span>Моя школа</span></div>
+      <h1>«СГОшка» —<br><span class="ld-grad" data-typewriter="клиент для Сетевого города и Моей школы|оценки, задания и расписание — рядом|дневник всегда под рукой|всё важное для учёбы — в одном месте">клиент для Сетевого города и Моей школы</span></h1>
+      <p class="ld-lead">Оценки, домашние задания и расписание из вашего электронного дневника
+        в одном красивом приложении. Работает в Telegram, в браузере и на домашнем экране телефона.</p>
+      <p class="ld-note">Неофициальное приложение. Не связано с «Сетевым городом», «Моей школой», Госуслугами, ИРТехом, школами и органами образования.</p>
       <div class="ld-actions">
-        <button class="btn ld-demo" type="button" data-landing-route="demo">Открыть демо без входа</button>
+        <button class="btn ld-demo" type="button" data-landing-route="demo">▶ Демо-режим</button>
         <button class="btn outline ld-status" type="button" data-landing-route="status"><i class="ld-status-dot" aria-hidden="true"></i>Статус серверов</button>
       </div>
-      <div class="ld-trust"><span>Пароль Госуслуг не храним</span><span>Неофициальный клиент</span><span>Данные не продаём</span></div>
     </section>
     <div class="ld-preview" aria-hidden="true">
       <div class="ld-stage">
@@ -89,8 +89,7 @@ function heroHtml() {
         </div>
       </div>
     </div>
-    <ul class="ld-features">${features}</ul>
-    <section class="ld-parent"><b>Для родителей</b><span>Приглашайте близких: оценки и уведомления без пароля от дневника.</span></section>`;
+    <ul class="ld-features">${features}</ul>`;
 }
 
 /** Вход, регистрация и сброс — на главном экране: слева о проекте, справа
@@ -117,6 +116,8 @@ function landing(html) {
     document.body.appendChild(root);
     document.documentElement.classList.add('app-locked');
     bindLanding(root);
+    root.querySelectorAll('[data-typewriter]').forEach((element) =>
+      cycleTypewriter(element, element.dataset.typewriter.split('|'), { pauseBeforeDelete: 2200 }));
   }
   const card = root.querySelector('.account-card');
   card.innerHTML = html;
