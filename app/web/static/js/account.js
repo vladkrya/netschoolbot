@@ -10,7 +10,7 @@ import { notify } from './haptics.js';
 import { ICONS } from './icons.js';
 import { pushScreen } from './screens.js';
 import { setHalloweenAccess } from './appearance.js';
-import { cycleTypewriter, enhanceAuthMotion, rejectSpringyInput, setOtpResult } from './ui-motion.js';
+import { enhanceAuthMotion, rejectSpringyInput, setOtpResult } from './ui-motion.js';
 
 /** Подпись под кнопкой входа: согласие с политикой. Ссылка — в новой
  * вкладке, чтобы не потерять заполненную форму. */
@@ -70,7 +70,7 @@ function heroHtml() {
   return `
     <section class="ld-hero">
       <div class="ld-brand"><img src="${base}/static/icon-192.png" alt="" width="36" height="36"> СГОшка</div>
-      <h1>«Сетевой город» —<br><span class="ld-grad" data-typewriter="удобно и быстро|всё нужное — рядом|оценки, ДЗ и расписание|понятно каждый день">удобно и быстро</span></h1>
+      <h1>«Сетевой город» —<br><span class="ld-grad">удобно и быстро</span></h1>
       <p class="ld-lead">Оценки, домашние задания и расписание из вашего электронного дневника
         в одном красивом приложении. Работает в Telegram, в браузере и на домашнем экране телефона.</p>
       <p class="ld-note">Неофициальное приложение — не сайт «Сетевого города» и не ИРТех.</p>
@@ -116,7 +116,6 @@ function landing(html) {
     document.body.appendChild(root);
     document.documentElement.classList.add('app-locked');
     bindLanding(root);
-    root.querySelectorAll('[data-typewriter]').forEach((element) => cycleTypewriter(element, element.dataset.typewriter.split('|')));
   }
   const card = root.querySelector('.account-card');
   card.innerHTML = html;
