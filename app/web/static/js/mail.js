@@ -9,6 +9,7 @@ import { ICONS } from './icons.js';
 import { markScreen, popScreen, pushScreen, reopenOnRefresh } from './screens.js';
 import { closeSheet, openSheet } from './sheet.js';
 import { setMailBadge } from './tabs.js';
+import { initFileDrop } from './ui-motion.js';
 
 const AVATAR_COLORS = ['#a7b83a', '#4a9fd8', '#d8844a', '#9a6ad8', '#d84a6a', '#3ab89a'];
 
@@ -491,10 +492,21 @@ export async function openCompose(draft = {}) {
       <label class="switch-row compose-notify"><span>Уведомить о прочтении</span><input type="checkbox" class="switch" id="composeNotify"></label>
       ${attach ? `<div class="detail-label">Вложения</div>
         <div id="composeFiles" class="compose-files"></div>
-        <label class="mail-file-drop" id="composeDrop" tabindex="0">
-          <span class="mail-file-core"><i></i><svg viewBox="0 0 72 72" fill="none" stroke-width="3" stroke-linecap="round"><circle class="track" cx="36" cy="36" r="33"/><circle class="arc" cx="36" cy="36" r="33"/></svg><b class="up">↑</b><b class="percent">0</b><b class="check">✓</b></span>
-          <strong class="drop-title">Перетащите файл сюда</strong><small class="drop-sub">или нажмите, чтобы выбрать · до 10 МБ</small>
-          <input type="file" id="composeFile" multiple hidden></label>` : ''}
+        <div class="mail-file-drop" id="composeDrop" role="button" tabindex="0" aria-label="Прикрепить файл">
+          <div class="mail-file-core">
+            <i class="g"></i>
+            <svg class="ring" viewBox="0 0 72 72" fill="none" stroke-width="3" stroke-linecap="round">
+              <circle class="track trk" cx="36" cy="36" r="33"/>
+              <circle class="arc" cx="36" cy="36" r="33"/>
+            </svg>
+            <span class="ic up"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5.5 11.5 12 5l6.5 6.5"/></svg></span>
+            <span class="ic pct">0</span>
+            <span class="ic ok"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path class="tick" d="M5 12.5l4.5 4.5L19 7.5"/></svg></span>
+          </div>
+          <div class="drop-line t"><span>Перетащите файл сюда</span></div>
+          <div class="drop-line s"><span>или нажмите для выбора · до 10 МБ</span></div>
+          <input type="file" id="composeFile" multiple hidden tabindex="-1" aria-hidden="true">
+        </div>` : ''}
       <button class="btn" id="composeSend">${ICONS.send} Отправить</button>
     </div>`;
 
@@ -534,39 +546,12 @@ export async function openCompose(draft = {}) {
       files.push(file);
     }
     renderFiles();
-    const zone = $('composeDrop');
-    if (zone && files.length) {
-      const percent = zone.querySelector('.percent');
-      const arc = zone.querySelector('.arc');
-      const fill = zone.querySelector('.mail-file-core i');
-      const up = zone.querySelector('.up');
-      const check = zone.querySelector('.check');
-      zone.classList.add('uploading');
-      let value = 0;
-      const draw = () => {
-        value = Math.min(100, value + Math.max(3, Math.round((100 - value) * .13)));
-        percent.textContent = value;
-        arc.style.opacity = '1'; percent.style.opacity = '1'; up.style.opacity = '0';
-        arc.style.strokeDashoffset = String(207.35 * (1 - value / 100));
-        if (value < 100) requestAnimationFrame(draw);
-        else {
-          zone.classList.remove('uploading'); zone.classList.add('done');
-          fill.style.transform = 'scale(1)'; check.style.opacity = '1'; percent.style.opacity = '0'; arc.style.opacity = '0';
-        }
-      };
-      requestAnimationFrame(draw);
-    }
   };
 
   const dropZone = $('composeDrop');
-  dropZone?.setAttribute('data-drop-hint', 'Перетащите файлы сюда');
-  ['dragenter', 'dragover'].forEach((name) => dropZone?.addEventListener(name, (event) => { event.preventDefault(); dropZone.classList.add('dragging'); }));
-  ['dragleave', 'drop'].forEach((name) => dropZone?.addEventListener(name, (event) => { event.preventDefault(); dropZone.classList.remove('dragging'); }));
-  dropZone?.addEventListener('drop', (event) => addFiles(event.dataTransfer?.files || []));
-  $('composeFile')?.addEventListener('change', (event) => {
-    addFiles(event.target.files);
-    event.target.value = '';
-  });
+  if (dropZone) {
+    initFileDrop(dropZone, (picked) => addFiles(picked));
+  }
 
   $('composeTo').addEventListener('click', () => chooseRecipients(chosen, renderTo));
 

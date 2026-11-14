@@ -70,7 +70,7 @@ function heroHtml() {
   return `
     <section class="ld-hero">
       <div class="ld-brand"><img src="${base}/static/icon-192.png" alt="" width="36" height="36"> СГОшка</div>
-      <h1>«Сетевой город» —<br><span class="ld-grad" data-typewriter="удобно и быстро|всё нужное — рядом|понятно каждый день">удобно и быстро</span></h1>
+      <h1>«Сетевой город» —<br><span class="ld-grad" data-typewriter="удобно и быстро|всё нужное — рядом|оценки, ДЗ и расписание|понятно каждый день">удобно и быстро</span></h1>
       <p class="ld-lead">Оценки, домашние задания и расписание из вашего электронного дневника
         в одном красивом приложении. Работает в Telegram, в браузере и на домашнем экране телефона.</p>
       <p class="ld-note">Неофициальное приложение — не сайт «Сетевого города» и не ИРТех.</p>
@@ -202,8 +202,13 @@ async function busy(button, work) {
 
 function showError(card, message) {
   const box = card.querySelector('.account-error');
-  box.textContent = message || '';
-  box.hidden = !message;
+  if (box) {
+    box.textContent = message || '';
+    box.hidden = !message;
+  }
+  if (message) {
+    card.querySelectorAll('input.field').forEach((input) => rejectSpringyInput(input));
+  }
 }
 
 const post = (path, body) => api(path, { method: 'POST', body: JSON.stringify(body) });
@@ -1003,13 +1008,14 @@ export function showSgoLogin(info = {}) {
     }));
   };
 
+  let lastLogin = '';
   const credentialsStep = () => {
     const esia = choice.method === 'esia';
     const card = screen(`
       <h2>${esia ? 'Госуслуги' : '«Сетевой город»'}</h2>
       <p class="muted">${esc(choice.school)}</p>
       <form class="account-form">
-        <input class="field" name="login" autocomplete="username" placeholder="${esia ? 'Телефон, СНИЛС или почта' : 'Логин «Сетевого города»'}" required>
+        <input class="field" name="login" autocomplete="username" value="${esc(lastLogin)}" placeholder="${esia ? 'Телефон, СНИЛС или почта' : 'Логин «Сетевого города»'}" required>
         <input class="field" type="password" name="password" autocomplete="current-password" placeholder="Пароль" required>
         ${esia ? '<p class="account-note">Логин и пароль Госуслуг нужны только на этот вход и не сохраняются.</p>'
           : `<label class="account-check"><input type="checkbox" name="remember" checked>
@@ -1023,6 +1029,7 @@ export function showSgoLogin(info = {}) {
     const form = card.querySelector('form');
     form.addEventListener('submit', (event) => {
       event.preventDefault();
+      lastLogin = form.login.value;
       start({ login: form.login.value, password: form.password.value, remember: !esia && form.remember.checked }, card);
     });
   };
@@ -1054,11 +1061,17 @@ export function showSgoLogin(info = {}) {
 
   let shown = '';
   let otpAccepted = false;
+  let otpSubmitting = false;
   const progress = (data) => {
+    if (otpSubmitting && (data.status === 'running' || data.status === 'error')) {
+      return;
+    }
     const key = `${data.status}:${data.qr ? data.qr.length : ''}`;
-    if (data.status === 'qr' && shown === key) {
-      const left = document.querySelector('#accountScreen .account-qr-left');
-      if (left) left.textContent = `Код действует ещё ${data.qr_left} с`;
+    if (shown === key) {
+      if (data.status === 'qr') {
+        const left = document.querySelector('#accountScreen .account-qr-left');
+        if (left) left.textContent = `Код действует ещё ${data.qr_left} с`;
+      }
       return;
     }
     shown = key;
@@ -1089,16 +1102,25 @@ export function showSgoLogin(info = {}) {
       form.addEventListener('submit', (event) => {
         event.preventDefault();
         busy(form.querySelector('button'), async () => {
+          showError(card, '');
+          const rawCode = form.code.value.replace(/\D/g, '');
+          if (!rawCode) return;
           try {
-            await post('/api/sgo/login/otp', { code: form.code.value.replace(/\D/g, '') });
+            otpSubmitting = true;
+            const res = await post('/api/sgo/login/otp', { code: rawCode });
             setOtpResult(form.code, true);
             otpAccepted = true;
             await new Promise((resolve) => setTimeout(resolve, 650));
             otpAccepted = false;
+            otpSubmitting = false;
             shown = '';
+            if (res?.data) progress(res.data);
           } catch (error) {
+            otpSubmitting = false;
             setOtpResult(form.code, false);
             showError(card, error.message);
+            await new Promise((resolve) => setTimeout(resolve, 800));
+            progress({ status: 'error', message: error.message });
           }
         });
       });
@@ -1109,10 +1131,12 @@ export function showSgoLogin(info = {}) {
       const card = screen(`<h2>Не получилось войти</h2>
         <p class="account-error">${esc(data.message || 'Попробуйте ещё раз')}</p>
         <div class="account-list">
+          ${choice.school && choice.method ? '<button class="btn" data-act="retry-login">Попробовать снова</button>' : ''}
           ${data.retry ? '<button class="btn" data-act="retry">Получить новый QR-код</button>' : ''}
           <button class="btn outline" data-act="method">Другой способ входа</button>
           <button class="btn outline" data-act="region">Начать сначала</button>
         </div>`);
+      card.querySelector('[data-act="retry-login"]')?.addEventListener('click', credentialsStep);
       card.querySelector('[data-act="retry"]')?.addEventListener('click', () => start({}));
       card.querySelector('[data-act="method"]').addEventListener('click', choice.school ? methodStep : regionStep);
       card.querySelector('[data-act="region"]').addEventListener('click', regionStep);
@@ -1167,7 +1191,7 @@ export async function openAccountSettings() {
           <p class="muted">По почте и паролю можно войти на сайт без Telegram — например, когда Telegram не открывается.</p>
           ${info.mail && !info.verified ? `
             <form class="account-form account-row" data-form="verify">
-              <input class="field" name="code" inputmode="numeric" placeholder="Код из письма">
+              <input class="field" name="code" inputmode="numeric" autocomplete="one-time-code" placeholder="Код из письма">
               <button class="btn" type="submit">Подтвердить</button>
             </form>
             <button class="link" data-act="resend">Прислать код ещё раз</button>` : ''}`
@@ -1203,6 +1227,7 @@ export async function openAccountSettings() {
         <p class="account-error" hidden></p><button class="btn outline danger" type="submit">Удалить все мои данные</button></form></div>` : ''}
       ${!tg?.initData ? '<button class="btn outline danger account-logout" data-act="logout">Выйти из аккаунта</button>' : ''}`;
     bind(info);
+    enhanceAuthMotion(body);
   };
 
   const bind = (info) => {

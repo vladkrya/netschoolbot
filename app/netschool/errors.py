@@ -235,8 +235,11 @@ def wrap(exc: Exception, *, context: str = "", myschool: bool = False) -> NetSch
     default = (_MYSCHOOL_MESSAGES if myschool else _USER_MESSAGES).get(reason) or _USER_MESSAGES[reason]
     message = _special_message(exc, reason) or default
     if reason is Reason.MFA and str(exc):
-        # У MFA-ошибок текст библиотеки уже написан для человека.
-        message = str(exc)
+        text = str(exc)
+        if "403" in text or "Ошибка подтверждения кода" in text:
+            message = "Неверный код подтверждения Госуслуг или время его действия истекло."
+        else:
+            message = text
     if reason is Reason.UNKNOWN:
         # Иначе за общим «Не удалось получить данные» не видно настоящей причины.
         logger.warning(

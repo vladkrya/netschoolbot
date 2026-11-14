@@ -73,6 +73,12 @@ class TestWrap:
         error = NetSchoolError(Reason.MFA, "нужен код")
         assert wrap(error) is error
 
+    def test_mfa_403_is_clean_message(self):
+        from netschoolpy.exceptions import MFAError
+        error = wrap(MFAError("Ошибка подтверждения кода: 403 Forbidden"))
+        assert "403" not in error.user_message
+        assert "Неверный код подтверждения" in error.user_message
+
 
 @pytest.mark.parametrize('text', ['Технические работы', 'Maintenance', 'Expecting value: line 1 column 1 (char 0)'])
 def test_maintenance_is_not_expired_session(text):
@@ -150,3 +156,11 @@ class TestLoginRefusalWithoutPasswordWords:
         from netschoolpy import client
 
         assert wrap(client.conflict_error("Вы совершили 3 неудачные попытки входа")).reason is Reason.RATE_LIMIT
+
+    def test_mfa_403_friendly_message(self):
+        from netschoolpy import exceptions as ns
+
+        error = wrap(ns.MFAError("Ошибка подтверждения кода: 403 Forbidden"))
+        assert error.reason is Reason.MFA
+        assert "Неверный код подтверждения" in error.user_message
+

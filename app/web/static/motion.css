@@ -158,55 +158,440 @@
 .motion-ticks span:nth-child(5) { left: 100%; }
 
 /* ───────── Motion Studies: forms, file drop, desktop sidebar ───────── */
-/* springy input: caret 700/32, morph 300/20 */
+/* 1. Springy input: caret 700/32, morph 300/20 */
 .spring-field { transition: transform .3s cubic-bezier(.34, 1.26, .64, 1), box-shadow .3s cubic-bezier(.34, 1.26, .64, 1), border-color .2s ease; }
 .spring-field.spring-focus { transform: scale(1.012); box-shadow: 0 0 0 4px color-mix(in srgb, var(--primary) 17%, transparent); }
 .spring-field.spring-invalid { border-color: var(--g2, #d33) !important; box-shadow: 0 0 0 4px color-mix(in srgb, var(--g2, #d33) 16%, transparent); }
-.springy-email { position: relative; display: block; isolation: isolate; margin: 4px 0 10px; background: var(--card-2); border-radius: 10px; }
-.springy-email > .field { position: relative; z-index: 2; margin: 0; background: transparent; color: transparent; caret-color: transparent; }
+
+.springy-email {
+  position: relative;
+  display: block;
+  isolation: isolate;
+  margin: 4px 0 10px;
+  background: var(--card-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  transition: border-color .2s, box-shadow .2s;
+}
+.springy-email.spring-focus,
+.springy-email:focus-within {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 25%, transparent);
+}
+.springy-email.spring-invalid {
+  border-color: var(--g2, #d33) !important;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--g2, #d33) 25%, transparent) !important;
+}
+.springy-email > .field {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  margin: 0;
+  padding: 11px 40px 11px 12px;
+  border: none;
+  background: transparent;
+  color: transparent;
+  caret-color: transparent;
+  outline: none;
+}
+.springy-email > .field::placeholder { color: var(--text2); opacity: .7; }
 .springy-email > .field::selection { color: transparent; background: color-mix(in srgb, var(--primary) 26%, transparent); }
-.springy-email-layer { position: absolute; z-index: 3; inset: 0; display: block; overflow: hidden; padding: 14px 12px 8px; pointer-events: none; white-space: pre; color: var(--text); font: inherit; line-height: normal; }
+
+.springy-email-layer {
+  position: absolute;
+  z-index: 3;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  padding: 0 40px 0 12px;
+  pointer-events: none;
+  white-space: pre;
+  color: var(--text);
+  font: inherit;
+  line-height: normal;
+}
 .springy-char { display: inline-block; transform-origin: 50% 80%; }
 .springy-char.entering { animation: springy-char-in .5s cubic-bezier(.2,.8,.2,1) both; animation-delay: var(--delay, 0ms); }
 .springy-char.leaving { position: absolute; animation: springy-char-out .34s cubic-bezier(.5,0,.75,0) forwards; }
 .springy-char.reject { animation: springy-char-reject .46s ease both; animation-delay: var(--delay, 0ms); }
-.springy-email-caret { position: absolute; z-index: 4; left: 12px; top: 15px; width: 2px; height: 1.15em; border-radius: 2px; background: var(--text); pointer-events: none; transform-origin: left center; opacity: 0; }
+.springy-email-caret {
+  position: absolute;
+  z-index: 4;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 2px;
+  height: 1.25em;
+  border-radius: 2px;
+  background: var(--text);
+  pointer-events: none;
+  transform-origin: left center;
+  opacity: 0;
+}
 .springy-email:focus-within .springy-email-caret { opacity: 1; }
 .springy-email-caret.blink { animation: springy-caret-blink 1s steps(1) infinite; }
-@keyframes springy-char-in { 0% { transform: translateY(14px) rotate(-16deg) scale(.5); opacity: 0; filter: blur(3px); } 55% { transform: translateY(-3px) rotate(4deg) scale(1.1); opacity: 1; filter: none; } 80% { transform: translateY(1px) rotate(-1deg) scale(.98); } 100% { transform: none; } }
-@keyframes springy-char-out { to { transform: translateY(-18px) rotate(20deg) scale(.5); opacity: 0; filter: blur(3px); } }
-@keyframes springy-char-reject { 0%,100% { transform: none; } 20% { transform: translateX(-4px) rotate(-8deg); } 40% { transform: translateX(4px) rotate(6deg); } 60% { transform: translateX(-2px); } 80% { transform: translateX(1px); } }
-@keyframes springy-caret-blink { 50% { opacity: 0; } }
-.password-meter { display: flex; align-items: center; gap: 9px; min-height: 18px; margin: -2px 2px 6px; color: var(--text2); font-size: 12px; }
-.password-bars { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3px; width: 72px; }
-.password-bars i { height: 4px; border-radius: 99px; background: var(--border); transform-origin: left; transition: background .26s cubic-bezier(.34, 1.26, .64, 1), transform .26s cubic-bezier(.34, 1.26, .64, 1); }
-.password-meter[data-level="1"] i:nth-child(1), .password-meter[data-level="2"] i:nth-child(-n+2) { background: var(--g2, #d33); transform: scaleX(1.08); }
-.password-meter[data-level="3"] i:nth-child(-n+3) { background: #e99d25; transform: scaleX(1.08); }
-.password-meter[data-level="4"] i { background: var(--g5, #24984b); transform: scaleX(1.08); }
-.motion-otp { position: relative; display: grid; grid-template-columns: repeat(var(--otp-count, 6), 1fr); gap: 8px; height: 56px; margin: 0 0 10px; }
-.motion-otp-box { display: grid; place-items: center; min-width: 0; border-radius: 14px; background: var(--card-2); color: var(--text); font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; transition: background .26s cubic-bezier(.34,1.26,.64,1), transform .26s cubic-bezier(.34,1.26,.64,1); }
-.motion-otp-box.active { background: color-mix(in srgb, var(--primary) 16%, var(--card-2)); box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 55%, transparent); }
-.motion-otp.verified { gap: 0; }
-.motion-otp.verified .motion-otp-box { border-radius: 0; background: color-mix(in srgb, var(--g5, #24984b) 75%, var(--card-2)); color: #fff; }
-.motion-otp.verified .motion-otp-box:first-of-type { border-radius: 14px 0 0 14px; }
-.motion-otp.verified .motion-otp-box:last-of-type { border-radius: 0 14px 14px 0; }
-.motion-otp.rejected .motion-otp-box { background: color-mix(in srgb, var(--g2, #d33) 72%, var(--card-2)); color: #fff; animation: otp-reject .38s cubic-bezier(.34,1.56,.64,1); }
-@keyframes otp-reject { 30% { transform: translateX(-5px); } 65% { transform: translateX(4px); } }
-.motion-otp-input { position: absolute !important; inset: 0; z-index: 2; opacity: 0; width: 100% !important; height: 100%; margin: 0 !important; caret-color: transparent; }
 
-/* file drop: follow 900/50, settle 280/22 */
-.mail-file-drop{position:relative;display:grid;place-items:center;min-height:176px;overflow:hidden;border-radius:var(--radius);background:var(--card-2);color:var(--text);cursor:pointer;transition:transform .28s cubic-bezier(.34,1.26,.64,1),background .2s}.mail-file-core{position:relative;display:grid;place-items:center;width:64px;height:64px;margin-top:16px;border-radius:50%;background:color-mix(in srgb,var(--text) 9%,transparent)}.mail-file-core i{position:absolute;inset:0;border-radius:inherit;background:var(--g5,#24984b);transform:scale(0)}.mail-file-core svg{position:absolute;inset:0;width:100%;transform:rotate(-90deg);opacity:0}.mail-file-core .track{stroke:color-mix(in srgb,var(--text) 15%,transparent)}.mail-file-core .arc{stroke:#fff;stroke-dasharray:207.35;stroke-dashoffset:207.35}.mail-file-core b{position:absolute;font-size:22px}.mail-file-core .percent,.mail-file-core .check{opacity:0}.drop-title{margin-top:10px}.drop-sub{margin:4px 14px 18px;color:var(--text2);text-align:center}.mail-file-drop.dragging{transform:scale(1.025);background:color-mix(in srgb,var(--primary) 22%,var(--card-2))}
-.file-drop-zone { position: relative; overflow: hidden; isolation: isolate; transition: transform .28s cubic-bezier(.34, 1.18, .64, 1), background .2s ease, color .2s ease; }
-.file-drop-zone::after { content: '↑'; display: inline-grid; place-items: center; width: 20px; height: 20px; margin-left: 7px; border-radius: 50%; background: color-mix(in srgb, currentColor 15%, transparent); font-weight: 700; transition: transform .28s cubic-bezier(.34, 1.18, .64, 1); }
-.file-drop-zone.dragging { transform: scale(1.035); background: var(--primary) !important; color: #fff; }
-.file-drop-zone.dragging::after { transform: translateY(-4px) scale(1.18); }
-.file-drop-zone.dragging::before { content: attr(data-drop-hint); position: absolute; inset: 0; z-index: 1; display: grid; place-items: center; background: var(--primary); color: #fff; font-weight: 600; }
+.springy-eye {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 5;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text2);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  transition: color .2s, background .2s;
+}
+.springy-eye:hover { color: var(--text); background: color-mix(in srgb, var(--text) 8%, transparent); }
+.springy-eye svg { width: 19px; height: 19px; display: block; }
+.eye-slash { transition: stroke-dashoffset .25s ease; }
+.eye-pupil { transition: transform .25s ease; transform-origin: 12px 12px; }
+
+@keyframes springy-char-in {
+  0% { transform: translateY(14px) rotate(-16deg) scale(.5); opacity: 0; filter: blur(3px); }
+  55% { transform: translateY(-3px) rotate(4deg) scale(1.1); opacity: 1; filter: none; }
+  80% { transform: translateY(1px) rotate(-1deg) scale(.98); }
+  100% { transform: none; }
+}
+@keyframes springy-char-out { to { transform: translateY(-18px) rotate(20deg) scale(.5); opacity: 0; filter: blur(3px); } }
+@keyframes springy-char-reject {
+  0%,100% { transform: none; }
+  20% { transform: translateX(-4px) rotate(-8deg); }
+  40% { transform: translateX(4px) rotate(6deg); }
+  60% { transform: translateX(-2px); }
+  80% { transform: translateX(1px); }
+}
+@keyframes springy-caret-blink { 50% { opacity: 0; } }
+
+/* 2. Password strength meter */
+.password-meter {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: -4px 0 12px;
+  font-size: 13px;
+}
+.password-bars {
+  display: flex;
+  gap: 6px;
+  width: 100%;
+}
+.password-bars i {
+  position: relative;
+  flex: 1;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--border);
+  overflow: hidden;
+}
+.password-bars i b {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 0%;
+  border-radius: 3px;
+  background: var(--muted);
+  will-change: width, background;
+}
+.password-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 12px;
+}
+.password-word {
+  font-weight: 600;
+  color: var(--muted);
+  will-change: transform, opacity, color;
+}
+.password-rules {
+  color: var(--text2);
+}
+
+/* 3. OTP Code */
+.motion-otp {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  height: 56px;
+  margin: 6px 0 14px;
+}
+.motion-otp-box {
+  position: relative;
+  flex: 1;
+  max-width: 48px;
+  height: 56px;
+  border-radius: 14px;
+  background: var(--card-2);
+  border: 1px solid var(--border);
+  display: grid;
+  place-items: center;
+  font-size: 24px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  will-change: transform, border-radius, background, border-color;
+  transition: border-color .2s, box-shadow .2s;
+}
+.motion-otp-box i {
+  font-style: normal;
+  display: block;
+  will-change: transform, opacity;
+}
+.motion-otp-box .car {
+  position: absolute;
+  width: 2px;
+  height: 24px;
+  border-radius: 1px;
+  background: var(--primary);
+  left: 50%;
+  top: 16px;
+  margin-left: -1px;
+  opacity: 0;
+  pointer-events: none;
+}
+.motion-otp-ok {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 16px;
+  font-weight: 700;
+  color: #fff;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 3;
+}
+.motion-otp-ok svg { width: 20px; height: 20px; }
+.motion-otp.rejected .motion-otp-box {
+  background: color-mix(in srgb, var(--g2, #d33) 72%, var(--card-2));
+  color: #fff;
+  animation: otp-reject .38s cubic-bezier(.34,1.56,.64,1);
+}
+@keyframes otp-reject {
+  25% { transform: translateX(-5px); }
+  60% { transform: translateX(5px); }
+  85% { transform: translateX(-2px); }
+  100% { transform: translateX(0); }
+}
+.motion-otp-input {
+  position: absolute !important;
+  inset: 0;
+  z-index: 2;
+  opacity: 0;
+  width: 100% !important;
+  height: 100%;
+  margin: 0 !important;
+  caret-color: transparent;
+  cursor: text;
+}
+
+/* 4. File Drop Component */
+.mail-file-drop {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 184px;
+  padding: 16px;
+  overflow: hidden;
+  border-radius: var(--radius, 16px);
+  background: var(--card-2);
+  border: 1px dashed var(--border);
+  color: var(--text);
+  cursor: pointer;
+  outline: none;
+  user-select: none;
+  will-change: transform;
+  -webkit-tap-highlight-color: transparent;
+}
+.mail-file-drop:focus-visible {
+  border-color: var(--primary);
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+.mail-file-drop::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: color-mix(in srgb, var(--primary) 14%, transparent);
+  opacity: var(--h, 0);
+  pointer-events: none;
+  transition: opacity .15s ease;
+}
+.mail-file-core {
+  position: relative;
+  width: 72px;
+  height: 72px;
+  margin: 8px auto 14px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+  z-index: 1;
+  will-change: transform;
+}
+.mail-file-core .g {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: var(--g5, #24984b);
+  transform: scale(0);
+  will-change: transform;
+}
+.mail-file-core .ring {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+  opacity: 0;
+  pointer-events: none;
+}
+.mail-file-core .track { stroke: color-mix(in srgb, var(--text) 14%, transparent); }
+.mail-file-core .arc { stroke: var(--primary); stroke-dasharray: 207.35; stroke-dashoffset: 207.35; }
+.mail-file-core .ic {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--text);
+  will-change: transform, opacity;
+}
+.mail-file-core .ic.up svg { width: 26px; height: 26px; }
+.mail-file-core .ic.pct {
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -.02em;
+  font-variant-numeric: tabular-nums;
+  opacity: 0;
+}
+.mail-file-core .ic.ok { color: #fff; opacity: 0; }
+.mail-file-core .ic.ok svg { width: 28px; height: 28px; }
+.mail-file-core .tick { stroke-dasharray: 24; stroke-dashoffset: 24; }
+
+.drop-line {
+  position: relative;
+  width: 100%;
+  z-index: 1;
+  overflow: hidden;
+  text-align: center;
+  pointer-events: none;
+}
+.drop-line span {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  will-change: transform, opacity;
+}
+.drop-line.t { height: 24px; margin-bottom: 2px; }
+.drop-line.t span { line-height: 24px; font-size: 16px; font-weight: 600; color: var(--text); }
+.drop-line.s { height: 20px; }
+.drop-line.s span { line-height: 20px; font-size: 13px; color: var(--text2); font-variant-numeric: tabular-nums; }
+
+/* 5. Streaming Reply Component */
+.ai-msg.assistant.ai-streaming-wrap {
+  position: relative;
+  overflow: visible;
+  padding: 0;
+  background: transparent;
+}
+.ai-stream-bubble {
+  position: relative;
+  overflow: hidden;
+  display: inline-block;
+  min-height: 40px;
+  padding: 9px 14px;
+  border-radius: 18px;
+  background: var(--card-2);
+  color: var(--text);
+  will-change: width, min-height;
+}
+.think {
+  position: absolute;
+  left: 14px;
+  top: 9px;
+  white-space: nowrap;
+  font-weight: 500;
+  pointer-events: none;
+}
+.think-shimmer {
+  background: linear-gradient(90deg, var(--text2) 20%, var(--text) 50%, var(--text2) 80%) 0 0 / 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: shine 1.4s linear infinite;
+}
+@keyframes shine { to { background-position: -200% 0; } }
+.stream-text {
+  position: relative;
+  margin: 0;
+  line-height: 1.45;
+}
+.stream-text .wd {
+  display: inline-block;
+  will-change: transform, opacity, filter;
+}
+
+/* 6. Kokonut UI Typewriter */
+.typewriter-screen {
+  display: inline-flex;
+  align-items: baseline;
+  white-space: pre;
+}
+.typewriter-kept {
+  display: inline;
+}
+.typewriter-selected {
+  display: inline;
+  background: color-mix(in srgb, var(--primary) 28%, transparent);
+  border-radius: 3px;
+  color: var(--text);
+}
+.typewriter-caret {
+  position: relative;
+  display: inline-block;
+  width: 0.08em;
+  min-width: 2px;
+  height: 1em;
+  margin: 0 1px;
+  background: currentColor;
+  vertical-align: -0.1em;
+}
+.ld-grad .typewriter-caret {
+  background: var(--head);
+  -webkit-text-fill-color: var(--head);
+}
+.typewriter-caret[data-idle="true"] {
+  animation: kokonutui-typewriter-caret 1s linear infinite;
+}
+@keyframes kokonutui-typewriter-caret {
+  0%, 33.333% { opacity: 1; }
+  66.667%, 100% { opacity: 0; }
+}
 
 .typewriter::after { content: ''; display: inline-block; height: .95em; width: 0; margin-left: 0; border-left: .1em solid currentColor; vertical-align: -.08em; animation: type-caret .7s step-end infinite; }
-/* The landing headline is gradient text (and therefore transparent); give its
-   cursor an explicit ink colour so it remains visible and blinks. */
 .ld-grad.typewriter::after { color: var(--head); border-color: var(--head); -webkit-text-fill-color: var(--head); }
 @keyframes type-caret { 50% { opacity: 0; } }
-.streaming-reply::after { content: ''; display: inline-block; height: 1em; margin-left: 2px; border-left: 2px solid var(--primary); vertical-align: -.14em; animation: type-caret .7s step-end infinite; }
 
-@media (prefers-reduced-motion: reduce) { .spring-field, .password-bars i, .file-drop-zone, .file-drop-zone::after, .side-col { transition: none; } .otp-field.otp-complete { animation: none; } .typewriter::after, .streaming-reply::after { animation: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .spring-field, .password-bars i b, .mail-file-drop, .side-col { transition: none; }
+  .typewriter::after, .typewriter-caret { animation: none; }
+}

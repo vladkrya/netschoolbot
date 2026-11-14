@@ -1088,6 +1088,12 @@ async def sgo_login_otp(request: web.Request) -> web.Response:
         return json_error("Введите код из цифр")
     if not attempt.otp_future.done():
         attempt.otp_future.set_result(code)
+    for _ in range(150):
+        await asyncio.sleep(0.1)
+        if attempt.status != "running":
+            break
+    if attempt.status == "error":
+        return json_error(attempt.message or "Не удалось войти")
     return web.json_response({"ok": True, "data": attempt.status_json()})
 
 

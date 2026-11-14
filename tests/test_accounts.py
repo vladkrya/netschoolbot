@@ -12,6 +12,7 @@ from aiohttp.test_utils import TestClient, TestServer
 
 from app.accounts import WEB_ID_BASE, has_telegram
 from app.accounts.service import link_telegram
+from app.netschool.errors import NetSchoolError, Reason
 from app.web import account as account_web
 from app.web.server import create_app
 from tests.test_telegram_auth import make_widget_data
@@ -297,6 +298,28 @@ class TestSgoLoginFromSite:
             await asyncio.sleep(0.01)
         assert state["status"] == "done"
         assert finished == [("Школа №1", "esia", '{"session": 1}')]
+
+    async def test_login_via_esia_otp_rejection(self, client, monkeypatch):
+        _, body, _ = await register(client)
+        token = body["data"]["token"]
+
+        async def fake_password_login(app, user, otp):
+            await otp("SMS", {"phone": "+7 *** 12", "code_length": 6})
+            raise NetSchoolError(Reason.MFA, "Неверный код подтверждения")
+
+        monkeypatch.setattr("app.netschool.login.password_login", fake_password_login)
+        status, _, _ = await post(client, "/api/sgo/login", {
+            "url": "https://sgo.example.ru", "school": "Школа №1", "method": "esia",
+            "login": "+79990000000", "password": "секрет"}, token)
+        assert status == 200
+        for _ in range(20):
+            state = (await (await client.get(f"{BASE}/api/sgo/login", params={"token": token})).json())["data"]
+            if state["status"] == "otp":
+                break
+            await asyncio.sleep(0.01)
+        res_status, res_body, _ = await post(client, "/api/sgo/login/otp", {"code": "000000"}, token)
+        assert res_status == 400
+        assert "Неверный код" in res_body["error"]
 
     async def test_bad_requests(self, client):
         _, body, _ = await register(client)

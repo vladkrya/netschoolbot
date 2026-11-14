@@ -41,7 +41,7 @@ def _is_next_step(response) -> bool:
 
 
 def _patch_httpx_202() -> None:
-    """202 от ЕСИА на шагах входа приравниваем к 200."""
+    """202 от ЕСИА на шагах входа приравниваем к 200, а тело запроса проверки кода снабжаем JSON."""
     import httpx
 
     if getattr(httpx.AsyncClient.post, "__netschoolbot_patched__", False):
@@ -50,6 +50,18 @@ def _patch_httpx_202() -> None:
     original_post = httpx.AsyncClient.post
 
     async def post(self, url, *args, **kwargs):
+        # На шаге проверки кода (/otp/verify, /totp/verify) netschoolpy передаёт
+        # code только в query params, а в заголовках шлёт Content-Type: application/json.
+        # WAF ЕСИА при пустом теле и заголовке json может возвращать 403.
+        # Дублируем code в json-тело, сохраняя и query params.
+        if (
+            str(url).startswith(ESIA_LOGIN_API)
+            and str(url).endswith("/verify")
+            and kwargs.get("json") is None
+            and kwargs.get("params", {}).get("code")
+        ):
+            kwargs["json"] = {"code": kwargs["params"]["code"]}
+
         response = await original_post(self, url, *args, **kwargs)
         if (
             response.status_code == 202
@@ -58,6 +70,20 @@ def _patch_httpx_202() -> None:
         ):
             logger.info("ЕСИА ответила 202 со следующим шагом — считаем код принятым")
             response.status_code = 200
+        elif (
+            response.status_code in (400, 401, 403)
+            and str(url).startswith(ESIA_LOGIN_API)
+            and str(url).endswith("/verify")
+        ):
+            try:
+                data = response.json()
+                if isinstance(data, dict) and data.get("failed"):
+                    # ЕСИА возвращает 403/400 с телом {"failed": ...}. В netschoolpy
+                    # проверка кода ожидает 200, чтобы прочитать failed и число
+                    # оставшихся попыток; 403 иначе превращается в сырой «403 {...}».
+                    response.status_code = 200
+            except Exception:
+                pass
         return response
 
     post.__netschoolbot_patched__ = True

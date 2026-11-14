@@ -17,6 +17,7 @@ import { pushScreen } from './screens.js';
 import { isHalloween, isMinDesign, isNewDesign } from './appearance.js';
 import { navTabs } from './tabs.js';
 import { textStream } from './text-stream.js';
+import { createStreamingReply } from './ui-motion.js';
 
 const SUGGESTIONS = [
   'Что задали на завтра?',
@@ -325,17 +326,13 @@ function mount(body, { tab = false } = {}) {
     syncSend();
     syncIntro();
     const typing = document.createElement('div');
-    typing.className = 'ai-msg assistant typing enter';
-    typing.innerHTML = '<span></span><span></span><span></span>';
+    typing.className = 'ai-msg assistant enter';
     log.appendChild(typing);
     scroll();
     q('aiSend').disabled = true;
+    const streamer = createStreamingReply(typing);
     const live = textStream((text) => {
-      typing.classList.remove('typing');
-      const content = document.createElement('div');
-      content.className = 'ai-text streaming-reply';
-      content.textContent = text;
-      typing.replaceChildren(content);
+      streamer.update(text);
       scroll();
     });
     try {
@@ -352,7 +349,7 @@ function mount(body, { tab = false } = {}) {
         }),
       });
       await live.finish();
-      typing.querySelector('.streaming-reply')?.classList.remove('streaming-reply');
+      streamer.finish();
       const reply = { role: 'assistant', content: data.reply };
       chat.messages.push(reply);
       chat.left = data.left;
@@ -361,6 +358,7 @@ function mount(body, { tab = false } = {}) {
     } catch (error) {
       // Вопрос без ответа убираем: иначе он ушёл бы в следующий запрос.
       chat.messages.pop();
+      streamer.destroy();
       typing.remove();
       asked.remove();
       input.value = text;
