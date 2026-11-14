@@ -1112,8 +1112,8 @@ export function cycleTypewriter(element, phrases, options = {}) {
     deleteMode = 'select', // 'select' | 'backspace'
   } = options;
 
+  element.setAttribute('aria-label', phrases.join(', '));
   element.innerHTML = `
-    <span class="sr-only">${phrases.join(', ')}</span>
     <span class="typewriter-screen" aria-hidden="true">
       <span class="typewriter-kept"></span>
       <span class="typewriter-caret" data-idle="false"></span>
