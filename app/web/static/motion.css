@@ -552,9 +552,10 @@
 
 /* 6. Kokonut UI Typewriter */
 .typewriter-screen {
-  display: inline-flex;
+  display: inline;
   align-items: baseline;
-  white-space: pre;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .typewriter-kept {
   display: inline;
