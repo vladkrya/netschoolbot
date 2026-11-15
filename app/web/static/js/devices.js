@@ -324,11 +324,6 @@ export async function openQrApproval(code) {
 }
 
 /** Сканер Telegram или веб-камеры: QR-код с экрана входа ведёт на …/?qr=<код>. */
-function canScan() {
-  if (initData && tg?.showScanQrPopup && tg.isVersionAtLeast?.('6.4')) return true;
-  return Boolean(navigator.mediaDevices?.getUserMedia || window.BarcodeDetector);
-}
-
 async function scanQr() {
   if (initData && tg?.showScanQrPopup && tg.isVersionAtLeast?.('6.4')) {
     tg.showScanQrPopup({ text: 'QR-код с экрана входа в дневник' }, (text) => {
@@ -393,7 +388,7 @@ export function openDevices() {
     body.innerHTML = `<p class="muted small device-note device-intro">Здесь все места, где открыт ваш дневник: у каждого видно, как и когда вошли, с какого устройства и откуда.
         Не узнаёте сеанс — завершите его.</p>
       <button class="btn device-add" data-add>${ICONS.plus} Добавить устройство</button>
-      ${canScan() ? `<button class="btn outline device-add" data-scan>${ICONS.qr} Сканировать QR-код</button>` : ''}
+      <button class="btn outline device-add" data-scan>${ICONS.qr} Сканировать QR-код</button>
       ${group('Это устройство', current)}
       ${group(current.length ? 'Другие устройства' : 'Устройства', devices)}
       ${group('Другие доступы', special)}

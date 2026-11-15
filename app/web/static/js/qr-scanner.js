@@ -1,11 +1,13 @@
-// Сканер QR-кода через камеру устройства для веб-приложения (PWA / браузер)
+// Сканер QR-кода через камеру устройства для веб-приложения (PWA / браузер).
 'use strict';
 
 import { banner, esc } from './core.js';
 import { closeSheet, openSheet } from './sheet.js';
+import jsQR from './vendor/jsQR.js';
 
 export function openWebQrScanner(onSuccess) {
   let stream = null;
+  let scanTimer;
   let active = true;
 
   const html = `
@@ -17,7 +19,7 @@ export function openWebQrScanner(onSuccess) {
       <p class="muted small" style="text-align:center; margin-top:10px;">
         Наведите камеру на QR-код для входа
       </p>
-      <input type="file" id="qrFileInput" accept="image/*" capture="environment" style="display:none">
+      <input type="file" id="qrFileInput" accept="image/*" hidden>
       <div style="display:flex; justify-content:center; gap:10px; margin-top:12px;">
         <button class="btn outline" id="qrPickFile" type="button">Загрузить фото QR</button>
         <button class="btn" id="qrCancelBtn" type="button">Отмена</button>
@@ -25,59 +27,65 @@ export function openWebQrScanner(onSuccess) {
     </div>
   `;
 
-  const sheet = openSheet('Сканирование QR-кода', html);
-
-  const cleanup = () => {
+  const stopCamera = () => {
+    clearTimeout(scanTimer);
+    stream?.getTracks().forEach((track) => track.stop());
+    stream = null;
+  };
+  const sheet = openSheet('Сканирование QR-кода', html, { onClose: () => {
     active = false;
-    if (stream) {
-      stream.getTracks().forEach((track) => track.stop());
-      stream = null;
-    }
+    stopCamera();
+  } });
+
+  const canvas = document.createElement('canvas');
+  const context = canvas.getContext('2d', { willReadFrequently: true });
+  const decode = (source, width, height, maxSide) => {
+    const scale = Math.min(1, maxSide / Math.max(width, height));
+    const w = Math.max(1, Math.round(width * scale));
+    const h = Math.max(1, Math.round(height * scale));
+    if (canvas.width !== w) canvas.width = w;
+    if (canvas.height !== h) canvas.height = h;
+    context.drawImage(source, 0, 0, w, h);
+    const pixels = context.getImageData(0, 0, w, h);
+    return jsQR(pixels.data, w, h, { inversionAttempts: 'dontInvert' })?.data;
   };
 
   const handleText = (text) => {
-    let code = '';
-    try {
-      code = new URL(text).searchParams.get('qr') || text;
-    } catch {
-      code = text;
-    }
-    if (code) {
-      cleanup();
-      closeSheet();
-      onSuccess(code);
-      return true;
-    }
-    return false;
+    if (!active || !text) return false;
+    let code = text;
+    try { code = new URL(text).searchParams.get('qr') || text; } catch { /* код без URL */ }
+    closeSheet();
+    onSuccess(code);
+    return true;
   };
 
-  sheet.querySelector('#qrCancelBtn')?.addEventListener('click', () => {
-    cleanup();
-    closeSheet();
-  });
+  sheet.querySelector('#qrCancelBtn').addEventListener('click', closeSheet);
 
   const fileInput = sheet.querySelector('#qrFileInput');
-  sheet.querySelector('#qrPickFile')?.addEventListener('click', () => fileInput?.click());
+  sheet.querySelector('#qrPickFile').addEventListener('click', () => fileInput.click());
 
-  fileInput?.addEventListener('change', async (event) => {
-    const file = event.target.files?.[0];
+  fileInput.addEventListener('change', async () => {
+    const file = fileInput.files?.[0];
     if (!file) return;
-    if ('BarcodeDetector' in window) {
-      try {
-        const detector = new BarcodeDetector({ formats: ['qr_code'] });
-        const img = new Image();
-        img.src = URL.createObjectURL(file);
-        await img.decode();
-        const barcodes = await detector.detect(img);
-        if (barcodes.length && handleText(barcodes[0].rawValue)) {
-          return;
-        }
-      } catch { /* fallback */ }
-    }
-    banner('Не удалось распознать QR-код на фото', true);
+    fileInput.value = '';
+    const url = URL.createObjectURL(file);
+    try {
+      const image = new Image();
+      image.src = url;
+      await image.decode();
+      if (!active || handleText(decode(image, image.naturalWidth, image.naturalHeight, 1600))) return;
+    } catch { /* повреждённое или неподдерживаемое изображение */ }
+    finally { URL.revokeObjectURL(url); }
+    if (active) banner('Не удалось распознать QR-код на фото', true);
   });
 
-  // Запуск камеры
+  const video = sheet.querySelector('#qrVideo');
+  const scanFrame = () => {
+    if (!active) return;
+    if (video.readyState >= 2 && handleText(decode(video, video.videoWidth, video.videoHeight, 960))) return;
+    scanTimer = setTimeout(scanFrame, 150);
+  };
+
   (async () => {
     try {
       if (!navigator.mediaDevices?.getUserMedia) {
@@ -88,32 +96,17 @@ export function openWebQrScanner(onSuccess) {
         audio: false,
       });
       if (!active) {
-        cleanup();
+        stopCamera();
         return;
       }
-      const video = sheet.querySelector('#qrVideo');
-      if (!video) return;
       video.srcObject = stream;
       await video.play();
-
-      if ('BarcodeDetector' in window) {
-        const detector = new BarcodeDetector({ formats: ['qr_code'] });
-        const scanFrame = async () => {
-          if (!active) return;
-          try {
-            const barcodes = await detector.detect(video);
-            if (barcodes.length && handleText(barcodes[0].rawValue)) {
-              return;
-            }
-          } catch { /* frame skip */ }
-          if (active) requestAnimationFrame(scanFrame);
-        };
-        requestAnimationFrame(scanFrame);
-      }
+      scanTimer = setTimeout(scanFrame, 150);
     } catch (err) {
+      stopCamera();
       if (active) {
         const vf = sheet.querySelector('.qr-viewfinder');
-        if (vf) vf.innerHTML = `<p class="empty" style="padding:20px; text-align:center;">${esc(err.message || 'Нет доступа к камере')}</p>`;
+        vf.innerHTML = `<p class="empty" style="padding:20px; text-align:center;">${esc(err.message || 'Нет доступа к камере')}</p>`;
       }
     }
   })();

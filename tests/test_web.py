@@ -1773,7 +1773,9 @@ class TestSecurityHeaders:
         assert page.headers['X-Content-Type-Options'] == 'nosniff'
         assert page.headers['Referrer-Policy'] == 'no-referrer'
         assert "frame-ancestors 'self'" in page.headers['Content-Security-Policy']
+        assert page.headers['Permissions-Policy'] == 'camera=(self), microphone=(), geolocation=(), payment=()'
         api = await client.get(f'{BASE}/api/profile')
+        assert api.headers['Permissions-Policy'].startswith('camera=(),')
         assert api.headers['Cache-Control'] == 'no-store'
 
     async def test_alternate_host_allows_only_main_site_reads(self, client, token):

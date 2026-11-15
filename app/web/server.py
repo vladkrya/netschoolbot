@@ -128,13 +128,14 @@ async def compress_static(request: web.Request, handler):
 # Встраивать страницы можно только себе и веб-версии Telegram: чужой сайт не
 # подложит экран PIN в невидимую рамку и не перехватит нажатия.
 FRAME_ANCESTORS = "frame-ancestors 'self' https://web.telegram.org https://*.telegram.org"
+DISABLED_PERMISSIONS = "microphone=(), geolocation=(), payment=()"
 
 
 def _secure(request: web.Request, headers) -> None:
     headers.setdefault('X-Content-Type-Options', 'nosniff')
     headers.setdefault('Referrer-Policy', 'no-referrer')
     headers.setdefault('Strict-Transport-Security', 'max-age=31536000')
-    headers.setdefault('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=()')
+    headers.setdefault('Permissions-Policy', f'camera=(), {DISABLED_PERMISSIONS}')
     if 'X-Frame-Options' not in headers:
         headers.setdefault('Content-Security-Policy', FRAME_ANCESTORS)
     # Личные данные и ключи входа не оседают в кэшах браузера и прокси.
@@ -551,6 +552,7 @@ async def index(request: web.Request) -> web.Response:
             "icon_180": await app_icon.icon_url(context, _base(request), user.telegram_id, 180) if user else "",
         },
     )
+    response.headers["Permissions-Policy"] = f"camera=(self), {DISABLED_PERMISSIONS}"
     # В поиск — только чистая главная: адрес с токеном или кодом входа
     # (а его могли где-то опубликовать) не индексируется.
     if token or request.query_string:
