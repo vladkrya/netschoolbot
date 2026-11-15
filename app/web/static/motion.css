@@ -558,21 +558,6 @@
 }
 
 /* 6. Kokonut UI Typewriter */
-.typewriter-cycle {
-  position: relative;
-  overflow-anchor: none;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-}
-.typewriter-cycle > .typewriter-screen:not(.typewriter-measure) {
-  position: absolute;
-  inset: 0;
-}
-.typewriter-cycle > .typewriter-measure {
-  grid-area: 1 / 1;
-  visibility: hidden;
-}
-
 .typewriter-screen {
   display: inline;
   align-items: baseline;

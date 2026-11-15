@@ -1129,19 +1129,6 @@ export function cycleTypewriter(element, phrases, options = {}) {
     </span>
   `;
 
-  element.classList.add('typewriter-cycle');
-  // Size the heading from the wrapped phrases, independent of the typing frame.
-  for (const phrase of phrases) {
-    const measure = document.createElement('span');
-    measure.className = 'typewriter-screen typewriter-measure';
-    measure.setAttribute('aria-hidden', 'true');
-    const cursor = document.createElement('span');
-    cursor.className = 'typewriter-caret';
-    measure.textContent = phrase;
-    measure.appendChild(cursor);
-    element.appendChild(measure);
-  }
-
   const keptEl = element.querySelector('.typewriter-kept');
   const caretEl = element.querySelector('.typewriter-caret');
   const selEl = element.querySelector('.typewriter-selected');

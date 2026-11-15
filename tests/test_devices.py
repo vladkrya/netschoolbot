@@ -160,7 +160,7 @@ async def test_native_app_shows_platform_model_and_version(client, token, app_co
     current = next(row for row in (await response.json())["data"]["items"] if row["current"])
     assert current["label"] == "Приложение на iOS"
     assert current["details"] == "iPhone17,2 · версия приложения 1.1.7"
-    assert current["ip"] == "95.24.10.20"
+    assert current["ip"] == "95.24.*.*"
 
 
 async def test_new_telegram_button_does_not_create_legacy_links(client, app_context, users):

@@ -17,6 +17,8 @@ from __future__ import annotations
 
 import base64
 import calendar
+import ipaddress
+import re
 import time
 
 from aiogram.types import BufferedInputFile
@@ -37,16 +39,23 @@ _touched: dict[str, float] = {}
 
 
 def masked_ip(request: web.Request) -> str:
-    """Примерный адрес браузера — «95.24.*.*». Нативные приложения показывают
-    точный IP, чтобы владелец мог узнать свой сеанс."""
+    """Примерный адрес устройства — «95.24.*.*»."""
     return mask_ip(request.headers.get("X-Real-IP") or request.remote or "")
 
 
 def mask_ip(ip: str) -> str:
-    if ":" in ip:
-        return ":".join(ip.split(":")[:2]) + ":…"
-    parts = ip.split(".")
-    return f"{parts[0]}.{parts[1]}.*.*" if len(parts) == 4 else ""
+    ip = ip.strip()
+    if re.fullmatch(r"(?:[0-9]{1,3}\.){2}\*\.\*|(?:[0-9a-fA-F]{1,4}:){1,2}…", ip):
+        return ip
+    try:
+        address = ipaddress.ip_address(ip)
+    except ValueError:
+        return ""
+    if isinstance(address, ipaddress.IPv6Address):
+        if address.ipv4_mapped is None:
+            return ":".join(ipaddress.IPv6Address(int(address)).exploded.split(":")[:2]) + ":…"
+        address = address.ipv4_mapped
+    return ".".join(str(address).split(".")[:2]) + ".*.*"
 
 
 async def touch(request: web.Request, token: str) -> None:
@@ -72,7 +81,7 @@ async def touch(request: web.Request, token: str) -> None:
     if len(_touched) > 50_000:
         _touched.clear()
     app = context(request)
-    ip = (request.headers.get("X-Real-IP") or request.remote or "")[:64] if client in ('ios', 'android') else masked_ip(request)
+    ip = masked_ip(request)
     owner = await app.miniapp.touch_token(
         token, label, model=" · ".join(part for part in (model, version) if part), ip=ip)
     # «Активность» и название устройства — сразу на открытых «Устройствах».
@@ -110,7 +119,7 @@ def build(rows: list[dict], current: str, in_telegram: bool, clients: list[dict]
             items.append({
                 "id": row["id"], "kind": "device", "label": row["label"] or "Браузер",
                 "name": row.get("name") or "", "method": row.get("method") or "",
-                "details": row.get("model") or "", "ip": row.get("ip") or "",
+                "details": row.get("model") or "", "ip": mask_ip(row.get("ip") or ""),
                 "current": row["token"] == current, "created": _when(row["created_at"]),
                 "last_used": _when(row["last_used"]),
             })
@@ -118,7 +127,7 @@ def build(rows: list[dict], current: str, in_telegram: bool, clients: list[dict]
         if group:
             used = [_when(row["last_used"]) for row in group if row["last_used"]]
             extra = {"clients": [{
-                "label": client["client"], "details": client["model"], "ip": client["ip"],
+                "label": client["client"], "details": client["model"], "ip": mask_ip(client["ip"] or ""),
                 "first_seen": client["first_seen"], "last_seen": client["last_seen"],
             } for client in clients or []]} if kind == LINKS else {}
             items.append({**extra,
