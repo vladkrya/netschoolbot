@@ -193,3 +193,30 @@ async def test_parent_school_is_taken_from_selected_child(app_context, users, mo
     scope = await mod.scope_for(app_context, user, require_enabled=False)
     assert scope.school_id == 18
     assert scope.class_key == "name:8а"
+
+
+async def test_owner_can_grant_school_moderation_by_account_number(client, app_context, users, monkeypatch):
+    owner = await users.save(make_user(1))
+    target = await users.save(make_user(2))
+    scope = mod.Scope("sgo.example.ru", 17, mod.school_year(owner.today()), "name:8а", "8А")
+
+    async def resolve(app, user, *, require_enabled=True):
+        assert user.telegram_id == target.telegram_id
+        assert not require_enabled
+        return scope
+
+    monkeypatch.setattr(mod, "scope_for", resolve)
+    account_no = (await app_context.db.fetch_one(
+        "SELECT account_no FROM users WHERE telegram_id=?", (target.telegram_id,),
+    ))["account_no"]
+    path = "/mini/api/moderation/quick-grant"
+    headers = {"X-Netschool-Token": await app_context.miniapp.issue_token(target.telegram_id)}
+    assert (await client.post(path, headers=headers, json={"account_no": account_no})).status == 403
+    headers["X-Netschool-Token"] = await app_context.miniapp.issue_token(owner.telegram_id)
+    for _ in range(2):
+        assert (await client.post(path, headers=headers, json={"account_no": account_no})).status == 200
+    school_scope = replace(scope, class_key="")
+    assert await mod.allowed(app_context, target.telegram_id, school_scope, "bells")
+    assert not await mod.allowed(app_context, target.telegram_id, school_scope, "lessons")
+    row = await app_context.db.fetch_one("SELECT count(*) AS total FROM moderation_roles")
+    assert row["total"] == 1

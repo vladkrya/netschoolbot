@@ -171,6 +171,40 @@ async def resolve_school(request):
     return response({"installation": scope.installation, "school_id": scope.school_id, "title": target.school.name})
 
 
+@routes.post("/api/moderation/quick-grant")
+async def quick_grant(request):
+    app, user = context(request), current_user(request)
+    if not access.owner(app, user.telegram_id):
+        return json_error("Доступно владельцу", status=403)
+    account_no = (await body(request)).get("account_no")
+    if type(account_no) is not int or not 0 < account_no < 2**63:
+        return json_error("Введите номер аккаунта СГОшки")
+    row = await app.db.fetch_one("SELECT telegram_id FROM users WHERE account_no=?", (account_no,))
+    target = await app.users.get(row["telegram_id"]) if row else None
+    if not target:
+        return json_error("Аккаунт не найден", status=404)
+    scope = await mod.scope_for(app, target, require_enabled=False)
+    if not scope:
+        return json_error("Школа не подтверждена. Попроси пользователя обновить дневник в СГОшке.")
+    key = (target.telegram_id, *scope.school, scope.year, "")
+    async with app.db.transaction() as db:
+        await db.execute(
+            """INSERT INTO moderation_schools VALUES (?, ?, ?, 1)
+               ON CONFLICT(installation, school_id) DO UPDATE SET enabled=1""",
+            (*scope.school, target.school.name),
+        )
+        existing = await app.db.fetch_one(
+            """SELECT permissions FROM moderation_roles
+               WHERE user_id=? AND installation=? AND school_id=? AND school_year=? AND class_key=?""", key,
+        )
+        if not existing:
+            await db.execute(
+                "INSERT INTO moderation_roles VALUES (?, ?, ?, ?, ?, ?)",
+                (*key, json.dumps(["announce", "bells", "read", "reports"])),
+            )
+    return response({"installation": scope.installation, "school_id": scope.school_id, "title": target.school.name})
+
+
 @routes.post("/api/moderation/roles")
 async def roles(request):
     app, user = context(request), current_user(request)

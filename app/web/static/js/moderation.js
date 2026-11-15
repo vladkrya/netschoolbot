@@ -18,6 +18,16 @@ export async function reportChange(id, reason) {
   await post(`/changes/${id}/report`, { reason });
 }
 
+function quickGrantForm() {
+  return `<form class="card" data-form="quick-grant">
+    <h3>Выдать модератора школы</h3>
+    <label>Номер аккаунта СГОшки <input name="account_no" type="number" min="1" required></label>
+    <button class="btn">Выдать модератора</button>
+    <p class="muted small">Школу определим по аккаунту и подключим её расписание.</p>
+    <p data-grant-result role="status" hidden></p>
+  </form>`;
+}
+
 function schoolForm() {
   return `<form class="card" data-form="schools"><h3>Подключение школы</h3>
     <label>Номер аккаунта для поиска <input name="find_account" type="number" min="1"></label>
@@ -151,11 +161,11 @@ export function openModeration() {
       if (scope?.class_key) classes[scope.class_key] ||= scope.class_label;
       for (const role of data.roles || []) if (role.class_key) classes[role.class_key] ||= role.class_key;
       const tabs = scope ? ['Расписание', 'Правки', 'История', ...(data.owner ? ['Права'] : [])] : [];
-      panel.innerHTML = (data.owner ? schoolForm() + `<label>Школа <select data-school aria-label="Школа">
+      panel.innerHTML = (data.owner ? quickGrantForm() + '<details class="card"><summary>Подключить школу вручную</summary>' + schoolForm() + '</details>' + `<label>Школа <select data-school aria-label="Школа">
         <option value="">Моя школа</option>${data.schools.map(school => {
           const query = new URLSearchParams({ installation: school.installation, school_id: school.school_id }).toString();
           return `<option value="${esc(query)}" ${query === selection ? 'selected' : ''}>${esc(school.title)}</option>`;
-        }).join('')}</select></label>` : '') + (!scope ? '<p class="muted">Школа или права доступа пока не настроены.</p>' :
+        }).join('')}</select></label>` : '') + (!scope ? '<p class="muted">После выдачи прав школа появится в списке.</p>' :
         `<div class="chips" aria-label="Разделы модерации">${tabs.map((label, index) =>
           `<button type="button" class="chip ${index === activeTab ? 'active' : ''}" aria-pressed="${index === activeTab}" data-tab-index="${index}">${label}</button>`).join('')}</div>
          <div data-pane="0" ${activeTab === 0 ? '' : 'hidden'}>${lessonList(data, classes)}</div>
@@ -230,7 +240,10 @@ export function openModeration() {
     const fields = Object.fromEntries(f);
     let path = '/changes';
     let payload = { ...data.scope, ...fields, kind };
-    if (kind === 'schools') {
+    if (kind === 'quick-grant') {
+      path = '/quick-grant';
+      payload = { account_no: Number(fields.account_no) };
+    } else if (kind === 'schools') {
       path = '/schools';
       payload = { ...fields, school_id: Number(fields.school_id), enabled: f.has('enabled') };
     } else if (kind === 'roles') {
@@ -271,14 +284,29 @@ export function openModeration() {
     }
     if (event.submitter) event.submitter.disabled = true;
     try {
-      await post(path, payload);
+      const result = await post(path, payload);
+      if (kind === 'quick-grant') {
+        selection = new URLSearchParams({
+          installation: result.data.installation, school_id: result.data.school_id,
+        }).toString();
+        activeTab = 3;
+        await load();
+        banner(`Права выданы · ${result.data.title}`);
+        return;
+      }
       if (kind === 'schools') selection = new URLSearchParams({
         installation: payload.installation.trim().toLowerCase(), school_id: payload.school_id,
       }).toString();
       banner('Сохранено');
       await load();
     } catch (error) {
-      banner(error.message);
+      const status = form.querySelector('[data-grant-result]');
+      if (status) {
+        status.textContent = error.message;
+        status.hidden = false;
+      } else {
+        banner(error.message);
+      }
     } finally {
       if (event.submitter) event.submitter.disabled = false;
     }
