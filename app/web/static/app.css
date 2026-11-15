@@ -3105,3 +3105,30 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
 .au-control .field { width: 100%; min-width: 0; margin: 0; }
 .au-security { display: grid; gap: 8px; }
 .au-danger { color: var(--g2); }
+
+.moderation-panel form {
+  display: grid;
+  gap: 10px;
+}
+.moderation-panel form label {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.moderation-panel form :is(input:not([type=checkbox]), select, textarea) {
+  max-width: 100%;
+  padding: 6px 8px;
+  font: inherit;
+  color: inherit;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.moderation-panel :is(form, section, details) {
+  margin-block: 8px;
+}
+.moderation-notice summary,
+.moderation-panel summary {
+  cursor: pointer;
+}

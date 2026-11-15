@@ -28,7 +28,7 @@ from ..domain import formatting, insights, review
 from ..domain.models import ApiMode, MarkKind, NotificationPrefs, Student, User
 from ..domain.periods import Quarter, class_average_period, current_period, periods_from_terms, resolve_periods
 from ..domain.vacations import on_vacation, vacations
-from ..domain.records import AbsenceRecord, HomeworkRecord, MarkEvent, RecentEvents
+from ..domain.records import AbsenceRecord, DiaryDay, HomeworkRecord, MarkEvent, RecentEvents
 from .outage import OutageMonitor
 from ..netschool.errors import NetSchoolError, Reason
 from ..netschool.mapping import absences_from_days, is_placeholder_name
@@ -161,8 +161,10 @@ class UserWatcher:
         homework_seen: Callable[[User, list[HomeworkRecord]], None] | None = None,
         keep_signed_in: Callable[[User], Awaitable[bool]] | None = None,
         weekly_review: Callable[[str], Awaitable[str | None]] | None = None,
+        diary_observer: Callable[[User, list[DiaryDay]], Awaitable[None]] | None = None,
     ) -> None:
         self._user_id = user_id
+        self._diary_observer = diary_observer
         # «Не выходить из аккаунта» для Госуслуг (AppContext.keep_signed_in).
         self._keep_signed_in = keep_signed_in
         self._last_keep_attempt: float | None = None
@@ -270,6 +272,8 @@ class UserWatcher:
             return
         # Один запрос дневника на оценки и задания сразу, а не по запросу на каждое.
         days = await self._diary.fetch_diary(user)
+        if self._diary_observer is not None:
+            await self._diary_observer(user, days)
         marks = [record for day in days for record in day.marks]
         homework = [record for day in days for record in day.homework]
         homework = await self._with_homework_comments(user, homework)
@@ -756,6 +760,8 @@ class UserWatcher:
 
     async def _check_child(self, child: User, student: Student) -> None:
         days = await self._diary.fetch_diary(child)
+        if self._diary_observer is not None:
+            await self._diary_observer(child, days)
         marks = [record for day in days for record in day.marks]
         homework = [record for day in days for record in day.homework]
         homework = await self._with_homework_comments(child, homework)
@@ -1099,6 +1105,7 @@ class WatcherRegistry:
         # (задаёт AppContext.create).
         self.keep_signed_in: Callable[[User], Awaitable[bool]] | None = None
         self.weekly_review: Callable[[str], Awaitable[str | None]] | None = None
+        self.diary_observer: Callable[[User, list[DiaryDay]], Awaitable[None]] | None = None
         self._tasks: dict[int, asyncio.Task] = {}
         self._lock = asyncio.Lock()
 
@@ -1140,6 +1147,7 @@ class WatcherRegistry:
                 homework_seen=self.homework_seen,
                 keep_signed_in=self.keep_signed_in,
                 weekly_review=self.weekly_review,
+                diary_observer=self.diary_observer,
             )
             task = asyncio.create_task(watcher.run(), name=f"watch-{user_id}")
             self._tasks[user_id] = task

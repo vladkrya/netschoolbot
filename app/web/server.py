@@ -25,7 +25,7 @@ from aiohttp import web
 
 from .. import __version__
 from ..context import AppContext
-from . import account, admin, admin_users, android_updates, api, app_icon, assistant, bugreport, caldav, captcha_proxy, clock, devices, extras, live, lock, passkeys, retro, schedule_import, solver, status, sync
+from . import account, admin, admin_users, android_updates, api, app_icon, assistant, bugreport, caldav, captcha_proxy, clock, devices, extras, live, lock, moderation, passkeys, retro, schedule_import, solver, status, sync
 from .api import BOT, CONTEXT
 from . import public_api
 
@@ -237,6 +237,7 @@ def create_app(context: AppContext, bot=None) -> web.Application:
     inner.add_routes(solver.routes)
     inner.add_routes(extras.routes)
     inner.add_routes(schedule_import.routes)
+    inner.add_routes(moderation.routes)
     inner.add_routes(captcha_proxy.routes)
     inner.add_routes(status.routes)
     inner.add_routes(retro.routes)

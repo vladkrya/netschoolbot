@@ -135,7 +135,7 @@ function render(monday) {
           ? `<button class="sched-toggle" data-toggle="${iso}" aria-expanded="${open}" aria-controls="sched-${iso}">${lessons.length} ${lessonsWord(lessons.length)} <span class="sched-chevron" aria-hidden="true">▾</span></button>`
           : '<div class="muted small sched-toggle">Уроков нет</div>'}
         ${lessons.length ? `<div id="sched-${iso}" class="sched-collapse${open ? ' open' : ''}"${open ? '' : ' inert'}><div class="sched-collapse-inner"><div class="sched-list">
-            ${lessons.map((l) => `<div class="sched-lesson"><span class="lc-num">${esc(lessonNo(l))}</span><span>${esc(l.subject)}${l.is_elective ? '<span class="elective-badge">Внеурочка</span>' : ''}</span></div>`).join('')}
+            ${lessons.map((l) => `<div class="sched-lesson"><span class="lc-num">${esc(lessonNo(l))}</span><span>${esc(l.subject)}${l.moderation_cancelled ? ' · Отменён' : ''}${l.is_elective ? '<span class="elective-badge">Внеурочка</span>' : ''}</span></div>`).join('')}
             <button class="btn outline" data-goto="${iso}">Перейти ко дню</button>
           </div></div></div>` : ''}
       </div>`);
@@ -222,7 +222,7 @@ function dayBells(lessons) {
   const rows = new Map();
   for (const lesson of lessons) {
     // Свои правки — не звонки школы.
-    if (lesson.addedBy || lesson.editedBy || lesson.imported) continue;
+    if (lesson.moderation_cancelled || lesson.addedBy || lesson.editedBy || lesson.imported) continue;
     const start = minutesOf(lesson.start);
     const end = minutesOf(lesson.end);
     if (start == null || end == null || end <= start) continue;
@@ -370,7 +370,9 @@ export function bellsHtml(monday) {
   const today = isoToday();
   const now = new Date();
   const minute = now.getHours() * 60 + now.getMinutes();
-  const shifts = hasSchoolBells() ? shiftsOf(monday) : null;
+  const moderated = Array.from({ length: 7 }, (_, index) => dayData(addDays(monday, index)))
+    .some(day => day?.moderation_bells);
+  const shifts = !moderated && hasSchoolBells() ? shiftsOf(monday) : null;
   const groups = shifts ? schoolGroups(monday, shifts.shown) : bellGroups(monday);
   if (!groups.length) {
     return `<div class="card bells-card"><div class="muted">На этой неделе уроков нет — звонки появятся вместе с расписанием.</div></div>`;

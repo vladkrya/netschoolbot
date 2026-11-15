@@ -1,0 +1,287 @@
+import { api, banner, esc, showFailure } from './core.js';
+import { pushScreen } from './screens.js';
+
+const root = '/api/moderation';
+const reasons = { time: 'Неверное время', room: 'Неверный кабинет', subject: 'Неверный предмет', cancelled: 'Уточнить отмену' };
+const post = (path, body) => api(root + path, { method: 'POST', body: JSON.stringify(body) });
+
+export function noticesHtml(notices = [], readonly = false) {
+  return notices.map(({ id, text }) => `<section class="card moderation-notice">
+    <b>${esc(text)}</b><p class="muted small">Изменение внесено в СГОшке.</p>
+    ${readonly ? '' : `<details><summary>Сообщить об ошибке</summary>
+      <div class="chips">${Object.entries(reasons).map(([key, label]) =>
+        `<button class="chip" type="button" data-report="${id}" data-reason="${key}">${label}</button>`).join('')}</div>
+    </details>`}</section>`).join('');
+}
+
+export async function reportChange(id, reason) {
+  await post(`/changes/${id}/report`, { reason });
+}
+
+function schoolForm() {
+  return `<form class="card" data-form="schools"><h3>Подключение школы</h3>
+    <label>Номер аккаунта для поиска <input name="find_account" type="number" min="1"></label>
+    <button type="button" class="chip" data-resolve-school>Найти школу</button>
+    <label>Адрес СГО без протокола <input name="installation" required maxlength="250"></label>
+    <label>ID школы в СГО <input name="school_id" type="number" min="1" required></label>
+    <label>Название <input name="title" required maxlength="150"></label>
+    <label><input name="enabled" type="checkbox" checked> Собирать расписание</label>
+    <button class="chip">Сохранить</button></form>`;
+}
+
+function permissionForm(data, classes, role = {}) {
+  const options = Object.entries(classes).map(([key, label]) =>
+    `<option value="${esc(key)}" ${key === role.class_key ? 'selected' : ''}>${esc(label)}</option>`).join('');
+  return `<form class="card" data-form="roles"><h3>${role.account_no ? `Права аккаунта #${role.account_no}` : 'Назначить модератора'}</h3>
+    <label>Номер аккаунта <input name="account_no" type="number" min="1" value="${role.account_no || ''}" required></label>
+    <label>Область <select name="class_key"><option value="">Вся школа</option>${options}</select></label>
+    ${Object.entries(data.permissions).map(([key, label]) =>
+      `<label class="switch-row"><span>${esc(label)}</span><input type="checkbox" name="permission" value="${key}"
+        ${role.permissions?.includes(key) ? 'checked' : ''} ${role.class_key && key === 'bells' ? 'disabled' : ''}></label>`).join('')}
+    <button class="chip">Сохранить права</button>
+    ${role.account_no ? '<button class="chip" name="revoke" value="1">Отозвать права</button>' : ''}</form>`;
+}
+
+function shiftForm(classes) {
+  return `<form class="card" data-form="shift"><h3>Смена класса</h3>
+    <label>Класс <select name="class_key" required>${Object.entries(classes).map(([key, label]) =>
+      `<option value="${esc(key)}">${esc(label)}</option>`).join('')}</select></label>
+    <label>Смена <select name="shift"><option value="0">Неизвестна</option>
+      <option value="1">Первая</option><option value="2">Вторая</option></select></label>
+    <button class="chip">Сохранить</button></form>`;
+}
+
+function bellsForm() {
+  return `<form class="card" data-form="bells"><h3>Звонки</h3>
+    <label>С <input name="date" type="date" required></label>
+    <label>По <input name="end_date" type="date"> <span class="muted small">Для одного дня оставьте пустым</span></label>
+    <label><input name="school_days_only" type="checkbox" checked> Понедельник — пятница, если выбран период</label>
+    <label>Смена <select name="shift"><option value="0">Все смены</option>
+      <option value="1">Первая</option><option value="2">Вторая</option></select></label>
+    <label>Сколько уроков оставить <input name="limit" type="number" min="0" max="20" placeholder="Все"></label>
+    <details><summary>Задать время отдельных уроков</summary>
+      ${Array.from({ length: 20 }, (_, index) => `<label>${index + 1}-й урок
+        <input type="time" name="start${index + 1}" aria-label="Начало ${index + 1}-го урока">
+        <input type="time" name="end${index + 1}" aria-label="Конец ${index + 1}-го урока"></label><br>`).join('')}
+    </details>
+    <button class="chip">Проверить и опубликовать</button></form>`;
+}
+
+function lessonForm(lesson, index, lessons) {
+  const swaps = lessons.filter(other => other.date === lesson.date && other.class_key === lesson.class_key && other.number !== lesson.number);
+  const swapForm = swaps.length ? `<form class="card" data-form="swap" data-lesson-index="${index}">
+    <label>Поменять местами с уроком <select name="swap_key">${swaps.map(other =>
+      `<option value="${esc(other.lesson_key)}">${other.number}. ${esc(other.subject)} · ${esc(other.start)}</option>`
+    ).join('')}</select></label><button class="chip">Поменять местами</button></form>` : '';
+  return `<form class="card" data-form="lesson" data-lesson-index="${index}">
+    <label>Предмет <input name="subject" value="${esc(lesson.subject)}" maxlength="100" required></label>
+    <label>Кабинет <input name="room" value="${esc(lesson.room || '')}" maxlength="100"></label>
+    <label>Номер <input name="number" type="number" min="1" max="20" value="${lesson.number}" required></label>
+    <label>Новое время при переносе <input name="start" type="time" aria-label="Начало">
+      <input name="end" type="time" aria-label="Конец"></label>
+    <label><input name="cancelled" type="checkbox"> Отменить урок</label>
+    <label>Повторять каждую неделю по <input name="end_date" type="date"></label>
+    <button class="chip">Опубликовать</button></form>${swapForm}`;
+}
+
+function lessonList(data, classes) {
+  const groups = new Map(Object.keys(classes).map(key => [key, []]));
+  data.lessons.forEach((lesson, index) => groups.get(lesson.class_key).push({ lesson, index }));
+  return `<section class="card"><h3>Расписание классов</h3>
+    <p class="muted small">Показаны уроки, полученные при синхронизации. Расписание подгрупп может быть неполным.</p>
+    ${[...groups.entries()].map(([key, items]) => `<details>
+      <summary>${esc(classes[key])} · ${items.length ? new Date(Math.max(...items.map(({ lesson }) => lesson.seen_at)) * 1000)
+        .toLocaleString('ru-RU') : 'Нет уроков'}</summary>
+      ${items.sort((a, b) => a.lesson.date.localeCompare(b.lesson.date) || a.lesson.number - b.lesson.number)
+        .map(({ lesson, index }) => {
+          const shown = lesson.effective || lesson;
+          const time = shown.moderation_cancelled ? 'Отменён' : [shown.start, shown.end].filter(Boolean).join('–');
+          return `<details><summary>${esc(lesson.date)} · ${shown.number}. ${esc(shown.subject)}
+           · ${esc(time)} ${esc(shown.room || '')}</summary>
+           ${(data.school_rights.includes('lessons') || (key === data.scope.class_key && data.class_rights.includes('lessons')))
+             ? lessonForm(lesson, index, data.lessons) : ''}</details>`;
+        }).join('')}</details>`).join('')}
+  </section>`;
+}
+
+function addLessonForm(data, classes) {
+  const options = Object.entries(classes).filter(([key]) =>
+    data.school_rights.includes('lessons') || key === data.scope.class_key);
+  if (!options.length) return '';
+  return `<form class="card" data-form="add"><h3>Добавить урок</h3>
+    <label>Класс <select name="class_key">${options.map(([key, label]) =>
+      `<option value="${esc(key)}">${esc(label)}</option>`).join('')}</select></label>
+    <label>Дата <input name="date" type="date" required></label>
+    <label>Предмет <input name="subject" maxlength="100" required></label>
+    <label>Кабинет <input name="room" maxlength="100"></label>
+    <label>Номер <input name="number" type="number" min="1" max="20" required></label>
+    <label>Время <input name="start" type="time" aria-label="Начало" required>
+      <input name="end" type="time" aria-label="Конец" required></label>
+    <label>Повторять каждую неделю по <input name="end_date" type="date"></label>
+    <button class="chip">Опубликовать</button></form>`;
+}
+
+function announceForm(data, classes) {
+  const school = data.school_rights.includes('announce');
+  const options = Object.entries(classes).filter(([key]) => school || key === data.scope.class_key)
+    .map(([key, label]) => `<option value="${esc(key)}">${esc(label)}</option>`).join('');
+  return `<form class="card" data-form="announce"><h3>Объявление</h3>
+    <label>Дата <input name="date" type="date" required></label>
+    <label>Для кого <select name="class_key">${school ? '<option value="">Вся школа</option>' : ''}${options}</select></label>
+    <label>Текст <textarea name="text" maxlength="1000" required></textarea></label>
+    <button class="chip">Опубликовать</button></form>`;
+}
+
+export function openModeration() {
+  const panel = pushScreen('Модерация');
+  panel.classList.add('moderation-panel');
+  panel.innerHTML = '<p class="muted">Загрузка…</p>';
+  let selection = '';
+  let activeTab = 0;
+  let data;
+  let loadId = 0;
+  const load = async () => {
+    const id = ++loadId;
+    try {
+      const result = await api(root + (selection ? `?${selection}` : ''));
+      if (id !== loadId) return;
+      data = result.data;
+      const scope = data.scope;
+      const classes = Object.fromEntries(data.lessons?.map(lesson => [lesson.class_key, lesson.class_label]) || []);
+      if (scope?.class_key) classes[scope.class_key] ||= scope.class_label;
+      for (const role of data.roles || []) if (role.class_key) classes[role.class_key] ||= role.class_key;
+      const tabs = scope ? ['Расписание', 'Правки', 'История', ...(data.owner ? ['Права'] : [])] : [];
+      panel.innerHTML = (data.owner ? schoolForm() + `<label>Школа <select data-school aria-label="Школа">
+        <option value="">Моя школа</option>${data.schools.map(school => {
+          const query = new URLSearchParams({ installation: school.installation, school_id: school.school_id }).toString();
+          return `<option value="${esc(query)}" ${query === selection ? 'selected' : ''}>${esc(school.title)}</option>`;
+        }).join('')}</select></label>` : '') + (!scope ? '<p class="muted">Школа или права доступа пока не настроены.</p>' :
+        `<div class="chips" aria-label="Разделы модерации">${tabs.map((label, index) =>
+          `<button type="button" class="chip ${index === activeTab ? 'active' : ''}" aria-pressed="${index === activeTab}" data-tab-index="${index}">${label}</button>`).join('')}</div>
+         <div data-pane="0" ${activeTab === 0 ? '' : 'hidden'}>${lessonList(data, classes)}</div>
+         <div data-pane="1" ${activeTab === 1 ? '' : 'hidden'}>
+           ${data.school_rights.includes('bells') ? bellsForm() : ''}
+           ${[...data.school_rights, ...data.class_rights].includes('lessons') ? addLessonForm(data, classes) : ''}
+           ${[...data.school_rights, ...data.class_rights].includes('announce') ? announceForm(data, classes) : ''}
+         </div>
+         <div data-pane="2" ${activeTab === 2 ? '' : 'hidden'} class="card"><h3>История и сообщения об ошибках</h3>
+           ${data.history.map(item => `<p><b>${esc(item.date)}${item.end_date !== item.date ? ` — ${esc(item.end_date)}` : ''}</b> · ${esc(item.payload.text || item.payload.summary ||
+             (item.payload.limit === null ? 'Изменены звонки' : `Количество уроков: ${item.payload.limit}`))}
+             ${item.revoked_at ? ' · Отозвано' : item.can_revoke ? `<button class="chip" data-revoke="${item.id}">Отозвать</button>` : ''}
+             ${item.reports?.map(report => `<br>${esc(reasons[report.reason])} · ${report.count}`).join('') || ''}</p>`).join('') || '<p>Правок пока нет.</p>'}
+         </div>
+         ${data.owner ? `<div data-pane="3" ${activeTab === 3 ? '' : 'hidden'}>${permissionForm(data, classes)}
+           ${data.roles.map(role => permissionForm(data, classes, role)).join('')}
+           ${Object.keys(classes).length ? shiftForm(classes) : ''}</div>` : ''}`);
+    } catch (error) {
+      if (id === loadId) showFailure(panel, error, load);
+    }
+  };
+  panel.addEventListener('change', event => {
+    if (event.target.matches('[data-form="roles"] select[name="class_key"]')) {
+      const bells = event.target.form.querySelector('[name="permission"][value="bells"]');
+      bells.disabled = Boolean(event.target.value);
+      if (bells.disabled) bells.checked = false;
+    }
+    if (event.target.matches('[data-school]')) {
+      selection = event.target.value;
+      activeTab = 0;
+      load();
+    }
+  });
+  panel.addEventListener('click', async event => {
+    const resolve = event.target.closest('[data-resolve-school]');
+    if (resolve) {
+      const form = resolve.form;
+      resolve.disabled = true;
+      try {
+        const { data: school } = await post('/schools/resolve', { account_no: Number(form.elements.find_account.value) });
+        ['installation', 'school_id', 'title'].forEach(key => { form.elements[key].value = school[key]; });
+      } catch (error) {
+        banner(error.message);
+      } finally {
+        resolve.disabled = false;
+      }
+      return;
+    }
+    const tab = event.target.closest('[data-tab-index]');
+    const revoke = event.target.closest('[data-revoke]');
+    if (tab) {
+      activeTab = Number(tab.dataset.tabIndex);
+      panel.querySelectorAll('[data-pane]').forEach(pane => { pane.hidden = pane.dataset.pane !== tab.dataset.tabIndex; });
+      panel.querySelectorAll('[data-tab-index]').forEach(button => {
+        button.classList.toggle('active', button === tab);
+        button.setAttribute('aria-pressed', String(button === tab));
+      });
+    }
+    if (revoke && window.confirm('Отозвать эту правку?')) {
+      try {
+        await api(root + '/changes/' + revoke.dataset.revoke, { method: 'DELETE' });
+        await load();
+      } catch (error) { banner(error.message); }
+    }
+  });
+  panel.addEventListener('submit', async event => {
+    const form = event.target;
+    const kind = form.dataset.form;
+    if (!kind) return;
+    event.preventDefault();
+    const f = new FormData(form);
+    const fields = Object.fromEntries(f);
+    let path = '/changes';
+    let payload = { ...data.scope, ...fields, kind };
+    if (kind === 'schools') {
+      path = '/schools';
+      payload = { ...fields, school_id: Number(fields.school_id), enabled: f.has('enabled') };
+    } else if (kind === 'roles') {
+      path = '/roles';
+      payload = { ...payload, account_no: Number(fields.account_no),
+        permissions: event.submitter?.name === 'revoke' ? [] : f.getAll('permission') };
+    } else if (kind === 'shift') {
+      path = '/shift';
+      payload.shift = Number(fields.shift);
+    } else if (kind === 'bells') {
+      const slots = {};
+      for (let number = 1; number <= 20; number += 1) {
+        const pair = [fields['start' + number], fields['end' + number]];
+        if (pair.some(Boolean)) slots[number] = pair;
+      }
+      const limit = fields.limit === '' ? null : Number(fields.limit);
+      const shift = Number(fields.shift);
+      const audience = ['Вся школа', 'Первая смена', 'Вторая смена'][shift];
+      const changes = Object.entries(slots).map(([number, pair]) => `${number}-й урок: ${pair.join('–')}`);
+      if (limit !== null) changes.push(limit ? `Уроки начиная с ${limit + 1}-го отменены` : 'Все уроки отменены');
+      if (!changes.length) { banner('Укажите звонки или количество уроков'); return; }
+      const period = fields.end_date && fields.end_date !== fields.date;
+      const dateLabel = period ? `${fields.date} — ${fields.end_date}${f.has('school_days_only') ? ' (Пн–Пт)' : ''}` : fields.date;
+      if (shift) changes.push("Правило применяется к классам с назначенной сменой");
+      if (!window.confirm([dateLabel, audience, ...changes].join('\n'))) return;
+      payload = { ...data.scope, kind, date: fields.date, end_date: fields.end_date,
+        school_days_only: f.has('school_days_only'), class_key: '', shift, limit, slots };
+    } else if (kind === 'add') {
+      payload = { ...payload, kind: 'lesson', action: 'add', number: Number(fields.number) };
+    } else if (kind === 'swap') {
+      const lesson = data.lessons[Number(form.dataset.lessonIndex)];
+      payload = { ...payload, kind: 'lesson', date: lesson.date, class_key: lesson.class_key,
+        lesson_key: lesson.lesson_key, swap_key: fields.swap_key };
+    } else if (kind === 'lesson') {
+      const lesson = data.lessons[Number(form.dataset.lessonIndex)];
+      payload = { ...payload, date: lesson.date, class_key: lesson.class_key, lesson_key: lesson.lesson_key,
+        number: Number(fields.number), cancelled: f.has('cancelled') };
+    }
+    if (event.submitter) event.submitter.disabled = true;
+    try {
+      await post(path, payload);
+      if (kind === 'schools') selection = new URLSearchParams({
+        installation: payload.installation.trim().toLowerCase(), school_id: payload.school_id,
+      }).toString();
+      banner('Сохранено');
+      await load();
+    } catch (error) {
+      banner(error.message);
+    } finally {
+      if (event.submitter) event.submitter.disabled = false;
+    }
+  });
+  load();
+}

@@ -120,6 +120,7 @@ function bindDoneToggles(body, items) {
  *  конец — со сдвигом звонка из настроек, как у таймера над днём: иначе
  *  «Урок окончен» появлялся на несколько секунд раньше звонка. */
 export function lessonStatus(lesson, iso, now = syncedNow(), shift = bellShift()) {
+  if (lesson.moderation_cancelled) return 'Отменён';
   if (lesson.absence) return absenceText(lesson.absence) || lesson.absence;
   const absence = (lesson.marks || []).map((m) => absenceText(m.mark)).find(Boolean);
   if (absence) return absence;

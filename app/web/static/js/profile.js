@@ -537,6 +537,8 @@ function render() {
       `)}
     </section>
     ${readonly ? '' : keepSection(data.keep_attachments, data.keep_signed_in)}
+    ${!readonly && data.moderation ? `<section class="drawer-section">
+      <button class="drawer-link" id="drawerModeration">${ICONS.shield} Модерация</button></section>` : ''}
     ${readonly ? '' : adminSection(data.admin)}
     ${readonly ? `<section class="drawer-section">
       <div class="drawer-heading">Уведомления</div>
@@ -954,6 +956,11 @@ function bindDrawer() {
     closeDrawer();
     const { openAppIcon } = await import('./app-icon.js');
     openAppIcon();
+  });
+  $('drawerModeration')?.addEventListener('click', async () => {
+    closeDrawer();
+    const { openModeration } = await import('./moderation.js');
+    openModeration();
   });
   $('drawerAdmin')?.addEventListener('click', async () => {
     tap();

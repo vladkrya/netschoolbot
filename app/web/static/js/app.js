@@ -952,6 +952,7 @@ function surveyThanks(body, feedback) {
 }
 
 async function start() {
+  const requestedModeration = location.hash === '#moderation';
   // Билет на вложения — заранее: внешний браузер открывается только прямо
   // из нажатия, ждать сети в этот момент нельзя.
   loadAttachmentTicket();
@@ -967,10 +968,10 @@ async function start() {
     if (changed) applySyncedPrefs();
     // Флаг «видел» уже пришёл с сервера — окошко не повторится на другом устройстве.
     dropInstallHints();
-    if (!isReadOnly()) showUnityNotice().then(showHalloweenNotice).then(showKeepFilesNotice).then(showSurvey);
+    if (!isReadOnly() && !requestedModeration) showUnityNotice().then(showHalloweenNotice).then(showKeepFilesNotice).then(showSurvey);
     reportVisit();
   });
-  offerPushOnFirstLaunch();
+  if (!requestedModeration) offerPushOnFirstLaunch();
   initInstallPrompt();
   openRequestedInstall();
   renderNav();
@@ -1006,9 +1007,9 @@ async function start() {
   const profileLoad = loadProfile().catch(() => null);
   // Первая вкладка панели — та, с которой открывается приложение.
   const requestedSettings = location.hash === '#settings';
-  if (requestedSettings) history.replaceState(history.state, '', location.pathname + location.search);
+  if (requestedSettings || requestedModeration) history.replaceState(history.state, '', location.pathname + location.search);
   // Перезапуск на новую версию (update.js) — туда же, где были: вкладка, день, прокрутка.
-  const resume = requestedSettings ? null : takeResume();
+  const resume = requestedSettings || requestedModeration ? null : takeResume();
   if (resume?.date) restoreDay(resume.date);
   if (Number.isInteger(resume?.scheduleWeek)) state.scheduleWeek = resume.scheduleWeek;
   const resumeTab = resume && TABS[resume.tab] && (navTabs().includes(resume.tab) || (resume.tab === 'settings' && isNewDesign())) ? resume.tab : null;
@@ -1029,6 +1030,10 @@ async function start() {
   // если страница открыта без токена (по initData Telegram).
   try {
     const profile = await profileLoad;
+    if (requestedModeration && profile?.moderation) {
+      const { openModeration } = await import('./moderation.js');
+      openModeration();
+    }
     setUnityAccess(profile?.unity);
     setHalloweenAccess(profile?.halloween);
     if (profile?.name) {

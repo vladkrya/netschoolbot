@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+from collections import defaultdict
 
 from aiohttp import web
 
 from ...context import AppContext
+from ... import moderation
 from ...domain import formatting
 from ...domain.calendar import build_ics
 from ...domain.models import ApiMode, User
@@ -148,6 +150,7 @@ async def diary(request: web.Request) -> web.Response:
     async def produce(app: AppContext, user: User):
         today = user.today() + dt.timedelta(weeks=offset)
         days = await app.diary.fetch_diary(user, weeks_back=0 if compact else 1, weeks_forward=0 if compact else 1, today=today)
+        await moderation.record_diary(app, user, days)
         # Обновление вручную — тоже успешная проверка: время в настройках не отстаёт.
         await app.state.mark_watch_ok(user.telegram_id)
         if compact and user.effective_api_mode is not ApiMode.MOBILE:
@@ -189,9 +192,25 @@ async def diary(request: web.Request) -> web.Response:
         return web.json_response({'ok': True, 'data': overlay({'days': [], 'week': offset}, imported),
                                   'stale': True, 'reason': exc.reason.value},
                                  headers={'Cache-Control': 'no-store'})
-    if response.status == 200 and imported:
+    if response.status == 200 and (imported or await moderation.available_for_school(app, user)):
         payload = json.loads(response.body)
-        payload['data'] = overlay(payload['data'], imported)
+        if imported:
+            payload['data'] = overlay(payload['data'], imported)
+        scope = await moderation.diary_scope(app, user)
+        if scope:
+            changes = await moderation.changes_for(app, scope, start.isoformat(), end.isoformat())
+            if changes:
+                changes_by_date = defaultdict(list)
+                for row in changes:
+                    for date in moderation.dates_for(row, start, end):
+                        changes_by_date[date].append(row)
+                days_by_date = {day["date"]: day for day in payload["data"]["days"]}
+                for date, day_changes in changes_by_date.items():
+                    iso = date.isoformat()
+                    if iso not in days_by_date:
+                        days_by_date[iso] = _day_to_json(DiaryDay(date))
+                    moderation.apply_day(days_by_date[iso], day_changes)
+                payload["data"]["days"] = sorted(days_by_date.values(), key=lambda day: day["date"])
         response = web.json_response(payload, headers={'Cache-Control': 'no-store'})
     return response
 

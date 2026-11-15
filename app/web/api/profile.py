@@ -75,6 +75,7 @@ async def _sgo_updates(app: AppContext, telegram_id: int, url: str) -> bool:
 @routes.get("/api/profile")
 async def profile(request: web.Request) -> web.Response:
     from .. import solver, viewing
+    from ... import moderation
     from ...access import UNITY_ENABLED, controls, feature
     from ...solver.permissions import rules_for
     from ..admin import android_apk_info
@@ -123,6 +124,8 @@ async def profile(request: web.Request) -> web.Response:
                 if app.settings.assistant.enabled and solver.is_owner(app, viewer or user) else None,
                 # Строка «Администрирование» в настройках (web/admin.py).
                 "admin": solver.is_owner(app, viewer or user),
+                "moderation": (viewer is None or viewer.telegram_id == user.telegram_id)
+                and await moderation.has_dashboard(app, user),
                 "managed_prefs": managed_prefs,
                 # Строка «Android-приложение» внизу настроек — только владельцу (admin.py).
                 "android_apk": android_apk_info(app) if solver.is_owner(app, viewer or user) else None,

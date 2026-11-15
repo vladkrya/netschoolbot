@@ -1044,6 +1044,74 @@ MIGRATIONS: list[str] = [
         ON homework_changes(telegram_id, school, id) WHERE notify = 1;
     """,
 
+    """
+    CREATE TABLE moderation_schools (
+        installation TEXT NOT NULL,
+        school_id INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        PRIMARY KEY (installation, school_id)
+    );
+    CREATE TABLE moderation_shifts (
+        installation TEXT NOT NULL,
+        school_id INTEGER NOT NULL,
+        school_year INTEGER NOT NULL,
+        class_key TEXT NOT NULL,
+        shift INTEGER NOT NULL CHECK(shift IN (1, 2)),
+        PRIMARY KEY (installation, school_id, school_year, class_key),
+        FOREIGN KEY (installation, school_id) REFERENCES moderation_schools(installation, school_id)
+    );
+    CREATE TABLE moderation_roles (
+        user_id INTEGER NOT NULL REFERENCES users(telegram_id) ON DELETE CASCADE,
+        installation TEXT NOT NULL,
+        school_id INTEGER NOT NULL,
+        school_year INTEGER NOT NULL,
+        class_key TEXT NOT NULL DEFAULT '',
+        permissions TEXT NOT NULL,
+        PRIMARY KEY (user_id, installation, school_id, school_year, class_key),
+        FOREIGN KEY (installation, school_id) REFERENCES moderation_schools(installation, school_id)
+    );
+    CREATE TABLE moderation_lessons (
+        installation TEXT NOT NULL,
+        school_id INTEGER NOT NULL,
+        school_year INTEGER NOT NULL,
+        class_key TEXT NOT NULL,
+        class_label TEXT NOT NULL,
+        date TEXT NOT NULL,
+        lesson_key TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        seen_at INTEGER NOT NULL,
+        PRIMARY KEY (installation, school_id, school_year, class_key, date, lesson_key),
+        FOREIGN KEY (installation, school_id) REFERENCES moderation_schools(installation, school_id)
+    );
+    CREATE INDEX moderation_lessons_date ON moderation_lessons(date);
+    CREATE TABLE moderation_changes (
+        id INTEGER PRIMARY KEY,
+        installation TEXT NOT NULL,
+        school_id INTEGER NOT NULL,
+        school_year INTEGER NOT NULL,
+        class_key TEXT NOT NULL DEFAULT '',
+        date TEXT NOT NULL,
+        end_date TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        author_id INTEGER REFERENCES users(telegram_id) ON DELETE SET NULL,
+        created_at INTEGER NOT NULL,
+        revoked_at INTEGER,
+        revoked_by INTEGER REFERENCES users(telegram_id) ON DELETE SET NULL,
+        FOREIGN KEY (installation, school_id) REFERENCES moderation_schools(installation, school_id)
+    );
+    CREATE INDEX moderation_changes_scope
+        ON moderation_changes(installation, school_id, school_year, date, class_key)
+        WHERE revoked_at IS NULL;
+    CREATE TABLE moderation_reports (
+        change_id INTEGER NOT NULL REFERENCES moderation_changes(id) ON DELETE CASCADE,
+        user_id INTEGER NOT NULL REFERENCES users(telegram_id) ON DELETE CASCADE,
+        reason TEXT NOT NULL,
+        PRIMARY KEY (change_id, user_id, reason)
+    );
+    """,
+
 ]
 
 

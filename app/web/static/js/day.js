@@ -24,6 +24,7 @@ import { select, tap } from './haptics.js';
 import { bindInstallCard, installCardHtml } from './install.js';
 import { msToBell, updateTimer } from './timer.js';
 import { isTestWork, loadNotes, noteWhen, openNoteEditor, setNoteDone } from './notes.js';
+import { noticesHtml, reportChange } from './moderation.js';
 import { openScheduleImport } from './schedule-import.js';
 import { applyEdits, bindHidden, hiddenHtml, openAddLesson } from './edits.js';
 import { flyTo, markKey, playFresh, takeFresh } from './motion.js';
@@ -309,22 +310,37 @@ let renderedKey = '';
 /** quiet — перерисовка по таймеру: без анимации появления и только если
  *  что-то поменялось (статус урока), иначе экран «перезагружался» каждую
  *  минуту. */
+function bindReports(container) {
+  container.querySelectorAll('[data-report]').forEach(button => button.addEventListener('click', async () => {
+    button.disabled = true;
+    try {
+      await reportChange(button.dataset.report, button.dataset.reason);
+      banner('Сообщение отправлено');
+    } catch (error) {
+      banner(error.message);
+      button.disabled = false;
+    }
+  }));
+}
+
 function renderDay(quiet = false) {
   renderHeader();
   const day = days.get(state.date);
   const lessons = day?.lessons || [];
   const container = $('dayContent');
+  const notices = day?.moderation_notices || [];
 
-  updateTimer(lessons, state.date === isoToday());
+  updateTimer(lessons.filter(lesson => !lesson.moderation_cancelled), state.date === isoToday());
   loadCountdown(() => renderDay(true));
   if (!lessons.length) {
     renderedKey = '';
-    container.innerHTML = installCardHtml() + countdownHtml()
+    container.innerHTML = installCardHtml() + noticesHtml(notices, Boolean(state.profile?.readonly)) + countdownHtml()
       + `<div class="empty big">${weekdayIndex(state.date) >= 5 ? 'Выходной' : 'Уроков нет'}</div>`
       + hiddenHtml(day) + addLessonButton();
     bindInstallCard(container);
     bindCountdown(container, () => renderDay(true));
     bindDayEdits(container, day);
+    bindReports(container);
     placeSide();
     return;
   }
@@ -333,18 +349,19 @@ function renderDay(quiet = false) {
   // перерисовка по таймеру должна их подхватить.
   const statuses = lessons.map((lesson) => lessonStatus(lesson, state.date)).join();
   const notes = (state.notes || []).filter((note) => note.date === state.date);
-  const key = `${state.date}|${countdownHtml().length}|${statuses}|${state.hwDone?.size ?? '-'}|${notes.map((n) => `${n.id}${n.done}${n.time}${n.remind}${n.text}${n.subject}`).join()}|${editsKey(day)}`;
+  const key = `${state.date}|${countdownHtml().length}|${statuses}|${state.hwDone?.size ?? '-'}|${notes.map((n) => `${n.id}${n.done}${n.time}${n.remind}${n.text}${n.subject}`).join()}|${editsKey(day)}|${notices.map(notice => notice.id).join(',')}`;
   if (quiet && key === renderedKey && container.children.length) return;
   renderedKey = key;
   freshMarks = takeFresh(lessons.flatMap((lesson) => realMarks(lesson.marks)
     .map((m) => ({ key: markKey(m, lesson.subject, state.date), date: m.date || state.date }))));
   container.classList.toggle('quiet', quiet);
-  container.innerHTML = installCardHtml() + daySummary(lessons) + countdownHtml()
+  container.innerHTML = installCardHtml() + noticesHtml(notices, Boolean(state.profile?.readonly)) + daySummary(lessons) + countdownHtml()
     + lessons.map((lesson, index) => lessonCard(lesson, index)).join('')
     + notesBlock(notes) + hiddenHtml(day) + addLessonButton();
   bindInstallCard(container);
   bindCountdown(container, () => renderDay(true));
   bindDayEdits(container, day);
+  bindReports(container);
   playFresh(container);
   container.querySelectorAll('[data-note]').forEach((row) => row.addEventListener('click', async (event) => {
     const note = notes[Number(row.dataset.note)];
@@ -466,7 +483,7 @@ function lessonCard(lesson, index) {
   const hasComment = lesson.homework.some((h) => h.comment);
   const status = homeworkStatus(lesson.homework);
   const test = lesson.homework.find(isTestWork);
-  const time = lesson.time || [lesson.start, lesson.end].filter(Boolean).join(' – ');
+  const time = lesson.moderation_cancelled ? '' : lesson.time || [lesson.start, lesson.end].filter(Boolean).join(' – ');
   // Новый дизайн: вместо бейджа «Д/З» — начало самого задания.
   const preview = isNewDesign()
     ? lesson.homework.map((item) => String(item.text || '').replace(/\s+/g, ' ').trim()).filter(Boolean).join(' · ')
