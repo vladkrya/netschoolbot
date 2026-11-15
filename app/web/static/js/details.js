@@ -196,9 +196,13 @@ function freshLesson(lesson, iso) {
 }
 
 function freshHomework(item) {
-  if (!item.key && !item.id) return item;
-  return lessonsOf(item.date).flatMap((lesson) => lesson.homework || [])
-    .find((other) => (item.key ? other.key === item.key : other.id === item.id)) || item;
+  const day = dayData(item.date);
+  const items = [...(day?.homework || []), ...lessonsOf(item.date).flatMap((lesson) => lesson.homework || [])];
+  return items.find((other) => (
+    (item.revision_key && other.revision_key === item.revision_key)
+    || (item.id && other.id === item.id)
+    || (item.key && other.key === item.key)
+  )) || item;
 }
 
 function freshMark(mark) {
@@ -311,6 +315,7 @@ function homeworkBlock(item, index) {
       <div class="detail-text">${escRich(item.text) || '<span class="muted">—Не указано—</span>'}</div>
       ${commentSlot(item)}
       ${attachmentsHtml(item.attachments)}
+      ${homeworkChangesHtml(item)}
       ${timestamps.length ? `<div class="hw-times">${timestamps.map(esc).join(' · ')}</div>` : ''}
       ${solveSlot(item, index)}
       ${answerSlot(item)}
@@ -377,6 +382,33 @@ export function homeworkTimes(item, format = compactTime) {
   ].filter(Boolean);
 }
 
+export function homeworkChangesHtml(item) {
+  if (!item.changes?.length) return '';
+  const rows = item.changes.map((change) => `
+    <li>
+      <time datetime="${esc(change.seen_at)}">${esc(compactTime(change.seen_at))}</time>
+      ${typeof change.old_text === 'string' ? `
+        <div class="detail-text"><strong>Текст задания — было</strong>
+${escRich(change.old_text) || '—'}</div>
+        <div class="detail-text"><strong>Стало</strong>
+${escRich(change.new_text) || '—'}</div>` : ''}
+      ${typeof change.old_comment === 'string' ? `
+        <div class="detail-label">Комментарий учителя</div>
+        <div class="detail-text"><strong>Было</strong>
+${escRich(change.old_comment) || '—'}</div>
+        <div class="detail-text"><strong>Стало</strong>
+${escRich(change.new_comment) || '—'}</div>` : ''}
+      ${change.added_files?.length ? `<div class="detail-text"><strong>Добавили</strong>
+${change.added_files.map(esc).join('\n')}</div>` : ''}
+      ${change.removed_files?.length ? `<div class="detail-text"><strong>Убрали</strong>
+${change.removed_files.map(esc).join('\n')}</div>` : ''}
+    </li>`).join('');
+  return `<details class="hw-changes">
+    <summary>Изменения (${item.changes.length})</summary>
+    <ol>${rows}</ol>
+  </details>`;
+}
+
 export function openHomework(item, topic = '') {
   topic = topic || item.topic || '';
   const body = pushScreen(homeworkKind(item), forDate(item.date));
@@ -393,6 +425,7 @@ export function openHomework(item, topic = '') {
       <div class="detail-text">${escRich(item.text) || '<span class="muted">—Не указано—</span>'}</div>
       ${commentSlot(item)}
       ${attachmentsHtml(item.attachments)}
+      ${homeworkChangesHtml(item)}
       ${solveSlot(item, 0)}
       ${answerSlot(item)}
       ${doneToggle(item, 0)}

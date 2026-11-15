@@ -30,6 +30,7 @@ from ..domain.records import (
 class OutboxKind(str, Enum):
     MARKS = "marks"
     HOMEWORK = "homework"
+    HOMEWORK_CHANGED = "homework_changed"
     ABSENCES = "absences"
     SCHEDULE = "schedule"
     MAIL = "mail"
@@ -182,6 +183,7 @@ def _risk_from_dict(data: dict[str, Any]) -> RiskAlert:
 _ENCODERS = {
     OutboxKind.MARKS: _event_to_dict,
     OutboxKind.HOMEWORK: _homework_to_dict,
+    OutboxKind.HOMEWORK_CHANGED: dict,
     OutboxKind.ABSENCES: _absence_to_dict,
     OutboxKind.SCHEDULE: _schedule_to_dict,
     OutboxKind.MAIL: dict,
@@ -191,6 +193,7 @@ _ENCODERS = {
 _DECODERS = {
     OutboxKind.MARKS: _event_from_dict,
     OutboxKind.HOMEWORK: _homework_from_dict,
+    OutboxKind.HOMEWORK_CHANGED: dict,
     OutboxKind.ABSENCES: _absence_from_dict,
     OutboxKind.SCHEDULE: _schedule_from_dict,
     OutboxKind.MAIL: dict,

@@ -260,7 +260,7 @@ const NOTIFY_LABELS = {
   grades: 'Новые оценки',
   changes: 'Изменения оценок',
   deletes: 'Удаления оценок',
-  homework: 'Домашние задания',
+  homework: 'Домашние задания и их изменения',
   mail: 'Школьная почта',
   weekly_summary: 'Сводка по понедельникам',
   evening_summary: 'Вечером — сводка на завтра',

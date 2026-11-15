@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import asyncio
+from bisect import bisect_right
 import datetime as dt
 import json
 import logging
@@ -44,6 +45,7 @@ from .digests import (
     reminder_period,
     weekly_period,
 )
+from .homework_changes import HomeworkPoll
 from .outbox import OutboxKind, decode, encode, mark_to_dict
 from .schedule_diff import diff_schedule, watched_days
 
@@ -66,6 +68,7 @@ SERVER_DOWN_NOTICE_AFTER = 3600
 # дневник сверяет только при новых событиях и не реже этого срока: лента не
 # показывает удалённые и исправленные давние оценки.
 FULL_SYNC_INTERVAL = 3600.0
+HOMEWORK_COMMENT_BATCH = 12
 
 # Об отметке посещаемости сообщаем, только если урок был не раньше этого числа
 # дней назад: так включение уведомлений или смена API не засыпают человека
@@ -136,7 +139,7 @@ class Notifier(Protocol):
 
     async def send_text(
         self, user: User, text: str, *, push: tuple[str, str] | None = None, kind: str = "",
-        family: bool = True,
+        family: bool = True, dedup_id: str = "",
     ) -> None: ...
 
 
@@ -172,6 +175,7 @@ class UserWatcher:
         # Свои задачи ученика — для вечернего напоминания (NotesRepository).
         self._notes = notes
         self._last_children_check: float | None = None
+        self._homework_comment_cursor: dict[int | None, int] = {}
         self._outages = outages
         self._live = live
         self._users = users
@@ -268,6 +272,7 @@ class UserWatcher:
         days = await self._diary.fetch_diary(user)
         marks = [record for day in days for record in day.marks]
         homework = [record for day in days for record in day.homework]
+        homework = await self._with_homework_comments(user, homework)
 
         known = await self._state.load_marks(user.telegram_id)
         first_run = not await self._state.has_history(user.telegram_id)
@@ -298,8 +303,6 @@ class UserWatcher:
         outbox: list[tuple[str, str]] = []
         if mark_events:
             outbox.append((OutboxKind.MARKS.value, encode(OutboxKind.MARKS, mark_events)))
-        if fresh_homework and prefs.homework:
-            outbox.append((OutboxKind.HOMEWORK.value, encode(OutboxKind.HOMEWORK, fresh_homework)))
         if fresh_absences and prefs.absences:
             outbox.append((OutboxKind.ABSENCES.value, encode(OutboxKind.ABSENCES, fresh_absences)))
         if schedule_changes and prefs.schedule:
@@ -308,7 +311,8 @@ class UserWatcher:
             risks = await self._grade_risks(user, result.events, today)
             if risks:
                 outbox.append((OutboxKind.RISK.value, encode(OutboxKind.RISK, risks)))
-        if outbox and await self._on_vacation(user, today):
+        vacation = (bool(outbox) or (prefs.homework and bool(homework))) and await self._on_vacation(user, today)
+        if vacation:
             # Тихий режим на каникулы: история и снимки обновляются, а в
             # очередь ничего не встаёт — после каникул не придёт всё разом.
             outbox = []
@@ -324,11 +328,12 @@ class UserWatcher:
 
         # Состояние и очередь — одной транзакцией: повторная проверка не
         # пришлёт то же самое ещё раз, а недоставленное не потеряется.
-        await self._state.save_check(
+        homework_edits = await self._state.save_check(
             user.telegram_id,
             tracked=result.tracked,
             homework=all_homework,
-            observed_new_homework={item.identity for item in fresh_homework},
+            observed_new_homework=set(),
+            homework_poll=HomeworkPoll(user, homework, fresh_homework, prefs.homework and not vacation),
             absences=absences,
             outbox=outbox,
             history=history,
@@ -348,9 +353,9 @@ class UserWatcher:
         # Открытое приложение обновит экраны сразу, не дожидаясь своего опроса.
         # Сообщаем о любых изменениях, даже если уведомления о них выключены.
         changed = [kind for kind, present in (
-            ("marks", result.events), ("homework", fresh_homework),
+            ("marks", result.events), ("homework", fresh_homework or homework_edits),
             ("absences", fresh_absences), ("schedule", schedule_changes)) if present]
-        if changed and self._live is not None and not first_run:
+        if changed and self._live is not None and (not first_run or homework_edits):
             try:
                 await self._live(user.telegram_id, {"t": "diary", "kinds": changed})
             except Exception as exc:  # noqa: BLE001 — сигнал приложению не важнее проверки
@@ -405,6 +410,16 @@ class UserWatcher:
             await self._notifier.send_mark_events(user, items)
         elif kind is OutboxKind.HOMEWORK:
             await self._notifier.send_homework(user, items)
+        elif kind is OutboxKind.HOMEWORK_CHANGED:
+            title = "Домашнее задание изменилось" if len(items) == 1 else "Домашние задания изменились"
+            lines = [f"{item['subject']} · на {dt.date.fromisoformat(item['date']):%d.%m}" for item in items]
+            preview = ", ".join(dict.fromkeys(lines[:4]))
+            text = "\n".join([f"<b>{title}</b>", *(formatting.esc(line) for line in lines[:15])])
+            if len(lines) > 15:
+                text += f"\nИ ещё {len(lines) - 15}"
+            await self._notifier.send_text(
+                user, text, push=(title, preview), kind="homework", dedup_id=str(items[0]["id"]),
+            )
         elif kind is OutboxKind.ABSENCES:
             await self._notifier.send_absences(user, items)
         elif kind is OutboxKind.MAIL:
@@ -696,6 +711,26 @@ class UserWatcher:
         before.extend(e.record for e in relevant if e.kind is MarkKind.DELETED)
         return insights.grade_drops(before, after, prefs)
 
+    async def _with_homework_comments(self, user: User, homework: list[HomeworkRecord]) -> list[HomeworkRecord]:
+        if user.effective_api_mode is not ApiMode.WEB:
+            return homework
+        ids = sorted({item.assignment_id for item in homework
+                      if item.assignment_id and not item.classwork and item.comment is None})
+        if not ids:
+            return homework
+        student = user.selected_student_id
+        start = bisect_right(ids, self._homework_comment_cursor.get(student, 0))
+        # В веб-дневнике комментария нет. Перебираем карточки порциями по кругу.
+        batch = (ids[start:] + ids[:start])[:HOMEWORK_COMMENT_BATCH]
+        self._homework_comment_cursor[student] = batch[-1]
+        try:
+            comments = await self._diary.fetch_homework_comments(user, batch)
+        except NetSchoolError as exc:
+            logger.debug("Комментарии к ДЗ для %s не получены: %s", user.telegram_id, exc.reason)
+            return homework
+        return [replace(item, comment=comments[item.assignment_id]) if item.assignment_id in comments else item
+                for item in homework]
+
     async def _check_children(self, user: User) -> None:
         """Остальные дети аккаунта, если родитель следит за всеми.
 
@@ -723,6 +758,7 @@ class UserWatcher:
         days = await self._diary.fetch_diary(child)
         marks = [record for day in days for record in day.marks]
         homework = [record for day in days for record in day.homework]
+        homework = await self._with_homework_comments(child, homework)
         saved = await self._state.load_child(child.telegram_id, student.id)
         first_run = saved is None
         result = diff_marks(saved["marks"] if saved else {}, marks, filters=child.filters, first_run=first_run)
@@ -749,13 +785,15 @@ class UserWatcher:
         mark_events = [e for e in result.events if _mark_event_wanted(e, prefs)]
         if mark_events:
             outbox.append((OutboxKind.MARKS.value, encode(OutboxKind.MARKS, mark_events)))
-        if fresh_homework and prefs.homework:
-            outbox.append((OutboxKind.HOMEWORK.value, encode(OutboxKind.HOMEWORK, fresh_homework)))
         if fresh_absences and prefs.absences:
             outbox.append((OutboxKind.ABSENCES.value, encode(OutboxKind.ABSENCES, fresh_absences)))
         await self._state.save_child_check(
             child.telegram_id, student.id, student.name,
             tracked=result.tracked, homework=all_homework, absences=absences, outbox=outbox,
+            homework_poll=HomeworkPoll(
+                child, homework, fresh_homework,
+                prefs.homework and bool(homework) and not await self._on_vacation(child, child.today()),
+            ),
         )
 
     async def _record_status(self, *, ok: bool, delay: float, error: str = "") -> None:

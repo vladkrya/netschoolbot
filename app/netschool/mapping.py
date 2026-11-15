@@ -24,6 +24,7 @@ from ..domain.records import (
     Lesson,
     MarkRecord,
     RecentEvents,
+    clean_assignment_comment,
     clean_content,
     extract_mark,
 )
@@ -190,7 +191,7 @@ def _comment(assignment: Any) -> str | None:
     Поле есть только у мобильного API (см. patches/assignments.py).
     """
     value = _attr(assignment, "description")
-    return None if value is None else clean_content(value)
+    return None if value is None else clean_assignment_comment(value)
 
 
 def _attachments(assignment: Any) -> tuple[Attachment, ...]:

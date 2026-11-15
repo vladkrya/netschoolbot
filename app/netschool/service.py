@@ -11,7 +11,6 @@ from __future__ import annotations
 import asyncio
 import copy
 import datetime as dt
-import html
 import logging
 import re
 import time
@@ -22,7 +21,7 @@ from typing import Any, TypeVar
 
 from ..db.repositories import UserRepository
 from ..domain.models import ApiMode, Student, User
-from ..domain.records import DiaryDay, HomeworkRecord, MarkRecord, RecentEvents, clean_content
+from ..domain.records import DiaryDay, HomeworkRecord, MarkRecord, RecentEvents, clean_assignment_comment
 from .errors import NetSchoolError, Reason, wrap
 from .mapping import (
     answer_from_mobile,
@@ -755,11 +754,26 @@ class DiaryService:
 
         async def call(client: Any) -> str:
             details = await client.assignment_details(assignment_id)
-            text = str(getattr(details, "description", "") or "")
-            # В веб-версии описание бывает HTML из редактора учителя.
-            text = re.sub(r"<br\s*/?>|</p>|</div>", "\n", text, flags=re.I)
-            text = html.unescape(re.sub(r"<[^>]+>", "", text))
-            return clean_content(re.sub(r"\n{3,}", "\n\n", text))
+            return clean_assignment_comment(getattr(details, "description", ""))
+
+        return await self._with_session(user, call)
+
+    async def fetch_homework_comments(self, user: User, assignment_ids: list[int]) -> dict[int, str]:
+        """Прочитать комментарии из карточек, сохранив успешные ответы при частичном сбое."""
+        async def call(client: Any) -> dict[int, str]:
+            comments: dict[int, str] = {}
+            semaphore = asyncio.Semaphore(4)
+
+            async def fetch(assignment_id: int) -> None:
+                async with semaphore:
+                    try:
+                        details = await client.assignment_details(assignment_id)
+                        comments[assignment_id] = clean_assignment_comment(details.description)
+                    except Exception as exc:  # отдельная карточка не должна прерывать сверку
+                        logger.debug("Комментарий задания %s не получен: %s", assignment_id, exc)
+
+            await asyncio.gather(*(fetch(assignment_id) for assignment_id in assignment_ids))
+            return comments
 
         return await self._with_session(user, call)
 

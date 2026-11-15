@@ -148,7 +148,11 @@ async def search(request: web.Request) -> web.Response:
         days = await app.diary.fetch_period(user, year_start, today + dt.timedelta(days=14), today=today)
         observed = await app.state.observed_homework(user.telegram_id)
         items = sorted((item for day in days for item in day.homework), key=lambda h: (h.due_date, h.subject))
-        return [{**_homework_to_json(item, observed), "label": formatting.date_label(item.due_date)} for item in items]
+        changes = await app.state.homework_history(user, {item.revision_key for item in items if item.revision_key})
+        return [
+            {**_homework_to_json(item, observed, changes), "label": formatting.date_label(item.due_date)}
+            for item in items
+        ]
 
     async def mail():
         messages = await app.diary.fetch_mail(user, limit=SEARCH_MAIL_LIMIT)

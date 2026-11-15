@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import datetime as dt
 import hashlib
+import html
 import re
 from dataclasses import dataclass, field
 from typing import Any
@@ -158,6 +159,15 @@ class HomeworkRecord:
     # Работа на уроке («Диктант», «Изложение»), а не домашнее задание: тип
     # задания не «Домашнее задание». В ключ не входит.
     classwork: bool = False
+
+    # UUID «Моей школы» не используется для запроса карточки СГО.
+    external_id: str | None = None
+
+    @property
+    def revision_key(self) -> str:
+        if self.external_id:
+            return f"myschool:{self.external_id}"
+        return f"sgo:{self.assignment_id}" if self.assignment_id else ""
 
     @property
     def identity(self) -> str:
@@ -308,6 +318,13 @@ def clean_content(content: Any) -> str:
     if text in {"---Не указана---", "Не указана"}:
         return ""
     return text.replace("---Не указана---", "").strip()
+
+
+def clean_assignment_comment(value: Any) -> str:
+    """Привести описание из дневника и карточки задания к одному тексту."""
+    text = re.sub(r"<br\s*/?>|</p>|</div>", "\n", str(value or ""), flags=re.I)
+    text = html.unescape(re.sub(r"<[^>]+>", "", text))
+    return clean_content(re.sub(r"\n{3,}", "\n\n", text))
 
 
 def extract_mark(source: Any, _depth: int = 0) -> str:

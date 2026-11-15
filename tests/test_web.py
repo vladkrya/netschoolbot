@@ -668,6 +668,62 @@ class TestData:
         assert items[0]["topic"] == "Дроби"
         assert items[0]["published_at"] == "2026-03-01T09:30:00+00:00"
 
+    async def test_homework_edits_are_delivered_and_returned_in_history(self, client, app_context, token):
+        from app.domain.records import Attachment, HomeworkRecord
+        from app.notifications.watcher import UserWatcher
+        from tests.test_watcher import FakeNotifier
+
+        user = await app_context.users.get(1)
+        notifier = FakeNotifier()
+        watcher = UserWatcher(1, users=app_context.users, state=app_context.state,
+                              diary=app_context.diary, notifier=notifier)
+        first = Attachment(1, "Упражнение.pdf")
+        extra = Attachment(2, "Подсказка.pdf")
+        original = HomeworkRecord("Алгебра", user.today(), "ДЗ", "Упр. 1",
+                                  assignment_id=123, attachments=(first,))
+        app_context.diary.homework = [original]
+        await watcher.run_once()
+
+        async def get(path, **params):
+            response = await client.get(f"{BASE}/api/{path}", params={"token": token, **params})
+            assert response.status == 200
+            return (await response.json())["data"]
+
+        assert (await get("homework"))["items"][0]["changes"] == []
+        baseline = await get("homework/changes")
+        assert baseline == {"cursor": 0, "items": []}
+        assert notifier.homework == notifier.texts == []
+
+        app_context.diary.homework = [replace(original, attachments=(first, extra))]
+        await watcher.run_once()
+        app_context.diary.homework = [replace(original, attachments=(extra, first))]
+        await watcher.run_once()  # Порядок файлов не меняет задание.
+        app_context.diary.homework = [replace(original, text="Упр. 2", attachments=(extra,))]
+        await watcher.run_once()
+        await watcher.run_once()
+
+        assert notifier.homework == []
+        assert len([text for text in notifier.texts if "Домашнее задание изменилось" in text]) == 2
+        saved = (await get("homework", refresh="1"))["items"][0]
+        assert saved["text"] == "Упр. 2"
+        latest, earlier = saved["changes"]
+        assert latest["old_text"] == "Упр. 1" and latest["new_text"] == "Упр. 2"
+        assert latest["removed_files"] == ["Упражнение.pdf"]
+        assert earlier["added_files"] == ["Подсказка.pdf"]
+        assert "old_text" not in earlier
+        assert earlier["id"] < latest["id"] and latest["seen_at"].endswith("Z")
+        assert (await get("diary"))["days"][0]["homework"][0]["changes"] == saved["changes"]
+        feed = await get("homework/changes", after="0")
+        assert [notice["id"] for notice in feed["items"]] == [earlier["id"], latest["id"]]
+        assert (await get("homework/changes", after=str(feed["cursor"])))["items"] == []
+
+        await app_context.users.save(replace(user, notifications=replace(user.notifications, homework=False)))
+        app_context.diary.homework = [original]
+        await watcher.run_once()
+        assert len((await get("homework", refresh="1"))["items"][0]["changes"]) == 3
+        assert (await get("homework/changes", after=str(feed["cursor"])))["items"] == []
+        assert len([text for text in notifier.texts if "Домашнее задание изменилось" in text]) == 2
+
     async def test_homework_comment(self, client, app_context, token):
         app_context.diary.comments = {34192144: "выполнить диагностику"}
         response = await client.get(f"{BASE}/api/homework/34192144/comment", params={"token": token})

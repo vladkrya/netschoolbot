@@ -48,7 +48,7 @@ class TelegramNotifier:
         # Push в браузер — дополнение к Telegram, а не замена: приложение
         # может быть не установлено, а подписка — отозвана без уведомления.
         self._push = push
-        self._pushed: dict[tuple[int, str, str], float] = {}
+        self._pushed: dict[tuple[int, str, str, str], float] = {}
 
     # Push уходит раньше Telegram: раньше сбой Telegram (а он бывает — сеть
     # до api.telegram.org рвётся) держал в очереди и push, и на телефон не
@@ -91,7 +91,7 @@ class TelegramNotifier:
     async def send_token_expiring(self, user: User, expires_at: dt.datetime) -> None:
         await self._send(user, formatting.token_expiring(expires_at, tz=user.tz))
 
-    async def _push_notify(self, user: User, title: str, body: str, *, kind: str = "", family: bool = True) -> None:
+    async def _push_notify(self, user: User, title: str, body: str, *, kind: str = "", family: bool = True, dedup_id: str = "") -> None:
         """Отправить push, не давая его сбою повлиять на Telegram."""
         if self._push is None:
             return
@@ -99,7 +99,7 @@ class TelegramNotifier:
         self._pushed = {key: at for key, at in self._pushed.items() if now - at < PUSH_DEDUP_SECONDS}
         if _many_children(user) and user.student_name:
             body = f"{user.student_name}: {body}"
-        key = (user.telegram_id, title, body)
+        key = (user.telegram_id, title, body, dedup_id)
         if key in self._pushed:
             return
         try:
@@ -108,9 +108,9 @@ class TelegramNotifier:
         except Exception as exc:  # noqa: BLE001
             logger.warning("Push для %s не ушёл: %s", user.telegram_id, exc)
         if family:
-            await self._push_followers(user, title, body, kind=kind, now=now)
+            await self._push_followers(user, title, body, kind=kind, now=now, dedup_id=dedup_id)
 
-    async def _push_followers(self, user: User, title: str, body: str, *, kind: str, now: float) -> None:
+    async def _push_followers(self, user: User, title: str, body: str, *, kind: str, now: float, dedup_id: str) -> None:
         """Push родным: тем, кто пришёл по почте без Telegram, это единственный канал."""
         if self._family is None:
             return
@@ -121,7 +121,7 @@ class TelegramNotifier:
             return
         body = f"{user.label}: {body}"
         for follower in followers:
-            key = (follower["id"], title, body)
+            key = (follower["id"], title, body, dedup_id)
             if key in self._pushed:
                 continue
             try:
@@ -132,12 +132,12 @@ class TelegramNotifier:
 
     async def send_text(
         self, user: User, text: str, *, push: tuple[str, str] | None = None, kind: str = "",
-        family: bool = True,
+        family: bool = True, dedup_id: str = "",
     ) -> None:
         """Уведомление-текст (замены, сводки); push — заголовок и строка для браузера.
         family=False — только самому ученику, без копии родным (свои напоминания)."""
         if push:
-            await self._push_notify(user, *push, kind=kind, family=family)
+            await self._push_notify(user, *push, kind=kind, family=family, dedup_id=dedup_id)
         await self._notify(user, text, family=family)
 
     async def _notify(self, user: User, text: str, *, family: bool = True) -> None:

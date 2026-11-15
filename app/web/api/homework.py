@@ -10,6 +10,7 @@ from aiohttp import web
 from ...context import AppContext
 from ...domain import formatting
 from ...domain.models import ApiMode, User
+from ..viewing import VIEWER
 from .base import _cached, context, current_user, json_error, routes
 from .diary import _homework_to_json
 from .mail import _safe_filename
@@ -149,13 +150,38 @@ async def homework(request: web.Request) -> web.Response:
         else:
             items = await app.diary.fetch_homework(user, weeks_back=0, weeks_forward=2)
         observed = await app.state.observed_homework(user.telegram_id)
+        changes = await app.state.homework_history(user, {item.revision_key for item in items if item.revision_key})
         return {
             # Та же форма, что у заданий внутри урока: экран задания один,
             # и раньше отсюда не доходили тип, вес, тема и время публикации.
             "items": [
-                {**_homework_to_json(item, observed), "label": formatting.date_label(item.due_date)}
+                {**_homework_to_json(item, observed, changes), "label": formatting.date_label(item.due_date)}
                 for item in sorted(items, key=lambda h: (h.due_date, h.subject))
             ]
         }
 
     return await _cached(request, "homework:past" if past else "homework", produce)
+
+
+@routes.get("/api/homework/changes")
+async def homework_changes(request: web.Request) -> web.Response:
+    user = current_user(request)
+    viewer = request.get(VIEWER)
+    if viewer is not None and viewer.telegram_id != user.telegram_id:
+        return json_error("Недоступно в режиме просмотра", status=403)
+    try:
+        after = int(request.query["after"]) if "after" in request.query else None
+        if after is not None and not 0 <= after <= 2**63 - 1:
+            raise ValueError
+    except ValueError:
+        return json_error("Некорректный номер изменения")
+    if after is not None and user.notifications.homework and user.quiet_hours.covers(user.now().time()):
+        cursor, items = after, []
+    else:
+        cursor, items = await context(request).state.homework_change_feed(user, after)
+        if not user.notifications.homework:
+            items = []
+    return web.json_response(
+        {"ok": True, "data": {"cursor": cursor, "items": items}},
+        headers={"Cache-Control": "no-store"},
+    )

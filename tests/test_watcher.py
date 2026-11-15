@@ -6,10 +6,11 @@
 
 import asyncio
 import datetime as dt
+from dataclasses import replace
 
 import pytest
 
-from app.domain.models import Credentials, LoginType, MarkKind, QuietHours
+from app.domain.models import ApiMode, Credentials, LoginType, MarkKind, QuietHours
 from app.domain.records import HomeworkRecord, MarkRecord, RecentEvents, TrackedMark
 from app.netschool.errors import NetSchoolError, Reason
 from app.notifications.diff import MISSING_STREAK_FOR_DELETE
@@ -61,7 +62,7 @@ class FakeNotifier:
     async def send_error(self, user, error):
         self.errors.append(error)
 
-    async def send_text(self, user, text, *, push=None, kind="", family=True):
+    async def send_text(self, user, text, *, push=None, kind="", family=True, dedup_id=""):
         self.texts.append(text)
         self.family = family
 
@@ -178,6 +179,10 @@ class FakeDiary:
             raise self.error
         return getattr(self, "comments", {}).get(assignment_id, "")
 
+    async def fetch_homework_comments(self, user, assignment_ids):
+        comments = getattr(self, "comments", {})
+        return {assignment_id: comments[assignment_id] for assignment_id in assignment_ids if assignment_id in comments}
+
     async def fetch_mail_message(self, user, message_id):
         if self.error:
             raise self.error
@@ -275,6 +280,35 @@ class TestFirstRun:
         diary.marks = [record(0)]
         await watcher.run_once()
         assert seen and seen[0][0] == 1
+
+
+@pytest.mark.parametrize("mode", [ApiMode.WEB, ApiMode.MOBILE])
+async def test_homework_comment_history_survives_unknown_comments(mode, users, marks, watcher, diary, notifier):
+    user = make_user(api_mode=mode)
+    await users.save(user)
+    original = HomeworkRecord("Математика", user.today(), "ДЗ", "№ 5", assignment_id=42)
+
+    async def observe(comment):
+        if mode is ApiMode.WEB:
+            diary.comments = {42: comment} if comment is not None else {}
+            diary.homework = [original]
+        else:
+            diary.homework = [replace(original, comment=comment)]
+        await watcher.run_once()
+
+    await observe(None)
+    await observe("")
+    assert notifier.texts == []
+    await observe("Показать ход решения")
+    await observe(None)
+    await observe("")
+    await observe("")
+    assert len(notifier.texts) == 2
+    assert notifier.homework == []
+    history = (await marks.homework_history(user, {original.revision_key}))[original.revision_key]
+    assert [(edit["old_comment"], edit["new_comment"]) for edit in history] == [
+        ("Показать ход решения", ""), ("", "Показать ход решения"),
+    ]
 
 
 class TestChanges:

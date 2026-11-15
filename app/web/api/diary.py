@@ -12,7 +12,7 @@ from ...domain import formatting
 from ...domain.calendar import build_ics
 from ...domain.models import ApiMode, User
 from ...notifications.outbox import mark_from_dict
-from ...domain.records import DiaryDay, clean_content
+from ...domain.records import DiaryDay, HomeworkRecord, clean_content
 from ...netschool.errors import NetSchoolError, Reason
 from ...domain.periods import quarter_of
 from .base import _cached, _refresh_cached_section, context, current_user, json_error, logger, routes
@@ -39,7 +39,10 @@ def _mark_to_json(record) -> dict:
     }
 
 
-def _homework_to_json(item, observed: dict[str, str] | None = None) -> dict:
+def _homework_to_json(
+    item: HomeworkRecord, observed: dict[str, str] | None = None,
+    changes: dict[str, list[dict]] | None = None,
+) -> dict:
     return {
         "subject": item.subject,
         "date": item.due_date.isoformat(),
@@ -51,6 +54,8 @@ def _homework_to_json(item, observed: dict[str, str] | None = None) -> dict:
         "weight": item.weight,
         "topic": item.topic,
         "key": item.key,
+        "revision_key": item.revision_key,
+        "changes": (changes or {}).get(item.revision_key, []),
         "id": item.assignment_id,
         "comment": item.comment,
         "auto_done": item.nothing_to_do,
@@ -92,6 +97,7 @@ async def _teachers(app: AppContext, user: User, days: list[DiaryDay]) -> dict[s
 def _day_to_json(
     day: DiaryDay, teachers: dict[str, str] | None = None,
     observed: dict[str, str] | None = None,
+    changes: dict[str, list[dict]] | None = None,
 ) -> dict:
     return {
         "date": day.day.isoformat(),
@@ -112,12 +118,12 @@ def _day_to_json(
                 "is_elective": lesson.is_elective,
                 "distance_meeting_id": getattr(lesson, "distance_meeting_id", None),
                 "marks": [_mark_to_json(m) for m in lesson.marks],
-                "homework": [_homework_to_json(h, observed) for h in lesson.homework],
+                "homework": [_homework_to_json(h, observed, changes) for h in lesson.homework],
             }
             for lesson in day.lessons
         ],
         "marks": [_mark_to_json(record) for record in day.marks],
-        "homework": [_homework_to_json(item, observed) for item in day.homework],
+        "homework": [_homework_to_json(item, observed, changes) for item in day.homework],
     }
 
 
@@ -158,7 +164,9 @@ async def diary(request: web.Request) -> web.Response:
         else:
             teachers = await _teachers(app, user, days)
         observed = await app.state.observed_homework(user.telegram_id)
-        return {"days": [_day_to_json(day, teachers, observed) for day in days], "week": offset}
+        keys = {item.revision_key for day in days for item in day.homework if item.revision_key}
+        changes = await app.state.homework_history(user, keys)
+        return {"days": [_day_to_json(day, teachers, observed, changes) for day in days], "week": offset}
 
     # Каждое окно кэшируется отдельно, иначе соседние недели вытесняли бы
     # друг друга и стрелки снова упирались бы в сеть.

@@ -166,6 +166,7 @@ def build_days(lessons: list[Any], marks: list[Any], homeworks: list[Any]) -> li
             text=re.sub(r"\s+", " ", item.description or "").strip(),
             lesson_number=numbers.get(item.ready_lesson_id or ""),
             attachments=tuple(_attachments(item.materials)),
+            external_id=item.id,
             # Пустой комментарий: карточки задания в «Моей школе» нет, спрашивать нечего.
             comment="",
         )

@@ -8,7 +8,7 @@ import {
   WEEKDAYS_FULL, weekdayIndex,
 } from './core.js';
 import { ICONS } from './icons.js';
-import { homeworkTimes, isAutoDone, isDoneItem, loadDone, openHomework, saveDone } from './details.js';
+import { homeworkChangesHtml, homeworkTimes, isAutoDone, isDoneItem, loadDone, openHomework, saveDone } from './details.js';
 import { select, tap } from './haptics.js';
 import { dueButtonHtml, loadDue, openDue } from './due.js';
 import { openSearch } from './search.js';
@@ -138,11 +138,13 @@ function render() {
             <span><span class="hw-badge">${item.classwork ? 'Урок' : 'Д/З'}</span>${item.attachments.length ? `<span class="hw-badge clip">${ICONS.clip}</span>` : ''}${item.comment ? `<span class="hw-badge clip" title="Есть комментарий к заданию">${ICONS.chat}</span>` : ''}</span>
             <span class="muted small">${esc(dayMonth(item.date))}</span>
           </div>
+          ${homeworkChangesHtml(item)}
         </div>`;
     })
     .join('') + yearSearch;
   container.querySelectorAll('[data-hw]').forEach((card) =>
     card.addEventListener('click', async (event) => {
+      if (event.target.closest('.hw-changes')) return;
       const item = items[Number(card.dataset.hw)];
       const check = event.target.closest('[data-done]');
       if (item.own && event.target.closest('[data-edit]')) {

@@ -817,6 +817,12 @@ html.offline .switch-row:has(#pushToggle, #keepFiles, #sgoUpdates) {
 
 .hw-card { cursor: pointer; }
 .hw-subject { font-size: 18px; color: var(--text); margin-bottom: 6px; }
+.hw-changes { margin-top: 10px; color: var(--text2); }
+.hw-changes summary { cursor: pointer; font-size: 14px; font-weight: 600; padding: 6px 0; }
+.hw-changes ol { margin: 4px 0 0; padding: 0; list-style: none; }
+.hw-changes li { padding: 8px 0; border-top: 1px solid var(--border); }
+.hw-changes time { font-size: 12px; }
+.hw-changes .detail-text { color: var(--text); font-size: 14px; }
 .hw-observed { margin-top: 8px; color: var(--text2); font-size: 12px; }
 .hw-observed + .hw-observed { margin-top: 2px; }
 .hw-text { font-size: 15px; margin-bottom: 10px; word-break: break-word; }

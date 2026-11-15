@@ -37,6 +37,8 @@ from ..domain.models import (
     parse_marks_filter,
 )
 from ..domain.records import MarkRecord, TrackedMark
+from ..notifications.homework_changes import HomeworkPoll, changes_between, homework_snapshot
+from ..notifications.outbox import OutboxKind, encode
 from .crypto import NO_ENCRYPTION, PasswordCipher
 from .engine import Database
 
@@ -412,6 +414,85 @@ async def _write_absences(db: aiosqlite.Connection, telegram_id: int, identities
         )
 
 
+def _homework_scope(user: User) -> tuple[int, str, int]:
+    return user.telegram_id, user.school.url, user.selected_student_id or 0
+
+
+async def _write_homework_poll(
+    db: aiosqlite.Connection, poll: HomeworkPoll | None, outbox: list[tuple[str, str]],
+) -> tuple[set[str], list[dict]]:
+    if poll is None:
+        return set(), []
+    scope = _homework_scope(poll.user)
+    async with db.execute(
+        """SELECT assignment_key, payload, date FROM homework_snapshots
+           WHERE telegram_id = ? AND school = ? AND student_id = ?""",
+        scope,
+    ) as cursor:
+        saved = {row["assignment_key"]: row for row in await cursor.fetchall()}
+
+    # Один ID может встретиться в дневнике несколько раз. Если ответы
+    # расходятся, ждём следующую согласованную сверку.
+    snapshots = {}
+    ambiguous = set()
+    for item in poll.items:
+        key = item.revision_key
+        if not key or item.classwork:
+            continue
+        snapshot = homework_snapshot(item)
+        if key in snapshots and snapshots[key][1] != snapshot:
+            ambiguous.add(key)
+        snapshots[key] = item, snapshot
+
+    edits = []
+    edited = set()
+    writes = []
+    for key, (item, snapshot) in snapshots.items():
+        if key in ambiguous:
+            continue
+        date = item.due_date.isoformat()
+        if key in saved:
+            previous = saved[key]
+            before = json.loads(previous["payload"])
+            if snapshot["comment"] is None:
+                snapshot["comment"] = before.get("comment")
+            changes = changes_between(before, snapshot)
+            if changes:
+                async with db.execute(
+                    """INSERT INTO homework_changes
+                       (telegram_id, school, student_id, assignment_key, subject, date, payload, notify)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (*scope, key, item.subject, date, json.dumps(changes, ensure_ascii=False), poll.notify),
+                ) as cursor:
+                    edits.append({"id": cursor.lastrowid, "subject": item.subject, "date": date})
+                edited.add(key)
+            elif previous["date"] == date and before.get("comment") == snapshot["comment"]:
+                continue
+        writes.append((*scope, key, date, json.dumps(snapshot, ensure_ascii=False)))
+    if writes:
+        await db.executemany(
+            """INSERT INTO homework_snapshots (telegram_id, school, student_id, assignment_key, date, payload)
+               VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT DO UPDATE SET
+               date = excluded.date, payload = excluded.payload""",
+            writes,
+        )
+
+    cutoff = (poll.user.today() - dt.timedelta(weeks=6)).isoformat()
+    await db.execute(
+        """DELETE FROM homework_snapshots
+           WHERE telegram_id = ? AND school = ? AND student_id = ? AND date < ?""",
+        (*scope, cutoff),
+    )
+    excluded = edited | ambiguous
+    fresh = [item for item in poll.fresh if item.revision_key not in excluded]
+    if poll.notify:
+        if fresh:
+            outbox.append((OutboxKind.HOMEWORK.value, encode(OutboxKind.HOMEWORK, fresh)))
+        if edits:
+            outbox.append((OutboxKind.HOMEWORK_CHANGED.value, encode(OutboxKind.HOMEWORK_CHANGED, edits)))
+    return {item.identity for item in fresh}, edits
+
+
 class MarkStateRepository:
     """Состояние слежения за оценками и домашними заданиями."""
 
@@ -530,7 +611,8 @@ class MarkStateRepository:
         baseline_done: bool,
         schedule: dict[dt.date, list] | None = None,
         today: dt.date | None = None,
-    ) -> None:
+        homework_poll: HomeworkPoll | None = None,
+    ) -> list[dict]:
         """Итог одной проверки — одной транзакцией.
 
         Состояние слежения и уведомления о найденных изменениях пишутся
@@ -538,8 +620,17 @@ class MarkStateRepository:
         `outbox` — пары (вид, JSON), `history` — (вид, JSON оценки, было, стало).
         """
         async with self._db.transaction() as db:
+            outbox = list(outbox)
+            new_keys, edits = await _write_homework_poll(db, homework_poll, outbox)
+            if edits:
+                await db.execute(
+                    """UPDATE cache_entries SET updated_at = '2000-01-01 00:00:00'
+                       WHERE telegram_id = ? AND (section IN ('homework', 'homework:past', 'search:homework')
+                                                  OR section LIKE 'diary:%')""",
+                    (telegram_id,),
+                )
             await _write_marks(db, telegram_id, tracked)
-            await _write_homework(db, telegram_id, homework, observed_new_homework)
+            await _write_homework(db, telegram_id, homework, observed_new_homework | new_keys)
             if absences is not None:
                 await _write_absences(db, telegram_id, absences)
             if outbox:
@@ -582,6 +673,47 @@ class MarkStateRepository:
                 await db.execute(
                     "UPDATE users SET baseline_pending = 0 WHERE telegram_id = ?", (telegram_id,)
                 )
+
+        return edits
+
+    async def homework_history(self, user: User, keys: set[str]) -> dict[str, list[dict]]:
+        if not keys:
+            return {}
+        rows = await self._db.fetch_all(
+            """SELECT id, assignment_key, seen_at, payload FROM homework_changes
+               WHERE telegram_id = ? AND school = ? AND student_id = ? ORDER BY id DESC""",
+            _homework_scope(user),
+        )
+        history: dict[str, list[dict]] = {}
+        for row in rows:
+            key = row["assignment_key"]
+            if key in keys:
+                history.setdefault(key, []).append({
+                    "id": row["id"], "seen_at": row["seen_at"], **json.loads(row["payload"]),
+                })
+        return history
+
+    async def homework_change_feed(self, user: User, after: int | None) -> tuple[int, list[dict]]:
+        selected = user.selected_student_id or 0
+        students = {selected: ""}
+        if user.notifications.all_children:
+            students.update({student.id: student.name for student in user.available_students})
+        placeholders = ",".join("?" for _ in students)
+        scope = (user.telegram_id, user.school.url, *students)
+        rows = await self._db.fetch_all(
+            f"""SELECT id, subject, date, student_id FROM homework_changes
+                WHERE telegram_id = ? AND school = ? AND student_id IN ({placeholders})
+                  AND notify = 1 AND id > ? AND seen_at >= strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-7 days')
+                ORDER BY id DESC LIMIT 50""",
+            (*scope, after or 0),
+        )
+        cursor = rows[0]["id"] if rows else after or 0
+        items = [
+            {"id": row["id"], "subject": row["subject"], "date": row["date"],
+             "student": students[row["student_id"]] if len(students) > 1 else ""}
+            for row in reversed(rows)
+        ] if after is not None else []
+        return cursor, items
 
     async def load_schedule(self, telegram_id: int) -> dict[dt.date, list]:
         rows = await self._db.fetch_all(
@@ -896,6 +1028,7 @@ class MarkStateRepository:
         homework: set[str],
         absences: set[str] | None,
         outbox: list[tuple[str, str]],
+        homework_poll: HomeworkPoll | None = None,
     ) -> None:
         """Итог проверки невыбранного ребёнка и его уведомления — одной транзакцией."""
         sections = {
@@ -908,6 +1041,8 @@ class MarkStateRepository:
         if absences is not None:
             sections["absences"] = sorted(absences)
         async with self._db.transaction() as db:
+            outbox = list(outbox)
+            await _write_homework_poll(db, homework_poll, outbox)
             await db.executemany(
                 """INSERT INTO child_state (telegram_id, student_id, section, payload) VALUES (?, ?, ?, ?)
                    ON CONFLICT(telegram_id, student_id, section) DO UPDATE SET payload = excluded.payload""",

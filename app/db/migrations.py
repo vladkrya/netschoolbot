@@ -1016,6 +1016,34 @@ MIGRATIONS: list[str] = [
     ALTER TABLE users ADD COLUMN beta_widgets INTEGER NOT NULL DEFAULT 0;
     """,
 
+    """
+    CREATE TABLE homework_snapshots (
+        telegram_id INTEGER NOT NULL REFERENCES users(telegram_id) ON DELETE CASCADE,
+        school TEXT NOT NULL,
+        student_id INTEGER NOT NULL,
+        assignment_key TEXT NOT NULL,
+        date TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        PRIMARY KEY (telegram_id, school, student_id, assignment_key)
+    );
+    CREATE TABLE homework_changes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        telegram_id INTEGER NOT NULL REFERENCES users(telegram_id) ON DELETE CASCADE,
+        school TEXT NOT NULL,
+        student_id INTEGER NOT NULL,
+        assignment_key TEXT NOT NULL,
+        subject TEXT NOT NULL,
+        date TEXT NOT NULL,
+        seen_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+        payload TEXT NOT NULL,
+        notify INTEGER NOT NULL
+    );
+    CREATE INDEX homework_changes_assignment
+        ON homework_changes(telegram_id, school, student_id, assignment_key, id DESC);
+    CREATE INDEX homework_changes_feed
+        ON homework_changes(telegram_id, school, id) WHERE notify = 1;
+    """,
+
 ]
 
 
