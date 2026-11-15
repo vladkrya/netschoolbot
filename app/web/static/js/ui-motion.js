@@ -1117,6 +1117,7 @@ export function cycleTypewriter(element, phrases, options = {}) {
     loopDelay = 1200,
     naturalVariance = false,
     typos = false,
+    visibilityRoot,
     // A normal backspace is clearer than the selection sweep on a large
     // headline and always reads left-to-right while typing.
     deleteMode = 'backspace', // 'select' | 'backspace'
@@ -1147,6 +1148,19 @@ export function cycleTypewriter(element, phrases, options = {}) {
 
   const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+  const active = () => running && (!visibilityRoot || element.isConnected);
+
+  async function waitUntilVisible() {
+    if (!visibilityRoot) return running;
+    while (active()) {
+      const bounds = element.getBoundingClientRect();
+      const viewport = visibilityRoot.getBoundingClientRect();
+      if (bounds.bottom > viewport.top && bounds.top < viewport.bottom) return true;
+      await wait(150);
+    }
+    return false;
+  }
+
   function getDelay() {
     if (!naturalVariance) return typingSpeed;
     const r = Math.random();
@@ -1156,7 +1170,7 @@ export function cycleTypewriter(element, phrases, options = {}) {
   }
 
   async function runCycle() {
-    while (running) {
+    while (await waitUntilVisible()) {
       const phrase = phrases[phraseIndex];
       let typed = '';
       keptEl.textContent = '';
@@ -1165,6 +1179,7 @@ export function cycleTypewriter(element, phrases, options = {}) {
 
       // Type the phrase
       for (let i = 0; i < phrase.length && running; i++) {
+        if (!(await waitUntilVisible())) return;
         const targetChar = phrase[i];
 
         // 4% chance of realistic typo on alphabetic characters
@@ -1173,12 +1188,13 @@ export function cycleTypewriter(element, phrases, options = {}) {
           keptEl.textContent = typed + wrong;
           markIdle();
           await wait(240); // pause upon noticing typo
-          if (!running) break;
+          if (!(await waitUntilVisible())) return;
           keptEl.textContent = typed; // backspace
           markIdle();
           await wait(140);
         }
 
+        if (typos && !(await waitUntilVisible())) return;
         typed += targetChar;
         keptEl.textContent = typed;
         markIdle();
@@ -1193,17 +1209,20 @@ export function cycleTypewriter(element, phrases, options = {}) {
       if (deleteMode === 'select') {
         // Kokonut UI select sweep: sweeps right-to-left
         for (let s = 1; s <= phrase.length && running; s++) {
+          if (!(await waitUntilVisible())) return;
           keptEl.textContent = phrase.slice(0, phrase.length - s);
           selEl.textContent = phrase.slice(phrase.length - s);
           markIdle();
           await wait(18);
         }
         await wait(220); // selection hold pause
+        if (!(await waitUntilVisible())) return;
         keptEl.textContent = '';
         selEl.textContent = '';
       } else {
         // Backspace mode
         for (let s = phrase.length - 1; s >= 0 && running; s--) {
+          if (!(await waitUntilVisible())) return;
           keptEl.textContent = phrase.slice(0, s);
           markIdle();
           await wait(deleteSpeed);

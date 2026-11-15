@@ -2600,7 +2600,7 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
 /* ───────────── Главный экран без входа (account.js, landing) ─────────────
    Компьютер: о проекте слева, карточка входа справа. Телефон: заголовок,
    вход, затем превью и возможности — одной колонкой. */
-.app-lock.landing { display: block; padding: 0; overflow-x: hidden; overflow-y: auto; color: var(--text); isolation: isolate; }
+.app-lock.landing { overflow-anchor: none; display: block; padding: 0; overflow-x: hidden; overflow-y: auto; color: var(--text); isolation: isolate; }
 .ld-bg { position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; }
 .ld-bg i { position: absolute; width: 46vmax; height: 46vmax; border-radius: 50%; filter: blur(70px); opacity: .45;
   background: var(--head, #4a6fae); animation: ld-float 18s ease-in-out infinite alternate; }
@@ -2633,7 +2633,7 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
 .ld-brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 18px; }
 .ld-brand img { border-radius: 10px; box-shadow: 0 4px 14px rgba(0, 0, 0, .15); }
 .ld-hero h1 { margin: 18px 0 12px; font-size: clamp(30px, 7.5vw, 54px); line-height: 1.05; letter-spacing: -.02em; }
-.ld-grad { background: linear-gradient(90deg, var(--head, #4a6fae), #8b5cf6, #ec4899, var(--head, #4a6fae));
+.ld-grad { display: block; background: linear-gradient(90deg, var(--head, #4a6fae), #8b5cf6, #ec4899, var(--head, #4a6fae));
   background-size: 300% 100%; -webkit-background-clip: text; background-clip: text; color: transparent;
   animation: ld-shine 8s linear infinite; }
 @keyframes ld-shine { to { background-position: 300% 0; } }
