@@ -60,7 +60,9 @@ PY
 notify() { "$PY" -m app.tools.notify_admin "$1" >/dev/null 2>&1 || true; }
 
 health() {
-  for _ in $(seq 1 15); do
+  # Веб поднимается после запуска школьных сессий, которые могут занять больше 30 секунд.
+  local deadline=$((SECONDS + 120))
+  while ((SECONDS < deadline)); do
     sleep 2
     systemctl is-active --quiet netschoolbot || continue
     "$PY" - <<'PY' && return 0
