@@ -596,6 +596,13 @@
   left: 0;
   top: .1em;
 }
+.ld-grad.ld-helper-closing .typewriter-kept:not(:empty) + .typewriter-caret::after {
+  content: '';
+  position: absolute;
+  inset: 0 100% 0 auto;
+  width: .34em;
+  background: linear-gradient(to right, transparent, color-mix(in srgb, var(--primary) 36%, transparent));
+}
 .ld-grad .typewriter-kept {
   white-space: pre-line;
   background: var(--ld-title-gradient);

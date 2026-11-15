@@ -2648,6 +2648,7 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
   pointer-events: none;
 }
 .ld-hero > .ld-helper {
+  --ld-helper-edge: -15;
   position: absolute;
   z-index: 2;
   inset: 0 auto auto 0;
@@ -2656,6 +2657,15 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
   color: var(--text);
   animation: none;
   pointer-events: none;
+}
+@media (max-width: 600px) {
+  .ld-hero { padding-inline-start: 22px; }
+  .ld-brand { margin-inline-start: -22px; }
+  .ld-hero > .ld-helper {
+    --ld-helper-scale: 1.32;
+    --ld-helper-edge: 0;
+    filter: drop-shadow(0 0 1px var(--bg));
+  }
 }
 .ld-helper i { position: absolute; display: block; }
 .ld-helper-head {

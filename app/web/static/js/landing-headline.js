@@ -31,10 +31,11 @@ export function landingHeadlineScene(root, headline) {
   const arms = actor.querySelectorAll('.ld-helper-arm');
   const legs = actor.querySelectorAll('.ld-helper-leg');
   const lead = hero.querySelector('.ld-lead');
-  let probe, probeText, width, startingHeight;
+  let probe, probeText, width, startingHeight, closing;
 
-  const pose = (x, y, angle = 0) => `translate(${x}px, ${y}px) rotate(${angle}deg)`;
-  const behindIcon = `${pose(8, 1)} scale(.76)`;
+  const pose = (x, y, angle = 0, scale = 'var(--ld-helper-scale, 1)') =>
+    `translate(${x}px, ${y}px) rotate(${angle}deg) scale(${scale})`;
+  const behindIcon = pose(8, 1, 0, .76);
   const transform = (...values) => values.map(value => ({ transform: value }));
   const visible = () => {
     const text = headline.getBoundingClientRect();
@@ -44,6 +45,7 @@ export function landingHeadlineScene(root, headline) {
 
   function finish() {
     headline.style.removeProperty('height');
+    headline.classList.remove('ld-helper-closing');
     actor.hidden = true;
     probe?.remove();
     probe = probeText = null;
@@ -93,13 +95,38 @@ export function landingHeadlineScene(root, headline) {
     return [limb, transform(...[0, swing, -swing, swing, -swing, 0].map(deg => `rotate(${deg}deg)`))];
   });
 
+  async function closeScene(before, after, edge, contact, current, destination) {
+    const lift = await play(310, [
+      [headline, [{ height: `${before}px` }, { height: `${after}px` }]],
+      [actor, transform(current, pose(edge, contact + 8), destination)],
+      ...[...arms].map((arm, i) => [arm, transform(
+        i === 0 ? 'rotate(30deg)' : 'rotate(-33deg)',
+        i === 0 ? 'rotate(-113deg)' : 'rotate(-122deg)',
+        i === 0 ? 'rotate(30deg)' : 'rotate(-33deg)',
+      )]),
+    ]);
+    if (!lift.length) return;
+    headline.style.removeProperty('height');
+    actor.style.transform = destination;
+    lift.forEach(animation => animation.cancel());
+
+    const run = await play(295, [
+      [actor, transform(destination, pose(edge, contact * .4, -12), pose(edge, 8, 14), behindIcon)],
+      ...gait(legs, -34), ...gait(arms, -38),
+    ]);
+    run.forEach(animation => animation.cancel());
+    finish();
+  }
+
   return async (next, kept, fullPhrase) => {
     if (typeof actor.animate !== 'function') return;
+    if (closing) {
+      if (!fullPhrase) return;
+      await closing;
+    }
     const currentWidth = headline.clientWidth;
     if (!actor.hidden && currentWidth !== width) finish();
-    // Keep the space while the phrase types and erases. Lift only after
-    // the final character disappears so the character cadence stays even.
-    if (!actor.hidden && (fullPhrase || next)) return;
+    if (actor.hidden ? !fullPhrase : fullPhrase) return;
     if (!probe) {
       probe = kept.parentElement.cloneNode(true);
       probe.classList.add('ld-headline-probe');
@@ -112,92 +139,55 @@ export function landingHeadlineScene(root, headline) {
     let after = probe.getBoundingClientRect().height;
     if (Math.abs(after - before) <= 1) return;
     const growing = after > before;
-    if (!growing && actor.hidden) return;
+    if (!growing && (actor.hidden || after > startingHeight + 1)) return;
     if (growing && fullPhrase) {
       // Wait for a real wrap, then open enough room for the entire phrase.
       probeText.textContent = fullPhrase;
       after = Math.max(after, probe.getBoundingClientRect().height);
     }
 
-    // The body stays beside the text. The extended hands reach the paragraph.
-    const edge = -15;
-    const contact = lead.offsetTop - 25;
+    const style = getComputedStyle(actor);
+    const edge = Number.parseFloat(style.getPropertyValue('--ld-helper-edge'));
+    const scale = Number.parseFloat(style.getPropertyValue('--ld-helper-scale')) || 1;
+    const contact = lead.offsetTop - 25 * scale;
     const current = pose(edge, contact);
     const destination = pose(edge, contact + after - before);
     width = currentWidth;
 
-    if (actor.hidden) {
-      startingHeight = before;
-      actor.hidden = false;
-      actor.classList.remove('ld-helper-looking');
-      const run = await play(350, [
-        [actor, transform(behindIcon, pose(edge, 8, -14), pose(edge, contact * .55, 12), current)],
-        ...gait(legs, 34), ...gait(arms, 38),
-      ]);
-      if (!run.length) return;
-      actor.style.transform = current;
-      run.forEach(animation => animation.cancel());
-    }
-
-    const delta = after - before;
-    const crouch = pose(edge, contact + 18);
-    const lifted = pose(edge, contact + 18 + delta);
-    const liftArms = ['rotate(-113deg)', 'rotate(-122deg)'];
-    const relaxedArms = ['rotate(30deg)', 'rotate(-33deg)'];
-    const armTracks = (from, to) => [...arms].map((arm, index) =>
-      [arm, transform(from[index], to[index])]);
-
-    let reach;
     if (!growing) {
-      kept.textContent = next;
-      // Dip below the paragraph, then turn both hands up before it moves.
-      reach = await play(140, [
-        [actor, transform(current, crouch)],
-        ...armTracks(relaxedArms, liftArms),
-      ]);
-      if (!reach.length) return;
+      headline.style.height = `${before}px`;
+      headline.classList.add('ld-helper-closing');
+      closing = closeScene(before, after, edge, contact, current, destination)
+        .finally(() => { closing = null; });
+      return;
     }
+
+    startingHeight = before;
+    actor.hidden = false;
+    actor.classList.remove('ld-helper-looking');
+    const run = await play(350, [
+      [actor, transform(behindIcon, pose(edge, 8, -14), pose(edge, contact * .55, 12), current)],
+      ...gait(legs, 34), ...gait(arms, 38),
+    ]);
+    if (!run.length) return;
+    actor.style.transform = current;
+    run.forEach(animation => animation.cancel());
 
     headline.style.height = `${before}px`;
-    const handMotion = growing
-      ? [...arms].map((arm, index) => [arm, transform(
+    const push = await play(275, [
+      [headline, [{ height: `${before}px` }, { height: `${after}px` }]],
+      [actor, transform(current, destination)],
+      ...[...arms].map((arm, index) => [arm, transform(
         index === 0 ? 'rotate(-28deg)' : 'rotate(-35deg)',
         index === 0 ? 'rotate(-36deg) scaleY(1.17)' : 'rotate(-42deg) scaleY(1.22)',
         index === 0 ? 'rotate(-30deg)' : 'rotate(-36deg)',
-      )])
-      : armTracks(liftArms, liftArms);
-    const shift = await play(275, [
-      [headline, [{ height: `${before}px` }, { height: `${after}px` }]],
-      [actor, growing ? transform(current, destination) : transform(crouch, lifted)],
-      ...handMotion,
+      )]),
     ]);
-    reach?.forEach(animation => animation.cancel());
-    if (!shift.length) return;
+    if (!push.length) return;
     kept.textContent = next;
-    if (growing && fullPhrase) headline.style.height = `${after}px`;
-    else headline.style.removeProperty('height');
+    headline.style.height = `${after}px`;
     actor.style.transform = destination;
     actor.classList.add('ld-helper-looking');
-
-    if (!growing) {
-      const recover = await play(130, [
-        [actor, transform(lifted, destination)],
-        ...armTracks(liftArms, relaxedArms),
-      ]);
-      shift.forEach(animation => animation.cancel());
-      if (!recover.length) return;
-      recover.forEach(animation => animation.cancel());
-    } else {
-      shift.forEach(animation => animation.cancel());
-    }
-
-    if (after <= startingHeight + 1) {
-      const run = await play(325, [
-        [actor, transform(destination, pose(edge, contact * .55, -12), pose(edge, 8, 14), behindIcon)],
-        ...gait(legs, -34), ...gait(arms, -38),
-      ]);
-      run.forEach(animation => animation.cancel());
-      finish();
-    }
+    push.forEach(animation => animation.cancel());
   };
 }
