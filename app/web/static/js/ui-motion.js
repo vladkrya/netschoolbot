@@ -1118,6 +1118,8 @@ export function cycleTypewriter(element, phrases, options = {}) {
     naturalVariance = false,
     typos = false,
     visibilityRoot,
+    beforeTextChange,
+    layoutPhrase,
     // A normal backspace is clearer than the selection sweep on a large
     // headline and always reads left-to-right while typing.
     deleteMode = 'backspace', // 'select' | 'backspace'
@@ -1138,7 +1140,21 @@ export function cycleTypewriter(element, phrases, options = {}) {
   let idleTimer = 0;
   let running = true;
 
+  function positionCaret() {
+    const lastText = selEl.textContent.trimEnd() ? selEl : keptEl;
+    const length = lastText.textContent.trimEnd().length;
+    const bounds = element.getBoundingClientRect();
+    if (!length) return;
+    const range = document.createRange();
+    range.setStart(lastText.firstChild, length - 1);
+    range.setEnd(lastText.firstChild, length);
+    const glyph = range.getBoundingClientRect();
+    caretEl.style.setProperty('--typewriter-caret-x', `${glyph.right - bounds.left + 1}px`);
+    caretEl.style.setProperty('--typewriter-caret-y', `${glyph.top - bounds.top + (glyph.height - caretEl.offsetHeight) / 2}px`);
+  }
+
   const markIdle = () => {
+    if (layoutPhrase) positionCaret();
     clearTimeout(idleTimer);
     if (caretEl) caretEl.dataset.idle = 'false';
     idleTimer = setTimeout(() => {
@@ -1171,7 +1187,8 @@ export function cycleTypewriter(element, phrases, options = {}) {
 
   async function runCycle() {
     while (await waitUntilVisible()) {
-      const phrase = phrases[phraseIndex];
+      const source = phrases[phraseIndex];
+      const phrase = layoutPhrase ? layoutPhrase(source) : source;
       let typed = '';
       keptEl.textContent = '';
       selEl.textContent = '';
@@ -1196,6 +1213,8 @@ export function cycleTypewriter(element, phrases, options = {}) {
 
         if (typos && !(await waitUntilVisible())) return;
         typed += targetChar;
+        if (beforeTextChange) await beforeTextChange(typed, keptEl, phrase);
+        if (!(await waitUntilVisible())) return;
         keptEl.textContent = typed;
         markIdle();
         await wait(/[,.—]/.test(targetChar) ? 190 : getDelay());
@@ -1223,7 +1242,10 @@ export function cycleTypewriter(element, phrases, options = {}) {
         // Backspace mode
         for (let s = phrase.length - 1; s >= 0 && running; s--) {
           if (!(await waitUntilVisible())) return;
-          keptEl.textContent = phrase.slice(0, s);
+          const next = phrase.slice(0, s);
+          if (beforeTextChange) await beforeTextChange(next, keptEl);
+          if (!(await waitUntilVisible())) return;
+          keptEl.textContent = next;
           markIdle();
           await wait(deleteSpeed);
         }

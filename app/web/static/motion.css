@@ -584,11 +584,21 @@
   vertical-align: -0.1em;
 }
 .ld-grad .typewriter-caret {
-  background: var(--head);
-  -webkit-text-fill-color: var(--head);
+  position: absolute;
+  left: var(--typewriter-caret-x, 0px);
+  top: var(--typewriter-caret-y, .1em);
+  width: max(2px, .08em);
+  height: .85em;
+  margin: 0;
+  background: var(--primary);
+}
+.ld-grad .typewriter-kept:empty + .typewriter-caret {
+  left: 0;
+  top: .1em;
 }
 .ld-grad .typewriter-kept {
-  background: linear-gradient(90deg, var(--head, #4a6fae), #8b5cf6, #ec4899, var(--head, #4a6fae));
+  white-space: pre-line;
+  background: var(--ld-title-gradient);
   background-size: 300% 100%;
   -webkit-background-clip: text;
   background-clip: text;

@@ -10,6 +10,7 @@ import { notify } from './haptics.js';
 import { ICONS } from './icons.js';
 import { pushScreen } from './screens.js';
 import { setHalloweenAccess } from './appearance.js';
+import { landingHeadlineScene, layoutLandingPhrase } from './landing-headline.js';
 import { cycleTypewriter, enhanceAuthMotion, rejectSpringyInput, setOtpResult } from './ui-motion.js';
 
 /** Подпись под кнопкой входа: согласие с политикой. Ссылка — в новой
@@ -70,7 +71,7 @@ function heroHtml() {
   return `
     <section class="ld-hero">
       <div class="ld-brand"><img src="${base}/static/icon-192.png" alt="" width="36" height="36"> СГОшка</div>
-      <h1>«СГОшка» —<span class="ld-grad">клиент для Сетевого города и Моей школы</span></h1>
+      <h1>«СГОшка» —<span class="ld-grad">клиент для&nbsp;Сетевого города и&nbsp;Моей школы</span></h1>
       <p class="ld-lead">Оценки, домашние задания и расписание из вашего электронного дневника
         в одном красивом приложении. Работает в Telegram, в браузере и на домашнем экране телефона.</p>
       <p class="ld-note">Неофициальное приложение. Не связано с «Сетевым городом», «Моей школой», Госуслугами, ИРТехом, школами и органами образования.</p>
@@ -78,6 +79,12 @@ function heroHtml() {
         <button class="btn ld-demo" type="button" data-landing-route="demo">▶ Демо-режим</button>
         <button class="btn outline ld-status" type="button" data-landing-route="status"><i class="ld-status-dot" aria-hidden="true"></i>Статус серверов</button>
       </div>
+      <span class="ld-helper" aria-hidden="true" hidden>
+        <i class="ld-helper-leg"></i><i class="ld-helper-leg"></i>
+        <i class="ld-helper-body"></i>
+        <i class="ld-helper-arm"></i><i class="ld-helper-arm"></i>
+        <i class="ld-helper-head"><i class="ld-helper-face"></i></i>
+      </span>
     </section>
     <div class="ld-preview" aria-hidden="true">
       <div class="ld-stage">
@@ -119,10 +126,16 @@ function landing(html) {
     const headline = root.querySelector('.ld-hero .ld-grad');
     cycleTypewriter(headline, [
       headline.textContent,
-      'оценки, задания и расписание — рядом',
-      'дневник всегда под рукой',
-      'всё важное для учёбы — в одном месте',
-    ], { pauseBeforeDelete: 2200, visibilityRoot: root });
+      'оценки, задания и\u00a0расписание —\u00a0рядом',
+      'дневник всегда под\u00a0рукой',
+      'всё важное для\u00a0учёбы — в\u00a0одном месте',
+    ], {
+      pauseBeforeDelete: 2200,
+      loopDelay: 100,
+      visibilityRoot: root,
+      layoutPhrase: phrase => layoutLandingPhrase(headline, phrase),
+      beforeTextChange: landingHeadlineScene(root, headline),
+    });
   }
   const card = root.querySelector('.account-card');
   card.innerHTML = html;
