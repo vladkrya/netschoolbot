@@ -1,0 +1,531 @@
+/* City artwork and route board for the second owner theme. */
+.miami-scene {
+  display: none;
+}
+
+:root[data-style="vice-city-2"] {
+  --miami-paper: var(--card);
+  --miami-line: color-mix(in srgb, var(--border) 70%, transparent);
+  --miami-ink: var(--text);
+  --miami-accent: var(--primary);
+  --miami-frame: 18px 18px 7px 18px;
+  --miami-type: var(--vice-display);
+  --miami-focus: 2px solid var(--miami-accent);
+}
+
+:root[data-style="vice-city-2"][data-vice-phase="morning"] {
+  --miami-sky: #f6ddcd;
+  --miami-aqua: #1b6962;
+  --miami-haze: #fff1de;
+  --miami-edge: #c5a895;
+  --miami-light: #fff3bd;
+  --miami-glow: #ffd887;
+}
+
+:root[data-style="vice-city-2"][data-vice-phase="evening"] {
+  --miami-sky: #24202a;
+  --miami-aqua: #a0c6bb;
+  --miami-haze: #211d27;
+  --miami-edge: #6e5765;
+  --miami-light: #ffb9b9;
+  --miami-glow: #d77bab;
+}
+
+/* The date keeps all its controls. The scene is one quiet backdrop, including
+   at large text sizes where the title can wrap and stretch the header. */
+:root[data-style="vice-city-2"]:not(#_) .date-bar.date-split {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 5px;
+  min-height: 92px;
+  margin: 2px 12px 9px;
+  padding: 9px;
+  border: 1px solid var(--miami-edge);
+  border-radius: var(--miami-frame);
+  background: var(--miami-sky);
+  color: var(--miami-ink);
+  box-shadow: var(--lift);
+}
+
+:root[data-style="vice-city-2"] .miami-scene {
+  position: absolute;
+  inset: 0;
+  display: block;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: -1;
+}
+
+:root[data-style="vice-city-2"] .miami-scene::before,
+:root[data-style="vice-city-2"] .miami-scene::after,
+:root[data-style="vice-city-2"] .miami-scene i {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+:root[data-style="vice-city-2"] .miami-scene::before {
+  inset: -6% -3%;
+  background: var(--vice-art) right 51% / cover no-repeat;
+}
+
+:root[data-style="vice-city-2"] .miami-scene::after {
+  background: linear-gradient(90deg, var(--miami-haze) 7%,
+    color-mix(in srgb, var(--miami-haze) 89%, transparent) 38%, transparent 86%);
+}
+
+:root[data-style="vice-city-2"] .miami-scene i {
+  inset-inline-start: 53%;
+}
+
+:root[data-style="vice-city-2"] .miami-scene i:first-child {
+  background: radial-gradient(ellipse at 78% 17%, var(--miami-glow), transparent 68%);
+  opacity: .26;
+}
+
+:root[data-style="vice-city-2"] .miami-scene i:last-child {
+  inset-block-start: 71%;
+  background: linear-gradient(90deg, transparent, var(--miami-light), transparent)
+    55% 53% / 33% 2px no-repeat;
+  opacity: .23;
+}
+
+:root[data-style="vice-city-2"]:not(#_) .date-title {
+  align-items: start;
+  align-self: center;
+  min-height: 44px;
+  justify-content: center;
+  text-align: left;
+  color: var(--miami-ink);
+}
+
+:root[data-style="vice-city-2"] .date-label {
+  font-family: var(--miami-type);
+  font-weight: 800;
+  font-style: italic;
+  font-size: clamp(24px, 7vw, 38px);
+  line-height: 1;
+  overflow-wrap: anywhere;
+}
+
+:root[data-style="vice-city-2"] .date-sub {
+  color: var(--miami-ink);
+  font-weight: 600;
+  opacity: .83;
+  text-wrap: balance;
+}
+
+:root[data-style="vice-city-2"]:not(#_) .date-arrow {
+  width: 34px;
+  height: 44px;
+  color: var(--miami-ink);
+  border-radius: 11px 11px 4px 11px;
+  background: color-mix(in srgb, var(--miami-paper) 90%, transparent);
+  box-shadow: inset 0 0 0 1px var(--miami-line);
+}
+
+:root[data-style="vice-city-2"] .date-arrow:hover {
+  background: var(--miami-paper);
+}
+
+:root[data-style="vice-city-2"] .topbar-title {
+  font-size: 19px;
+  letter-spacing: .02em;
+}
+
+:root[data-style="vice-city-2"] :is(.topbar-btn, .screen-back) {
+  border-radius: 13px 13px 5px 13px;
+}
+
+:root[data-style="vice-city-2"] .week-row {
+  padding-bottom: 7px;
+}
+
+:root[data-style="vice-city-2"] .week-strip {
+  position: relative;
+  isolation: isolate;
+}
+
+:root[data-style="vice-city-2"] .week-strip::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: auto 5% 8px;
+  height: 1px;
+  background: var(--miami-line);
+}
+
+:root[data-style="vice-city-2"]:not(#_) .week-day {
+  border-radius: 12px 12px 4px 12px;
+  padding-block: 4px 6px;
+  min-height: 44px;
+}
+
+:root[data-style="vice-city-2"] .week-day.on {
+  box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--miami-ink) 20%, transparent);
+}
+
+:root[data-style="vice-city-2"] .wd-num {
+  font-variant-numeric: tabular-nums;
+  font-weight: 750;
+}
+
+:root[data-style="vice-city-2"] .week-day.today:not(.on) .wd-num {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: var(--miami-accent);
+}
+
+/* The artwork belongs to the date bar. Keep the summary clear for grades. */
+:root[data-style="vice-city-2"]:not([data-holiday]):not(#_) .day-summary {
+  align-items: center;
+  border: 1px solid var(--miami-line);
+  border-inline-start: 3px solid var(--miami-aqua);
+  border-radius: var(--miami-frame);
+  background: var(--miami-paper);
+  padding: 10px 12px;
+}
+
+:root[data-style="vice-city-2"] .ds-title {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  column-gap: 8px;
+  font-size: 18px;
+}
+
+:root[data-style="vice-city-2"] .ds-hours {
+  font-style: normal;
+  font-size: .83em;
+  color: var(--miami-aqua);
+}
+
+:root[data-style="vice-city-2"] .ds-separator {
+  display: none;
+}
+
+:root[data-style="vice-city-2"] .ds-marks {
+  border-inline-start: 1px dashed var(--miami-line);
+  padding-inline-start: 8px;
+}
+
+:root[data-style="vice-city-2"]:not(#_) #dayContent .lesson-card {
+  position: relative;
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+  column-gap: 11px;
+  row-gap: 3px;
+  padding: 10px 12px;
+  margin: 0 0 6px;
+  border: 1px solid var(--miami-line);
+  border-radius: var(--miami-frame);
+  background: var(--miami-paper);
+  box-shadow: none;
+  min-width: 0;
+}
+
+:root[data-style="vice-city-2"] #dayContent .lesson-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 27px;
+  width: 1px;
+  pointer-events: none;
+  background: var(--miami-line);
+}
+
+:root[data-style="vice-city-2"] #dayContent .lesson-card:has(+ .lesson-card)::before {
+  inset-block-end: -7px;
+}
+
+:root[data-style="vice-city-2"] #dayContent .lesson-card:not(.lesson-card + .lesson-card)::before {
+  inset-block-start: 18px;
+}
+
+:root[data-style="vice-city-2"] #dayContent .lesson-card:not(:has(+ .lesson-card))::before {
+  inset-block-end: calc(100% - 38px);
+}
+
+:root[data-style="vice-city-2"] #dayContent .lesson-card[data-current-lesson] {
+  border-color: var(--miami-aqua);
+  background: color-mix(in srgb, var(--miami-aqua) 9%, var(--miami-paper));
+}
+
+:root[data-style="vice-city-2"]:not(#_) #dayContent .lc-top {
+  display: contents;
+}
+
+:root[data-style="vice-city-2"]:not(#_) #dayContent .lc-num {
+  position: relative;
+  grid-column: 1;
+  grid-row: 1 / span 2;
+  align-self: start;
+  display: grid;
+  place-items: center;
+  min-width: 32px;
+  width: 32px;
+  height: 30px;
+  border-radius: 9px 9px 3px 9px;
+  background: var(--card-2);
+  box-shadow: inset 0 0 0 1px var(--miami-line);
+  color: var(--miami-accent);
+  font: italic 800 17px / 1 var(--miami-type);
+  font-variant-numeric: tabular-nums;
+}
+
+:root[data-style="vice-city-2"] #dayContent [data-current-lesson] .lc-num {
+  color: var(--miami-ink);
+  background: color-mix(in srgb, var(--miami-aqua) 23%, var(--miami-paper));
+}
+
+:root[data-style="vice-city-2"]:not(#_) #dayContent .lc-num:empty {
+  width: 8px;
+  height: 8px;
+  min-width: 8px;
+  margin: 8px auto 0;
+  border-radius: 50%;
+  background: var(--miami-aqua);
+}
+
+:root[data-style="vice-city-2"]:not(#_) #dayContent .lc-subject {
+  grid-column: 2;
+  grid-row: 1;
+  align-self: center;
+  color: var(--miami-ink);
+  font-size: 18px;
+  line-height: 1.13;
+  overflow-wrap: anywhere;
+}
+
+:root[data-style="vice-city-2"]:not(#_) #dayContent .lc-marks {
+  grid-column: 3;
+  grid-row: 1 / span 2;
+  align-self: start;
+  max-width: min(96px, 25vw);
+  flex-wrap: wrap;
+}
+
+:root[data-style="vice-city-2"] #dayContent .lc-marks:empty {
+  display: none;
+}
+
+:root[data-style="vice-city-2"]:not(#_) #dayContent :is(.lc-bottom, .lc-hw, .lc-badges) {
+  grid-column: 2 / -1;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+:root[data-style="vice-city-2"]:not(#_) #dayContent .lc-bottom {
+  grid-column: 2;
+  grid-row: 2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: start;
+  gap: 3px 8px;
+  color: var(--text2);
+  font-size: 11px;
+}
+
+:root[data-style="vice-city-2"] #dayContent .lc-time {
+  color: var(--miami-aqua);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+:root[data-style="vice-city-2"]:not(#_) #dayContent .lc-status {
+  text-align: left;
+}
+
+:root[data-style="vice-city-2"]:not(#_) #dayContent .lc-status::before {
+  content: none;
+}
+
+:root[data-style="vice-city-2"] #dayContent .lc-status:empty,
+:root[data-style="vice-city-2"] #dayContent .lc-time:empty {
+  display: none;
+}
+
+:root[data-style="vice-city-2"]:not(#_) #dayContent .lc-hw {
+  width: max-content;
+  max-width: 100%;
+  color: var(--text2);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+:root[data-style="vice-city-2"]:not(#_) #dayContent .lc-hw.hw-todo {
+  color: var(--miami-accent);
+}
+
+:root[data-style="vice-city-2"]:not(#_) #dayContent .lc-hw.hw-done {
+  color: var(--g5);
+}
+
+:root[data-style="vice-city-2"] .lt-card {
+  border-radius: var(--miami-frame);
+  border: 1px solid var(--miami-line);
+  box-shadow: inset 3px 0 0 var(--miami-aqua);
+}
+
+:root[data-style="vice-city-2"] .lt-clock {
+  font-family: var(--miami-type);
+  font-style: italic;
+  font-variant-numeric: tabular-nums;
+}
+
+/* A finished lesson is a small confirmation; keep the route in view. */
+:root[data-style="vice-city-2"] .lt-card.done {
+  height: 48px;
+  min-height: 0;
+  overflow: hidden;
+}
+
+:root[data-style="vice-city-2"] .lt-card.done .lt-done {
+  font-size: 14px;
+}
+
+:root[data-style="vice-city-2"] .lt-card.done .lt-check {
+  width: 24px;
+  height: 24px;
+  font-size: 13px;
+}
+
+/* The other destinations share the frame, ink, numbers and accent system. */
+:root[data-style="vice-city-2"]:not(#_) :is(
+  .hw-card, .subject-card, .mail-card, .ann-card, .task-block, .drawer-section,
+  .search, .totals-head, .th-card
+) {
+  border-radius: var(--miami-frame);
+  border-color: var(--miami-line);
+}
+
+:root[data-style="vice-city-2"] :is(.hw-card, .subject-card, .mail-card, .ann-card) {
+  box-shadow: inset 0 -1px 0 var(--miami-line);
+}
+
+:root[data-style="vice-city-2"] :is(.hw-day, .drawer-heading, .screen-title, .ann-title) {
+  font-family: var(--miami-type);
+  font-style: italic;
+  font-weight: 800;
+  letter-spacing: .015em;
+}
+
+:root[data-style="vice-city-2"] :is(.hw-day, .drawer-sub) {
+  color: var(--miami-aqua);
+}
+
+:root[data-style="vice-city-2"] :is(.hw-card .hw-subject, .subject-card .sc-name) {
+  font-size: 18px;
+  line-height: 1.2;
+}
+
+:root[data-style="vice-city-2"] .sc-avg {
+  font-variant-numeric: tabular-nums;
+}
+
+:root[data-style="vice-city-2"] .search:focus-within {
+  outline: var(--miami-focus);
+  outline-offset: 1px;
+}
+
+:root[data-style="vice-city-2"]:not(#_) .bottom-nav {
+  background: var(--glass);
+  border: 1px solid var(--miami-line);
+  box-shadow: var(--glass-shadow);
+}
+
+:root[data-style="vice-city-2"] .bottom-nav .nav-item:not(.active) .ico {
+  color: var(--miami-aqua);
+}
+
+:root[data-style="vice-city-2"] .bottom-nav .nav-item.active {
+  font-weight: 750;
+}
+
+:root[data-style="vice-city-2"] :is(.lesson-card, .date-title, .date-arrow, .nav-item):focus-visible {
+  outline: var(--miami-focus);
+  outline-offset: -2px;
+}
+
+@media (max-width: 360px) {
+  :root[data-style="vice-city-2"]:not(#_) .date-bar.date-split {
+    margin-inline: 8px;
+    padding-inline: 6px;
+    gap: 3px;
+  }
+
+  :root[data-style="vice-city-2"]:not(#_) .date-arrow {
+    width: 30px;
+  }
+
+  :root[data-style="vice-city-2"] .date-label {
+    font-size: clamp(21px, 6.8vw, 26px);
+  }
+
+  :root[data-style="vice-city-2"]:not(#_) #dayContent .lesson-card {
+    column-gap: 8px;
+    padding-inline: 9px;
+  }
+
+  :root[data-style="vice-city-2"] #dayContent .lesson-card::before {
+    inset-inline-start: 24px;
+  }
+}
+
+@media (min-width: 1024px) {
+  :root[data-style="vice-city-2"]:not(#_) .bottom-nav .nav-glider {
+    background: var(--vice-selected);
+  }
+
+  :root[data-style="vice-city-2"]:not(#_) .bottom-nav .nav-item.active {
+    color: var(--vice-selected-text);
+  }
+
+  :root[data-style="vice-city-2"] .date-label {
+    font-size: 39px;
+  }
+
+  :root[data-style="vice-city-2"]:not(#_) .date-title {
+    padding-inline: 16px;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-style="vice-city-2"]:not(.motion-min, [data-vice-paused]) .miami-scene::before {
+    animation: miami-breeze 17s ease-in-out infinite alternate;
+  }
+
+  :root[data-style="vice-city-2"]:not(.motion-min, [data-vice-paused]) .miami-scene i:first-child {
+    animation: miami-light 4s ease-in-out infinite alternate;
+  }
+
+  :root[data-style="vice-city-2"]:not(.motion-min, [data-vice-paused]) .miami-scene i:last-child {
+    animation: miami-water 8s linear infinite;
+  }
+
+  :root[data-style="vice-city-2"]:not(.motion-min, [data-vice-paused]) #dayContent [data-current-lesson]::before {
+    animation: miami-light 3s ease-in-out infinite alternate;
+    background: var(--miami-aqua);
+  }
+}
+
+@keyframes miami-breeze {
+  from { transform: translateX(0) scale(1); }
+  to { transform: translateX(-1.6%) scale(1.035); }
+}
+
+@keyframes miami-light {
+  from { opacity: .18; }
+  to { opacity: .59; }
+}
+
+@keyframes miami-water {
+  0% { background-position-x: 100%; opacity: 0; }
+  24%, 70% { opacity: .68; }
+  100% { background-position-x: 3%; opacity: 0; }
+}

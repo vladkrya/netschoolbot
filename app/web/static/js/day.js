@@ -294,11 +294,11 @@ function daySummary(lessons) {
   // Оценка — с коэффициентом, как в карточке урока; нажатие открывает урок.
   const marks = lessons.flatMap((lesson, index) => realMarks(lesson.marks).map((m, nth) =>
     `<button class="ds-mark" data-summary-lesson="${index}" data-summary-mark="${nth}" aria-label="${esc(lesson.subject)}: ${esc(m.mark)}">${markBox(m.mark, freshClass(m, lesson.subject), m.weight || 1)}</button>`)).join('');
-  const parts = [`${lessons.length} ${plural(lessons.length, 'урок', 'урока', 'уроков')}`];
-  if (first && last) parts.push(`${first}–${last}`);
+  const count = `${lessons.length} ${plural(lessons.length, 'урок', 'урока', 'уроков')}`;
+  const hours = first && last ? `${first}–${last}` : '';
   return `<div class="day-summary">
       <div class="ds-main">
-        <div class="ds-title">${esc(parts.join(' · '))}</div>
+        <div class="ds-title"><span class="ds-count">${esc(count)}</span>${hours ? `<span class="ds-separator"> · </span><span class="ds-hours">${esc(hours)}</span>` : ''}</div>
         <div class="ds-sub">${homework ? `Д/З по ${homework} ${plural(homework, 'предмету', 'предметам', 'предметам')}` : 'Без домашних заданий'}</div>
       </div>
       ${marks ? `<div class="ds-marks">${marks}</div>` : ''}
@@ -369,6 +369,11 @@ function renderDay(quiet = false) {
     flyTo(from, lessonMarks()[Number(button.dataset.summaryMark)]);
   }));
   container.querySelectorAll('[data-lesson]').forEach((card) => {
+    card.addEventListener('keydown', (event) => {
+      if (event.target !== card || (event.key !== 'Enter' && event.key !== ' ')) return;
+      event.preventDefault();
+      card.click();
+    });
     card.addEventListener('click', (event) => {
       tap();
       const lesson = lessons[Number(card.dataset.lesson)];
@@ -471,11 +476,12 @@ function lessonCard(lesson, index) {
   const status = homeworkStatus(lesson.homework);
   const test = lesson.homework.find(isTestWork);
   const time = lesson.moderation_cancelled ? '' : lesson.time || [lesson.start, lesson.end].filter(Boolean).join(' – ');
+  const timing = lessonStatus(lesson, state.date);
   // Новый дизайн: вместо бейджа «Д/З» — начало самого задания.
   const preview = isNewDesign()
     ? lesson.homework.map((item) => String(item.text || '').replace(/\s+/g, ' ').trim()).filter(Boolean).join(' · ')
     : '';
-  return `<div class="lesson-card" data-lesson="${index}">
+  return `<div class="lesson-card" data-lesson="${index}" role="button" tabindex="0"${timing === 'Идёт урок' ? ' data-current-lesson' : ''}>
       <div class="lc-top">
         <span class="lc-num">${esc(lessonNo(lesson))}</span>
         <span class="lc-subject">${esc(lesson.subject)}</span>
@@ -495,7 +501,7 @@ function lessonCard(lesson, index) {
         ${hasComment ? `<span class="hw-badge clip" title="Есть комментарий к заданию">${ICONS.chat}</span>` : ''}
       </div>` : ''}
       ${preview ? `<div class="lc-hw ${status}">${hasFiles ? ICONS.clip : ''}${hasComment ? ICONS.chat : ''}<span>${esc(preview)}</span></div>` : ''}
-      <div class="lc-bottom"><span>${esc(time)}</span><span>${esc(lessonStatus(lesson, state.date))}</span></div>
+      <div class="lc-bottom"><span class="lc-time">${esc(time)}</span><span class="lc-status">${esc(timing)}</span></div>
     </div>`;
 }
 
