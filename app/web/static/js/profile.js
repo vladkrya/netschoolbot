@@ -496,6 +496,9 @@ function render() {
         <label class="switch-row"><span>Вайс-Сити 2<span class="muted small switch-note">Солнечная сцена с 06:00, неоновая с 18:00</span></span>
           <input type="checkbox" switch class="switch" id="viceCityTwoOn" ${vice === 2 ? 'checked' : ''}
             ${data.managed_prefs?.halloween === 'on' ? 'disabled title="Хеллоуин задан администратором"' : ''}></label>
+        <label class="switch-row"><span>Вайс-Сити 3<span class="muted small switch-note">Живая набережная и расписание маршрутом</span></span>
+          <input type="checkbox" switch class="switch" id="viceCityThreeOn" ${vice === 3 ? 'checked' : ''}
+            ${data.managed_prefs?.halloween === 'on' ? 'disabled title="Хеллоуин задан администратором"' : ''}></label>
         ${data.halloween ? `<label class="switch-row halloween-row"><span>Хеллоуин</span>
           <input type="checkbox" switch class="switch" id="halloweenOn" ${spooky ? 'checked' : ''}></label>` : ''}
       `) : ''}
@@ -760,7 +763,7 @@ function bindDrawer() {
     select();
     smoothRepaint(() => saveBells(event.target.checked));
   });
-  for (const [id, version] of [['viceCityOn', 1], ['viceCityTwoOn', 2]]) {
+  for (const [id, version] of [['viceCityOn', 1], ['viceCityTwoOn', 2], ['viceCityThreeOn', 3]]) {
     $(id)?.addEventListener('change', ({ target }) => {
       select();
       smoothRepaint(() => {

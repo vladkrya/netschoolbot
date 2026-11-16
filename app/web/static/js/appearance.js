@@ -37,6 +37,7 @@ let viceCityClock;
 
 export function viceCityVersion() {
   const style = document.documentElement.getAttribute('data-style');
+  if (style === 'vice-city-3') return 3;
   return style === 'vice-city-2' ? 2 : style === 'vice-city' ? 1 : 0;
 }
 
@@ -47,7 +48,7 @@ export function isViceCity() {
 function syncViceCityClock() {
   clearTimeout(viceCityClock);
   const root = document.documentElement;
-  if (viceCityVersion() !== 2) {
+  if (viceCityVersion() < 2) {
     root.removeAttribute('data-vice-phase');
     root.removeAttribute('data-vice-paused');
     return;
@@ -66,9 +67,9 @@ function syncViceCityClock() {
 
 function applyViceCity(version) {
   const root = document.documentElement;
-  if (version) root.setAttribute('data-style', version === 2 ? 'vice-city-2' : 'vice-city');
+  if (version) root.setAttribute('data-style', version === 1 ? 'vice-city' : `vice-city-${version}`);
   else root.removeAttribute('data-style');
-  if (version === 2) {
+  if (version >= 2) {
     document.addEventListener('visibilitychange', syncViceCityClock);
     window.addEventListener('pageshow', syncViceCityClock);
   } else {
@@ -86,7 +87,7 @@ export function setViceCityAccess(allowed) {
   if (viceCityAllowed) {
     try {
       const saved = localStorage.getItem(VICE_CITY_KEY);
-      version = saved === '2' ? 2 : saved === 'on' ? 1 : 0;
+      version = saved === 'on' ? 1 : ['2', '3'].includes(saved) ? Number(saved) : 0;
     } catch { /* хранилище недоступно */ }
   }
   if (version || viceCityVersion()) applyViceCity(viceCityAllowed ? version : 0);
@@ -95,7 +96,7 @@ export function setViceCityAccess(allowed) {
 export function saveViceCity(version) {
   if (!viceCityAllowed || (version && prefManaged('halloween') && getPref('halloween') === 'on')) return;
   try {
-    if (version) localStorage.setItem(VICE_CITY_KEY, version === 2 ? '2' : 'on');
+    if (version) localStorage.setItem(VICE_CITY_KEY, version === 1 ? 'on' : String(version));
     else localStorage.removeItem(VICE_CITY_KEY);
   } catch { /* приватный режим — до перезагрузки */ }
   applyViceCity(version);
@@ -107,7 +108,7 @@ export function applyAccent(color = currentAccent()) {
   if (isHalloween()) color = halloweenAccent();
   if (isUnity()) color = '#315fba';
   if (viceCityVersion() === 1) color = '#9b4b58';
-  if (viceCityVersion() === 2) {
+  if (viceCityVersion() >= 2) {
     color = document.documentElement.getAttribute('data-vice-phase') === 'morning' ? '#a23d4e' : '#8f435d';
   }
   const root = document.documentElement.style;
