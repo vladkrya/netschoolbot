@@ -1,9 +1,9 @@
 import { api, banner, esc, showFailure } from './core.js';
-import { pushScreen } from './screens.js';
+import { popScreen, pushScreen, topScreen } from './screens.js';
 
-const classDate = new Intl.DateTimeFormat('ru-RU', {
-  weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC',
-});
+function formatDate(iso) {
+  return iso.split('-').reverse().join('.');
+}
 const root = '/api/moderation';
 const reasons = { time: 'Неверное время', room: 'Неверный кабинет', subject: 'Неверный предмет', cancelled: 'Уточнить отмену' };
 const post = (path, body) => api(root + path, { method: 'POST', body: JSON.stringify(body) });
@@ -121,26 +121,34 @@ function lessonForm(lesson, index, lessons) {
     <button class="chip">Опубликовать</button></form>${swapForm}`;
 }
 
-function lessonList(data, classes, selectedClass) {
-  const groups = new Map(Object.keys(classes).map(key => [key, []]));
-  data.lessons.forEach((lesson, index) => groups.get(lesson.class_key).push({ lesson, index }));
-  return `<section class="card"><h3>Выбрать класс</h3>
-    ${groups.size ? `<label>Класс <select data-class-picker aria-label="Класс">${[...groups.keys()].map(key =>
-      `<option value="${esc(key)}" ${key === selectedClass ? 'selected' : ''}>${esc(classes[key])}</option>`
-    ).join('')}</select></label>` : ''}
-    <p class="muted small">СГОшка показывает классы, которые уже удалось определить по аккаунтам. Если класса нет, ученику или родителю из него нужно обновить дневник.</p>
-    ${[...groups.entries()].map(([key, items]) => `<div data-class-card="${esc(key)}" ${key === selectedClass ? '' : 'hidden'}>
-      ${items.length ? '<p class="muted small">Выбери урок, чтобы посмотреть или изменить его.</p>' :
-        '<p>Класс найден. На ближайшие даты уроков из СГО пока нет.</p>'}
-      ${items.sort((a, b) => a.lesson.date.localeCompare(b.lesson.date) || a.lesson.number - b.lesson.number)
-        .map(({ lesson, index }) => {
-          const shown = lesson.effective || lesson;
-          const time = shown.moderation_cancelled ? 'Отменён' : [shown.start, shown.end].filter(Boolean).join('–');
-          return `<details><summary>${esc(classDate.format(new Date(lesson.date + 'T00:00:00Z')))} · ${shown.number}. ${esc(shown.subject)}
-           · ${esc(time)} ${esc(shown.room || '')}</summary>
-           ${(data.school_rights.includes('lessons') || (key === data.scope.class_key && data.class_rights.includes('lessons')))
-             ? lessonForm(lesson, index, data.lessons) : ''}</details>`;
-        }).join('')}</div>`).join('')}
+function lessonList(data, classes, selectedClass, selectedDate) {
+  if (!Object.keys(classes).length) {
+    return '<section class="card"><p>Чтобы класс появился здесь, ученик или родитель из него должен обновить дневник в СГОшке.</p></section>';
+  }
+  const instance = data.lessons.map((lesson, index) => ({ lesson, index }))
+    .filter(({ lesson }) => lesson.class_key === selectedClass);
+  const date = selectedDate || data.today;
+  const onDay = instance.filter(({ lesson }) => lesson.date === date)
+    .sort((a, b) => (a.lesson.effective || a.lesson).number - (b.lesson.effective || b.lesson).number);
+  return `<section class="card">
+    <div class="moderation-filters">
+      <label>Класс <select data-class-picker>${Object.entries(classes).map(([key, label]) =>
+        `<option value="${esc(key)}" ${key === selectedClass ? 'selected' : ''}>${esc(label)}</option>`
+      ).join('')}</select></label>
+      <div><span>Дата</span>
+        <button type="button" class="chip" data-open-date aria-label="Выбрать дату, ${esc(formatDate(date))}">${esc(formatDate(date))}</button>
+      </div>
+    </div>
+    ${onDay.length ? `<ul class="moderation-lessons">${onDay.map(({ lesson, index }) => {
+      const shown = lesson.effective || lesson;
+      const time = shown.moderation_cancelled ? 'Отменён' : [shown.start, shown.end].filter(Boolean).join('–');
+      const room = (shown.room || '').match(/^(?:каб\.?\s*)?(\d+[а-яa-z]?)(?=\s|$)/i)?.[1];
+      return `<li><button type="button" data-open-lesson="${index}">
+        <span class="moderation-lesson-number">${shown.number}</span>
+        <span><strong>${esc(shown.subject)}</strong><small>${esc([time, room ? `каб. ${room}` : shown.room].filter(Boolean).join(' · '))}</small></span>
+        <span aria-hidden="true" class="muted">›</span>
+      </button></li>`;
+    }).join('')}</ul>` : '<p class="muted">На этот день расписание пока не получено.</p>'}
   </section>`;
 }
 
@@ -179,6 +187,8 @@ export function openModeration() {
   let selection = '';
   let activeTab = 0;
   let selectedClass = '';
+  let selectedDate = '';
+  let classes = {};
   let data;
   let loadId = 0;
   const load = async () => {
@@ -188,7 +198,7 @@ export function openModeration() {
       if (id !== loadId) return;
       data = result.data;
       const scope = data.scope;
-      const classes = Object.fromEntries((data.classes || []).map(item => [item.class_key, item.class_label]));
+      classes = Object.fromEntries((data.classes || []).map(item => [item.class_key, item.class_label]));
       if (scope?.class_key) classes[scope.class_key] ||= scope.class_label;
       for (const role of data.roles || []) if (role.class_key) classes[role.class_key] ||= role.class_key;
       if (!Object.hasOwn(classes, selectedClass)) selectedClass = Object.keys(classes)[0] || '';
@@ -202,14 +212,14 @@ export function openModeration() {
         : 'Права модератора для твоей школы ещё не выданы.'}</p>` :
         `<div class="chips" aria-label="Разделы модерации">${tabs.map((label, index) =>
           `<button type="button" class="chip ${index === activeTab ? 'active' : ''}" aria-pressed="${index === activeTab}" data-tab-index="${index}">${label}</button>`).join('')}</div>
-         <div data-pane="0" ${activeTab === 0 ? '' : 'hidden'}>${lessonList(data, classes, selectedClass)}</div>
+         <div data-pane="0" ${activeTab === 0 ? '' : 'hidden'}>${lessonList(data, classes, selectedClass, selectedDate)}</div>
          <div data-pane="1" ${activeTab === 1 ? '' : 'hidden'}>
            ${data.school_rights.includes('bells') ? bellsForm(data.today) : ''}
            ${[...data.school_rights, ...data.class_rights].includes('lessons') ? addLessonForm(data, classes) : ''}
            ${[...data.school_rights, ...data.class_rights].includes('announce') ? announceForm(data, classes) : ''}
          </div>
          <div data-pane="2" ${activeTab === 2 ? '' : 'hidden'} class="card"><h3>История и сообщения об ошибках</h3>
-           ${data.history.map(item => `<p><b>${esc(item.date)}${item.end_date !== item.date ? ` — ${esc(item.end_date)}` : ''}</b> · ${esc(item.payload.text || item.payload.summary ||
+           ${data.history.map(item => `<p><b>${esc(formatDate(item.date))}${item.end_date !== item.date ? ` — ${esc(formatDate(item.end_date))}` : ''}</b> · ${esc(item.payload.text || item.payload.summary ||
              (item.payload.limit === null ? 'Изменены звонки' : `Количество уроков: ${item.payload.limit}`))}
              ${item.revoked_at ? ' · Отозвано' : item.can_revoke ? `<button class="chip" data-revoke="${item.id}">Отозвать</button>` : ''}
              ${item.reports?.map(report => `<br>${esc(reasons[report.reason])} · ${report.count}`).join('') || ''}</p>`).join('') || '<p>Правок пока нет.</p>'}
@@ -230,9 +240,8 @@ export function openModeration() {
     }
     if (event.target.matches('[data-class-picker]')) {
       selectedClass = event.target.value;
-      panel.querySelectorAll('[data-class-card]').forEach(card => {
-        card.hidden = card.dataset.classCard !== selectedClass;
-      });
+      panel.querySelector('[data-pane="0"]').innerHTML = lessonList(data, classes, selectedClass, selectedDate);
+      panel.querySelector('[data-class-picker]').focus();
       return;
     }
     if (event.target.matches('[data-form="roles"] select[name="class_key"]')) {
@@ -247,6 +256,34 @@ export function openModeration() {
     }
   });
   panel.addEventListener('click', async event => {
+    if (event.target.closest('[data-open-date]')) {
+      const { openCalendar } = await import('./day.js');
+      openCalendar(selectedDate || data.today, date => {
+        selectedDate = date;
+        panel.querySelector('[data-pane="0"]').innerHTML = lessonList(data, classes, selectedClass, selectedDate);
+        panel.querySelector('[data-open-date]').focus();
+      });
+      return;
+    }
+    const lessonButton = event.target.closest('[data-open-lesson]');
+    if (lessonButton) {
+      const index = Number(lessonButton.dataset.openLesson);
+      const lesson = data.lessons[index];
+      const shown = lesson.effective || lesson;
+      const canEdit = data.school_rights.includes('lessons') ||
+        (lesson.class_key === data.scope.class_key && data.class_rights.includes('lessons'));
+      const date = formatDate(lesson.date);
+      const editor = pushScreen(shown.subject, `${classes[lesson.class_key]} · ${date} · ${shown.number}-й урок`);
+      editor.classList.add('moderation-panel');
+      if (canEdit) {
+        editor.innerHTML = lessonForm(lesson, index, data.lessons);
+        editor.addEventListener('submit', submit);
+      } else {
+        const time = shown.moderation_cancelled ? 'Урок отменён' : [shown.start, shown.end].filter(Boolean).join('–');
+        editor.innerHTML = `<div class="card"><p>${esc(time)}</p><p>${esc(shown.room || 'Кабинет не указан')}</p></div>`;
+      }
+      return;
+    }
     const resolve = event.target.closest('[data-resolve-school]');
     if (resolve) {
       const form = resolve.form;
@@ -278,7 +315,7 @@ export function openModeration() {
       } catch (error) { banner(error.message); }
     }
   });
-  panel.addEventListener('submit', async event => {
+  async function submit(event) {
     const form = event.target;
     const kind = form.dataset.form;
     if (!kind) return;
@@ -351,6 +388,7 @@ export function openModeration() {
       if (kind === 'schools') selection = new URLSearchParams({
         installation: payload.installation.trim().toLowerCase(), school_id: payload.school_id,
       }).toString();
+      if ((kind === 'lesson' || kind === 'swap') && topScreen()?.contains(form)) popScreen();
       banner('Сохранено');
       await load();
     } catch (error) {
@@ -364,6 +402,7 @@ export function openModeration() {
     } finally {
       if (event.submitter) event.submitter.disabled = false;
     }
-  });
+  }
+  panel.addEventListener('submit', submit);
   load();
 }

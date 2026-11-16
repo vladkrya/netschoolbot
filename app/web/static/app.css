@@ -3132,3 +3132,28 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
 .moderation-panel summary {
   cursor: pointer;
 }
+
+.moderation-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+}
+.moderation-filters > :is(label, div) { display: grid; gap: 4px; }
+.moderation-lessons { list-style: none; margin: 12px 0 0; padding: 0; }
+.moderation-lessons li + li { border-top: 1px solid var(--border); }
+.moderation-lessons button {
+  display: grid;
+  grid-template-columns: 2ch minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  padding: 10px 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.moderation-lesson-number, .moderation-lessons small { color: var(--text2); }
+.moderation-lessons small { display: block; margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
