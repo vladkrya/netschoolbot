@@ -228,9 +228,13 @@
 }
 
 .gta-event-dialog {
+  position: fixed;
+  inset: auto 0 calc(var(--safe-bottom) + 12px);
+  margin: 0 auto;
   box-sizing: border-box;
   width: min(440px, calc(100% - 32px));
-  max-height: calc(100% - 32px);
+  max-height: calc(100% - var(--safe-top) - var(--safe-bottom) - 24px);
+  overflow: auto;
   padding: 24px;
   color: var(--text);
   background: var(--card);
