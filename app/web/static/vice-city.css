@@ -18,7 +18,7 @@
 
 /* Тема меняет палитру, типографику и выделение активных элементов.
    Геометрию экранов задаёт выбранный дизайн, включая «Минимальный». */
-:root:is([data-style="vice-city"], [data-style="vice-city-2"], [data-style="vice-city-3"]):not([data-holiday]):not(#_) {
+:root:is([data-style="vice-city"], [data-style="vice-city-2"], [data-style="vice-city-3"], [data-style="vice-city-4"]):not([data-holiday]):not(#_) {
   color-scheme: dark;
   --bg: #19121e;
   --boot-bg: var(--bg);
@@ -51,15 +51,15 @@
   --vice-art: url("vice-city-sunset.webp");
 }
 
-:root:is([data-style="vice-city"], [data-style="vice-city-2"], [data-style="vice-city-3"]):not([data-holiday]) .boot-splash {
+:root:is([data-style="vice-city"], [data-style="vice-city-2"], [data-style="vice-city-3"], [data-style="vice-city-4"]):not([data-holiday]) .boot-splash {
   color: var(--text2);
 }
 
-:root:is([data-style="vice-city"], [data-style="vice-city-2"], [data-style="vice-city-3"]):not([data-holiday]) .boot-spinner {
+:root:is([data-style="vice-city"], [data-style="vice-city-2"], [data-style="vice-city-3"], [data-style="vice-city-4"]):not([data-holiday]) .boot-spinner {
   border-top-color: var(--primary);
 }
 
-:root:is([data-style="vice-city"], [data-style="vice-city-2"], [data-style="vice-city-3"]):not([data-holiday]):not(#_) :is(
+:root:is([data-style="vice-city"], [data-style="vice-city-2"], [data-style="vice-city-3"], [data-style="vice-city-4"]):not([data-holiday]):not(#_) :is(
   .topbar-title, .lc-subject, .hw-subject, .sc-name, .sc-avg, .ds-title, .week-day.on .wd-num
 ) {
   font-family: var(--vice-display);
@@ -68,40 +68,40 @@
   text-transform: none;
 }
 
-:root:is([data-style="vice-city"], [data-style="vice-city-2"], [data-style="vice-city-3"]):not([data-holiday]) .hw-subject .hw-tag {
+:root:is([data-style="vice-city"], [data-style="vice-city-2"], [data-style="vice-city-3"], [data-style="vice-city-4"]):not([data-holiday]) .hw-subject .hw-tag {
   font-family: system-ui, sans-serif;
   font-style: normal;
 }
 
-:root:is([data-style="vice-city"], [data-style="vice-city-2"], [data-style="vice-city-3"]):not([data-holiday]):not(#_) .day-summary {
+:root:is([data-style="vice-city"], [data-style="vice-city-2"], [data-style="vice-city-3"], [data-style="vice-city-4"]):not([data-holiday]):not(#_) .day-summary {
   background: var(--card) var(--vice-art) right 61% / cover no-repeat;
 }
 
-:root:is([data-style="vice-city"], [data-style="vice-city-2"], [data-style="vice-city-3"]):not([data-holiday]):not(#_) .week-day.on {
+:root:is([data-style="vice-city"], [data-style="vice-city-2"], [data-style="vice-city-3"], [data-style="vice-city-4"]):not([data-holiday]):not(#_) .week-day.on {
   background: var(--vice-selected);
   border-radius: 14px 10px 14px 10px;
 }
 
-:root:is([data-style="vice-city"], [data-style="vice-city-2"], [data-style="vice-city-3"]):not([data-holiday]):not(#_) .week-day.on :is(.wd-name, .wd-num) {
+:root:is([data-style="vice-city"], [data-style="vice-city-2"], [data-style="vice-city-3"], [data-style="vice-city-4"]):not([data-holiday]):not(#_) .week-day.on :is(.wd-name, .wd-num) {
   color: var(--vice-selected-text);
 }
 
 @media (max-width: 1023px) {
-  :root:is([data-style="vice-city"], [data-style="vice-city-2"], [data-style="vice-city-3"]):not([data-holiday]) .bottom-nav:not(.dragging) {
+  :root:is([data-style="vice-city"], [data-style="vice-city-2"], [data-style="vice-city-3"], [data-style="vice-city-4"]):not([data-holiday]) .bottom-nav:not(.dragging) {
     overflow: hidden;
   }
 
-  :root:is([data-style="vice-city"], [data-style="vice-city-2"], [data-style="vice-city-3"]):not([data-holiday]):not(#_) .bottom-nav:not(.dragging, .no-lens) .nav-glider {
+  :root:is([data-style="vice-city"], [data-style="vice-city-2"], [data-style="vice-city-3"], [data-style="vice-city-4"]):not([data-holiday]):not(#_) .bottom-nav:not(.dragging, .no-lens) .nav-glider {
     background: var(--vice-selected);
   }
 
-  :root:is([data-style="vice-city"], [data-style="vice-city-2"], [data-style="vice-city-3"]):not([data-holiday]):not(#_) .bottom-nav:not(.dragging, .no-lens) .nav-item.active {
+  :root:is([data-style="vice-city"], [data-style="vice-city-2"], [data-style="vice-city-3"], [data-style="vice-city-4"]):not([data-holiday]):not(#_) .bottom-nav:not(.dragging, .no-lens) .nav-item.active {
     color: var(--vice-selected-text);
   }
 }
 
 /* Вторая тема использует тот же шрифт и формы, но меняет сцену по местному времени. */
-:root:is([data-style="vice-city-2"], [data-style="vice-city-3"])[data-vice-phase="morning"]:not(#_) {
+:root:is([data-style="vice-city-2"], [data-style="vice-city-3"], [data-style="vice-city-4"])[data-vice-phase="morning"]:not(#_) {
   color-scheme: light;
   --bg: #fff0da;
   --card: #fffaf1;
@@ -130,7 +130,7 @@
   --vice-art: url("vice-city-morning.webp");
 }
 
-:root:is([data-style="vice-city-2"], [data-style="vice-city-3"])[data-vice-phase="evening"]:not(#_) {
+:root:is([data-style="vice-city-2"], [data-style="vice-city-3"], [data-style="vice-city-4"])[data-vice-phase="evening"]:not(#_) {
   --bg: #191820;
   --card: #25232e;
   --card-2: #302c3a;

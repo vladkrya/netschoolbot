@@ -37,6 +37,7 @@ let viceCityClock;
 
 export function viceCityVersion() {
   const style = document.documentElement.getAttribute('data-style');
+  if (style === 'vice-city-4') return 4;
   if (style === 'vice-city-3') return 3;
   return style === 'vice-city-2' ? 2 : style === 'vice-city' ? 1 : 0;
 }
@@ -87,7 +88,7 @@ export function setViceCityAccess(allowed) {
   if (viceCityAllowed) {
     try {
       const saved = localStorage.getItem(VICE_CITY_KEY);
-      version = saved === 'on' ? 1 : ['2', '3'].includes(saved) ? Number(saved) : 0;
+      version = saved === 'on' ? 1 : ['2', '3', '4'].includes(saved) ? Number(saved) : 0;
     } catch { /* хранилище недоступно */ }
   }
   if (version || viceCityVersion()) applyViceCity(viceCityAllowed ? version : 0);

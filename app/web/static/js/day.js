@@ -14,7 +14,7 @@ import {
   parseIso, plural, showFailure, showLoading, skeleton, state, WEEKDAYS, WEEKDAYS_FULL, weekdayIndex, weekOffsetOf, stillMotion,
 } from './core.js';
 import { ICONS } from './icons.js';
-import { isNewDesign, saveBells, showBells, showHomeworkStatus, showWeekends } from './appearance.js';
+import { isNewDesign, saveBells, showBells, showHomeworkStatus, showWeekends, viceCityVersion } from './appearance.js';
 import { bellsHtml, bellsNoteHtml, loadSchoolBells, weekCardsHtml } from './schedule.js';
 import { canGoBack, topScreen } from './screens.js';
 import { EDGE_PX, swipeBackMode } from './swipeback.js';
@@ -22,7 +22,8 @@ import { isDoneItem, lessonStatus, loadDone, markBox, openHomework, openLesson, 
 import { closeSheet, openSheet, sheetOpen } from './sheet.js';
 import { select, tap } from './haptics.js';
 import { bindInstallCard, installCardHtml } from './install.js';
-import { msToBell, updateTimer } from './timer.js';
+import { bellShift, msToBell, syncedNow, updateTimer } from './timer.js';
+import { bindRouteBoard, routeBoardHtml, routeBoardModel } from './route-board.js';
 import { isTestWork, loadNotes, noteWhen, openNoteEditor, setNoteDone } from './notes.js';
 import { bindNotices, noticesHtml, visibleNotices } from './moderation.js';
 import { openScheduleImport } from './schedule-import.js';
@@ -335,16 +336,22 @@ function renderDay(quiet = false) {
   // Статусы («Идёт урок», «Урок окончен») меняются по времени — тихая
   // перерисовка по таймеру должна их подхватить.
   const statuses = lessons.map((lesson) => lessonStatus(lesson, state.date)).join();
+  const route = viceCityVersion() === 4 ? routeBoardModel(lessons, state.date, syncedNow(), bellShift()) : null;
+  const routeKey = route ? route.rows.map(({ status, hasHomework }) => `${status}:${hasHomework}`).join(';') : '';
+
   const notes = (state.notes || []).filter((note) => note.date === state.date);
-  const key = `${state.date}|${countdownHtml().length}|${statuses}|${state.hwDone?.size ?? '-'}|${notes.map((n) => `${n.id}${n.done}${n.time}${n.remind}${n.text}${n.subject}`).join()}|${editsKey(day)}|${notices.map(notice => notice.id).join(',')}`;
+  const key = `${state.date}|${countdownHtml().length}|${statuses}|${routeKey}|${state.hwDone?.size ?? '-'}|${notes.map((n) => `${n.id}${n.done}${n.time}${n.remind}${n.text}${n.subject}`).join()}|${editsKey(day)}|${notices.map(notice => notice.id).join(',')}`;
   if (quiet && key === renderedKey && container.children.length) return;
   renderedKey = key;
   freshMarks = takeFresh(lessons.flatMap((lesson) => realMarks(lesson.marks)
     .map((m) => ({ key: markKey(m, lesson.subject, state.date), date: m.date || state.date }))));
   container.classList.toggle('quiet', quiet);
-  container.innerHTML = installCardHtml() + noticesHtml(notices, Boolean(state.profile?.readonly)) + daySummary(lessons) + countdownHtml()
+  const summary = daySummary(lessons);
+  container.innerHTML = installCardHtml() + noticesHtml(notices, Boolean(state.profile?.readonly))
+    + (route ? routeBoardHtml(route, summary) : summary) + countdownHtml()
     + lessons.map((lesson, index) => lessonCard(lesson, index)).join('')
     + notesBlock(notes) + hiddenHtml(day) + addLessonButton();
+  if (route) bindRouteBoard(container, state.date, route);
   bindInstallCard(container);
   bindCountdown(container, () => renderDay(true));
   bindDayEdits(container, day);
