@@ -86,9 +86,12 @@
 }
 
 @media (max-width: 1023px) {
+  :root[data-style="vice-city"]:not([data-holiday]) .bottom-nav:not(.dragging) {
+    overflow: hidden;
+  }
+
   :root[data-style="vice-city"]:not([data-holiday]):not(#_) .bottom-nav:not(.dragging, .no-lens) .nav-glider {
     background: var(--vice-selected);
-    border-radius: 16px 10px 16px 10px;
   }
 
   :root[data-style="vice-city"]:not([data-holiday]):not(#_) .bottom-nav:not(.dragging, .no-lens) .nav-item.active {
