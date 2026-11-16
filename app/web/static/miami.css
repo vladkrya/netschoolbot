@@ -249,7 +249,7 @@
   inset-block-end: calc(100% - 38px);
 }
 
-:root[data-style="vice-city-2"] #dayContent .lesson-card[data-current-lesson] {
+:root[data-style="vice-city-2"]:not(#_) #dayContent .lesson-card[data-current-lesson] {
   border-color: var(--miami-aqua);
   background: color-mix(in srgb, var(--miami-aqua) 9%, var(--miami-paper));
 }
@@ -279,6 +279,11 @@
 :root[data-style="vice-city-2"] #dayContent [data-current-lesson] .lc-num {
   color: var(--miami-ink);
   background: color-mix(in srgb, var(--miami-aqua) 23%, var(--miami-paper));
+}
+
+:root[data-style="vice-city-2"] #dayContent [data-current-lesson] .lc-status {
+  color: var(--miami-aqua);
+  font-weight: 700;
 }
 
 :root[data-style="vice-city-2"]:not(#_) #dayContent .lc-num:empty {
