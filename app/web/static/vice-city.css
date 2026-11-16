@@ -18,7 +18,7 @@
 
 /* Тема меняет палитру, типографику и выделение активных элементов.
    Геометрию экранов задаёт выбранный дизайн, включая «Минимальный». */
-:root[data-style="vice-city"]:not([data-holiday]):not(#_) {
+:root:is([data-style="vice-city"], [data-style="vice-city-2"]):not([data-holiday]):not(#_) {
   color-scheme: dark;
   --bg: #19121e;
   --boot-bg: var(--bg);
@@ -48,17 +48,18 @@
   --vice-display: "Roboto Condensed", system-ui, sans-serif;
   --vice-selected: linear-gradient(135deg, #d68a86, #bd7488);
   --vice-selected-text: #21121e;
+  --vice-art: url("vice-city-sunset.webp");
 }
 
-:root[data-style="vice-city"]:not([data-holiday]) .boot-splash {
+:root:is([data-style="vice-city"], [data-style="vice-city-2"]):not([data-holiday]) .boot-splash {
   color: var(--text2);
 }
 
-:root[data-style="vice-city"]:not([data-holiday]) .boot-spinner {
+:root:is([data-style="vice-city"], [data-style="vice-city-2"]):not([data-holiday]) .boot-spinner {
   border-top-color: var(--primary);
 }
 
-:root[data-style="vice-city"]:not([data-holiday]):not(#_) :is(
+:root:is([data-style="vice-city"], [data-style="vice-city-2"]):not([data-holiday]):not(#_) :is(
   .topbar-title, .lc-subject, .hw-subject, .sc-name, .sc-avg, .ds-title, .week-day.on .wd-num
 ) {
   font-family: var(--vice-display);
@@ -67,34 +68,157 @@
   text-transform: none;
 }
 
-:root[data-style="vice-city"]:not([data-holiday]) .hw-subject .hw-tag {
+:root:is([data-style="vice-city"], [data-style="vice-city-2"]):not([data-holiday]) .hw-subject .hw-tag {
   font-family: system-ui, sans-serif;
   font-style: normal;
 }
 
-:root[data-style="vice-city"]:not([data-holiday]):not(#_) .day-summary {
-  background: var(--card) url("vice-city-sunset.webp") right 61% / cover no-repeat;
+:root:is([data-style="vice-city"], [data-style="vice-city-2"]):not([data-holiday]):not(#_) .day-summary {
+  background: var(--card) var(--vice-art) right 61% / cover no-repeat;
 }
 
-:root[data-style="vice-city"]:not([data-holiday]):not(#_) .week-day.on {
+:root:is([data-style="vice-city"], [data-style="vice-city-2"]):not([data-holiday]):not(#_) .week-day.on {
   background: var(--vice-selected);
   border-radius: 14px 10px 14px 10px;
 }
 
-:root[data-style="vice-city"]:not([data-holiday]):not(#_) .week-day.on :is(.wd-name, .wd-num) {
+:root:is([data-style="vice-city"], [data-style="vice-city-2"]):not([data-holiday]):not(#_) .week-day.on :is(.wd-name, .wd-num) {
   color: var(--vice-selected-text);
 }
 
 @media (max-width: 1023px) {
-  :root[data-style="vice-city"]:not([data-holiday]) .bottom-nav:not(.dragging) {
+  :root:is([data-style="vice-city"], [data-style="vice-city-2"]):not([data-holiday]) .bottom-nav:not(.dragging) {
     overflow: hidden;
   }
 
-  :root[data-style="vice-city"]:not([data-holiday]):not(#_) .bottom-nav:not(.dragging, .no-lens) .nav-glider {
+  :root:is([data-style="vice-city"], [data-style="vice-city-2"]):not([data-holiday]):not(#_) .bottom-nav:not(.dragging, .no-lens) .nav-glider {
     background: var(--vice-selected);
   }
 
-  :root[data-style="vice-city"]:not([data-holiday]):not(#_) .bottom-nav:not(.dragging, .no-lens) .nav-item.active {
+  :root:is([data-style="vice-city"], [data-style="vice-city-2"]):not([data-holiday]):not(#_) .bottom-nav:not(.dragging, .no-lens) .nav-item.active {
     color: var(--vice-selected-text);
   }
+}
+
+/* Вторая тема использует тот же шрифт и формы, но меняет сцену по местному времени. */
+:root[data-style="vice-city-2"][data-vice-phase="morning"]:not(#_) {
+  color-scheme: light;
+  --bg: #fff0da;
+  --card: #fffaf1;
+  --card-2: #f8e6cf;
+  --text: #202832;
+  --text2: #505854;
+  --border: #c7a991;
+  --primary: #9e3749;
+  --mark-bg: #f8e6cf;
+  --g2: #aa3047;
+  --g3: #9e500e;
+  --g4: #526b18;
+  --g5: #147444;
+  --soft: #ffd9cf;
+  --soft-2: #fbc9bd;
+  --glass: rgba(255, 250, 241, .92);
+  --glass-2: rgba(255, 240, 218, .88);
+  --glass-edge: #e5cdb6;
+  --glass-shine: rgba(255, 255, 255, .66);
+  --glass-shadow: 0 8px 24px rgba(102, 63, 34, .15);
+  --lens: #ffd9cf;
+  --lens-shine: rgba(255, 255, 255, .6);
+  --lift: 0 0 0 1px rgba(136, 92, 53, .16);
+  --vice-selected: linear-gradient(135deg, #ffad9f, #ff858f);
+  --vice-selected-text: #321b25;
+  --vice-art: url("vice-city-morning.webp");
+}
+
+:root[data-style="vice-city-2"][data-vice-phase="evening"]:not(#_) {
+  --bg: #101e3b;
+  --card: #1b2c56;
+  --card-2: #253b68;
+  --text: #fff3da;
+  --text2: #cfdaf1;
+  --border: #5876a8;
+  --primary: #ff94bb;
+  --mark-bg: #253b68;
+  --g2: #ff9dae;
+  --g3: #ffba79;
+  --g4: #d1e98c;
+  --g5: #8fe6ba;
+  --soft: #462955;
+  --soft-2: #63355d;
+  --glass: rgba(27, 44, 86, .94);
+  --glass-2: rgba(16, 30, 59, .88);
+  --glass-edge: #5876a8;
+  --glass-shine: rgba(131, 238, 255, .14);
+  --glass-shadow: 0 8px 24px rgba(9, 17, 44, .44);
+  --lens: #462955;
+  --lens-shine: rgba(255, 148, 187, .22);
+  --lift: 0 0 0 1px rgba(128, 171, 232, .2);
+  --vice-selected: linear-gradient(135deg, #ff8fbc, #ff65a1);
+  --vice-selected-text: #2b1228;
+  --vice-art: url("vice-city-evening.webp");
+}
+
+:root[data-style="vice-city-2"] .day-summary {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-style="vice-city-2"]:not(.motion-min, [data-vice-paused]) .day-summary::before,
+  :root[data-style="vice-city-2"]:not(.motion-min, [data-vice-paused]) .day-summary::after {
+    content: "";
+    position: absolute;
+    inset: 0 0 0 49%;
+    z-index: -1;
+    pointer-events: none;
+  }
+
+  :root[data-style="vice-city-2"][data-vice-phase="morning"] .day-summary::before {
+    background:
+      radial-gradient(ellipse at 20% 28%, #ffffffe0, transparent 66%) left 24% top 20% / 45% 31% no-repeat,
+      radial-gradient(ellipse at center, #fff0bbaa, transparent 69%) left 7% top 4% / 57% 75% no-repeat;
+    animation: vice-cloud 12s ease-in-out infinite alternate;
+  }
+
+  :root[data-style="vice-city-2"][data-vice-phase="morning"] .day-summary::after {
+    background:
+      radial-gradient(ellipse, #fff5bfff, transparent 72%) left 20% bottom 15% / 29% 7% no-repeat,
+      radial-gradient(ellipse, #fffaf3df, transparent 72%) left 55% bottom 7% / 20% 8% no-repeat;
+    animation: vice-ripples 3s ease-in-out infinite alternate;
+  }
+
+  :root[data-style="vice-city-2"][data-vice-phase="evening"] .day-summary::before {
+    background:
+      radial-gradient(ellipse at 94% 28%, #ff45c7bb, transparent 38%),
+      radial-gradient(ellipse at 57% 71%, #67f7ffb0, transparent 38%);
+    animation: vice-neon 3s ease-in-out infinite alternate;
+  }
+
+  :root[data-style="vice-city-2"][data-vice-phase="evening"] .day-summary::after {
+    background: linear-gradient(90deg, #fff4cf, #ff51cd90 44%, transparent)
+      left 56% bottom 12% / 35% 4px no-repeat;
+    animation: vice-headlights 7s linear infinite;
+  }
+}
+
+@keyframes vice-cloud {
+  from { background-position-x: 12%, 7%; opacity: .28; }
+  to { background-position-x: 68%, 22%; opacity: .93; }
+}
+
+@keyframes vice-ripples {
+  from { background-position-x: 18%, 45%; opacity: .25; }
+  to { background-position-x: 36%, 66%; opacity: 1; }
+}
+
+@keyframes vice-neon {
+  from { opacity: .20; }
+  to { opacity: .86; }
+}
+
+@keyframes vice-headlights {
+  0% { opacity: 0; background-position-x: 100%; }
+  20%, 75% { opacity: .92; }
+  100% { opacity: 0; background-position-x: 0%; }
 }

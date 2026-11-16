@@ -485,7 +485,7 @@
 :root[data-design="new"] .week-day.on { background: var(--head); color: #fff; opacity: 1; }
 :root[data-design="new"] .week-day.on :is(.wd-name, .wd-num) { color: #fff; }
 
-:root[data-design="new"] .day-summary {
+:root:is([data-design="new"], [data-style="vice-city-2"]) .day-summary {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -497,12 +497,12 @@
   color: var(--text);
   text-align: left;
 }
-:root[data-design="new"] .ds-main { flex: 1; min-width: 0; }
-:root[data-design="new"] .ds-title { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
-:root[data-design="new"] .ds-sub { margin-top: 1px; font-size: 13px; color: var(--text2); }
-:root[data-design="new"] .ds-marks { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 5px; max-width: 40%; }
-:root[data-design="new"] .ds-marks .mark-box { min-width: 28px; height: 28px; border-radius: 9px; font-size: 14px; }
-:root[data-design="new"] .ds-mark { display: flex; padding: 0; }
+:root:is([data-design="new"], [data-style="vice-city-2"]) .ds-main { flex: 1; min-width: 0; }
+:root:is([data-design="new"], [data-style="vice-city-2"]) .ds-title { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
+:root:is([data-design="new"], [data-style="vice-city-2"]) .ds-sub { margin-top: 1px; font-size: 13px; color: var(--text2); }
+:root:is([data-design="new"], [data-style="vice-city-2"]) .ds-marks { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 5px; max-width: 40%; }
+:root:is([data-design="new"], [data-style="vice-city-2"]) .ds-marks .mark-box { min-width: 28px; height: 28px; border-radius: 9px; font-size: 14px; }
+:root:is([data-design="new"], [data-style="vice-city-2"]) .ds-mark { display: flex; padding: 0; }
 
 
 /* Вкладки подписаны короче: «Неделя», «Задания», «Оценки», «Почта». */

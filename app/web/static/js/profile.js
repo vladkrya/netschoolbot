@@ -5,7 +5,7 @@
 
 import { $, androidApkUrl, api, banner, demo, ensureAttachmentTicket, esc, initData, motionAtLeast, openExternal, state } from './core.js';
 import {
-  isUnity, saveUnity, isViceCity, saveViceCity, setViceCityAccess, setHalloweenAccess,
+  isUnity, saveUnity, viceCityVersion, saveViceCity, setViceCityAccess, setHalloweenAccess,
   ACCENTS, applyMotion, currentAccent, forgetAccent, HALLOWEEN_ACCENTS, halloweenAccent, isHalloween, isNewDesign, motionChosen, motionLevel, rememberAccent, saveAccent, saveAnswers, saveBells, saveConfetti, savedAccents, saveDesign, saveHalloween, saveHalloweenAccent, saveHomeworkStatus, saveMotion, saveWeekends, showAnswers, showBells, showConfetti, showHomeworkStatus, showWeekends, syncChromeColor, weakDevice,
 } from './appearance.js';
 import { ICONS } from './icons.js';
@@ -415,7 +415,7 @@ function render() {
   // В Хеллоуин — свои цвета и свой выбранный: отмеченный кружок совпадает с экраном.
   const spooky = isHalloween();
   const unity = isUnity();
-  const vice = isViceCity();
+  const vice = viceCityVersion();
   const palette = unity ? [['#315fba', 'Праздничный синий']] : spooky ? HALLOWEEN_ACCENTS : ACCENTS;
   const accent = unity ? '#315fba' : spooky ? halloweenAccent() : currentAccent();
   // Дневник ученика по приглашению: его уведомления и почту не трогаем.
@@ -491,7 +491,10 @@ function render() {
         <input type="checkbox" switch class="switch" id="unityOn" ${unity ? 'checked' : ''}></label>` : ''}
       ${data.vice_city ? more('private-themes', 'Темы владельца', `
         <label class="switch-row"><span>Вайс-Сити</span>
-          <input type="checkbox" switch class="switch" id="viceCityOn" ${vice ? 'checked' : ''}
+          <input type="checkbox" switch class="switch" id="viceCityOn" ${vice === 1 ? 'checked' : ''}
+            ${data.managed_prefs?.halloween === 'on' ? 'disabled title="Хеллоуин задан администратором"' : ''}></label>
+        <label class="switch-row"><span>Вайс-Сити 2<span class="muted small switch-note">Солнечная сцена с 06:00, неоновая с 18:00</span></span>
+          <input type="checkbox" switch class="switch" id="viceCityTwoOn" ${vice === 2 ? 'checked' : ''}
             ${data.managed_prefs?.halloween === 'on' ? 'disabled title="Хеллоуин задан администратором"' : ''}></label>
         ${data.halloween ? `<label class="switch-row halloween-row"><span>Хеллоуин</span>
           <input type="checkbox" switch class="switch" id="halloweenOn" ${spooky ? 'checked' : ''}></label>` : ''}
@@ -757,14 +760,16 @@ function bindDrawer() {
     select();
     smoothRepaint(() => saveBells(event.target.checked));
   });
-  $('viceCityOn')?.addEventListener('change', ({ target }) => {
-    select();
-    smoothRepaint(() => {
-      saveViceCity(target.checked);
-      render();
-      $('viceCityOn')?.focus({ preventScroll: true });
+  for (const [id, version] of [['viceCityOn', 1], ['viceCityTwoOn', 2]]) {
+    $(id)?.addEventListener('change', ({ target }) => {
+      select();
+      smoothRepaint(() => {
+        saveViceCity(target.checked ? version : 0);
+        render();
+        $(id)?.focus({ preventScroll: true });
+      });
     });
-  });
+  }
   $('unityOn')?.addEventListener('change', (event) => {
     select();
     smoothRepaint(() => {

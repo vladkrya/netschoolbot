@@ -33,37 +33,72 @@ function shade(hex, amount) {
 
 const VICE_CITY_KEY = 'ns-vice-city';
 let viceCityAllowed = false;
+let viceCityClock;
+
+export function viceCityVersion() {
+  const style = document.documentElement.getAttribute('data-style');
+  return style === 'vice-city-2' ? 2 : style === 'vice-city' ? 1 : 0;
+}
 
 export function isViceCity() {
-  return document.documentElement.getAttribute('data-style') === 'vice-city';
+  return viceCityVersion() > 0;
+}
+
+function syncViceCityClock() {
+  clearTimeout(viceCityClock);
+  const root = document.documentElement;
+  if (viceCityVersion() !== 2) {
+    root.removeAttribute('data-vice-phase');
+    root.removeAttribute('data-vice-paused');
+    return;
+  }
+  root.toggleAttribute('data-vice-paused', document.hidden);
+  if (document.hidden) return;
+  const now = new Date();
+  const phase = now.getHours() >= 6 && now.getHours() < 18 ? 'morning' : 'evening';
+  if (root.getAttribute('data-vice-phase') !== phase) {
+    root.setAttribute('data-vice-phase', phase);
+    applyAccent();
+  }
+  // Re-read the device's local clock, including time-zone changes.
+  viceCityClock = setTimeout(syncViceCityClock, 60_000 - now.getSeconds() * 1000 - now.getMilliseconds());
+}
+
+function applyViceCity(version) {
+  const root = document.documentElement;
+  if (version) root.setAttribute('data-style', version === 2 ? 'vice-city-2' : 'vice-city');
+  else root.removeAttribute('data-style');
+  if (version === 2) {
+    document.addEventListener('visibilitychange', syncViceCityClock);
+    window.addEventListener('pageshow', syncViceCityClock);
+  } else {
+    document.removeEventListener('visibilitychange', syncViceCityClock);
+    window.removeEventListener('pageshow', syncViceCityClock);
+  }
+  syncViceCityClock();
+  applyHalloween();
+  applyAccent();
 }
 
 export function setViceCityAccess(allowed) {
   viceCityAllowed = allowed === true;
+  let version = viceCityVersion();
   if (viceCityAllowed) {
     try {
-      if (localStorage.getItem(VICE_CITY_KEY) === 'on') {
-        document.documentElement.setAttribute('data-style', 'vice-city');
-      }
+      const saved = localStorage.getItem(VICE_CITY_KEY);
+      version = saved === '2' ? 2 : saved === 'on' ? 1 : 0;
     } catch { /* хранилище недоступно */ }
-  } else {
-    document.documentElement.removeAttribute('data-style');
   }
-  applyHalloween();
-  applyAccent();
+  if (version || viceCityVersion()) applyViceCity(viceCityAllowed ? version : 0);
 }
 
-export function saveViceCity(on) {
-  if (!viceCityAllowed || (on && prefManaged('halloween') && getPref('halloween') === 'on')) return;
-  const root = document.documentElement;
-  if (on) root.setAttribute('data-style', 'vice-city');
-  else root.removeAttribute('data-style');
+export function saveViceCity(version) {
+  if (!viceCityAllowed || (version && prefManaged('halloween') && getPref('halloween') === 'on')) return;
   try {
-    if (on) localStorage.setItem(VICE_CITY_KEY, 'on');
+    if (version) localStorage.setItem(VICE_CITY_KEY, version === 2 ? '2' : 'on');
     else localStorage.removeItem(VICE_CITY_KEY);
   } catch { /* приватный режим — до перезагрузки */ }
-  applyHalloween();
-  applyAccent();
+  applyViceCity(version);
 }
 
 export function applyAccent(color = currentAccent()) {
@@ -71,7 +106,10 @@ export function applyAccent(color = currentAccent()) {
   // У хеллоуинского оформления свой акцент — обычный выбранный цвет не трогаем.
   if (isHalloween()) color = halloweenAccent();
   if (isUnity()) color = '#315fba';
-  if (isViceCity()) color = '#9b4b58';
+  if (viceCityVersion() === 1) color = '#9b4b58';
+  if (viceCityVersion() === 2) {
+    color = document.documentElement.getAttribute('data-vice-phase') === 'morning' ? '#a23d4e' : '#ac3c72';
+  }
   const root = document.documentElement.style;
   const dark = shade(color, -0.18);
   root.setProperty('--head', color);
@@ -292,7 +330,7 @@ export function saveHalloween(on) {
   if (!halloweenAllowed || prefManaged('halloween') || (on && prefManaged('unity') && getPref('unity') === 'on')) return;
   if (on) setPref('unity', 'off');
   setPref('halloween', on ? 'on' : 'off');
-  if (on && isViceCity()) saveViceCity(false);
+  if (on && isViceCity()) saveViceCity(0);
   else applyHalloween();
 }
 
