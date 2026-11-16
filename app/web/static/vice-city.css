@@ -226,3 +226,21 @@
   20%, 75% { opacity: .92; }
   100% { opacity: 0; background-position-x: 0%; }
 }
+
+.gta-event-dialog {
+  box-sizing: border-box;
+  width: min(440px, calc(100% - 32px));
+  max-height: calc(100% - 32px);
+  padding: 24px;
+  color: var(--text);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+}
+
+.gta-event-dialog::backdrop { background: #100914b8; }
+.gta-event-dialog h2 {
+  margin: 0 0 16px;
+  font: italic 800 1.5rem "Roboto Condensed", system-ui, sans-serif;
+}
+.gta-event-dialog .notice-actions { flex-wrap: wrap; }

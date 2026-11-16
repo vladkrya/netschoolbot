@@ -290,3 +290,41 @@ async def test_numbered_link_resolves_through_version_named_manifest(app_context
         assert (await client.get('/mini/android/sgoshka-12.apk')).status == 404
     finally:
         await client.close()
+
+
+@pytest.mark.asyncio
+async def test_gta_event_can_end_without_rolling_back_personal_theme(app_context, tmp_path):
+    from tests.test_repositories import make_user
+
+    app_context.settings = replace(app_context.settings, data_dir=tmp_path)
+    await app_context.users.save(make_user(5))
+    token = await app_context.miniapp.issue_token(5)
+    headers = {'X-Netschool-Token': token}
+    marker = tmp_path / 'gta-vi-event.enabled'
+    async with TestClient(TestServer(create_app(app_context))) as client:
+        response = await client.get('/mini/theme-event.json')
+        assert await response.json() == {'active': False}
+        assert response.headers['Cache-Control'] == 'no-store'
+
+        marker.touch()
+        response = await client.get('/mini/android/policy.json')
+        assert (await response.json())['blockedVersionCodes'] == []
+        root = tmp_path / 'android-releases'
+        publish(root, versionCode=28, versionName='0.6.18', file='sgoshka-28.apk')
+        (root / 'sgoshka-4.apk').rename(root / 'sgoshka-28.apk')
+        response = await client.get('/mini/android/policy.json')
+        assert (await response.json())['blockedVersionCodes'] == list(range(1, 28))
+        response = await client.get('/mini/theme-event.json')
+        assert await response.json() == {'active': True}
+        assert (await client.post('/mini/api/prefs', headers=headers, json={'gtaViEvent': 'off'})).status == 200
+        assert (await client.post('/mini/api/prefs', headers=headers, json={'theme': 'dark'})).status == 200
+
+        marker.unlink()
+        response = await client.get('/mini/android/policy.json')
+        assert (await response.json())['blockedVersionCodes'] == []
+        response = await client.get('/mini/theme-event.json')
+        assert await response.json() == {'active': False}
+        response = await client.get('/mini/api/prefs', headers=headers)
+        prefs = (await response.json())['data']
+        assert prefs['theme'] == 'dark'
+        assert prefs['gtaViEvent'] == 'off'

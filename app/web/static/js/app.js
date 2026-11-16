@@ -33,6 +33,7 @@ import { initSwipeBack } from './swipeback.js';
 import { initTrackpad } from './trackpad.js';
 import { initIosHaptics, notify, tap } from './haptics.js';
 import { getPref, setPref, syncPrefs } from './prefs.js';
+import { initGtaViEvent, syncGtaViEvent } from './gta-event.js';
 import { loadDone } from './details.js';
 import { loadNotes } from './notes.js';
 import { loadGames, warmGames } from './games.js';
@@ -516,6 +517,7 @@ function initLiveDiary() {
 
 /** Настройки с сервера отличались от сохранённых здесь — применить заново. */
 function applySyncedPrefs() {
+  syncGtaViEvent();
   applyStoredTheme();
   // Хеллоуин выключили или включили на другом устройстве.
   applyHalloween();
@@ -745,6 +747,10 @@ function initChrome() {
   // «Перейти ко дню» из расписания.
   window.addEventListener('netschool:tab', (event) => switchTab(event.detail));
   window.addEventListener('netschool:design', onDesign);
+  window.addEventListener('netschool:gta-event', () => {
+    if (state.tab === 'settings' || isDrawerOpen()) quietly(() => loadSettings());
+    if (state.tab === 'day' && state.date) quietly(() => loadDay());
+  });
   // Вошли без сети, сеть вернулась и сервер принял PIN — показываем свежее.
   window.addEventListener('netschool:unlocked', () => { if (state.tab) quietly(() => TABS[state.tab]()); });
 }
@@ -963,11 +969,12 @@ async function start() {
   initTelegram();
   // Тема, дизайн и цвет, выбранные в Telegram, — и на сайте (и наоборот).
   // Запрос ушёл ещё из boot.js, раньше дневника: своё — вперёд «Сетевого города».
-  (state.prefsSync || syncPrefs()).then((changed) => {
+  (state.prefsSync || syncPrefs()).then(async (changed) => {
     if (changed) applySyncedPrefs();
     // Флаг «видел» уже пришёл с сервера — окошко не повторится на другом устройстве.
     dropInstallHints();
-    if (!isReadOnly() && !requestedModeration) showUnityNotice().then(showHalloweenNotice).then(showKeepFilesNotice).then(showSurvey);
+    const eventShown = await initGtaViEvent();
+    if (!eventShown && !isReadOnly() && !requestedModeration) showUnityNotice().then(showHalloweenNotice).then(showKeepFilesNotice).then(showSurvey);
     reportVisit();
   });
   if (!requestedModeration) offerPushOnFirstLaunch();

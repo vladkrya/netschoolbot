@@ -5,7 +5,7 @@
 
 import { $, androidApkUrl, api, banner, demo, ensureAttachmentTicket, esc, initData, motionAtLeast, openExternal, state } from './core.js';
 import {
-  isUnity, saveUnity, viceCityVersion, saveViceCity, setViceCityAccess, setHalloweenAccess,
+  isUnity, saveUnity, isGtaViEventActive, isGtaViEventTheme, selectedViceCity, saveViceCity, setViceCityAccess, setHalloweenAccess,
   ACCENTS, applyMotion, currentAccent, forgetAccent, HALLOWEEN_ACCENTS, halloweenAccent, isHalloween, isNewDesign, motionChosen, motionLevel, rememberAccent, saveAccent, saveAnswers, saveBells, saveConfetti, savedAccents, saveDesign, saveHalloween, saveHalloweenAccent, saveHomeworkStatus, saveMotion, saveWeekends, showAnswers, showBells, showConfetti, showHomeworkStatus, showWeekends, syncChromeColor, weakDevice,
 } from './appearance.js';
 import { ICONS } from './icons.js';
@@ -23,6 +23,7 @@ import { openLockSettings } from './lock.js';
 import { openInBrowser, openInstallGuide } from './install.js';
 import { pendingOps, send } from './outbox.js';
 import { BELL_SHIFTS, bellShift } from './timer.js';
+import { syncGtaViEvent } from './gta-event.js';
 import { openCalendar } from './caldav.js';
 import { openFamily } from './family.js';
 import { openHistory } from './history.js';
@@ -415,7 +416,7 @@ function render() {
   // В Хеллоуин — свои цвета и свой выбранный: отмеченный кружок совпадает с экраном.
   const spooky = isHalloween();
   const unity = isUnity();
-  const vice = viceCityVersion();
+  const vice = selectedViceCity();
   const palette = unity ? [['#315fba', 'Праздничный синий']] : spooky ? HALLOWEEN_ACCENTS : ACCENTS;
   const accent = unity ? '#315fba' : spooky ? halloweenAccent() : currentAccent();
   // Дневник ученика по приглашению: его уведомления и почту не трогаем.
@@ -487,6 +488,8 @@ function render() {
     </section>
     <section class="drawer-section">
       <div class="drawer-heading">Оформление</div>
+      ${isGtaViEventActive() ? `<label class="switch-row"><span>GTA VI — временная тема</span>
+        <input type="checkbox" switch class="switch" id="gtaEventOn" ${isGtaViEventTheme() ? 'checked' : ''}></label>` : ''}
       ${data.unity ? `<label class="switch-row unity-row"><span>День народного единства<span class="muted small switch-note">4 ноября · праздничная тема</span></span>
         <input type="checkbox" switch class="switch" id="unityOn" ${unity ? 'checked' : ''}></label>` : ''}
       ${data.vice_city ? more('private-themes', 'Темы владельца', `
@@ -765,6 +768,10 @@ function bindDrawer() {
   $('bellsTab')?.addEventListener('change', (event) => {
     select();
     smoothRepaint(() => saveBells(event.target.checked));
+  });
+  $('gtaEventOn')?.addEventListener('change', ({ target }) => {
+    setPref('gtaViEvent', target.checked ? 'on' : 'off');
+    syncGtaViEvent();
   });
   for (const [id, version] of [['viceCityOn', 1], ['viceCityTwoOn', 2], ['viceCityThreeOn', 3], ['viceCityFourOn', 4]]) {
     $(id)?.addEventListener('change', ({ target }) => {

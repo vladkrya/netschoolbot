@@ -35,6 +35,7 @@ async def updates_enabled(app) -> bool:
 
 
 BLOCK_PREFIX = "android_version_blocked:"
+GTA_VI_ANDROID_VERSION = 28
 
 
 async def blocked_versions(app) -> list[int]:
@@ -45,8 +46,23 @@ async def blocked_versions(app) -> list[int]:
 
 @routes.get("/android/policy.json")
 async def version_policy(request: web.Request) -> web.Response:
-    return web.json_response({"packageName": "ru.ikrya.sgoshka", "blockedVersionCodes": await blocked_versions(context(request))},
+    app = context(request)
+    blocked = set(await blocked_versions(app))
+    if gta_vi_active(app) and await updates_enabled(app):
+        release = release_manifest(directory(request))
+        if release and release["versionCode"] >= GTA_VI_ANDROID_VERSION:
+            blocked.update(range(1, GTA_VI_ANDROID_VERSION))
+    return web.json_response({"packageName": "ru.ikrya.sgoshka", "blockedVersionCodes": sorted(blocked)},
                              headers={"Cache-Control": "no-store"})
+
+
+def gta_vi_active(app) -> bool:
+    return (app.settings.data_dir / "gta-vi-event.enabled").is_file()
+
+
+@routes.get("/theme-event.json")
+async def theme_event(request: web.Request) -> web.Response:
+    return web.json_response({"active": gta_vi_active(context(request))}, headers={"Cache-Control": "no-store"})
 
 
 def directory(request: web.Request) -> Path:

@@ -338,6 +338,10 @@ async def save_prefs(request: web.Request) -> web.Response:
             if managed.get(other) == "on":
                 return json_error("Другая праздничная тема задана администратором", status=403)
             changes[other] = "off"
+    if "gtaViEvent" in body:
+        if body["gtaViEvent"] not in ("closed", "off", "on"):
+            return json_error("Неизвестная настройка темы GTA VI")
+        changes["gtaViEvent"] = body["gtaViEvent"]
     if "theme" in body:
         if body["theme"] not in THEMES:
             return json_error("Неизвестная тема")

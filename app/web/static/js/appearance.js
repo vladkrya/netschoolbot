@@ -34,6 +34,21 @@ function shade(hex, amount) {
 const VICE_CITY_KEY = 'ns-vice-city';
 let viceCityAllowed = false;
 let viceCityClock;
+let privateViceCity = 0;
+let gtaViEventActive = false;
+
+export function isGtaViEventActive() { return gtaViEventActive; }
+export function isGtaViEventTheme() { return gtaViEventActive && getPref('gtaViEvent') !== 'off'; }
+export function selectedViceCity() { return viceCityAllowed ? privateViceCity : 0; }
+
+export function applyGtaViEvent(active = gtaViEventActive) {
+  const wasActive = gtaViEventActive;
+  gtaViEventActive = active;
+  const version = isGtaViEventTheme() ? 1 : selectedViceCity();
+  const changed = version !== viceCityVersion();
+  if (changed) applyViceCity(version);
+  if (wasActive !== active || (active && changed)) window.dispatchEvent(new Event('netschool:gta-event'));
+}
 
 export function viceCityVersion() {
   const style = document.documentElement.getAttribute('data-style');
@@ -77,6 +92,8 @@ function applyViceCity(version) {
     document.removeEventListener('visibilitychange', syncViceCityClock);
     window.removeEventListener('pageshow', syncViceCityClock);
   }
+  root.style.removeProperty('background');
+  root.style.removeProperty('--boot-bg');
   syncViceCityClock();
   applyHalloween();
   applyAccent();
@@ -84,14 +101,13 @@ function applyViceCity(version) {
 
 export function setViceCityAccess(allowed) {
   viceCityAllowed = allowed === true;
-  let version = viceCityVersion();
   if (viceCityAllowed) {
     try {
       const saved = localStorage.getItem(VICE_CITY_KEY);
-      version = saved === 'on' ? 1 : ['2', '3', '4'].includes(saved) ? Number(saved) : 0;
+      privateViceCity = saved === 'on' ? 1 : ['2', '3', '4'].includes(saved) ? Number(saved) : 0;
     } catch { /* хранилище недоступно */ }
   }
-  if (version || viceCityVersion()) applyViceCity(viceCityAllowed ? version : 0);
+  applyGtaViEvent();
 }
 
 export function saveViceCity(version) {
@@ -100,7 +116,8 @@ export function saveViceCity(version) {
     if (version) localStorage.setItem(VICE_CITY_KEY, version === 1 ? 'on' : String(version));
     else localStorage.removeItem(VICE_CITY_KEY);
   } catch { /* приватный режим — до перезагрузки */ }
-  applyViceCity(version);
+  privateViceCity = version;
+  applyGtaViEvent();
 }
 
 export function applyAccent(color = currentAccent()) {
@@ -332,8 +349,8 @@ export function saveHalloween(on) {
   if (!halloweenAllowed || prefManaged('halloween') || (on && prefManaged('unity') && getPref('unity') === 'on')) return;
   if (on) setPref('unity', 'off');
   setPref('halloween', on ? 'on' : 'off');
-  if (on && isViceCity()) saveViceCity(0);
-  else applyHalloween();
+  if (on && selectedViceCity()) saveViceCity(0);
+  applyHalloween();
 }
 
 /** Субботу и воскресенье без уроков прячем, если не включено «Показывать выходные». */
