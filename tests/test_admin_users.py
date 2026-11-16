@@ -141,9 +141,9 @@ async def test_forced_settings_cannot_be_overridden_and_can_be_released(app_cont
     assert await access.feature(app_context, 2, 'unity') is True
     await manage_user(Callback('force-halloween-on'), app_context)
     controls = await access.controls(app_context, 2)
-    assert controls['forced_prefs']['halloween'] == 'on'
-    assert 'unity' not in controls['forced_prefs']
-    assert (await app_context.miniapp.prefs(2))['unity'] == 'off'
+    assert 'halloween' not in controls['forced_prefs']
+    assert controls['forced_prefs']['unity'] == 'on'
+    assert (await app_context.miniapp.prefs(2))['unity'] == 'on'
     await manage_user(Callback('force-theme-free'), app_context)
     await client.post('/mini/api/prefs', params=params, json={'theme': 'light'})
     assert (await app_context.miniapp.prefs(2))['theme'] == 'light'

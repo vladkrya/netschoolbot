@@ -50,7 +50,7 @@ async def test_search_by_username_id_and_account_number_is_minimal(client, peopl
     response = await client.get('/mini/api/admin/users/2', params=params)
     data = (await response.json())['data']
     assert data['username'] == 'alice_test'
-    assert [theme['key'] for theme in data['themes']] == ['unity', 'halloween']
+    assert [theme['key'] for theme in data['themes']] == ['unity']
     assert_minimal(data)
 
 
@@ -68,13 +68,13 @@ async def test_themes_grant_force_and_release_from_miniapp(client, people, app_c
     assert themes['unity']['available'] and themes['unity']['active']
     themes = await post('force', 'unity', 'on')
     assert themes['unity']['active'] and themes['unity']['forced'] == 'on'
-    themes = await post('force', 'halloween', 'on')
-    assert themes['halloween']['active'] and not themes['unity']['active']
-    themes = await post('force', 'halloween', 'free')
-    assert themes['halloween']['forced'] == 'free'
-    themes = await post('grant', 'halloween', 'deny')
-    assert not themes['halloween']['available'] and not themes['halloween']['active']
-    assert (await app_context.miniapp.prefs(2))['halloween'] == 'off'
+    response = await client.post(url, params=params, json={'kind': 'force', 'name': 'halloween', 'value': 'on'})
+    assert response.status == 400
+    themes = await post('force', 'unity', 'free')
+    assert themes['unity']['forced'] == 'free'
+    themes = await post('grant', 'unity', 'deny')
+    assert not themes['unity']['available'] and not themes['unity']['active']
+    assert (await app_context.miniapp.prefs(2))['unity'] == 'off'
 
 
 async def test_invalid_operations_and_missing_users(client, people):

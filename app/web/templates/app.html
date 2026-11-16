@@ -23,6 +23,7 @@
     if (!/^#[0-9a-f]{6}$/i.test(accent || '')) accent = '#4a6fae';
     // Новый дизайн — по умолчанию; min и старый восстанавливаем до первого кадра.
     var savedDesign = localStorage.getItem('ns-design-v2');
+    var fresh = savedDesign !== 'classic';
     if (savedDesign === 'min' || savedDesign === 'v3') {
       document.documentElement.setAttribute('data-design', 'new');
       document.documentElement.setAttribute('data-variant', 'min');
@@ -38,14 +39,6 @@
     if (level < 50) classes.add('motion-min');
     if (!level) classes.add('no-motion');
     var bg = fresh ? (dark ? '#0f1217' : '#f3f4f8') : (dark ? '#141a22' : '#eef1f6');
-    // Хеллоуинское оформление (в сезон у всех) — ночное, со своим цветом акцента.
-    if ({{ 'true' if token or demo else 'false' }} && localStorage.getItem('ns-halloween') === 'on'
-        && localStorage.getItem('ns-signed-out') !== {{ token | tojson }}) {
-      document.documentElement.setAttribute('data-holiday', 'halloween');
-      bg = '#120d18';
-      accent = localStorage.getItem('ns-halloween-accent');
-      if (!/^#[0-9a-f]{6}$/i.test(accent || '')) accent = '#e8740c';
-    }
     var glass = CSS.supports('background', 'color-mix(in srgb, red 50%, transparent)')
       && (CSS.supports('backdrop-filter', 'blur(1px)') || CSS.supports('-webkit-backdrop-filter', 'blur(1px)'));
     var chrome = '#' + [1, 3, 5].map(function(offset) {
@@ -116,6 +109,7 @@
 <!-- Хеллоуин: правила под html[data-holiday="halloween"], включает appearance.js. -->
 <link rel="stylesheet" href="{{ base }}/static/v{{ version }}/halloween.css">
 <link rel="stylesheet" href="{{ base }}/static/v{{ version }}/unity.css">
+<link rel="stylesheet" href="{{ base }}/static/v{{ version }}/vice-city.css">
 <link rel="stylesheet" href="{{ base }}/static/v{{ version }}/games.css">
 <!-- Уровни «Анимаций»: облегчённые режимы и украшения полного (motion-calm/-lite/-min на <html>). -->
 <link rel="stylesheet" href="{{ base }}/static/v{{ version }}/motion.css">

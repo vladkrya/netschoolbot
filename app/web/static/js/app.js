@@ -14,7 +14,7 @@ import { initLive, liveEvents } from './live.js';
 import { initMail, loadMail, openAnnouncements, openCompose } from './mail.js';
 import {
   applyAccent, applyDesign, applyHalloween, applyScheduleTab, halloweenAvailable, initFullscreen, isHalloween,
-  isNewDesign, navIcon, setHalloweenAccess, setUnityAccess,
+  isNewDesign, navIcon, setUnityAccess,
 } from './appearance.js';
 import { ICONS } from './icons.js';
 import { dropInstallHints, initInstallPrompt, openInstall } from './install.js';
@@ -549,7 +549,6 @@ async function applySync(topic) {
     const profile = await loadProfile(true).catch(() => null);
     if (profile) {
       setUnityAccess(profile.unity);
-      setHalloweenAccess(profile.halloween);
     }
     if (isDrawerOpen()) await loadSettings();
   }
@@ -1035,7 +1034,6 @@ async function start() {
       openModeration();
     }
     setUnityAccess(profile?.unity);
-    setHalloweenAccess(profile?.halloween);
     if (profile?.name) {
       const fName = studentFirstName(profile.name);
       if (state.tab === 'teacher') {

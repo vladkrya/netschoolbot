@@ -5,7 +5,8 @@
 
 import { $, androidApkUrl, api, banner, demo, ensureAttachmentTicket, esc, initData, motionAtLeast, openExternal, state } from './core.js';
 import {
-  isUnity, saveUnity, ACCENTS, applyMotion, currentAccent, forgetAccent, HALLOWEEN_ACCENTS, halloweenAccent, halloweenCountdown, isHalloween, isNewDesign, motionChosen, motionLevel, rememberAccent, saveAccent, saveAnswers, saveBells, saveConfetti, savedAccents, saveDesign, saveHalloween, saveHalloweenAccent, saveHomeworkStatus, saveMotion, saveWeekends, showAnswers, showBells, showConfetti, showHomeworkStatus, showWeekends, syncChromeColor, weakDevice,
+  isUnity, saveUnity, isViceCity, saveViceCity, setViceCityAccess, setHalloweenAccess,
+  ACCENTS, applyMotion, currentAccent, forgetAccent, HALLOWEEN_ACCENTS, halloweenAccent, isHalloween, isNewDesign, motionChosen, motionLevel, rememberAccent, saveAccent, saveAnswers, saveBells, saveConfetti, savedAccents, saveDesign, saveHalloween, saveHalloweenAccent, saveHomeworkStatus, saveMotion, saveWeekends, showAnswers, showBells, showConfetti, showHomeworkStatus, showWeekends, syncChromeColor, weakDevice,
 } from './appearance.js';
 import { ICONS } from './icons.js';
 import { smoothRepaint } from './motion.js';
@@ -43,6 +44,8 @@ export async function loadProfile(force = false) {
     if (data.notifications) Object.assign(data.notifications, localSettings(path, body));
   }
   state.profile = data;
+  setViceCityAccess(data.vice_city);
+  setHalloweenAccess(data.vice_city && data.halloween);
   window.dispatchEvent(new CustomEvent('netschool:profile', { detail: data }));
   return data;
 }
@@ -88,8 +91,11 @@ function currentTheme() {
 
 export function applyStoredTheme() {
   const theme = currentTheme();
-  if (theme === 'auto') document.documentElement.removeAttribute('data-theme');
-  else document.documentElement.setAttribute('data-theme', theme);
+  const root = document.documentElement;
+  if (theme === 'auto') root.removeAttribute('data-theme');
+  else root.setAttribute('data-theme', theme);
+  root.style.removeProperty('background');
+  root.style.removeProperty('--boot-bg');
   // «Анимации» могли выключить на другом устройстве — приходит с настройками.
   applyMotion();
   syncChromeColor();
@@ -409,6 +415,7 @@ function render() {
   // В Хеллоуин — свои цвета и свой выбранный: отмеченный кружок совпадает с экраном.
   const spooky = isHalloween();
   const unity = isUnity();
+  const vice = isViceCity();
   const palette = unity ? [['#315fba', 'Праздничный синий']] : spooky ? HALLOWEEN_ACCENTS : ACCENTS;
   const accent = unity ? '#315fba' : spooky ? halloweenAccent() : currentAccent();
   // Дневник ученика по приглашению: его уведомления и почту не трогаем.
@@ -482,9 +489,14 @@ function render() {
       <div class="drawer-heading">Оформление</div>
       ${data.unity ? `<label class="switch-row unity-row"><span>День народного единства<span class="muted small switch-note">4 ноября · праздничная тема</span></span>
         <input type="checkbox" switch class="switch" id="unityOn" ${unity ? 'checked' : ''}></label>` : ''}
-      ${data.halloween ? `<label class="switch-row halloween-row"><span>🎃 Хеллоуин<span class="muted small switch-note">${halloweenCountdown()}</span></span>
-        <input type="checkbox" switch class="switch" id="halloweenOn" ${isHalloween() ? 'checked' : ''}></label>` : ''}
-      ${spooky ? '<div class="muted small halloween-note">В Хеллоуин тема всегда ночная. Светлая и свой цвет вернутся, когда выключите праздник.</div>'
+      ${data.vice_city ? more('private-themes', 'Темы владельца', `
+        <label class="switch-row"><span>Вайс-Сити</span>
+          <input type="checkbox" switch class="switch" id="viceCityOn" ${vice ? 'checked' : ''}
+            ${data.managed_prefs?.halloween === 'on' ? 'disabled title="Хеллоуин задан администратором"' : ''}></label>
+        ${data.halloween ? `<label class="switch-row halloween-row"><span>Хеллоуин</span>
+          <input type="checkbox" switch class="switch" id="halloweenOn" ${spooky ? 'checked' : ''}></label>` : ''}
+      `) : ''}
+      ${vice ? '' : `${spooky ? '<div class="muted small halloween-note">В Хеллоуин тема всегда ночная. Светлая и свой цвет вернутся, когда выключите праздник.</div>'
         : isNewDesign() ? themeSegment : `${radio('light', 'Светлая тема')}
       ${radio('auto', 'Как в системе')}
       ${radio('dark', 'Тёмная тема')}`}
@@ -496,7 +508,7 @@ function render() {
           <input type="color" id="accentCustom" value="${accent}">＋</label>`}
       </div>
       ${spooky || unity ? '' : customAccent ? '<button class="link accent-action" id="accentRemember">Сохранить этот цвет</button>'
-        : saved.includes(accent) ? '<button class="link accent-action" id="accentForget">Убрать из сохранённых</button>' : ''}
+        : saved.includes(accent) ? '<button class="link accent-action" id="accentForget">Убрать из сохранённых</button>' : ''}`}
       ${demo ? '' : `<button class="drawer-link" id="drawerAppIcon">${ICONS.install} Иконка приложения</button>`}
       ${tabsMore()}
       ${more('home', 'Главная и расписание', `
@@ -744,6 +756,14 @@ function bindDrawer() {
   $('bellsTab')?.addEventListener('change', (event) => {
     select();
     smoothRepaint(() => saveBells(event.target.checked));
+  });
+  $('viceCityOn')?.addEventListener('change', ({ target }) => {
+    select();
+    smoothRepaint(() => {
+      saveViceCity(target.checked);
+      render();
+      $('viceCityOn')?.focus({ preventScroll: true });
+    });
   });
   $('unityOn')?.addEventListener('change', (event) => {
     select();

@@ -100,14 +100,22 @@ class TestAuth:
         assert response.status == 200
         assert (await response.json())["data"]["name"] == "Иванов И."
 
-    async def test_halloween_for_everyone_in_season(self, client, app_context, users, token):
-        from app.web.api import halloween_season
-
+    async def test_private_themes_are_owner_only(self, client, app_context, users, token):
         await users.save(make_user(2, student_name="Петров П."))
         other = await app_context.miniapp.issue_token(2)
-        response = await client.get(f"{BASE}/api/profile", params={"token": other})
-        user = await users.get(2)
-        assert (await response.json())["data"]["halloween"] is halloween_season(user.today())
+        # A grant from before the rollout cannot give an ordinary user access.
+        await app_context.db.execute(
+            "INSERT INTO user_controls (telegram_id, blocked, grants, forced_prefs) VALUES (?, 0, ?, ?)",
+            (2, '{"halloween":true}', '{"halloween":"on"}'),
+        )
+        for ticket, allowed in ((token, True), (other, False)):
+            params = {"token": ticket}
+            response = await client.get(f"{BASE}/api/profile", params=params)
+            data = (await response.json())["data"]
+            assert data["vice_city"] is allowed
+            assert data["halloween"] is allowed
+            response = await client.post(f"{BASE}/api/prefs", params=params, json={"halloween": "on"})
+            assert response.status == (200 if allowed else 403)
 
     def test_halloween_season(self):
         from app.web.api import halloween_season
@@ -120,10 +128,14 @@ class TestAuth:
         assert not halloween_season(dt.date(2026, 10, 17))
         assert not halloween_season(dt.date(2026, 6, 1))
 
-    async def test_halloween_notice_once(self, client, app_context, token, monkeypatch):
+    async def test_halloween_notice_once_for_owner(self, client, app_context, users, token, monkeypatch):
         from app.web.api import prefs as web_api
 
         monkeypatch.setattr(web_api, "halloween_season", lambda today: True)
+        await users.save(make_user(2))
+        other = await app_context.miniapp.issue_token(2)
+        response = await client.post(f"{BASE}/api/notices/halloween", params={"token": other})
+        assert (await response.json())["data"]["show"] is False
         response = await client.post(f"{BASE}/api/notices/halloween", params={"token": token})
         assert (await response.json())["data"]["show"] is True
         response = await client.post(f"{BASE}/api/notices/halloween", params={"token": token})

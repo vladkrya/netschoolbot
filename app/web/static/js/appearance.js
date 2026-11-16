@@ -31,11 +31,47 @@ function shade(hex, amount) {
   return `#${mixed.map((c) => c.toString(16).padStart(2, '0')).join('')}`;
 }
 
+const VICE_CITY_KEY = 'ns-vice-city';
+let viceCityAllowed = false;
+
+export function isViceCity() {
+  return document.documentElement.getAttribute('data-style') === 'vice-city';
+}
+
+export function setViceCityAccess(allowed) {
+  viceCityAllowed = allowed === true;
+  if (viceCityAllowed) {
+    try {
+      if (localStorage.getItem(VICE_CITY_KEY) === 'on') {
+        document.documentElement.setAttribute('data-style', 'vice-city');
+      }
+    } catch { /* хранилище недоступно */ }
+  } else {
+    document.documentElement.removeAttribute('data-style');
+  }
+  applyHalloween();
+  applyAccent();
+}
+
+export function saveViceCity(on) {
+  if (!viceCityAllowed || (on && prefManaged('halloween') && getPref('halloween') === 'on')) return;
+  const root = document.documentElement;
+  if (on) root.setAttribute('data-style', 'vice-city');
+  else root.removeAttribute('data-style');
+  try {
+    if (on) localStorage.setItem(VICE_CITY_KEY, 'on');
+    else localStorage.removeItem(VICE_CITY_KEY);
+  } catch { /* приватный режим — до перезагрузки */ }
+  applyHalloween();
+  applyAccent();
+}
+
 export function applyAccent(color = currentAccent()) {
   if (!/^#[0-9a-f]{6}$/i.test(color)) color = ACCENTS[0][0];
   // У хеллоуинского оформления свой акцент — обычный выбранный цвет не трогаем.
   if (isHalloween()) color = halloweenAccent();
   if (isUnity()) color = '#315fba';
+  if (isViceCity()) color = '#9b4b58';
   const root = document.documentElement.style;
   const dark = shade(color, -0.18);
   root.setProperty('--head', color);
@@ -46,7 +82,7 @@ export function applyAccent(color = currentAccent()) {
   if (initData && tg) {
     try {
       // Панель вкладок теперь стеклянная и парит над фоном — низ Telegram в цвет фона.
-      tg.setBottomBarColor?.('bg_color');
+      tg.setBottomBarColor?.(isViceCity() ? getComputedStyle(document.documentElement).getPropertyValue('--bg').trim() : 'bg_color');
     } catch {
       /* старый клиент Telegram — просто без покраски */
     }
@@ -67,7 +103,7 @@ export function syncChromeColor() {
     return Math.round(glass ? foreground * 0.8 + background * 0.2 : foreground);
   });
   // В новом дизайне шапка в тон фону — и системная область тоже.
-  const color = isNewDesign() ? bg
+  const color = (isNewDesign() || isViceCity()) ? bg
     : `#${channels.map((value) => value.toString(16).padStart(2, '0')).join('')}`;
   document.documentElement.style.setProperty('--chrome-head', color);
   document.querySelector('meta[name="theme-color"]')?.setAttribute('content', color);
@@ -117,18 +153,9 @@ export function saveDesign(value) {
   window.dispatchEvent(new CustomEvent('netschool:design'));
 }
 
-/*
- * Хеллоуинское оформление — у всех в праздничный сезон (флаг halloween в
- * профиле). Выбор тумблером — общая настройка halloween ('off' — выключили),
- * одна на Telegram и сайт: раньше он жил только на устройстве, и в браузере
- * тема могла остаться выключенной, когда в Telegram она есть. ns-halloween —
- * копия итога для скрипта в <head>: по 'on' он ставит data-holiday до
- * отрисовки. Правила — в halloween.css.
- */
-const HALLOWEEN_KEY = 'ns-halloween';
-let halloweenAllowed = null;
+// Хеллоуин включается владельцем после загрузки профиля.
+let halloweenAllowed = false;
 
-/** Свои цвета акцента на Хеллоуин: в меню вместо обычных, пока тема включена. */
 export const HALLOWEEN_ACCENTS = [
   ['#e8740c', 'Тыквенный'],
   ['#8e4fd6', 'Ведьмин'],
@@ -151,17 +178,6 @@ export function saveHalloweenAccent(color) {
 /** Иконка вкладки нижней панели и кнопки помощника: в Хеллоуин — праздничная, если такая есть. */
 export function navIcon(name) {
   return (isHalloween() && HALLOWEEN_ICONS[name]) || ICONS[name] || '';
-}
-
-function readHalloween() {
-  try { return localStorage.getItem(HALLOWEEN_KEY); } catch { return null; }
-}
-
-function writeHalloween(on) {
-  try {
-    if (on) localStorage.setItem(HALLOWEEN_KEY, 'on');
-    else localStorage.removeItem(HALLOWEEN_KEY);
-  } catch { /* приватный режим — продержится до перезагрузки */ }
 }
 
 export function halloweenAvailable() {
@@ -188,18 +204,14 @@ export function saveUnity(on) {
 }
 
 export function isHalloween() {
-  if (isUnity()) return false;
-  // Пока профиль не пришёл — верим прошлому запуску, чтобы не мигать.
-  if (halloweenAllowed === null) return readHalloween() === 'on';
-  return halloweenAllowed && getPref('halloween') !== 'off';
+  return halloweenAllowed && !isViceCity() && !isUnity() && getPref('halloween') === 'on';
 }
 
 export function applyHalloween() {
   const on = isHalloween();
-  if (halloweenAllowed !== null) writeHalloween(on);
   const root = document.documentElement;
   const previous = root.getAttribute('data-holiday');
-  const holiday = on ? 'halloween' : isUnity() ? 'unity' : null;
+  const holiday = on ? 'halloween' : !isViceCity() && isUnity() ? 'unity' : null;
   if (holiday) root.setAttribute('data-holiday', holiday);
   else root.removeAttribute('data-holiday');
   // Луна, паутина, мыши и паук — слой внутри шапки, под её кнопками и
@@ -250,18 +262,6 @@ export function halloweenDaysLeft(now = new Date()) {
   return Math.round((day - today) / 86400000);
 }
 
-/** Подпись к тумблеру: обратный отсчёт до праздника. */
-export function halloweenCountdown(now = new Date()) {
-  const left = halloweenDaysLeft(now);
-  if (left === 0) return 'сегодня Хеллоуин! 🎃';
-  if (left < 0) return 'Хеллоуин прошёл — до следующего года';
-  const mod10 = left % 10;
-  const mod100 = left % 100;
-  const word = mod10 === 1 && mod100 !== 11 ? 'день'
-    : mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14) ? 'дня' : 'дней';
-  return `до Хеллоуина ${left} ${word}`;
-}
-
 /** Мыши летают от 75% «Анимаций»: ниже motion.css ставит их на место. */
 function batsAllowed() {
   return motionAtLeast(75);
@@ -289,10 +289,11 @@ export function setHalloweenAccess(allowed) {
 }
 
 export function saveHalloween(on) {
-  if (prefManaged('halloween') || (on && prefManaged('unity') && getPref('unity') === 'on')) return;
+  if (!halloweenAllowed || prefManaged('halloween') || (on && prefManaged('unity') && getPref('unity') === 'on')) return;
   if (on) setPref('unity', 'off');
   setPref('halloween', on ? 'on' : 'off');
-  applyHalloween();
+  if (on && isViceCity()) saveViceCity(false);
+  else applyHalloween();
 }
 
 /** Субботу и воскресенье без уроков прячем, если не включено «Показывать выходные». */

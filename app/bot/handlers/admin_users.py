@@ -147,7 +147,7 @@ CONFIRMATIONS = {}
 
 
 async def advanced_panel(app, uid, panel):
-    from ...access import controls, FEATURES, MANAGED_PREFS
+    from ...access import controls, FEATURES, MANAGED_PREFS, owner
     data = await controls(app, uid)
     rows = []
     def button(text, action):
@@ -155,6 +155,8 @@ async def advanced_panel(app, uid, panel):
     if panel == "rights":
         lines = [f"🔐 <b>Доступы пользователя {uid}</b>", "По умолчанию — общие правила приложения."]
         for key, label in FEATURES.items():
+            if key == "halloween" and not owner(app, uid):
+                continue
             value = data["grants"].get(key)
             state = "разрешено" if value is True else "запрещено" if value is False else "по умолчанию"
             lines.append(f"{label}: <b>{state}</b>")
@@ -165,6 +167,8 @@ async def advanced_panel(app, uid, panel):
         labels = {"unity": "День единства", "halloween": "Хеллоуин", "theme": "Светлая / тёмная", "design": "Дизайн", "motion": "Анимации", "confetti": "Конфетти"}
         names = {"on": "Вкл.", "off": "Выкл.", "light": "Светлая", "dark": "Тёмная", "auto": "Системная", "min": "min", "v3": "min (старое имя)", "new": "Новый", "classic": "Старый", "show": "Вкл.", "hide": "Выкл."}
         for key, values in MANAGED_PREFS.items():
+            if key == "halloween" and not owner(app, uid):
+                continue
             forced = data["forced_prefs"].get(key)
             lines.append(f"{labels[key]}: <b>{names.get(forced, 'свободно')}</b>")
             rows.append([button(f"{labels[key] + ': ' if value == values[0] else ''}{'✓ ' if forced == value else ''}{names[value]}", f"force-{key}-{value}") for value in values]

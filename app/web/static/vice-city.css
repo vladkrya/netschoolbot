@@ -1,0 +1,97 @@
+@font-face {
+  font-family: "Roboto Condensed";
+  src: url("fonts/RobotoCondensed-800Italic-cyrillic.woff2") format("woff2");
+  font-style: italic;
+  font-weight: 800;
+  font-display: swap;
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+
+@font-face {
+  font-family: "Roboto Condensed";
+  src: url("fonts/RobotoCondensed-800Italic-latin.woff2") format("woff2");
+  font-style: italic;
+  font-weight: 800;
+  font-display: swap;
+  unicode-range: U+0000-00FF, U+2000-206F;
+}
+
+/* Тема меняет палитру, типографику и выделение активных элементов.
+   Геометрию экранов задаёт выбранный дизайн, включая «Минимальный». */
+:root[data-style="vice-city"]:not([data-holiday]):not(#_) {
+  color-scheme: dark;
+  --bg: #19121e;
+  --boot-bg: var(--bg);
+  --card: #2a1d30;
+  --card-2: #332339;
+  --text: #f6e8dd;
+  --text2: #c8afc6;
+  --border: #543b55;
+  --primary: #efa2a4;
+  --mark-bg: #332439;
+  --g2: #f88891;
+  --g3: #f3ae64;
+  --g4: #c3d76f;
+  --g5: #83cf95;
+  --soft: #402938;
+  --soft-2: #563440;
+  --glass: rgba(45, 30, 50, .9);
+  --glass-2: rgba(37, 24, 41, .82);
+  --glass-edge: #523650;
+  --glass-shine: rgba(244, 187, 197, .09);
+  --glass-shadow: 0 8px 24px rgba(12, 5, 16, .4);
+  --lens: #543241;
+  --lens-shine: rgba(244, 187, 197, .16);
+  --lift: 0 0 0 1px rgba(244, 187, 197, .12);
+  --lift-2: var(--glass-shadow), var(--lift);
+  --sync-color: var(--primary);
+  --vice-display: "Roboto Condensed", system-ui, sans-serif;
+  --vice-selected: linear-gradient(135deg, #d68a86, #bd7488);
+  --vice-selected-text: #21121e;
+}
+
+:root[data-style="vice-city"]:not([data-holiday]) .boot-splash {
+  color: var(--text2);
+}
+
+:root[data-style="vice-city"]:not([data-holiday]) .boot-spinner {
+  border-top-color: var(--primary);
+}
+
+:root[data-style="vice-city"]:not([data-holiday]):not(#_) :is(
+  .topbar-title, .lc-subject, .hw-subject, .sc-name, .sc-avg, .ds-title, .week-day.on .wd-num
+) {
+  font-family: var(--vice-display);
+  font-weight: 800;
+  font-style: italic;
+  text-transform: none;
+}
+
+:root[data-style="vice-city"]:not([data-holiday]) .hw-subject .hw-tag {
+  font-family: system-ui, sans-serif;
+  font-style: normal;
+}
+
+:root[data-style="vice-city"]:not([data-holiday]):not(#_) .day-summary {
+  background: var(--card) url("vice-city-sunset.webp") right 61% / cover no-repeat;
+}
+
+:root[data-style="vice-city"]:not([data-holiday]):not(#_) .week-day.on {
+  background: var(--vice-selected);
+  border-radius: 14px 10px 14px 10px;
+}
+
+:root[data-style="vice-city"]:not([data-holiday]):not(#_) .week-day.on :is(.wd-name, .wd-num) {
+  color: var(--vice-selected-text);
+}
+
+@media (max-width: 1023px) {
+  :root[data-style="vice-city"]:not([data-holiday]):not(#_) .bottom-nav:not(.dragging, .no-lens) .nav-glider {
+    background: var(--vice-selected);
+    border-radius: 16px 10px 16px 10px;
+  }
+
+  :root[data-style="vice-city"]:not([data-holiday]):not(#_) .bottom-nav:not(.dragging, .no-lens) .nav-item.active {
+    color: var(--vice-selected-text);
+  }
+}

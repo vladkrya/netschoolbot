@@ -12,7 +12,7 @@ from ...context import AppContext
 from ...domain import formatting
 from ...domain.models import TIMEZONES, ApiMode, User
 from ...netschool.errors import NetSchoolError
-from .base import _utc_iso, context, current_user, halloween_season, unity_season, json_error, routes
+from .base import _utc_iso, context, current_user, unity_season, json_error, routes
 
 
 async def _keep_attachments_info(app: AppContext, user: User) -> dict:
@@ -83,8 +83,11 @@ async def profile(request: web.Request) -> web.Response:
     app, user = context(request), current_user(request)
     status = await app.state.watch_status(user.telegram_id)
     viewer = request.get(viewing.VIEWER)
+    is_admin = solver.is_owner(app, viewer or user)
     solver_rules = await rules_for(app, viewer or user)
     managed_prefs = (await controls(app, (viewer or user).telegram_id))["forced_prefs"]
+    if not is_admin:
+        managed_prefs.pop("halloween", None)
     if not UNITY_ENABLED:
         managed_prefs.pop("unity", None)
     return web.json_response(
@@ -123,15 +126,14 @@ async def profile(request: web.Request) -> web.Response:
                 "solver_class": {"on": await solver.class_open(app)}
                 if app.settings.assistant.enabled and solver.is_owner(app, viewer or user) else None,
                 # Строка «Администрирование» в настройках (web/admin.py).
-                "admin": solver.is_owner(app, viewer or user),
+                "admin": is_admin,
+                "vice_city": is_admin,
                 "moderation": (viewer is None or viewer.telegram_id == user.telegram_id)
                 and await moderation.has_dashboard(app, user),
                 "managed_prefs": managed_prefs,
                 # Строка «Android-приложение» внизу настроек — только владельцу (admin.py).
                 "android_apk": android_apk_info(app) if solver.is_owner(app, viewer or user) else None,
-                # Хеллоуинское оформление — у всех в праздничный сезон;
-                # выключается тумблером в настройках.
-                "halloween": await feature(app, (viewer or user).telegram_id, "halloween", halloween_season(user.today())),
+                "halloween": is_admin,
                 "unity": await feature(app, (viewer or user).telegram_id, "unity", unity_season(user.today()) or solver.is_owner(app, viewer or user)),
                 # Без капчи отчёт об ошибке не отправить — пункт меню прячется.
                 "bug_report": bool(app.settings.web.captcha_url),

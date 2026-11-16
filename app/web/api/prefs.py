@@ -201,6 +201,10 @@ async def get_prefs(request: web.Request) -> web.Response:
         data = await app.miniapp.save_prefs(user.telegram_id, {"pwa": "installed"})
     from ...access import UNITY_ENABLED, controls, owner
     managed = (await controls(app, user.telegram_id))["forced_prefs"]
+    if not owner(app, user.telegram_id):
+        managed.pop("halloween", None)
+        if "halloween" in data:
+            data = {**data, "halloween": "off"}
     if not UNITY_ENABLED:
         managed.pop("unity", None)
         if "unity" in data:
@@ -253,7 +257,9 @@ async def halloween_notice(request: web.Request) -> web.Response:
     """Разовая карточка «включили хеллоуинское оформление» — по одной на
     человека, флаг в общих настройках, чтобы не повторять на других устройствах."""
     app, user = context(request), current_user(request)
-    show = halloween_season(user.today()) and not (await app.miniapp.prefs(user.telegram_id)).get("halloween_notice")
+    from ...access import owner
+
+    show = owner(app, user.telegram_id) and halloween_season(user.today()) and not (await app.miniapp.prefs(user.telegram_id)).get("halloween_notice")
     if show:
         await app.miniapp.save_prefs(user.telegram_id, {"halloween_notice": True})
     data = {"show": show, "bug_report": bool(app.settings.web.captcha_url)}
@@ -316,6 +322,8 @@ async def save_prefs(request: web.Request) -> web.Response:
         return json_error("Некорректный запрос")
     from ...access import UNITY_ENABLED, controls, feature, owner
     managed = (await controls(app, user.telegram_id))["forced_prefs"]
+    if not owner(app, user.telegram_id):
+        managed.pop("halloween", None)
     if not UNITY_ENABLED:
         managed.pop("unity", None)
         body.pop("unity", None)
@@ -366,7 +374,7 @@ async def save_prefs(request: web.Request) -> web.Response:
     if "halloween" in body:
         if body["halloween"] not in ("on", "off"):
             return json_error("Некорректная настройка Хеллоуина")
-        if body["halloween"] == "on" and not await feature(app, user.telegram_id, "halloween", halloween_season(user.today())):
+        if body["halloween"] == "on" and not await feature(app, user.telegram_id, "halloween"):
             return json_error("Праздничная тема недоступна", status=403)
         changes["halloween"] = body["halloween"]
     if "halloweenAccent" in body:

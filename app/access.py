@@ -31,6 +31,8 @@ async def blocked(app, uid):
 
 
 async def feature(app, uid, name, default=False):
+    if name == "halloween":
+        return owner(app, uid)
     if name == "unity" and not UNITY_ENABLED:
         return False
     data = await controls(app, uid)
@@ -46,6 +48,10 @@ async def _set_control(app, uid, *, block=None, grant=None, force=None):
     """Изменение из админ-команд. Имена и значения — только из белых списков."""
     if not UNITY_ENABLED and any(change and change[0] == "unity" for change in (grant, force)):
         raise ValueError("Праздничная тема завершилась")
+    if not owner(app, uid) and (
+        grant == ("halloween", "allow") or force == ("halloween", "on")
+    ):
+        raise ValueError("Хеллоуин доступен только владельцу")
     if block and owner(app, uid):
         raise ValueError("Нельзя заблокировать владельца")
     data = await controls(app, uid)
