@@ -8,9 +8,15 @@ const root = '/api/moderation';
 const reasons = { time: 'Неверное время', room: 'Неверный кабинет', subject: 'Неверный предмет', cancelled: 'Уточнить отмену' };
 const post = (path, body) => api(root + path, { method: 'POST', body: JSON.stringify(body) });
 
+function noticeDetail(text) {
+  return esc(text).replace(/\b\d{2}:\d{2}–\d{2}:\d{2}\b/g, '<span class="moderation-time">$&</span>');
+}
+
 export function noticesHtml(notices = [], readonly = false) {
-  return notices.map(({ id, text }) => `<section class="card moderation-notice">
-    <b>${esc(text)}</b><p class="muted small">Изменение внесено в СГОшке.</p>
+  return notices.map(({ id, text, title, detail, source }) => `<section class="card moderation-notice">
+    <b>${noticeDetail(title || text)}</b>
+    ${detail ? `<p class="moderation-detail">${noticeDetail(detail)}</p>` : ''}
+    <p class="muted small">${esc(source || 'Изменение внесено в СГОшке')}</p>
     ${readonly ? '' : `<details><summary>Сообщить об ошибке</summary>
       <div class="chips">${Object.entries(reasons).map(([key, label]) =>
         `<button class="chip" type="button" data-report="${id}" data-reason="${key}">${label}</button>`).join('')}</div>

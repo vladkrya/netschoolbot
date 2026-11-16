@@ -98,6 +98,11 @@ async def test_roles_announcements_and_partial_bells(client, app_context, users,
     mod.apply_day(result, await mod.changes_for(app_context, eight, date.isoformat(), date.isoformat()))
     assert result["lessons"][0]["number"] == 3
     assert result["lessons"][0]["time"] == "10:05–10:45"
+    assert result["lessons"][0]["moderation_changed"]
+    notice = next(item for item in result["moderation_notices"] if item.get("detail", "").endswith("10:05–10:45"))
+    assert notice["title"] == "Физика · 3-й урок"
+    assert notice["source"] == "Модератор класса в СГОшке"
+    assert result["moderation_notices"][-1]["source"] == "Модератор школы в СГОшке"
     assert result["lessons"][0]["homework"] == ["Прочитать"]
     assert "author_id" not in str(result["moderation_notices"])
     unaffected = day()
@@ -143,7 +148,7 @@ def test_bells_only_change_specified_slots():
     mod.apply_day(day, [{"id": 1, "date": date, "kind": "bells", "payload": json.dumps(rule)}])
     assert day["lessons"] == [
         {"number": 1, "start": "08:00", "end": "08:45"},
-        {"number": 2, "start": "09:00", "end": "09:40", "time": "09:00–09:40"},
+        {"number": 2, "start": "09:00", "end": "09:40", "time": "09:00–09:40", "moderation_changed": True},
     ]
 
 

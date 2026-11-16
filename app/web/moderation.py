@@ -349,6 +349,9 @@ async def publish(request):
                     payload["weekdays"] = [date.weekday()]
         except ValueError as exc:
             return json_error(str(exc))
+        if not access.owner(app, user.telegram_id):
+            school_scope = mod.Scope(*scope.school, scope.year)
+            payload["moderator_role"] = "school" if await mod.allowed(app, user.telegram_id, school_scope, right) else "class"
         encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True)
         key = (*scope.cohort, date.isoformat(), end_date.isoformat(), kind, encoded)
         existing = await app.db.fetch_one(

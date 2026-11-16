@@ -494,7 +494,8 @@ function lessonCard(lesson, index) {
         <span class="lc-subject">${esc(lesson.subject)}</span>
         <span class="lc-marks">${marks}</span>
       </div>
-      ${lesson.is_elective || lesson.addedBy || lesson.editedBy || lesson.imported ? `<div class="lc-badges">
+      ${lesson.moderation_changed || lesson.is_elective || lesson.addedBy || lesson.editedBy || lesson.imported ? `<div class="lc-badges">
+        ${lesson.moderation_changed ? '<span class="elective-badge edit-badge">Изменён</span>' : ''}
         ${lesson.imported ? '<span class="elective-badge edit-badge">Своё расписание</span>' : ''}
         ${lesson.is_elective ? '<span class="elective-badge">Внеурочка</span>' : ''}
         ${lesson.addedBy ? '<span class="elective-badge edit-badge">Свой урок</span>' : ''}

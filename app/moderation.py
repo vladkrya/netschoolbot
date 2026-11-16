@@ -240,6 +240,21 @@ def dates_for(change: dict, start: dt.date, end: dt.date):
             yield date
 
 
+def notice(change_id: int, text: str, payload: dict) -> dict:
+    result = {"id": change_id, "text": text}
+    roles = {"class": "Модератор класса в СГОшке", "school": "Модератор школы в СГОшке"}
+    source = roles.get(payload.get("moderator_role"))
+    if source:
+        result["source"] = source
+    if "summary" in payload:
+        heading, separator, details = text.partition(". ")
+        slot, dot, subject = heading.partition(" · ")
+        if separator and dot and re.fullmatch(r"\d+-й урок", slot):
+            result["title"] = f"{subject} · {slot}"
+            result["detail"] = details.replace("Время изменено на ", "Новое время ", 1)
+    return result
+
+
 def apply_day(day: dict, changes) -> None:
     lessons = day["lessons"]
     originals = [(lesson, lesson_key({
@@ -258,12 +273,12 @@ def apply_day(day: dict, changes) -> None:
             bells[payload["shift"]] = (change["id"], payload)
             continue
         if kind == "announce":
-            notices.append({"id": change["id"], "text": payload["text"]})
+            notices.append(notice(change["id"], payload["text"], payload))
             continue
         if fields := payload.get("add"):
             if not any(lesson.get("number") == fields["number"] for lesson in lessons):
-                lessons.append({**fields, "marks": [], "homework": [], "is_elective": False})
-                notices.append({"id": change["id"], "text": payload["summary"]})
+                lessons.append({**fields, "marks": [], "homework": [], "is_elective": False, "moderation_changed": True})
+                notices.append(notice(change["id"], payload["summary"], payload))
             continue
         changed = False
         for entry in payload.get("entries", [payload]):
@@ -277,6 +292,7 @@ def apply_day(day: dict, changes) -> None:
                 # но карточка замены не должна показывать их как новый урок.
                 lesson.update(teacher="", topic="", absence="", distance_meeting_id=None, marks=[], homework=[])
             lesson.update(fields)
+            lesson["moderation_changed"] = True
             if "start" in fields:
                 if entry.get("clock_override"):
                     individual_times.add(id(lesson))
@@ -287,7 +303,7 @@ def apply_day(day: dict, changes) -> None:
                 lesson["moderation_cancelled"] = True
             changed = True
         if changed:
-            notices.append({"id": change["id"], "text": payload["summary"]})
+            notices.append(notice(change["id"], payload["summary"], payload))
     if bells:
         day["moderation_bells"] = True
         ordered = [bells[shift] for shift in sorted(bells)]
@@ -304,8 +320,10 @@ def apply_day(day: dict, changes) -> None:
             limit = combined_limit
             if limit is not None and number > limit:
                 lesson["moderation_cancelled"] = True
+                lesson["moderation_changed"] = True
             if id(lesson) not in individual_times and (pair := combined_slots.get(str(number))):
-                lesson.update(start=pair[0], end=pair[1], time="–".join(pair))
+                if (lesson.get("start"), lesson.get("end")) != tuple(pair):
+                    lesson.update(start=pair[0], end=pair[1], time="–".join(pair), moderation_changed=True)
         for change_id, payload in ordered:
             text = "Изменилось расписание звонков"
             if limit := payload["limit"]:
@@ -314,7 +332,7 @@ def apply_day(day: dict, changes) -> None:
                     text = "Звонки изменились. " + text
             elif payload["limit"] == 0:
                 text = "Все уроки отменены"
-            notices.append({"id": change_id, "text": text})
+            notices.append(notice(change_id, text, payload))
     if notices:
         # Старые клиенты тоже показывают отмену в поле времени и не ставят
         # отменённый урок в таймер. Исходные времена остались в кэше СГО.
