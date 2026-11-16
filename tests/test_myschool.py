@@ -2,6 +2,7 @@
 
 import datetime as dt
 from dataclasses import replace
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -69,6 +70,24 @@ def test_marks_get_distinct_identity_and_skip_empty_values():
     assert marks[0].identity != marks[1].identity
     assert marks[0].title == "Контрольная Динамика" and marks[0].weight == 3
     assert marks[0].lesson_number == 2
+
+
+def test_duplicate_lesson_slots_keep_records_from_all_ids():
+    lessons, marks, homeworks = parsed()
+    duplicate = lessons[0].model_copy(update={"id": "l2b", "theme": ""})
+    later = ms.Lesson.model_validate({**LESSONS[0], "lesson_id": "l3",
+                                     "start_datetime": "2026-10-28 10:00:00.0",
+                                     "end_datetime": "2026-10-28 10:45:00.0"})
+    marks[0] = marks[0].model_copy(update={"lesson_id": "l2b"})
+    homeworks[1] = homeworks[1].model_copy(update={"ready_lesson_id": "l2b"})
+    day = build_days([duplicate, *lessons, lessons[0], later], marks, homeworks)[0]
+    assert [(lesson.number, lesson.subject) for lesson in day.lessons] == [
+        (1, "Алгебра"), (2, "Физика"), (3, "Физика"),
+    ]
+    physics = day.lessons[1]
+    assert physics.topic == "Законы Ньютона"
+    assert [mark.mark for mark in physics.marks] == ["4", "5"]
+    assert [item.text for item in physics.homework] == ["§13"]
 
 
 def test_homework_text_is_flattened_and_due_date_is_day():
@@ -153,6 +172,16 @@ async def test_fetch_diary_reads_myschool_with_saved_token(db):
     assert client.imported == '{"mode": "bearer", "access_token": "T"}'
     assert client.calls == [("lessons", "aaa")]  # ученик №1 — первый по id, не по порядку ответа
     assert [m.mark for d in days for m in d.marks] == ["4", "5"]
+
+
+async def test_fetch_diary_includes_sunday_of_last_requested_week():
+    service = DiaryService(None, None)
+    service.fetch_period = AsyncMock(return_value=[])
+    user = myschool_user()
+    await service.fetch_diary(user, weeks_back=0, weeks_forward=1, today=DAY)
+    service.fetch_period.assert_awaited_once_with(
+        user, dt.date(2026, 10, 26), dt.date(2026, 11, 8), today=DAY,
+    )
 
 
 async def test_sync_students_numbers_students_and_keeps_selection(db):

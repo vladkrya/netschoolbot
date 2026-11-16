@@ -119,15 +119,14 @@ def build_days(lessons: list[Any], marks: list[Any], homeworks: list[Any]) -> li
         return days.setdefault(date, DiaryDay(day=date))
 
     numbers: dict[str, int] = {}
-    per_day: dict[dt.date, list[Any]] = defaultdict(list)
-    for lesson in lessons:
-        if lesson.start:
-            per_day[lesson.start.date()].append(lesson)
-    by_lesson: dict[str, tuple[dt.date, int]] = {}
-    for date, items in per_day.items():
-        for number, lesson in enumerate(sorted(items, key=lambda x: x.start), 1):
-            numbers[lesson.id] = number
-            by_lesson[lesson.id] = (date, number)
+    per_day: dict[dt.date, dict[tuple, list[Any]]] = defaultdict(dict)
+    for lesson in sorted((item for item in lessons if item.start), key=lambda item: item.start):
+        slot = (lesson.start, lesson.end, lesson.subject_name)
+        per_day[lesson.start.date()].setdefault(slot, []).append(lesson)
+    for slots in per_day.values():
+        for number, variants in enumerate(slots.values(), 1):
+            for lesson in variants:
+                numbers[lesson.id] = number
 
     mark_records: dict[dt.date, list[MarkRecord]] = defaultdict(list)
     seen: dict[tuple, int] = defaultdict(int)
@@ -177,19 +176,21 @@ def build_days(lessons: list[Any], marks: list[Any], homeworks: list[Any]) -> li
         homework_records.append(record)
         day_of(item.plan_ready_date).homework.append(record)
 
-    for date, items in per_day.items():
+    for date, slots in per_day.items():
         day = day_of(date)
-        for lesson in sorted(items, key=lambda x: x.start):
-            number = numbers[lesson.id]
+        # Витрина может вернуть несколько строк одного урока. Сохраняем
+        # привязки оценок и заданий ко всем его идентификаторам.
+        for number, variants in enumerate(slots.values(), 1):
+            lesson = variants[0]
             day.lessons.append(Lesson(
                 number=number,
                 subject=lesson.subject_name,
                 start=_hhmm(lesson.start),
                 end=_hhmm(lesson.end),
-                room=(lesson.room or "").strip(),
-                teacher=lesson.teacher,
-                topic=(lesson.theme or "").strip(),
-                absence=(lesson.skip_type or "").strip(),
+                room=next((item.room.strip() for item in variants if item.room and item.room.strip()), ""),
+                teacher=next((item.teacher for item in variants if item.teacher), ""),
+                topic=next((item.theme.strip() for item in variants if item.theme and item.theme.strip()), ""),
+                absence=next((item.skip_type.strip() for item in variants if item.skip_type and item.skip_type.strip()), ""),
                 marks=tuple(
                     m for m in mark_records.get(date, ())
                     if m.subject == lesson.subject_name and m.lesson_number == number

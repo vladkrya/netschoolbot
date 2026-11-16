@@ -200,6 +200,10 @@ class DiaryService:
         today = today or msk_today()
         start = _monday_of(today - dt.timedelta(weeks=weeks_back))
         end = today + dt.timedelta(weeks=weeks_forward)
+        if user.api_mode is ApiMode.MYSCHOOL:
+            # Остальные клиенты получают неделю целиком, а «Моя школа»
+            # обрезает ответ по точной дате конца диапазона.
+            end = _monday_of(end) + dt.timedelta(days=6)
         return await self.fetch_period(user, start, end, today=today)
 
     async def fetch_period(

@@ -1248,6 +1248,22 @@ class TestErrors:
 
 
 class TestCache:
+    async def test_myschool_diary_removes_duplicate_cards_in_saved_data(self, client, app_context, token):
+        from dataclasses import replace
+        from app.domain.models import ApiMode
+
+        user = await app_context.users.get(1)
+        await app_context.users.save(replace(user, api_mode=ApiMode.MYSCHOOL))
+        lesson = {"number": 2, "subject": "История", "start": "08:00", "end": "08:40"}
+        later = {**lesson, "number": 3, "start": "08:45", "end": "09:25"}
+        await app_context.cache.put(1, "diary:0", {
+            "days": [{"date": user.today().isoformat(), "lessons": [lesson, lesson, later]}],
+            "week": 0,
+        })
+        response = await client.get(f"{BASE}/api/diary", params={"token": token})
+        assert response.status == 200
+        assert (await response.json())["data"]["days"][0]["lessons"] == [lesson, later]
+
     async def test_slow_refresh_serves_saved_data_and_runs_only_once(
         self, client, app_context, token, monkeypatch
     ):

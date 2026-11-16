@@ -192,8 +192,17 @@ async def diary(request: web.Request) -> web.Response:
         return web.json_response({'ok': True, 'data': overlay({'days': [], 'week': offset}, imported),
                                   'stale': True, 'reason': exc.reason.value},
                                  headers={'Cache-Control': 'no-store'})
-    if response.status == 200 and (imported or await moderation.available_for_school(app, user)):
+    myschool = user.effective_api_mode is ApiMode.MYSCHOOL
+    if response.status == 200 and (myschool or imported or await moderation.available_for_school(app, user)):
         payload = json.loads(response.body)
+        if myschool:
+            # Старый кэш может содержать одинаковые карточки до следующего входа.
+            for day in payload["data"]["days"]:
+                unique = []
+                for lesson in day["lessons"]:
+                    if lesson not in unique:
+                        unique.append(lesson)
+                day["lessons"] = unique
         if imported:
             payload['data'] = overlay(payload['data'], imported)
         scope = await moderation.diary_scope(app, user)
