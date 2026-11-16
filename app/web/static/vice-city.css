@@ -131,31 +131,35 @@
 }
 
 :root[data-style="vice-city-2"][data-vice-phase="evening"]:not(#_) {
-  --bg: #101e3b;
-  --card: #1b2c56;
-  --card-2: #253b68;
-  --text: #fff3da;
-  --text2: #cfdaf1;
-  --border: #5876a8;
-  --primary: #ff94bb;
-  --mark-bg: #253b68;
+  --bg: #191820;
+  --card: #25232e;
+  --card-2: #302c3a;
+  --text: #f5e9de;
+  --text2: #c9becb;
+  --border: #52485c;
+  --primary: #e6a1b2;
+  --mark-bg: #302c3a;
   --g2: #ff9dae;
   --g3: #ffba79;
   --g4: #d1e98c;
   --g5: #8fe6ba;
-  --soft: #462955;
-  --soft-2: #63355d;
-  --glass: rgba(27, 44, 86, .94);
-  --glass-2: rgba(16, 30, 59, .88);
-  --glass-edge: #5876a8;
-  --glass-shine: rgba(131, 238, 255, .14);
-  --glass-shadow: 0 8px 24px rgba(9, 17, 44, .44);
-  --lens: #462955;
-  --lens-shine: rgba(255, 148, 187, .22);
-  --lift: 0 0 0 1px rgba(128, 171, 232, .2);
-  --vice-selected: linear-gradient(135deg, #ff8fbc, #ff65a1);
-  --vice-selected-text: #2b1228;
+  --soft: #422d3c;
+  --soft-2: #533748;
+  --glass: rgba(37, 35, 46, .94);
+  --glass-2: rgba(25, 24, 32, .88);
+  --glass-edge: #52485c;
+  --glass-shine: rgba(214, 178, 201, .14);
+  --glass-shadow: 0 8px 24px rgba(10, 8, 16, .44);
+  --lens: #422d3c;
+  --lens-shine: rgba(230, 161, 178, .22);
+  --lift: 0 0 0 1px rgba(198, 155, 181, .2);
+  --vice-selected: linear-gradient(135deg, #d591a2, #bb758c);
+  --vice-selected-text: #281720;
   --vice-art: url("vice-city-evening.webp");
+}
+
+:root[data-style="vice-city-2"][data-vice-phase="evening"]:not(#_) .day-summary {
+  background-image: linear-gradient(90deg, #262330 8%, #262330ed 36%, #241b2e60 76%), var(--vice-art);
 }
 
 :root[data-style="vice-city-2"] .day-summary {
@@ -190,13 +194,13 @@
 
   :root[data-style="vice-city-2"][data-vice-phase="evening"] .day-summary::before {
     background:
-      radial-gradient(ellipse at 94% 28%, #ff45c7bb, transparent 38%),
-      radial-gradient(ellipse at 57% 71%, #67f7ffb0, transparent 38%);
+      radial-gradient(ellipse at 94% 28%, #db4ca675, transparent 38%),
+      radial-gradient(ellipse at 57% 71%, #73c8da5c, transparent 38%);
     animation: vice-neon 3s ease-in-out infinite alternate;
   }
 
   :root[data-style="vice-city-2"][data-vice-phase="evening"] .day-summary::after {
-    background: linear-gradient(90deg, #fff4cf, #ff51cd90 44%, transparent)
+    background: linear-gradient(90deg, #ffe9c7, #dc78ab83 44%, transparent)
       left 56% bottom 12% / 35% 4px no-repeat;
     animation: vice-headlights 7s linear infinite;
   }
@@ -214,7 +218,7 @@
 
 @keyframes vice-neon {
   from { opacity: .20; }
-  to { opacity: .86; }
+  to { opacity: .72; }
 }
 
 @keyframes vice-headlights {

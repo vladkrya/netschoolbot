@@ -108,7 +108,7 @@ export function applyAccent(color = currentAccent()) {
   if (isUnity()) color = '#315fba';
   if (viceCityVersion() === 1) color = '#9b4b58';
   if (viceCityVersion() === 2) {
-    color = document.documentElement.getAttribute('data-vice-phase') === 'morning' ? '#a23d4e' : '#ac3c72';
+    color = document.documentElement.getAttribute('data-vice-phase') === 'morning' ? '#a23d4e' : '#8f435d';
   }
   const root = document.documentElement.style;
   const dark = shade(color, -0.18);
