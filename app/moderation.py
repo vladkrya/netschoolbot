@@ -94,9 +94,23 @@ def lesson_key(fields: dict) -> str:
     return hashlib.sha256(json.dumps(fields, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
 
 
+async def remember_class(app, scope: Scope) -> None:
+    if not scope.class_key:
+        return
+    await app.db.execute(
+        """INSERT INTO moderation_classes
+           SELECT ?, ?, ?, ?, ?, ?
+           WHERE EXISTS (SELECT 1 FROM moderation_schools WHERE installation=? AND school_id=? AND enabled=1)
+           ON CONFLICT(installation, school_id, school_year, class_key)
+           DO UPDATE SET class_label=excluded.class_label, seen_at=max(seen_at, excluded.seen_at)""",
+        (*scope.cohort, scope.class_label, int(time.time()), *scope.school),
+    )
+
+
 async def observe(app, scope: Scope, days, today: dt.date) -> None:
     if not await enabled(app, scope):
         return
+    await remember_class(app, scope)
     now = int(time.time())
     rows = []
     for day in days:
@@ -233,6 +247,7 @@ def apply_day(day: dict, changes) -> None:
     })) for lesson in lessons]
     notices = []
     bells = {}
+    individual_times = set()
     date = dt.date.fromisoformat(day["date"])
     for change in changes:
         if not any(dates_for(change, date, date)):
@@ -262,6 +277,12 @@ def apply_day(day: dict, changes) -> None:
                 # но карточка замены не должна показывать их как новый урок.
                 lesson.update(teacher="", topic="", absence="", distance_meeting_id=None, marks=[], homework=[])
             lesson.update(fields)
+            if "start" in fields:
+                if entry.get("clock_override"):
+                    individual_times.add(id(lesson))
+                    day["moderation_bells"] = True
+                else:
+                    individual_times.discard(id(lesson))
             if entry.get("cancelled"):
                 lesson["moderation_cancelled"] = True
             changed = True
@@ -283,7 +304,7 @@ def apply_day(day: dict, changes) -> None:
             limit = combined_limit
             if limit is not None and number > limit:
                 lesson["moderation_cancelled"] = True
-            if pair := combined_slots.get(str(number)):
+            if id(lesson) not in individual_times and (pair := combined_slots.get(str(number))):
                 lesson.update(start=pair[0], end=pair[1], time="–".join(pair))
         for change_id, payload in ordered:
             text = "Изменилось расписание звонков"
@@ -338,7 +359,7 @@ async def diary_scope(app, user, *, refresh: bool = False) -> Scope | None:
             if not refresh or age < dt.timedelta(minutes=10):
                 return scope
     try:
-        async with asyncio.timeout(2):
+        async with asyncio.timeout(8 if refresh else 2):
             resolved = await scope_for(app, user)
     except TimeoutError:
         return None if refresh else scope
@@ -349,6 +370,7 @@ async def diary_scope(app, user, *, refresh: bool = False) -> Scope | None:
         if (current is not None and current.school == user.school and current.credentials == user.credentials
             and current.selected_student_id == user.selected_student_id and current.api_mode == user.api_mode):
             await app.cache.put(user.telegram_id, section, asdict(resolved))
+        await remember_class(app, resolved)
         return resolved
     # Сохранённая привязка используется для чтения собственного дневника.
     # При новом наблюдении не записываем расписание, пока школа не подтверждена.
@@ -357,7 +379,8 @@ async def diary_scope(app, user, *, refresh: bool = False) -> Scope | None:
 
 async def record_diary(app, user, days) -> None:
     try:
-        if days and (scope := await diary_scope(app, user, refresh=True)):
+        scope = await diary_scope(app, user, refresh=True)
+        if scope and days:
             await observe(app, scope, days, user.today())
     except sqlite3.Error:
         logging.getLogger(__name__).exception("Не удалось сохранить общий календарь")

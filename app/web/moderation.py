@@ -57,6 +57,13 @@ async def dashboard(request):
     class_rights = [key for key in mod.CLASS_PERMISSIONS if await mod.allowed(app, user.telegram_id, scope, key)]
     if not school_rights and not class_rights:
         return response({"owner": owner, "schools": schools, "available": owner})
+    classes = [dict(row) for row in await app.db.fetch_all(
+        """SELECT c.class_key, c.class_label, s.shift FROM moderation_classes c
+           LEFT JOIN moderation_shifts s USING (installation, school_id, school_year, class_key)
+           WHERE c.installation=? AND c.school_id=? AND c.school_year=?
+           ORDER BY c.class_label""",
+        (*scope.school, scope.year),
+    ) if "read" in school_rights or (row["class_key"] == scope.class_key and "read" in class_rights)]
     rows = await app.db.fetch_all(
         """SELECT class_key, class_label, date, lesson_key, payload, seen_at FROM moderation_lessons
            WHERE installation=? AND school_id=? AND school_year=? AND date>=? AND date<=?
@@ -105,7 +112,8 @@ async def dashboard(request):
     return response({"available": True, "owner": owner, "schools": schools, "school_rights": school_rights,
                      "class_rights": class_rights, "scope": {"installation": scope.installation,
                      "school_id": scope.school_id, "class_key": scope.class_key, "class_label": scope.class_label},
-                     "permissions": mod.PERMISSIONS, "roles": roles, "lessons": lessons, "history": history})
+                     "permissions": mod.PERMISSIONS, "roles": roles, "classes": classes, "lessons": lessons, "history": history,
+                     "today": user.today().isoformat()})
 
 
 async def _add_preview(app, scope, lessons):
@@ -152,6 +160,7 @@ async def schools(request):
         )
         if not is_enabled:
             await db.execute("DELETE FROM moderation_lessons WHERE installation=? AND school_id=?", school)
+            await db.execute("DELETE FROM moderation_classes WHERE installation=? AND school_id=?", school)
     return response(True)
 
 
@@ -202,6 +211,7 @@ async def quick_grant(request):
                 "INSERT INTO moderation_roles VALUES (?, ?, ?, ?, ?, ?)",
                 (*key, json.dumps(["announce", "bells", "read", "reports"])),
             )
+    await mod.remember_class(app, scope)
     return response({"installation": scope.installation, "school_id": scope.school_id, "title": target.school.name})
 
 
@@ -414,20 +424,28 @@ async def _lesson_payload(app, scope, date, data):
         if value.strip() != original[field]:
             fields[field] = value.strip()
             summaries.append(f"{title} → {value.strip() or 'не указан'}")
-    if "number" in data:
-        number = data["number"]
-        if type(number) is not int or not 1 <= number <= mod.MAX_LESSONS:
-            raise ValueError("Проверьте номер урока")
-        if number != original["number"]:
-            if not mod.clock_time(data.get("start")) or not mod.clock_time(data.get("end")) or data["start"] >= data["end"]:
-                raise ValueError("Укажите новое время урока")
-            fields.update(number=number, start=data["start"], end=data["end"], time=f'{data["start"]}–{data["end"]}')
-            summaries.append(f'Перенос на {number}-й урок ({fields["time"]})')
+    number = data.get("number", original["number"])
+    if type(number) is not int or not 1 <= number <= mod.MAX_LESSONS:
+        raise ValueError("Проверьте номер урока")
+    moved = number != original["number"]
+    start, end = data.get("start"), data.get("end")
+    clock_override = False
+    if moved or start or end:
+        if not mod.clock_time(start) or not mod.clock_time(end) or start >= end:
+            raise ValueError("Укажи начало и конец урока. Конец должен быть позже начала.")
+        if moved or (start, end) != (original["start"], original["end"]):
+            fields.update(start=start, end=end, time=f"{start}–{end}")
+            if moved:
+                fields["number"] = number
+                summaries.append(f'Перенос на {number}-й урок ({fields["time"]})')
+            else:
+                clock_override = True
+                summaries.append(f'Время изменено на {fields["time"]}')
     if cancelled:
         summaries.append("Урок отменён")
     if not summaries:
         raise ValueError("Укажите, что изменилось")
-    return {"lesson_key": key, "fields": fields, "cancelled": cancelled,
+    return {"lesson_key": key, "fields": fields, "cancelled": cancelled, "clock_override": clock_override,
             "summary": f'{original["number"]}-й урок · {original["subject"]}. ' + ". ".join(summaries)}
 
 

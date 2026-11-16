@@ -1112,6 +1112,22 @@ MIGRATIONS: list[str] = [
     );
     """,
 
+    """
+    CREATE TABLE moderation_classes (
+        installation TEXT NOT NULL,
+        school_id INTEGER NOT NULL,
+        school_year INTEGER NOT NULL,
+        class_key TEXT NOT NULL,
+        class_label TEXT NOT NULL,
+        seen_at INTEGER NOT NULL,
+        PRIMARY KEY (installation, school_id, school_year, class_key),
+        FOREIGN KEY (installation, school_id) REFERENCES moderation_schools(installation, school_id)
+    );
+    INSERT INTO moderation_classes
+        SELECT installation, school_id, school_year, class_key, class_label, max(seen_at)
+        FROM moderation_lessons GROUP BY installation, school_id, school_year, class_key;
+    """,
+
 ]
 
 

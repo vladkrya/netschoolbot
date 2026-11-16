@@ -269,6 +269,8 @@ class UserWatcher:
         user = await self._refresh_student_if_needed(user)
         events = await self._diary.fetch_recent_events(user)
         if events is not None and not self._full_sync_due(events):
+            if self._diary_observer is not None:
+                await self._diary_observer(user, [])
             return
         # Один запрос дневника на оценки и задания сразу, а не по запросу на каждое.
         days = await self._diary.fetch_diary(user)

@@ -1,6 +1,9 @@
 import { api, banner, esc, showFailure } from './core.js';
 import { pushScreen } from './screens.js';
 
+const classDate = new Intl.DateTimeFormat('ru-RU', {
+  weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC',
+});
 const root = '/api/moderation';
 const reasons = { time: 'Неверное время', room: 'Неверный кабинет', subject: 'Неверный предмет', cancelled: 'Уточнить отмену' };
 const post = (path, body) => api(root + path, { method: 'POST', body: JSON.stringify(body) });
@@ -61,9 +64,9 @@ function shiftForm(classes) {
     <button class="chip">Сохранить</button></form>`;
 }
 
-function bellsForm() {
+function bellsForm(today) {
   return `<form class="card" data-form="bells"><h3>Звонки</h3>
-    <label>С <input name="date" type="date" required></label>
+    <label>С <input name="date" type="date" value="${esc(today)}" required></label>
     <label>По <input name="end_date" type="date"> <span class="muted small">Для одного дня оставьте пустым</span></label>
     <label><input name="school_days_only" type="checkbox" checked> Понедельник — пятница, если выбран период</label>
     <label>Смена <select name="shift"><option value="0">Все смены</option>
@@ -72,9 +75,33 @@ function bellsForm() {
     <details><summary>Задать время отдельных уроков</summary>
       ${Array.from({ length: 20 }, (_, index) => `<label>${index + 1}-й урок
         <input type="time" name="start${index + 1}" aria-label="Начало ${index + 1}-го урока">
-        <input type="time" name="end${index + 1}" aria-label="Конец ${index + 1}-го урока"></label><br>`).join('')}
+        <input type="time" name="end${index + 1}" aria-label="Конец ${index + 1}-го урока">
+        <small data-slot-info="${index + 1}" class="muted"></small></label>`).join('')}
     </details>
     <button class="chip">Проверить и опубликовать</button></form>`;
+}
+
+function prefillBells(form, data) {
+  const date = form.elements.date.value;
+  const shift = Number(form.elements.shift.value);
+  const shifts = new Map((data.classes || []).map(item => [item.class_key, item.shift]));
+  for (let number = 1; number <= 20; number += 1) {
+    const pairs = new Set();
+    for (const lesson of data.lessons) {
+      if (lesson.date !== date || (shift && shifts.get(lesson.class_key) !== shift)) continue;
+      const shown = lesson.effective || lesson;
+      if (shown.number === number && shown.start && shown.end && !shown.moderation_cancelled) {
+        pairs.add(shown.start + '|' + shown.end);
+      }
+    }
+    const [start, end] = pairs.size === 1 ? [...pairs][0].split('|') : ['', ''];
+    const from = form.elements['start' + number];
+    const to = form.elements['end' + number];
+    from.defaultValue = from.value = start;
+    to.defaultValue = to.value = end;
+    form.querySelector(`[data-slot-info="${number}"]`).textContent =
+      pairs.size > 1 ? 'Разное время у классов' : pairs.size === 0 ? 'Нет данных' : '';
+  }
 }
 
 function lessonForm(lesson, index, lessons) {
@@ -87,30 +114,33 @@ function lessonForm(lesson, index, lessons) {
     <label>Предмет <input name="subject" value="${esc(lesson.subject)}" maxlength="100" required></label>
     <label>Кабинет <input name="room" value="${esc(lesson.room || '')}" maxlength="100"></label>
     <label>Номер <input name="number" type="number" min="1" max="20" value="${lesson.number}" required></label>
-    <label>Новое время при переносе <input name="start" type="time" aria-label="Начало">
-      <input name="end" type="time" aria-label="Конец"></label>
+    <label>Начало урока <input name="start" type="time" value="${esc(lesson.effective?.start || lesson.start || '')}"></label>
+    <label>Конец урока <input name="end" type="time" value="${esc(lesson.effective?.end || lesson.end || '')}"></label>
     <label><input name="cancelled" type="checkbox"> Отменить урок</label>
     <label>Повторять каждую неделю по <input name="end_date" type="date"></label>
     <button class="chip">Опубликовать</button></form>${swapForm}`;
 }
 
-function lessonList(data, classes) {
+function lessonList(data, classes, selectedClass) {
   const groups = new Map(Object.keys(classes).map(key => [key, []]));
   data.lessons.forEach((lesson, index) => groups.get(lesson.class_key).push({ lesson, index }));
-  return `<section class="card"><h3>Расписание классов</h3>
-    <p class="muted small">Показаны уроки, полученные при синхронизации. Расписание подгрупп может быть неполным.</p>
-    ${[...groups.entries()].map(([key, items]) => `<details>
-      <summary>${esc(classes[key])} · ${items.length ? new Date(Math.max(...items.map(({ lesson }) => lesson.seen_at)) * 1000)
-        .toLocaleString('ru-RU') : 'Нет уроков'}</summary>
+  return `<section class="card"><h3>Выбрать класс</h3>
+    ${groups.size ? `<label>Класс <select data-class-picker aria-label="Класс">${[...groups.keys()].map(key =>
+      `<option value="${esc(key)}" ${key === selectedClass ? 'selected' : ''}>${esc(classes[key])}</option>`
+    ).join('')}</select></label>` : ''}
+    <p class="muted small">СГОшка показывает классы, которые уже удалось определить по аккаунтам. Если класса нет, ученику или родителю из него нужно обновить дневник.</p>
+    ${[...groups.entries()].map(([key, items]) => `<div data-class-card="${esc(key)}" ${key === selectedClass ? '' : 'hidden'}>
+      ${items.length ? '<p class="muted small">Выбери урок, чтобы посмотреть или изменить его.</p>' :
+        '<p>Класс найден. На ближайшие даты уроков из СГО пока нет.</p>'}
       ${items.sort((a, b) => a.lesson.date.localeCompare(b.lesson.date) || a.lesson.number - b.lesson.number)
         .map(({ lesson, index }) => {
           const shown = lesson.effective || lesson;
           const time = shown.moderation_cancelled ? 'Отменён' : [shown.start, shown.end].filter(Boolean).join('–');
-          return `<details><summary>${esc(lesson.date)} · ${shown.number}. ${esc(shown.subject)}
+          return `<details><summary>${esc(classDate.format(new Date(lesson.date + 'T00:00:00Z')))} · ${shown.number}. ${esc(shown.subject)}
            · ${esc(time)} ${esc(shown.room || '')}</summary>
            ${(data.school_rights.includes('lessons') || (key === data.scope.class_key && data.class_rights.includes('lessons')))
              ? lessonForm(lesson, index, data.lessons) : ''}</details>`;
-        }).join('')}</details>`).join('')}
+        }).join('')}</div>`).join('')}
   </section>`;
 }
 
@@ -148,6 +178,7 @@ export function openModeration() {
   panel.innerHTML = '<p class="muted">Загрузка…</p>';
   let selection = '';
   let activeTab = 0;
+  let selectedClass = '';
   let data;
   let loadId = 0;
   const load = async () => {
@@ -157,20 +188,23 @@ export function openModeration() {
       if (id !== loadId) return;
       data = result.data;
       const scope = data.scope;
-      const classes = Object.fromEntries(data.lessons?.map(lesson => [lesson.class_key, lesson.class_label]) || []);
+      const classes = Object.fromEntries((data.classes || []).map(item => [item.class_key, item.class_label]));
       if (scope?.class_key) classes[scope.class_key] ||= scope.class_label;
       for (const role of data.roles || []) if (role.class_key) classes[role.class_key] ||= role.class_key;
-      const tabs = scope ? ['Расписание', 'Правки', 'История', ...(data.owner ? ['Права'] : [])] : [];
+      if (!Object.hasOwn(classes, selectedClass)) selectedClass = Object.keys(classes)[0] || '';
+      const tabs = scope ? ['Расписание', 'Звонки и объявления', 'История', ...(data.owner ? ['Модераторы'] : [])] : [];
       panel.innerHTML = (data.owner ? quickGrantForm() + '<details class="card"><summary>Подключить школу вручную</summary>' + schoolForm() + '</details>' + `<label>Школа <select data-school aria-label="Школа">
         <option value="">Моя школа</option>${data.schools.map(school => {
           const query = new URLSearchParams({ installation: school.installation, school_id: school.school_id }).toString();
           return `<option value="${esc(query)}" ${query === selection ? 'selected' : ''}>${esc(school.title)}</option>`;
-        }).join('')}</select></label>` : '') + (!scope ? '<p class="muted">После выдачи прав школа появится в списке.</p>' :
+        }).join('')}</select></label>` : '') + (!scope ? `<p class="muted">${data.owner
+        ? 'После выдачи прав школа появится в списке.'
+        : 'Права модератора для твоей школы ещё не выданы.'}</p>` :
         `<div class="chips" aria-label="Разделы модерации">${tabs.map((label, index) =>
           `<button type="button" class="chip ${index === activeTab ? 'active' : ''}" aria-pressed="${index === activeTab}" data-tab-index="${index}">${label}</button>`).join('')}</div>
-         <div data-pane="0" ${activeTab === 0 ? '' : 'hidden'}>${lessonList(data, classes)}</div>
+         <div data-pane="0" ${activeTab === 0 ? '' : 'hidden'}>${lessonList(data, classes, selectedClass)}</div>
          <div data-pane="1" ${activeTab === 1 ? '' : 'hidden'}>
-           ${data.school_rights.includes('bells') ? bellsForm() : ''}
+           ${data.school_rights.includes('bells') ? bellsForm(data.today) : ''}
            ${[...data.school_rights, ...data.class_rights].includes('lessons') ? addLessonForm(data, classes) : ''}
            ${[...data.school_rights, ...data.class_rights].includes('announce') ? announceForm(data, classes) : ''}
          </div>
@@ -183,11 +217,24 @@ export function openModeration() {
          ${data.owner ? `<div data-pane="3" ${activeTab === 3 ? '' : 'hidden'}>${permissionForm(data, classes)}
            ${data.roles.map(role => permissionForm(data, classes, role)).join('')}
            ${Object.keys(classes).length ? shiftForm(classes) : ''}</div>` : ''}`);
+      const bells = panel.querySelector('[data-form="bells"]');
+      if (bells) prefillBells(bells, data);
     } catch (error) {
       if (id === loadId) showFailure(panel, error, load);
     }
   };
   panel.addEventListener('change', event => {
+    if (event.target.matches('[data-form="bells"] [name="date"], [data-form="bells"] [name="shift"]')) {
+      prefillBells(event.target.form, data);
+      return;
+    }
+    if (event.target.matches('[data-class-picker]')) {
+      selectedClass = event.target.value;
+      panel.querySelectorAll('[data-class-card]').forEach(card => {
+        card.hidden = card.dataset.classCard !== selectedClass;
+      });
+      return;
+    }
     if (event.target.matches('[data-form="roles"] select[name="class_key"]')) {
       const bells = event.target.form.querySelector('[name="permission"][value="bells"]');
       bells.disabled = Boolean(event.target.value);
@@ -257,7 +304,9 @@ export function openModeration() {
       const slots = {};
       for (let number = 1; number <= 20; number += 1) {
         const pair = [fields['start' + number], fields['end' + number]];
-        if (pair.some(Boolean)) slots[number] = pair;
+        const from = form.elements['start' + number];
+        const to = form.elements['end' + number];
+        if (pair.some(Boolean) && (pair[0] !== from.defaultValue || pair[1] !== to.defaultValue)) slots[number] = pair;
       }
       const limit = fields.limit === '' ? null : Number(fields.limit);
       const shift = Number(fields.shift);
@@ -281,6 +330,11 @@ export function openModeration() {
       const lesson = data.lessons[Number(form.dataset.lessonIndex)];
       payload = { ...payload, date: lesson.date, class_key: lesson.class_key, lesson_key: lesson.lesson_key,
         number: Number(fields.number), cancelled: f.has('cancelled') };
+      if (payload.number === lesson.number && fields.start === form.elements.start.defaultValue &&
+          fields.end === form.elements.end.defaultValue) {
+        delete payload.start;
+        delete payload.end;
+      }
     }
     if (event.submitter) event.submitter.disabled = true;
     try {

@@ -52,6 +52,13 @@ async def test_roles_announcements_and_partial_bells(client, app_context, users,
     dashboard = await client.get(root, headers=headers[2])
     data = (await dashboard.json())["data"]
     assert {lesson["subject"] for lesson in data["lessons"]} == {"Физика", "Английский"}
+    assert {item["class_key"] for item in data["classes"]} == {eight.class_key}
+    ten = replace(nine, class_key="name:10а", class_label="10А")
+    await mod.observe(app_context, ten, [], date)
+    school_dashboard = await client.get(root, headers=headers[4])
+    school_data = (await school_dashboard.json())["data"]
+    assert any(item["class_key"] == ten.class_key for item in school_data["classes"])
+    assert all(lesson["class_key"] != ten.class_key for lesson in school_data["lessons"])
     assert "Личн" not in str(data)
 
     bells = {"kind": "bells", "date": date.isoformat(), "shift": 1, "limit": 3,
@@ -83,6 +90,15 @@ async def test_roles_announcements_and_partial_bells(client, app_context, users,
     assert result["lessons"][0]["start"] == "10:00"
     assert result["lessons"][0]["marks"] == [5]
     assert result["lessons"][1]["moderation_cancelled"]
+    bad_time = {**lesson, "start": "11:00", "end": "10:55"}
+    assert (await client.post(root + "/changes", headers=headers[2], json=bad_time)).status == 400
+    fixed_time = {**lesson, "number": 3, "start": "10:05", "end": "10:45"}
+    assert (await client.post(root + "/changes", headers=headers[2], json=fixed_time)).status == 200
+    result = day()
+    mod.apply_day(result, await mod.changes_for(app_context, eight, date.isoformat(), date.isoformat()))
+    assert result["lessons"][0]["number"] == 3
+    assert result["lessons"][0]["time"] == "10:05–10:45"
+    assert result["lessons"][0]["homework"] == ["Прочитать"]
     assert "author_id" not in str(result["moderation_notices"])
     unaffected = day()
     mod.apply_day(unaffected, await mod.changes_for(app_context, nine, date.isoformat(), date.isoformat()))
