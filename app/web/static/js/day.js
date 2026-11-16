@@ -24,7 +24,7 @@ import { select, tap } from './haptics.js';
 import { bindInstallCard, installCardHtml } from './install.js';
 import { msToBell, updateTimer } from './timer.js';
 import { isTestWork, loadNotes, noteWhen, openNoteEditor, setNoteDone } from './notes.js';
-import { noticesHtml, reportChange } from './moderation.js';
+import { bindNotices, noticesHtml, visibleNotices } from './moderation.js';
 import { openScheduleImport } from './schedule-import.js';
 import { applyEdits, bindHidden, hiddenHtml, openAddLesson } from './edits.js';
 import { flyTo, markKey, playFresh, takeFresh } from './motion.js';
@@ -310,25 +310,12 @@ let renderedKey = '';
 /** quiet — перерисовка по таймеру: без анимации появления и только если
  *  что-то поменялось (статус урока), иначе экран «перезагружался» каждую
  *  минуту. */
-function bindReports(container) {
-  container.querySelectorAll('[data-report]').forEach(button => button.addEventListener('click', async () => {
-    button.disabled = true;
-    try {
-      await reportChange(button.dataset.report, button.dataset.reason);
-      banner('Сообщение отправлено');
-    } catch (error) {
-      banner(error.message);
-      button.disabled = false;
-    }
-  }));
-}
-
 function renderDay(quiet = false) {
   renderHeader();
   const day = days.get(state.date);
   const lessons = day?.lessons || [];
   const container = $('dayContent');
-  const notices = day?.moderation_notices || [];
+  const notices = visibleNotices(day?.moderation_notices);
 
   updateTimer(lessons.filter(lesson => !lesson.moderation_cancelled), state.date === isoToday());
   loadCountdown(() => renderDay(true));
@@ -340,7 +327,7 @@ function renderDay(quiet = false) {
     bindInstallCard(container);
     bindCountdown(container, () => renderDay(true));
     bindDayEdits(container, day);
-    bindReports(container);
+    bindNotices(container);
     placeSide();
     return;
   }
@@ -361,7 +348,7 @@ function renderDay(quiet = false) {
   bindInstallCard(container);
   bindCountdown(container, () => renderDay(true));
   bindDayEdits(container, day);
-  bindReports(container);
+  bindNotices(container);
   playFresh(container);
   container.querySelectorAll('[data-note]').forEach((row) => row.addEventListener('click', async (event) => {
     const note = notes[Number(row.dataset.note)];

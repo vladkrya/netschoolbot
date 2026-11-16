@@ -12,19 +12,75 @@ function noticeDetail(text) {
   return esc(text).replace(/\b\d{2}:\d{2}–\d{2}:\d{2}\b/g, '<span class="moderation-time">$&</span>');
 }
 
-export function noticesHtml(notices = [], readonly = false) {
-  return notices.map(({ id, text, title, detail, source }) => `<section class="card moderation-notice">
-    <b>${noticeDetail(title || text)}</b>
-    ${detail ? `<p class="moderation-detail">${noticeDetail(detail)}</p>` : ''}
-    <p class="muted small">${esc(source || 'Изменение внесено в СГОшке')}</p>
-    ${readonly ? '' : `<details><summary>Сообщить об ошибке</summary>
-      <div class="chips">${Object.entries(reasons).map(([key, label]) =>
-        `<button class="chip" type="button" data-report="${id}" data-reason="${key}">${label}</button>`).join('')}</div>
-    </details>`}</section>`).join('');
+const DISMISSED_KEY = 'ns-moderation-dismissed';
+const dismissedNotices = new Set();
+const reportStatus = new Map();
+
+try {
+  const saved = JSON.parse(localStorage.getItem(DISMISSED_KEY) || '[]');
+  if (Array.isArray(saved)) saved.forEach(id => dismissedNotices.add(String(id)));
+} catch { /* При отключённом хранилище работает до перезагрузки. */ }
+
+export function visibleNotices(notices = []) {
+  return notices.filter(notice => !dismissedNotices.has(String(notice.id)));
 }
 
-export async function reportChange(id, reason) {
-  await post(`/changes/${id}/report`, { reason });
+export function noticesHtml(notices, readonly = false) {
+  return notices.map(({ id, text, title, detail, source }) => {
+    const status = reportStatus.get(String(id));
+    const sent = status?.sent;
+    return `<section class="card moderation-notice">
+      <b>${noticeDetail(title || text)}</b>
+      ${detail ? `<p class="moderation-detail">${noticeDetail(detail)}</p>` : ''}
+      <p class="muted small">${esc(source || 'Изменение внесено в СГОшке')}</p>
+      <div class="moderation-notice-actions">
+        <button class="chip" type="button" data-dismiss-notice="${esc(id)}">Понятно</button>
+        ${readonly ? '' : `<details ${status && !sent ? 'open' : ''}><summary>Сообщить об ошибке</summary>
+          <form data-report-notice="${esc(id)}" ${sent ? 'hidden' : ''}>
+            <label>Что неверно <select name="reason" required><option value="">Выбери причину</option>
+              ${Object.entries(reasons).map(([key, label]) => `<option value="${key}">${label}</option>`).join('')}
+            </select></label>
+            <button class="chip" type="submit" ${status?.pending ? 'disabled' : ''}>Отправить</button>
+          </form>
+        </details>`}
+      </div>
+      <p class="small" data-notice-status role="status" ${status?.text ? '' : 'hidden'}>${esc(status?.text || '')}</p>
+    </section>`;
+  }).join('');
+}
+
+export function bindNotices(container) {
+  container.querySelectorAll('[data-dismiss-notice]').forEach(button => button.addEventListener('click', () => {
+    dismissedNotices.add(button.dataset.dismissNotice);
+    if (dismissedNotices.size > 200) dismissedNotices.delete(dismissedNotices.values().next().value);
+    try { localStorage.setItem(DISMISSED_KEY, JSON.stringify([...dismissedNotices])); } catch { /* Сессия продолжает работать. */ }
+    button.closest('.moderation-notice').remove();
+  }));
+  container.querySelectorAll('[data-report-notice]').forEach(form => form.addEventListener('submit', async event => {
+    event.preventDefault();
+    const id = form.dataset.reportNotice;
+    if (reportStatus.get(id)?.pending || reportStatus.get(id)?.sent) return;
+    const reason = form.elements.reason.value;
+    if (!reason) return;
+    const update = status => {
+      reportStatus.set(id, status);
+      const current = container.querySelector(`[data-report-notice="${id}"]`);
+      if (!current) return;
+      current.hidden = Boolean(status.sent);
+      current.querySelector('button').disabled = Boolean(status.pending);
+      current.closest('details').open = !status.sent;
+      const message = current.closest('.moderation-notice').querySelector('[data-notice-status]');
+      message.hidden = false;
+      message.textContent = status.text;
+    };
+    update({ pending: true, text: 'Отправляем…' });
+    try {
+      await post(`/changes/${id}/report`, { reason });
+      update({ sent: true, text: 'Сообщение отправлено. Модераторы увидят его в истории правок.' });
+    } catch (error) {
+      update({ text: error.message || 'Не удалось отправить сообщение. Попробуй ещё раз.' });
+    }
+  }));
 }
 
 function quickGrantForm() {

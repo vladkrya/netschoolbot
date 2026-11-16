@@ -3160,3 +3160,6 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
 
 .moderation-notice .moderation-detail { margin-block: 4px; }
 .moderation-notice .moderation-time { white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+.moderation-notice-actions { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 12px; }
+.moderation-notice-actions form { margin-block: 6px; }

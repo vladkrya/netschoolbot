@@ -114,6 +114,10 @@ async def test_roles_announcements_and_partial_bells(client, app_context, users,
     assert (await client.post(report, headers=headers[3], json={"reason": "time"})).status == 200
     assert (await client.post(report, headers=headers[3], json={"reason": "time"})).status == 200
     assert (await app_context.db.fetch_one("SELECT count(*) AS n FROM moderation_reports"))["n"] == 1
+    response = await client.get(root, headers=headers[4])
+    history = (await response.json())["data"]["history"]
+    reported = next(item for item in history if item["id"] == bells_id)
+    assert reported["reports"] == [{"reason": "time", "count": 1}]
     public = {"kind": "announce", "date": date.isoformat(), "class_key": eight.class_key,
               "text": "Возьмите форму"}
     assert (await client.post(root + "/changes", headers=headers[2], json=public)).status == 200
