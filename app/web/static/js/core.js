@@ -593,6 +593,7 @@ export function markSgoUp() {
   sgoNoticed = false;
   sgoRecoveryGeneration += 1;
   $('sgoDown')?.remove();
+  if (isMyschool()) $('loginFailed')?.remove();
   document.dispatchEvent(new CustomEvent('netschool:sgo-up'));
 }
 
@@ -616,32 +617,47 @@ function sgoHint(failed = false, slow = false) {
   }).catch(() => {});
 }
 
-// «Сетевой город» не пускает с сохранённым паролем — скорее всего, его
-// сменили. Сам вход не повторить: спрашиваем, войти заново или остаться
-// с сохранёнными данными. «Продолжить так» — до закрытия приложения.
+// «Продолжить так» скрывает просьбу о повторном входе до закрытия приложения.
 const LOGIN_FAILED_KEY = 'ns-login-failed-dismissed';
 
 function loginFailedNotice(reason) {
   if ($('loginFailed') || $('accountScreen')) return;
-  try { if (sessionStorage.getItem(LOGIN_FAILED_KEY)) return; } catch { /* приватный режим */ }
+  const myschool = isMyschool();
+  if (myschool && isReadOnly()) return;
+  const dismissKey = myschool ? `${LOGIN_FAILED_KEY}-myschool` : LOGIN_FAILED_KEY;
+  try { if (sessionStorage.getItem(dismissKey)) return; } catch { /* приватный режим */ }
   const el = document.createElement('div');
   el.id = 'loginFailed';
   el.className = 'banner error login-failed';
   el.setAttribute('role', 'alert');
-  el.innerHTML = `<p>${LOGIN_TEXTS[reason] || 'Не удалось войти в «Сетевой город». Возможно, сменился пароль или школа.'}</p>
+  const text = myschool
+    ? 'Войдите заново в «Мою школу». В боте отправьте /login и выберите «Госуслуги Моя школа».'
+    : LOGIN_TEXTS[reason];
+  el.innerHTML = `<p>${text}</p>
     <div class="login-failed-actions">
-      <button class="btn" data-sgo-relogin>Войти заново</button>
+      <button class="btn" data-sgo-relogin>${myschool ? 'Открыть бота' : 'Войти заново'}</button>
       <button class="btn outline" data-act="continue">Продолжить так</button>
     </div>`;
   el.querySelector('[data-act="continue"]').addEventListener('click', () => {
-    try { sessionStorage.setItem(LOGIN_FAILED_KEY, '1'); } catch { /* приватный режим */ }
+    try { sessionStorage.setItem(dismissKey, '1'); } catch { /* приватный режим */ }
     el.remove();
   });
   document.body.append(el);
 }
 
-/** Войти в «Сетевой город» заново: кнопка в уведомлении и в карточке ошибки. */
+/** Кнопка повторного входа в уведомлении и в карточке ошибки. */
 async function relogin() {
+  if (isMyschool()) {
+    try {
+      const { data } = await request('/api/account/config');
+      if (!data.bot) throw new Error();
+      if (initData && tg?.openTelegramLink) tg.openTelegramLink(data.bot);
+      else location.assign(data.bot);
+    } catch {
+      banner('Не удалось открыть бота. Откройте его в Telegram и отправьте /login.', true);
+    }
+    return;
+  }
   $('loginFailed')?.remove();
   const [{ showSgoLogin }, info] = await Promise.all([
     import('./account.js'), request('/api/account').then((r) => r.data).catch(() => ({})),
@@ -1069,10 +1085,11 @@ export function errorCard(error, retryId) {
       ${retryId ? `<button class="btn outline" id="${retryId}">Повторить</button>` : ''}
     </div>`;
   }
-  const needsLogin = error.reason === 'login' || Boolean(LOGIN_TEXTS[error.reason]);
+  const needsLogin = (error.reason === 'login' || Boolean(LOGIN_TEXTS[error.reason]))
+    && !(isMyschool() && isReadOnly());
   return `<div class="card error-card">
       <p>${esc(String(error.message).replace(/\s*Войти заново: \/login$/, ''))}</p>
-      ${needsLogin ? '<button class="btn outline" data-sgo-relogin>Войти заново</button>' : ''}
+      ${needsLogin ? `<button class="btn outline" data-sgo-relogin>${isMyschool() ? 'Открыть бота' : 'Войти заново'}</button>` : ''}
       ${retryId ? `<button class="btn" id="${retryId}">Повторить</button>` : ''}
     </div>`;
 }

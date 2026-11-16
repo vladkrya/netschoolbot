@@ -6,21 +6,30 @@ import vm from 'node:vm';
 const source = (name) => readFileSync(new URL(`../../app/web/static/js/${name}.js`, import.meta.url), 'utf8')
   .replace(/^import .*;\n/gm, '').replace(/^export /gm, '');
 
-function setup() {
+function setup({ myschool = false } = {}) {
   const elements = new Map();
   const storage = new Map();
   let removed = 0;
   let calls = [];
   let reply = { ok: true, data: {}, stale: false };
   let offline = false;
+  let telegramUrl;
   const document = new EventTarget();
   document.getElementById = (id) => elements.get(id) || null;
-  document.documentElement = { classList: { toggle() {} } };
-  document.createElement = () => { throw new Error('Old outage must not create a new card'); };
+  document.documentElement = { classList: {
+    toggle() {},
+    contains: (name) => myschool && name === 'myschool-mode',
+  } };
+  document.createElement = () => {
+    if (!myschool) throw new Error('Old outage must not create a new card');
+    return { querySelector: () => new EventTarget(), setAttribute() {}, remove() { elements.delete(this.id); } };
+  };
+  document.body = { append: (element) => elements.set(element.id, element) };
   elements.set('banner', { dataset: { dismiss: '1' }, style: {}, classList: { toggle() {} } });
   elements.set('sgoDown', { dataset: {}, remove() { removed += 1; elements.delete('sgoDown'); } });
   const globals = {
     document, Event, CustomEvent: class extends Event {}, AbortController,
+    location: Object.assign(new URL('https://sgoshka.ru'), { assign: (url) => { telegramUrl = url; } }),
     window: { NETSCHOOL: { base: '', token: '', demo: false }, matchMedia: () => ({ matches: false }), addEventListener() {} },
     navigator: {}, sessionStorage: {
       getItem: (key) => storage.get(key), setItem: (key, value) => storage.set(key, value),
@@ -29,14 +38,43 @@ function setup() {
     setTimeout: () => 1, clearTimeout() {},
     fetch: async (path) => {
       calls.push(path);
-      return { ok: true, headers: { get: (name) => name === 'X-Netschool-Offline' && offline ? '1' : null }, json: async () => reply };
+      return { ok: reply.ok, url: 'https://sgoshka.ru', headers: { get: (name) => name === 'X-Netschool-Offline' && offline ? '1' : null }, json: async () => reply };
     },
   };
   const context = vm.createContext({ ...globals, ICONS: {} });
-  const core = vm.runInContext(`${source('core')}\n({ api, markSgoDown, markSgoUp, sgoDown });`, context);
+  const core = vm.runInContext(`${source('core')}\n({ api, markSgoDown, markSgoUp, relogin, sgoDown });`, context);
   return { core, globals, storage, elements, calls, removed: () => removed,
+    telegramUrl: () => telegramUrl,
     response(value, cachedOffline = false) { reply = value; offline = cachedOffline; } };
 }
+
+test('My School asks for a Telegram login when the cached diary has an expired session', async () => {
+  const h = setup({ myschool: true });
+  h.response({ ok: true, data: {}, stale: true, reason: 'auth' });
+  await h.core.api('/api/diary?refresh=1');
+  const card = h.elements.get('loginFailed');
+  assert.match(card.innerHTML, /Войдите заново в «Мою школу»/);
+  assert.match(card.innerHTML, /\/login/);
+  assert.match(card.innerHTML, /Открыть бота/);
+  h.response({ ok: true, data: {}, stale: false });
+  await h.core.api('/api/diary?refresh=1');
+  assert.equal(h.elements.has('loginFailed'), false);
+});
+
+test('My School also asks for a new login when the diary has no cache', async () => {
+  const h = setup({ myschool: true });
+  h.response({ ok: false, error: 'Вход истёк', reason: 'auth' });
+  await assert.rejects(h.core.api('/api/diary'), /Вход истёк/);
+  assert.match(h.elements.get('loginFailed').innerHTML, /Войдите заново в «Мою школу»/);
+});
+
+test('My School re-login opens the configured Telegram bot', async () => {
+  const h = setup({ myschool: true });
+  h.response({ ok: true, data: { bot: 'https://t.me/example_bot' } });
+  await h.core.relogin();
+  assert.deepEqual(h.calls, ['/api/account/config']);
+  assert.equal(h.telegramUrl(), 'https://t.me/example_bot');
+});
 
 test('only a fresh school response clears the outage, not profile/cache/offline', async () => {
   const h = setup();

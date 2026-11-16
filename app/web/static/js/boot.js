@@ -74,6 +74,10 @@ async function accountInfo() {
   if (info !== undefined) return info;
   // Сервер ответил позже и просит войти в «Сетевой город» — заново, со входом.
   request.then(late => { if (late?.needs_sgo) location.reload(); });
+  return cachedAccountMode();
+}
+
+function cachedAccountMode() {
   let viewing = false;
   let myschool = false;
   try {
@@ -177,7 +181,12 @@ async function boot() {
   await unlockApp();
   await ownToken();
   const tglink = /[?&]tglink=/.test(location.search) || location.hash.startsWith('#tglink=');
-  if (!demo && !tglink && !pendingInvite() && wasReady()) loadInitialDiary();
+  if (!demo && !tglink && !pendingInvite() && wasReady()) {
+    const { viewing, myschool } = cachedAccountMode();
+    document.documentElement.classList.toggle('view-mode', viewing);
+    document.documentElement.classList.toggle('myschool-mode', myschool);
+    loadInitialDiary();
+  }
   // Вернулись из Telegram после «Привязать через Telegram» (account.js).
   if (!demo && tglink) {
     const { finishTelegramLink } = await import('./account.js');
