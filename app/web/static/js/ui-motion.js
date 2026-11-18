@@ -1256,7 +1256,11 @@ export function cycleTypewriter(element, phrases, options = {}) {
     }
   }
 
-  runCycle().catch(() => {});
+  runCycle().catch(() => {
+    clearTimeout(idleTimer);
+    element.textContent = phrases[0];
+    element.removeAttribute('aria-label');
+  });
 
   return {
     stop() {

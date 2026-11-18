@@ -1,3 +1,29 @@
+export function fadeLandingPhrases(headline, phrases) {
+  const slides = phrases.map((phrase, index) => {
+    const slide = document.createElement('span');
+    slide.textContent = phrase;
+    slide.setAttribute('aria-hidden', 'true');
+    slide.classList.toggle('ld-phrase-active', index === 0);
+    return slide;
+  });
+  headline.setAttribute('aria-label', phrases[0]);
+  headline.classList.add('ld-phrases');
+  headline.textContent = '';
+  headline.append(...slides);
+
+  let current = 0;
+  const timer = setInterval(() => {
+    if (!headline.isConnected) {
+      clearInterval(timer);
+      return;
+    }
+    if (document.hidden) return;
+    slides[current].classList.remove('ld-phrase-active');
+    current = (current + 1) % slides.length;
+    slides[current].classList.add('ld-phrase-active');
+  }, 3800);
+}
+
 // Read the browser's line breaks for the completed phrase. Keeping those
 // breaks while typing prevents a partially entered word from jumping lines.
 export function layoutLandingPhrase(headline, phrase) {

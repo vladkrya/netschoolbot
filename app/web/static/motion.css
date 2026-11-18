@@ -603,14 +603,16 @@
   width: .34em;
   background: linear-gradient(to right, transparent, color-mix(in srgb, var(--primary) 36%, transparent));
 }
-.ld-grad .typewriter-kept {
-  white-space: pre-line;
-  background: var(--ld-title-gradient);
-  background-size: 300% 100%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  -webkit-text-fill-color: transparent;
+.ld-grad .typewriter-kept { white-space: pre-line; }
+@supports (min-height: 1lh) and ((background-clip: text) or (-webkit-background-clip: text)) {
+  .ld-grad .typewriter-kept {
+    background: var(--ld-title-gradient);
+    background-size: 300% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    -webkit-text-fill-color: transparent;
+  }
 }
 .typewriter-caret[data-idle="true"] {
   animation: kokonutui-typewriter-caret 1s linear infinite;

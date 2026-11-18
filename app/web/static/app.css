@@ -2639,11 +2639,17 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
 .ld-brand { position: relative; z-index: 3; display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 18px; }
 .ld-brand img { border-radius: 10px; box-shadow: 0 4px 14px rgba(0, 0, 0, .15); }
 .ld-hero h1 { margin: 18px 0 12px; font-size: clamp(30px, 7.5vw, 54px); line-height: 1.05; letter-spacing: -.02em; }
-.ld-grad { position: relative; display: block; min-height: 1lh; text-wrap: pretty;
-  --ld-title-gradient: linear-gradient(90deg, var(--primary), #8b5cf6, #ec4899, var(--primary));
-  background: var(--ld-title-gradient);
-  background-size: 300% 100%; -webkit-background-clip: text; background-clip: text; color: transparent;
-  animation: ld-shine 8s linear infinite; }
+.ld-grad { position: relative; display: block; min-height: 1lh; color: var(--primary); text-wrap: pretty; }
+@supports (min-height: 1lh) and ((background-clip: text) or (-webkit-background-clip: text)) {
+  .ld-grad {
+    --ld-title-gradient: linear-gradient(90deg, var(--primary), #8b5cf6, #ec4899, var(--primary));
+    background: var(--ld-title-gradient);
+    background-size: 300% 100%; -webkit-background-clip: text; background-clip: text; color: transparent;
+    animation: ld-shine 8s linear infinite; }
+}
+.ld-grad.ld-phrases { display: grid; color: var(--primary); background: none; animation: none; }
+.ld-phrases > span { grid-area: 1 / 1; align-self: start; opacity: 0; transition: opacity .4s ease; }
+.ld-phrases > .ld-phrase-active { opacity: 1; }
 @keyframes ld-shine { to { background-position: 300% 0; } }
 .ld-grad > .ld-headline-probe {
   position: absolute;

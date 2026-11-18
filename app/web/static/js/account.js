@@ -10,8 +10,8 @@ import { notify } from './haptics.js';
 import { ICONS } from './icons.js';
 import { pushScreen } from './screens.js';
 import { setHalloweenAccess } from './appearance.js';
-import { landingHeadlineScene, layoutLandingPhrase } from './landing-headline.js';
-import { cycleTypewriter, enhanceAuthMotion, rejectSpringyInput, setOtpResult } from './ui-motion.js';
+import { fadeLandingPhrases, landingHeadlineScene, layoutLandingPhrase } from './landing-headline.js';
+import { cycleTypewriter, enhanceAuthMotion, reduced, rejectSpringyInput, setOtpResult } from './ui-motion.js';
 
 /** Подпись под кнопкой входа: согласие с политикой. Ссылка — в новой
  * вкладке, чтобы не потерять заполненную форму. */
@@ -124,18 +124,24 @@ function landing(html) {
     document.documentElement.classList.add('app-locked');
     bindLanding(root);
     const headline = root.querySelector('.ld-hero .ld-grad');
-    cycleTypewriter(headline, [
+    const phrases = [
       headline.textContent,
-      'оценки, задания и\u00a0расписание —\u00a0рядом',
-      'дневник всегда под\u00a0рукой',
-      'всё важное для\u00a0учёбы — в\u00a0одном месте',
-    ], {
-      pauseBeforeDelete: 2200,
-      loopDelay: 100,
-      visibilityRoot: root,
-      layoutPhrase: phrase => layoutLandingPhrase(headline, phrase),
-      beforeTextChange: landingHeadlineScene(root, headline),
-    });
+      'домашние задания всегда под\u00a0рукой',
+      'оценки и\u00a0средний балл в\u00a0одном месте',
+      'расписание на\u00a0сегодня и\u00a0на\u00a0неделю',
+    ];
+    // The empty typing line needs a measurable height before its first glyph.
+    if (window.CSS?.supports('min-height', '1lh')) {
+      cycleTypewriter(headline, phrases, {
+        pauseBeforeDelete: 2200,
+        loopDelay: 100,
+        visibilityRoot: root,
+        layoutPhrase: phrase => layoutLandingPhrase(headline, phrase),
+        beforeTextChange: landingHeadlineScene(root, headline),
+      });
+    } else if (!reduced()) {
+      fadeLandingPhrases(headline, phrases);
+    }
   }
   const card = root.querySelector('.account-card');
   card.innerHTML = html;
