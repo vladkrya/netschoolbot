@@ -937,11 +937,10 @@ html.offline .switch-row:has(#pushToggle, #keepFiles, #sgoUpdates) {
 .tt-cell.g4 { color: var(--g4); }
 .tt-cell.g5 { color: var(--g5); }
 .tt-cell.g2, .tt-cell.g3, .tt-cell.g4, .tt-cell.g5 { font-weight: 600; }
-.class-avg { margin: -6px 0 8px; text-align: right; }
 .class-history .ch-body { margin-top: 10px; }
 .class-history .ch-row { padding: 8px 0; border-top: 1px solid var(--border); }
 .class-history .ch-row:first-of-type { border-top: 0; }
-.class-history .ch-main { display: flex; align-items: baseline; gap: 10px; }
+.class-history .ch-main { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; }
 .class-history .ch-date { color: var(--text2); font-size: 14px; }
 .class-history .ch-values { flex: 1; font-variant-numeric: tabular-nums; }
 .class-history .ch-shift { font-weight: 600; font-variant-numeric: tabular-nums; }
@@ -959,7 +958,18 @@ html.offline .switch-row:has(#pushToggle, #keepFiles, #sgoUpdates) {
 .seg.done:nth-child(n) { animation-delay: calc(var(--i, 0) * 20ms); }
 @keyframes seg-in { from { transform: scaleY(.2); opacity: 0; } }
 .progress-caption { display: flex; justify-content: space-between; font-size: 12px; color: var(--text2); }
-.avg-line { display: flex; justify-content: space-between; align-items: center; font-weight: 600; margin-bottom: 10px; }
+.subject-average { display: grid; gap: 12px; }
+.avg-line { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 8px; }
+.avg-line .card-title { margin-bottom: 2px; }
+.avg-score { display: grid; justify-items: end; align-items: center; row-gap: 4px; text-align: right; }
+.avg-score strong { grid-area: 1 / 1; }
+.avg-score .odo-trend { grid-area: 1 / 2; margin-left: 8px; }
+.avg-score .class-avg { grid-area: 2 / 1 / 3 / -1; }
+.avg-carry { display: grid; gap: 8px; padding: 10px 0; border-block: 1px solid var(--border); }
+.avg-carry .field { margin: 4px 0 0; }
+.avg-carry-result { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 8px; font-size: 14px; }
+.avg-distribution { display: grid; gap: 6px; }
+.avg-distribution .dist { margin: 0; }
 .avg-line strong { font-size: 26px; }
 .dist { display: flex; height: 36px; border-radius: 4px; overflow: hidden; margin-bottom: 8px; animation: grow .6s var(--ease) both; transform-origin: left; }
 @keyframes grow { from { transform: scaleX(0); } }
@@ -2273,16 +2283,13 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
 .tt-trend.up { color: var(--g5); }
 .tt-trend.down { color: var(--g2); }
 
-/* ───────────────────── Свои задачи, проверочные, серии ───────────────────── */
+/* ───────────────────── Свои задачи и проверочные ───────────────────── */
 
 .hw-add {
   display: block; width: 100%; margin: 0 0 10px; padding: 11px 14px;
   border: 1.5px dashed var(--border); border-radius: var(--radius);
   background: transparent; color: var(--primary); font: inherit; font-size: 15px; text-align: left; cursor: pointer;
 }
-.hw-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin-bottom: 10px; }
-.hw-toolbar .streaks { flex: 1 1 220px; margin: 0; }
-.hw-toolbar .hw-add { flex: none; width: auto; margin: 0; white-space: nowrap; }
 .hw-add:active { background: var(--card-2); }
 .btn.loading { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
 .button-spinner { width: 15px; height: 15px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: button-spin .7s linear infinite; }
@@ -2369,13 +2376,6 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
 .import-add-lesson { margin: 2px 0 0; border-style: dashed; }
 .import-share-note { margin: -5px 4px 0; line-height: 1.4; text-align: center; }
 @media (min-width: 620px) { .import-preview [data-import-day] { padding: 16px; } .import-lesson-edit { grid-template-columns: 1.5fr 1fr; } .import-lesson-head, .import-lesson-edit > .field-label { grid-column: 1 / -1; } }
-.streaks { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
-.streak {
-  display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px;
-  border-radius: 999px; background: var(--card); color: var(--text); font-size: 13px;
-  box-shadow: inset 0 0 0 1px var(--border); animation: pop .4s var(--ease) both; cursor: default;
-}
-.streak-icon { font-size: 15px; }
 .day-notes .card-title { margin-bottom: 6px; }
 .day-note { display: flex; align-items: flex-start; gap: 10px; width: 100%; padding: 7px 0; border: 0; background: none;
   color: var(--text); font: inherit; font-size: 15px; text-align: left; cursor: pointer; }

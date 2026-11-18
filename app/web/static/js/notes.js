@@ -1,14 +1,12 @@
-// Свои задачи ученика («принести циркуль», «повторить параграф») и серии.
+// Свои задачи ученика («принести циркуль», «повторить параграф»).
 //
 // Задачи хранятся на сервере (app/web/extras.py), видны в «Заданиях» рядом
-// со школьными и попадают в вечернее напоминание бота. Серии — «N дней без
-// двоек», «пятёрки подряд», «всё на неделю сделано» — считаются из уже
-// загруженных оценок и заданий, отдельных запросов не делают.
+// со школьными и попадают в вечернее напоминание бота.
 'use strict';
 
-import { addDays, api, banner, esc, isoToday, markValue, mondayOf, plural, refuseReadOnly, state, weekdayIndex } from './core.js';
+import { addDays, api, banner, esc, isoToday, refuseReadOnly, state, weekdayIndex } from './core.js';
 import { closeSheet, openSheet } from './sheet.js';
-import { notify, select, tap } from './haptics.js';
+import { notify, tap } from './haptics.js';
 import { dequeue, pendingOp, pendingOps, realId, send } from './outbox.js';
 
 /* ───────────────────────── Проверочные работы ───────────────────────── */
@@ -224,53 +222,3 @@ export function openNoteEditor(subjects, onSaved, { date = null, subject = '', n
 }
 
 /* ──────────────────────────────── Серии ──────────────────────────────── */
-
-/** Учебные дни (пн–пт) после дня iso и до сегодня включительно. */
-function schoolDaysSince(iso, today = isoToday()) {
-  let count = 0;
-  for (let day = addDays(iso, 1); day <= today; day = addDays(day, 1)) {
-    if (weekdayIndex(day) < 5) count += 1;
-  }
-  return count;
-}
-
-/** Серии из оценок года (state.grades) и заданий недели. */
-export function streaks(grades, homework, done, notes = []) {
-  const result = [];
-  const marks = (grades?.subjects || []).flatMap((s) => s.marks || [])
-    .filter((m) => markValue(m.mark) >= 1 && markValue(m.mark) <= 5)
-    .sort((a, b) => a.date.localeCompare(b.date) || String(a.marked_at || '').localeCompare(String(b.marked_at || '')));
-  if (marks.length) {
-    const bad = marks.filter((m) => markValue(m.mark) <= 2);
-    const since = bad.length ? schoolDaysSince(bad[bad.length - 1].date) : null;
-    if (since == null && marks.length >= 5) result.push({ icon: '🛡️', text: 'Ни одной двойки за год' });
-    else if (since >= 3) result.push({ icon: '🛡️', text: `${since} ${plural(since, 'учебный день', 'учебных дня', 'учебных дней')} без двоек` });
-    let fives = 0;
-    for (let i = marks.length - 1; i >= 0 && markValue(marks[i].mark) === 5; i -= 1) fives += 1;
-    if (fives >= 2) result.push({ icon: '🔥', text: `${fives} ${plural(fives, 'пятёрка', 'пятёрки', 'пятёрок')} подряд` });
-  }
-  if (homework) {
-    const today = isoToday();
-    const end = addDays(mondayOf(today), 6);
-    const week = homework.filter((item) => item.date >= today && item.date <= end && (item.key || item.auto_done));
-    const weekNotes = notes.filter((n) => n.date >= today && n.date <= end);
-    const total = week.length + weekNotes.length;
-    const left = week.filter((item) => !item.auto_done && !done.has(item.key)).length + weekNotes.filter((n) => !n.done).length;
-    if (total && !left) result.push({ icon: '✅', text: 'Всё на эту неделю сделано' });
-    else if (total >= 3 && left <= total / 3) result.push({ icon: '💪', text: `Осталось ${left} из ${total} на неделе` });
-  }
-  return result;
-}
-
-export function streaksHtml(items) {
-  if (!items.length) return '';
-  return `<div class="streaks">${items.map((item) =>
-    `<span class="streak"><span class="streak-icon">${item.icon}</span>${esc(item.text)}</span>`).join('')}</div>`;
-}
-
-export function bindStreaks(container) {
-  container.querySelectorAll('.streak').forEach((chip) => chip.addEventListener('click', () => {
-    select();
-    chip.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.08)' }, { transform: 'scale(1)' }], { duration: 300 });
-  }));
-}

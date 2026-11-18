@@ -13,7 +13,7 @@ import { select, tap } from './haptics.js';
 import { dueButtonHtml, loadDue, openDue } from './due.js';
 import { openSearch } from './search.js';
 import {
-  bindStreaks, isTestWork, loadNotes, noteWhen, notesAsItems, openNoteEditor, setNoteDone, streaks, streaksHtml,
+  isTestWork, loadNotes, noteWhen, notesAsItems, openNoteEditor, setNoteDone,
 } from './notes.js';
 
 let query = '';
@@ -100,8 +100,7 @@ function render() {
 
   const container = $('homeworkContent');
   const top = filter === 'past' || query.trim() ? ''
-    : `<div class="hw-toolbar">${streaksHtml(streaks(state.grades, state.homework?.items, done, state.notes || []))}
-      <button class="hw-add" data-add-note>＋ Своя задача</button></div>`;
+    : '<button class="hw-add" data-add-note>＋ Своя задача</button>';
   // «Должен сдать» — сверху и только когда что-то висит (due.js).
   const due = filter === 'past' || query.trim() ? '' : `<div id="hwDue">${dueButtonHtml()}</div>`;
   // Поле ищет по загруженным неделям, всё остальное — «Поиск за год».
@@ -171,7 +170,6 @@ function render() {
 }
 
 function bindTop(container) {
-  bindStreaks(container);
   container.querySelector('[data-add-note]')?.addEventListener('click', () => openNoteEditor(subjectNames(), () => render()));
   container.querySelector('[data-due]')?.addEventListener('click', () => openDue());
   if (container.querySelector('#hwDue')) refreshDue();

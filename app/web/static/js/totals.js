@@ -3,7 +3,7 @@
 
 import {
   $, ABSENCES, DEFAULT_THRESHOLDS, api, avgClass, errorCard, esc, formatAverage, isAbsence, isoToday, dayMonth,
-  markValue, plural, shortDate, showFailure, showLoading, skeleton, state, syncFinished, syncStarted, weightedAverage, motionAtLeast, demo,
+  markValue, observedTime, plural, shortDate, showFailure, showLoading, skeleton, state, syncFinished, syncStarted, weightedAverage, motionAtLeast, demo,
 } from './core.js';
 import { markBox, openMark } from './details.js';
 import { keepAcrossRestart, markScreen, onScreenRefresh, pushScreen, reopenOnRefresh } from './screens.js';
@@ -290,10 +290,10 @@ function carryAverage(data, subject, key, average, marks) {
   const priorAverage = previous ? subject.totals?.terms?.[previous.key]?.average ?? weightedAverage(prior) : null;
   const mode = carryMode(data, subject.subject, key);
   if (!previous || !prior.length || subject.totals?.terms?.[previous.key]?.mark || !mode) return null;
-  if (mode === 'periods' && average != null && priorAverage != null) return { value: (average + priorAverage) / 2, previous, mode, previousAverage: priorAverage, previousMarks: prior };
+  if (mode === 'periods' && average != null && priorAverage != null) return { value: (average + priorAverage) / 2, mode, previousAverage: priorAverage, previousMarks: prior };
   if (mode === 'marks') {
     const values = [...prior, ...marks].map((mark) => markValue(mark.mark)).filter((value) => value >= 1 && value <= 5);
-    if (values.length) return { value: values.reduce((sum, value) => sum + value, 0) / values.length, previous, mode, previousAverage: priorAverage, previousMarks: prior };
+    if (values.length) return { value: values.reduce((sum, value) => sum + value, 0) / values.length, mode, previousAverage: priorAverage, previousMarks: prior };
   }
   return null;
 }
@@ -410,9 +410,9 @@ function cardsHtml(rows, averages) {
   return orderRows(rows).map((row) => {
     const isPinned = pinned.has(row.subject.subject);
     const grade = row.official ? markGrade(row.official)
-      : row.avg == null ? '' : avgClass(row.avg, thresholdsFor(row.subject.subject));
+      : row.baseAvg == null ? '' : avgClass(row.baseAvg, thresholdsFor(row.subject.subject));
     const recent = row.marks.slice(-10).map((mark) => markBox(mark.mark, '', mark.weight || 1)).join('');
-    const fill = row.avg == null ? 0 : Math.max(0, Math.min(100, (row.avg - 1) / 4 * 100));
+    const fill = row.baseAvg == null ? 0 : Math.max(0, Math.min(100, (row.baseAvg - 1) / 4 * 100));
     const trend = Math.abs(row.trend) >= 0.005 && !row.official
       ? `<span class="sc-trend ${row.trend > 0 ? 'up' : 'down'}">${row.trend > 0 ? '▲' : '▼'} ${signed(row.trend)}</span>` : '';
     return `<button class="card subject-card glass" data-subject="${row.index}">
@@ -421,7 +421,7 @@ function cardsHtml(rows, averages) {
             aria-label="${isPinned ? 'Открепить' : 'Закрепить сверху'}">${ICONS.pin}</span>
           <div class="sc-name">${esc(row.subject.subject)}</div>
           ${trend}
-          <div class="sc-avg ${grade}"${row.official || row.avg == null ? '' : ` data-odo="${esc(`${row.subject.subject}|${period}`)}"`}>${row.official ? esc(row.official) : formatAverage(row.avg)}</div>
+          <div class="sc-avg ${grade}"${row.official || row.baseAvg == null ? '' : ` data-odo="${esc(`${row.subject.subject}|${period}`)}"`}>${row.official ? esc(row.official) : formatAverage(row.baseAvg)}</div>
         </div>
         <div class="sc-bar ${grade}"><span style="width:${fill}%"></span>${goalMark(row)}</div>
         <div class="sc-marks">${recent || '<span class="muted small">Оценок пока нет</span>'}</div>
@@ -443,11 +443,14 @@ function goalMark(row) {
 function footHtml(row, classAvg) {
   const goal = goalText(row);
   const right = [
-    row.official && row.avg != null ? `ср. ${formatAverage(row.avg)}` : '',
+    row.official && row.baseAvg != null ? `ср. ${formatAverage(row.baseAvg)}` : '',
     classAvg != null ? `у класса ${formatAverage(classAvg)}` : '',
   ].filter(Boolean).join(' · ');
-  const carried = row.carried ? `Средний с учётом ${row.carried.previous.label}: ${formatAverage(row.carried.value)}` : '';
-  return goal || right || carried ? `<div class="sc-foot"><span>${esc(goal)}</span>${right ? `<span>${right}</span>` : ''}</div>${carried ? `<div class="sc-foot"><span>${esc(carried)}</span></div>` : ''}` : '';
+  const carried = row.carried ? `Средний за два периода: ${formatAverage(row.carried.value)}` : '';
+  return `<div data-subject-foot>
+    ${goal || right ? `<div class="sc-foot"><span>${esc(goal)}</span>${right ? `<span>${right}</span>` : ''}</div>` : ''}
+    ${carried ? `<div class="sc-foot"><span>${esc(carried)}</span></div>` : ''}
+  </div>`;
 }
 
 // Средние баллы класса за период (только мобильное API):
@@ -476,8 +479,7 @@ async function loadClassAverages(data, list, rows) {
   for (const row of rows) {
     const card = list.querySelector(`[data-subject="${row.index}"]`);
     if (!card) continue;
-    card.querySelector('.sc-foot')?.remove();
-    card.insertAdjacentHTML('beforeend', footHtml(row, averages[row.subject.subject]));
+    card.querySelector('[data-subject-foot]').outerHTML = footHtml(row, averages[row.subject.subject]);
   }
 }
 
@@ -938,15 +940,10 @@ function openSubject(subject, key, existingBody = null, data = state.totals) {
   const previous = periodIndex > 0 ? data.quarters[periodIndex - 1] : null;
   const previousMarks = previous ? quarterMarks(subject, previous.key).filter((mark) => !isAttendance(mark)) : [];
   const carryKey = carryId(data, subject.subject, key);
-  const savedCarry = carryMode(data, subject.subject, key);
-  const arithmetic = (entries) => {
-    const values = entries.map((mark) => markValue(mark.mark)).filter((value) => value >= 1 && value <= 5);
-    return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
-  };
-  const carryAverage = savedCarry === 'marks' ? arithmetic([...previousMarks, ...marks.filter((mark) => !isAttendance(mark))])
-    : savedCarry === 'periods' && avg != null && weightedAverage(previousMarks) != null
-      ? (avg + weightedAverage(previousMarks)) / 2 : null;
-  const carryGrade = carryAverage == null ? null : [5, 4, 3].find((grade) => carryAverage >= thresholdsFor(subject.subject)[grade]) || 2;
+  const canCarry = !data.archived && Boolean(previousMarks.length) && !subject.totals?.terms?.[previous.key]?.mark;
+  const savedCarry = canCarry ? carryMode(data, subject.subject, key) : '';
+  const carryValue = canCarry ? carryAverage(data, subject, key, avg, marks)?.value : null;
+  const carryGrade = carryValue == null ? null : [5, 4, 3].find((grade) => carryValue >= thresholdsFor(subject.subject)[grade]) || 2;
 
   const segments = `<div data-lessons>${lessonsHtml(lessons, quarter, key, data.archived)}</div>`;
 
@@ -968,20 +965,23 @@ function openSubject(subject, key, existingBody = null, data = state.totals) {
       ${segments}
       ${subject.teacher ? `<div class="muted small" style="margin-top:8px">Учитель: <span class="link">${esc(subject.teacher)}</span></div>` : ''}
     </div>
-    <div class="card">
-      <div class="avg-line"><span>Средний балл ученика:</span><strong data-avg ${avg == null ? '' : `data-count="${esc(`${subject.subject}|${key}`)}" data-odo-trend`} class="${avg == null ? '' : avgClass(avg, thresholdsFor(subject.subject))}">${formatAverage(avg)}</strong></div>
-      <div class="muted small class-avg" data-class-avg hidden></div>
-      ${!data.archived && previous && previousMarks.length && !subject.totals?.terms?.[previous.key]?.mark ? `<label class="muted small">С учётом ${esc(previous.label)}
-        <select class="field" data-carry><option value="">Не учитывать</option><option value="periods" ${savedCarry === 'periods' ? 'selected' : ''}>Средний балл периодов</option><option value="marks" ${savedCarry === 'marks' ? 'selected' : ''}>Средний балл по оценкам за две четверти</option></select></label>
-        ${carryGrade ? `<div class="muted small">Текущий средний с учётом ${esc(previous.label)}: <strong>${formatAverage(carryAverage)}</strong> · выходит «${carryGrade}»</div>` : ''}` : ''}
+    <div class="card subject-average">
+      <div class="avg-line">
+        <div><div class="card-title">Средний балл</div><div class="muted small">${esc(quarter?.label || '')}</div></div>
+        <div class="avg-score"><strong data-avg ${avg == null ? '' : `data-count="${esc(`${subject.subject}|${key}`)}" data-odo-trend`} class="${avg == null ? '' : avgClass(avg, thresholdsFor(subject.subject))}">${formatAverage(avg)}</strong>
+          <div class="muted small class-avg" data-class-avg hidden></div></div>
+      </div>
+      ${canCarry ? `<div class="avg-carry"><label class="muted small">Учёт предыдущего периода
+        <select class="field" data-carry><option value="">Не учитывать</option><option value="periods" ${savedCarry === 'periods' ? 'selected' : ''}>Средний балл периодов</option><option value="marks" ${savedCarry === 'marks' ? 'selected' : ''}>Средний балл по всем оценкам</option></select></label>
+        ${carryGrade ? `<div class="avg-carry-result"><span>За два периода</span>
+          <span><strong>${formatAverage(carryValue)}</strong> · выходит «${carryGrade}»</span></div>` : ''}</div>` : ''}
       ${official || yearMark || finalMark ? `<div class="muted small">${[
         official ? `Оценка за ${esc((quarter?.label || 'период').replace(/^\d+\s*/, ''))}: <strong>${esc(official)}</strong>` : '',
         yearMark ? `Годовая: <strong>${esc(yearMark)}</strong>` : '',
         finalMark ? `Итоговая: <strong>${esc(finalMark)}</strong>` : '',
       ].filter(Boolean).join(' · ')}</div>` : ''}
       ${attendanceLine(subject.absences?.[key])}
-      ${distribution(marks)}
-      <div class="muted small">*доли оценок, образующих средний балл</div>
+      <div class="avg-distribution"><div class="muted small">Доли оценок за период</div>${distribution(marks)}</div>
     </div>
     ${data.archived ? '' : `<div class="card goal-card">
       <div class="card-title">Цель на ${esc((quarter?.label || 'период').replace(/^\d+\s*/, ''))}</div>
@@ -1191,7 +1191,7 @@ async function loadClassHistory(body, subject, key, marks) {
       `<span class="ch-work">${markBox(mark.mark, '', mark.weight || 1)} ${esc(mark.type || 'Оценка')}</span>`).join('');
     return `<div class="ch-row">
       <div class="ch-main">
-        <span class="ch-date">${esc(dayMonth(after.at.slice(0, 10)))}</span>
+        <span class="ch-date">${esc(observedTime(after.at))}</span>
         <span class="ch-values">${formatAverage(before.value)} → <strong>${formatAverage(after.value)}</strong></span>
         <span class="ch-shift ${shift > 0 ? 'up' : 'down'}">${formatShift(shift)}</span>
       </div>
@@ -1204,7 +1204,7 @@ async function loadClassHistory(body, subject, key, marks) {
         ? formatAverage(history[0].value) : `${shift > 0 ? '↑' : '↓'} ${formatAverage(Math.abs(shift))}`}</span></summary>
     <div class="ch-body">
       ${rows || `<div class="muted small">Пока не менялся: ${formatAverage(history[0].value)}.</div>`}
-      <div class="muted small ch-note">Бот запоминает средний класса с ${esc(since)} — так видно, каким он был до работы и каким стал после.</div>
+      <div class="muted small ch-note">Указано время, когда бот заметил изменение. История ведётся с ${esc(since)}.</div>
     </div>`;
   card.open = readLocal(CLASS_HISTORY_KEY, '') === 'open';
   card.addEventListener('toggle', () => writeLocal(CLASS_HISTORY_KEY, card.open ? 'open' : ''));
@@ -1297,9 +1297,9 @@ function bindWhatIf(card, marks, id, subjectName, carry = {}) {
 
   const saveWeights = () => setPref('weights', weights);
   // Какой средний «станет» показан сейчас — новый досчитывает от него.
-  let shown = weightedAverage(marks);
+  let shown = null;
 
-  const render = () => {
+  const render = (animate = false) => {
     const thresholds = thresholdsFor(subjectName);
     // Последний чип не убрать: без веса нечего добавлять.
     card.querySelector('.whatif-chips').innerHTML = weights
@@ -1361,8 +1361,10 @@ function bindWhatIf(card, marks, id, subjectName, carry = {}) {
           : ''}</span>`
       : '';
     // Добавили или убрали оценку — средний плавно переходит к новому значению.
-    if (changed) tweenNumber(card.querySelector('.whatif-result strong'), shown, after);
-    shown = changed && after != null ? after : before;
+    if (animate && changed && formatAverage(shown) !== formatAverage(after)) {
+      tweenNumber(card.querySelector('.whatif-result strong'), shown ?? 0, after);
+    }
+    shown = changed ? after : null;
 
     const all = [...kept(), ...plan.extra];
     card.querySelector('.whatif-goals').innerHTML = [5, 4]
@@ -1417,7 +1419,7 @@ function bindWhatIf(card, marks, id, subjectName, carry = {}) {
     } else {
       return;
     }
-    render();
+    render(Boolean(add || remove || toggle));
   });
 
   // Свой вес становится чипом: по «Готово»/Enter или когда поле теряет фокус.

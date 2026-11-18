@@ -18,7 +18,7 @@ import { isNewDesign, saveBells, showBells, showHomeworkStatus, showWeekends, vi
 import { bellsHtml, bellsNoteHtml, loadSchoolBells, weekCardsHtml } from './schedule.js';
 import { canGoBack, topScreen } from './screens.js';
 import { EDGE_PX, swipeBackMode } from './swipeback.js';
-import { isDoneItem, lessonStatus, loadDone, markBox, openHomework, openLesson, realMarks } from './details.js';
+import { isAutoDone, isDoneItem, lessonStatus, loadDone, markBox, openHomework, openLesson, realMarks } from './details.js';
 import { closeSheet, openSheet, sheetOpen } from './sheet.js';
 import { select, tap } from './haptics.js';
 import { bindInstallCard, installCardHtml } from './install.js';
@@ -143,6 +143,7 @@ function pickDay() {
 }
 
 export async function loadDay(force = false) {
+  if (showHomeworkStatus() && (!state.hwDone || force)) loadDone();
   // Тот же выбор дня, что и после загрузки: раньше на время запроса экран
   // прыгал на «сегодня» — и при обновлении в выходной появлялись спрятанные
   // суббота и воскресенье, пока школа не ответит.
@@ -175,8 +176,6 @@ export async function loadDay(force = false) {
   }
   renderDay();
   prefetchAround();
-  // Отметки «выполнено» — для подсветки Д/З; день рисуется, не дожидаясь их.
-  if (showHomeworkStatus() && !state.hwDone) loadDone().then(() => { if (state.tab === 'day') renderDay(true); });
   if (!state.notes) loadNotes().then(() => { if (state.tab === 'day') renderDay(true); });
 }
 
@@ -340,7 +339,8 @@ function renderDay(quiet = false) {
   const routeKey = route ? route.rows.map(({ status, hasHomework }) => `${status}:${hasHomework}`).join(';') : '';
 
   const notes = (state.notes || []).filter((note) => note.date === state.date);
-  const key = `${state.date}|${countdownHtml().length}|${statuses}|${routeKey}|${state.hwDone?.size ?? '-'}|${notes.map((n) => `${n.id}${n.done}${n.time}${n.remind}${n.text}${n.subject}`).join()}|${editsKey(day)}|${notices.map(notice => notice.id).join(',')}`;
+  const homeworkStatuses = lessons.map((lesson) => homeworkStatus(lesson.homework));
+  const key = `${state.date}|${countdownHtml().length}|${statuses}|${routeKey}|${homeworkStatuses.join(',')}|${notes.map((n) => `${n.id}${n.done}${n.time}${n.remind}${n.text}${n.subject}`).join()}|${editsKey(day)}|${notices.map(notice => notice.id).join(',')}`;
   if (quiet && key === renderedKey && container.children.length) return;
   renderedKey = key;
   freshMarks = takeFresh(lessons.flatMap((lesson) => realMarks(lesson.marks)
@@ -349,7 +349,7 @@ function renderDay(quiet = false) {
   const summary = daySummary(lessons);
   container.innerHTML = installCardHtml() + noticesHtml(notices, Boolean(state.profile?.readonly))
     + (route ? routeBoardHtml(route, summary) : summary) + countdownHtml()
-    + lessons.map((lesson, index) => lessonCard(lesson, index)).join('')
+    + lessons.map((lesson, index) => lessonCard(lesson, index, homeworkStatuses[index])).join('')
     + notesBlock(notes) + hiddenHtml(day) + addLessonButton();
   if (route) bindRouteBoard(container, state.date, route);
   bindInstallCard(container);
@@ -469,18 +469,18 @@ function notesBlock(notes) {
 /** Цвет Д/З на главной: hw-todo — не сделано, hw-done — всё сделано.
  *  Пусто, если подсветку выключили или отметки ещё не загрузились. */
 function homeworkStatus(homework) {
-  if (!homework.length || !showHomeworkStatus() || !state.hwDone) return '';
-  const items = homework.filter((item) => item.key || item.auto_done);
+  if (!homework.length || !showHomeworkStatus()) return '';
+  const items = homework.filter((item) => item.key || isAutoDone(item));
   if (!items.length) return '';
-  return items.every((item) => isDoneItem(item, state.hwDone)) ? 'hw-done' : 'hw-todo';
+  if (items.every((item) => isDoneItem(item))) return 'hw-done';
+  return state.hwDone ? 'hw-todo' : '';
 }
 
-function lessonCard(lesson, index) {
+function lessonCard(lesson, index, status) {
   // Новый дизайн: коэффициент маленькой цифрой у оценки, как в «Оценках».
   const marks = realMarks(lesson.marks).map((m) => markBox(m.mark, freshClass(m, lesson.subject), isNewDesign() ? m.weight || 1 : null)).join('');
   const hasFiles = lesson.homework.some((h) => (h.attachments || []).length);
   const hasComment = lesson.homework.some((h) => h.comment);
-  const status = homeworkStatus(lesson.homework);
   const test = lesson.homework.find(isTestWork);
   const time = lesson.moderation_cancelled ? '' : lesson.time || [lesson.start, lesson.end].filter(Boolean).join(' – ');
   const timing = lessonStatus(lesson, state.date);

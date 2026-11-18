@@ -5,9 +5,16 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="referrer" content="no-referrer">
 <title>{{ name or "Вложение" }}</title>
+<script>
+  var theme = new URLSearchParams(location.search).get('theme');
+  if (theme === 'dark' || theme === 'light') document.documentElement.dataset.theme = theme;
+</script>
 <style>
-  :root { color-scheme: light dark; --bg: #eef1f6; --card: #fff; --text: #202733; --muted: #6b7486; --accent: #4a6fae; --bad: #c0392b; }
-  @media (prefers-color-scheme: dark) { :root { --bg: #111318; --card: #1b1e25; --text: #e8eaf0; --muted: #9aa2b2; --accent: #6f9be0; --bad: #ff7a6b; } }
+  :root { color-scheme: light; --bg: #eef1f6; --card: #fff; --text: #202733; --muted: #6b7486; --accent: #4a6fae; --bad: #c0392b; }
+  :root[data-theme="dark"] { color-scheme: dark; --bg: #111318; --card: #1b1e25; --text: #e8eaf0; --muted: #9aa2b2; --accent: #6f9be0; --bad: #ff7a6b; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme]) { color-scheme: dark; --bg: #111318; --card: #1b1e25; --text: #e8eaf0; --muted: #9aa2b2; --accent: #6f9be0; --bad: #ff7a6b; }
+  }
   body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 16px; box-sizing: border-box;
          background: var(--bg); color: var(--text); font: 16px/1.4 -apple-system, system-ui, "Segoe UI", Roboto, sans-serif; }
   .card { width: min(100%, 380px); background: var(--card); border-radius: 18px; padding: 24px; text-align: center; }

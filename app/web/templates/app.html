@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ru" class="app-locked">
+<html lang="ru" class="app-locked" data-design="new">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
@@ -24,10 +24,8 @@
     // Новый дизайн — по умолчанию; min и старый восстанавливаем до первого кадра.
     var savedDesign = localStorage.getItem('ns-design-v2');
     var fresh = savedDesign !== 'classic';
-    if (savedDesign === 'min' || savedDesign === 'v3') {
-      document.documentElement.setAttribute('data-design', 'new');
-      document.documentElement.setAttribute('data-variant', 'min');
-    } else if (savedDesign !== 'classic') document.documentElement.setAttribute('data-design', 'new');
+    if (!fresh) document.documentElement.removeAttribute('data-design');
+    if (savedDesign === 'min' || savedDesign === 'v3') document.documentElement.setAttribute('data-variant', 'min');
     // Сколько анимаций играть (настройка «Анимации», appearance.js) — до
     // первой отрисовки, без мигания. Не выбрано: на слабом телефоне 50%.
     var motion = localStorage.getItem('ns-motion');

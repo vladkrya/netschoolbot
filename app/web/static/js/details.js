@@ -21,19 +21,30 @@ import { bellShift, msToBell, syncedNow } from './timer.js';
 // Общая для «Д/З», экрана урока и экрана задания; хранится на сервере и
 // видна в /dz бота. Без сети отметка ждёт в очереди (outbox.js).
 
-export async function loadDone() {
+let doneRequest;
+export function loadDone() {
+  doneRequest ??= fetchDone().finally(() => { doneRequest = null; });
+  return doneRequest;
+}
+
+async function fetchDone() {
+  let done;
   try {
     const { data } = await api('/api/homework/done');
-    state.hwDone = new Set(data.keys);
+    done = new Set(data.keys);
     state.hwDoneSince = data.since || '';
   } catch {
-    state.hwDone = state.hwDone || new Set();
+    done = state.hwDone;
   }
   // Сохранённая копия с сервера ещё не знает отметок, сделанных без сети.
   for (const { body } of pendingOps('hw:')) {
-    if (body.done) state.hwDone.add(body.key);
-    else state.hwDone.delete(body.key);
+    done ??= new Set();
+    if (body.done) done.add(body.key);
+    else done.delete(body.key);
   }
+  if (!done) return;
+  state.hwDone = done;
+  window.dispatchEvent(new CustomEvent('netschool:hwdone', { detail: { source: 'load' } }));
 }
 
 /** Отмечать нечего: учитель написал «Не предусмотрено» («Нет», «нет
@@ -57,8 +68,8 @@ export function homeworkKind(item) {
  *  source — кто отметил: этот экран уже перерисован и событие пропустит. */
 export async function saveDone(item, next, apply, source = '') {
   if (refuseReadOnly()) return;
-  const done = state.hwDone || (state.hwDone = new Set());
   const set = (value) => {
+    const done = state.hwDone ??= new Set();
     if (value) done.add(item.key);
     else done.delete(item.key);
     apply(value);

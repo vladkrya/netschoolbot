@@ -542,7 +542,6 @@ async function applySync(topic) {
   }
   if (topic === 'homework') {
     await loadDone();
-    window.dispatchEvent(new CustomEvent('netschool:hwdone', { detail: { source: 'sync' } }));
   } else if (topic === 'notes') {
     await loadNotes(true);
   } else if (topic === 'prefs') {
@@ -585,6 +584,7 @@ function initNetwork() {
   });
   document.addEventListener('netschool:network', ({ detail }) => {
     if (detail.offline || demo) return;
+    ['homework', 'prefs'].forEach((topic) => applySync(topic).catch(() => {}));
     forgetRevalidated();
     if (!state.tab || $('screens').childElementCount || state.refreshing) return;
     quietly(() => TABS[state.tab]());

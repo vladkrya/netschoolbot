@@ -1046,7 +1046,11 @@ function fileUrl(path, extra) {
   const host = alternateActive ? ALTERNATE_ORIGIN : attachmentHost();
   // via=pwa: страница вложения подскажет нажать компас «Открыть в Safari».
   const via = host ? '&via=pwa' : '';
-  return `${host}${base}/${path}?${credential}${extra}${via}`;
+  const root = document.documentElement;
+  const scheme = getComputedStyle(root).colorScheme;
+  const theme = scheme === 'dark' || scheme === 'light' ? scheme : root.dataset.theme
+    || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  return `${host}${base}/${path}?${credential}${extra}${via}&theme=${theme}`;
 }
 
 // В установленном на iPhone приложении (PWA) ссылка на свой домен
