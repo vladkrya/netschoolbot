@@ -311,6 +311,21 @@ async def test_homework_comment_history_survives_unknown_comments(mode, users, m
     ]
 
 
+async def test_homework_lesson_number_change_is_not_new_homework(users, watcher, diary, notifier):
+    user = await users.save(make_user())
+    original = HomeworkRecord("Алгебра", user.today(), "ДЗ", "№ 5", lesson_number=1, assignment_id=42)
+    diary.homework = [original]
+    await watcher.run_once()
+
+    moved = replace(original, lesson_number=2)
+    new = replace(original, text="№ 6", assignment_id=43)
+    diary.homework = [moved, new]
+    await watcher.run_once()
+
+    assert [item.identity for item in notifier.homework] == [new.identity]
+    assert notifier.texts == []
+
+
 class TestChanges:
     async def test_changed_mark(self, users, watcher, diary, notifier):
         await users.save(make_user())

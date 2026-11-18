@@ -484,7 +484,14 @@ async def _write_homework_poll(
         (*scope, cutoff),
     )
     excluded = edited | ambiguous
-    fresh = [item for item in poll.fresh if item.revision_key not in excluded]
+    # Номер урока входит в identity, но его изменение при неизменных ID
+    # и дате не делает задание новым. Правки текста идут отдельным событием.
+    fresh = [
+        item for item in poll.fresh
+        if item.revision_key not in excluded
+        and (item.revision_key not in saved
+             or saved[item.revision_key]["date"] != item.due_date.isoformat())
+    ]
     if poll.notify:
         if fresh:
             outbox.append((OutboxKind.HOMEWORK.value, encode(OutboxKind.HOMEWORK, fresh)))

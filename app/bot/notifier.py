@@ -69,11 +69,13 @@ class TelegramNotifier:
     async def send_homework(self, user: User, items: list[HomeworkRecord]) -> None:
         if not items:
             return
+        subjects_by_date = sorted({(item.due_date, item.subject) for item in items})
+        preview = ", ".join(f"{subject} · на {date:%d.%m}" for date, subject in subjects_by_date[:4])
+        if len(subjects_by_date) > 4:
+            preview += f" · ещё {len(subjects_by_date) - 4}"
         await self._push_notify(
-            user,
-            "Новые задания",
-            ", ".join(sorted({item.subject for item in items})[:4]),
-            kind="homework",
+            user, "Новые задания", preview, kind="homework",
+            dedup_id="\n".join(sorted({item.identity for item in items})),
         )
         await self._notify(user, formatting.homework_digest(items, tz=user.tz))
 

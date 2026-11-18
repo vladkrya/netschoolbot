@@ -247,7 +247,7 @@ self.addEventListener('push', (event) => {
       body: payload.body || '',
       icon: '/static/icon-192.png',
       badge: '/static/icon-192.png',
-      data: { url: payload.url || '/', kind: payload.kind || '' },
+      data: { url: payload.url || '', kind: payload.kind || '' },
       // Свой tag у каждого: иначе новое уведомление заменяло бы прежнее.
       tag: `${payload.kind || 'note'}-${Date.now()}`,
       // Без общего tag: с ним каждое уведомление заменяло предыдущее, и из
@@ -256,13 +256,37 @@ self.addEventListener('push', (event) => {
   );
 });
 
+const PUSH_TABS = new Map([
+  ['homework', 'homework'],
+  ['marks', 'totals'],
+  ['schedule', 'schedule'],
+  ['mail', 'mail'],
+  ['note', 'homework'],
+]);
+
+async function openNotification({ url, kind } = {}) {
+  const scope = new URL(self.registration.scope);
+  const target = new URL(url || scope, scope);
+  if (target.origin !== scope.origin) return;
+  const tab = PUSH_TABS.get(kind);
+  if (tab && (target.pathname === '/' || target.pathname === scope.pathname)) {
+    target.pathname = scope.pathname;
+    target.searchParams.set('notification', tab);
+  }
+  const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+  const exact = clients.find((client) => client.url === target.href);
+  if (exact) return exact.focus();
+
+  const app = clients.find((client) => new URL(client.url).pathname === scope.pathname);
+  if (app) {
+    if (!tab && !url) return app.focus();
+    const navigated = await app.navigate(target.href).catch(() => null);
+    if (navigated) return navigated.focus();
+  }
+  return self.clients.openWindow(target.href);
+}
+
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  const target = (event.notification.data && event.notification.data.url) || '/';
-  event.waitUntil(
-    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
-      const existing = clients.find((client) => 'focus' in client);
-      return existing ? existing.focus() : self.clients.openWindow(target);
-    })
-  );
+  event.waitUntil(openNotification(event.notification.data || {}));
 });

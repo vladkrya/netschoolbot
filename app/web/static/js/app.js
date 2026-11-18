@@ -1013,13 +1013,20 @@ async function start() {
   const profileLoad = loadProfile().catch(() => null);
   // Первая вкладка панели — та, с которой открывается приложение.
   const requestedSettings = location.hash === '#settings';
-  if (requestedSettings || requestedModeration) history.replaceState(history.state, '', location.pathname + location.search);
+  const url = new URL(location.href);
+  const notificationTab = url.searchParams.get('notification');
+  const requestedTab = ['homework', 'totals', 'schedule', 'mail'].includes(notificationTab)
+    && (notificationTab !== 'mail' || (!isReadOnly() && !isMyschool())) ? notificationTab : null;
+  if (notificationTab) url.searchParams.delete('notification');
+  if (requestedSettings || requestedModeration) url.hash = '';
+  if (notificationTab || requestedSettings || requestedModeration) history.replaceState(history.state, '', url);
   // Перезапуск на новую версию (update.js) — туда же, где были: вкладка, день, прокрутка.
-  const resume = requestedSettings || requestedModeration ? null : takeResume();
+  const savedResume = requestedSettings || requestedModeration ? null : takeResume();
+  const resume = requestedTab ? null : savedResume;
   if (resume?.date) restoreDay(resume.date);
   if (Number.isInteger(resume?.scheduleWeek)) state.scheduleWeek = resume.scheduleWeek;
   const resumeTab = resume && TABS[resume.tab] && (navTabs().includes(resume.tab) || (resume.tab === 'settings' && isNewDesign())) ? resume.tab : null;
-  const firstTab = switchTab(requestedSettings && isNewDesign() ? 'settings' : resumeTab || navTabs()[0]);
+  const firstTab = switchTab(requestedSettings && isNewDesign() ? 'settings' : requestedTab || resumeTab || navTabs()[0]);
   if (resume) {
     firstTab.catch(() => {}).then(() => new Promise((resolve) => requestAnimationFrame(resolve))).then(() => {
       if (resume.scroll) window.scrollTo(0, resume.scroll);

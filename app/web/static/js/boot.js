@@ -231,7 +231,7 @@ async function boot() {
     const { openRetro, wantsRetro } = await import('./retro.js');
     // QR-код с экрана входа подтверждается в обычном интерфейсе: в ретро
     // его некому показать, а другое устройство ждёт.
-    if (wantsRetro() && !qrLogin) {
+    if (wantsRetro() && !qrLogin && !new URLSearchParams(location.search).has('notification')) {
       openRetro();
       return;
     }

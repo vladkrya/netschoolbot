@@ -639,6 +639,19 @@ class TestPushDelivery:
         assert len(bot.sent) == 1
         assert len(push.sent) == 1
 
+    async def test_homework_push_shows_due_dates(self, users):
+        from datetime import date
+        from app.domain.records import HomeworkRecord
+
+        push = self.Push()
+        user = await users.save(make_user())
+        notifier = TelegramNotifier(TestTelegramNotifier.Bot(), users, push)
+        await notifier.send_homework(user, [
+            HomeworkRecord("Алгебра", date(2026, 11, 20), "ДЗ", "№ 1"),
+            HomeworkRecord("Алгебра", date(2026, 11, 23), "ДЗ", "№ 2"),
+        ])
+        assert push.sent == [(user.telegram_id, "Новые задания", "Алгебра · на 20.11, Алгебра · на 23.11")]
+
     async def test_push_failure_does_not_break_telegram(self, users):
         bot = TestTelegramNotifier.Bot()
         push = self.Push(error=RuntimeError("сервис push недоступен"))
