@@ -353,7 +353,7 @@ function mount(body, { tab = false } = {}) {
       const reply = { role: 'assistant', content: data.reply };
       chat.messages.push(reply);
       chat.left = data.left;
-      typing.replaceWith(bubble(reply, true));
+      typing.replaceWith(bubble(reply, false));
       notify('success');
     } catch (error) {
       // Вопрос без ответа убираем: иначе он ушёл бы в следующий запрос.

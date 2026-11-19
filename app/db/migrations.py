@@ -1138,6 +1138,18 @@ MIGRATIONS: list[str] = [
         PRIMARY KEY (telegram_id, school, student_id, assignment_key)
     );
     """,
+    """
+    CREATE TABLE moderation_thresholds (
+        installation TEXT NOT NULL,
+        school_id INTEGER NOT NULL,
+        school_year INTEGER NOT NULL,
+        class_key TEXT NOT NULL,
+        thresholds TEXT NOT NULL,
+        PRIMARY KEY (installation, school_id, school_year, class_key),
+        FOREIGN KEY (installation, school_id) REFERENCES moderation_schools(installation, school_id)
+    );
+    """,
+
 ]
 
 

@@ -214,7 +214,10 @@ async def get_prefs(request: web.Request) -> web.Response:
     min_allowed = owner(app, user.telegram_id) or managed.get("design") in ("min", "v3")
     if data.get("design") in ("min", "v3") and not min_allowed:
         data = await app.miniapp.save_prefs(user.telegram_id, {"design": "new"})
-    return web.json_response({"ok": True, "data": {**data, **managed}, "managed": managed})
+    from ...moderation import thresholds_for_user
+    shared = await thresholds_for_user(app, user)
+    return web.json_response({"ok": True, "data": {**data, **managed}, "managed": managed,
+                              "shared_thresholds": shared})
 
 
 @routes.post("/api/visit")

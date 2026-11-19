@@ -1,5 +1,6 @@
-import { api, banner, esc, showFailure } from './core.js';
+import { api, banner, DEFAULT_THRESHOLDS, esc, showFailure } from './core.js';
 import { popScreen, pushScreen, topScreen } from './screens.js';
+import { syncPrefs } from './prefs.js';
 
 function formatDate(iso) {
   return iso.split('-').reverse().join('.');
@@ -242,6 +243,19 @@ function announceForm(data, classes) {
     <button class="chip">Опубликовать</button></form>`;
 }
 
+function thresholdForm({ key, label, values, inherited }) {
+  const shown = values || inherited || DEFAULT_THRESHOLDS;
+  return `<form class="card" data-form="thresholds">
+    <h3>${esc(label)}</h3>
+    <input type="hidden" name="class_key" value="${esc(key)}">
+    <div class="thr-inputs">${[5, 4, 3].map(grade => `<label class="thr-field">«${grade}» от
+      <input name="grade${grade}" type="number" min="1" max="5" step="0.01" inputmode="decimal"
+        required value="${shown[grade]}"></label>`).join('')}</div>
+    <div class="chips"><button class="chip">Сохранить</button>
+      ${values ? '<button class="chip" name="reset" formnovalidate>Сбросить</button>' : ''}</div>
+  </form>`;
+}
+
 export function openModeration() {
   const panel = pushScreen('Модерация');
   panel.classList.add('moderation-panel');
@@ -264,7 +278,10 @@ export function openModeration() {
       if (scope?.class_key) classes[scope.class_key] ||= scope.class_label;
       for (const role of data.roles || []) if (role.class_key) classes[role.class_key] ||= role.class_key;
       if (!Object.hasOwn(classes, selectedClass)) selectedClass = Object.keys(classes)[0] || '';
-      const tabs = scope ? ['Расписание', 'Звонки и объявления', 'История', ...(data.owner ? ['Модераторы'] : [])] : [];
+      const tabs = scope ? ['Расписание', 'Звонки и объявления', 'История', ...(data.owner ? ['Модераторы'] : []),
+        ...(data.threshold_editors?.length ? ['Пороги оценок'] : [])] : [];
+      const thresholdTab = data.owner ? 4 : 3;
+      if (activeTab >= tabs.length) activeTab = 0;
       panel.innerHTML = (data.owner ? quickGrantForm() + '<details class="card"><summary>Подключить школу вручную</summary>' + schoolForm() + '</details>' + `<label>Школа <select data-school aria-label="Школа">
         <option value="">Моя школа</option>${data.schools.map(school => {
           const query = new URLSearchParams({ installation: school.installation, school_id: school.school_id }).toString();
@@ -288,7 +305,10 @@ export function openModeration() {
          </div>
          ${data.owner ? `<div data-pane="3" ${activeTab === 3 ? '' : 'hidden'}>${permissionForm(data, classes)}
            ${data.roles.map(role => permissionForm(data, classes, role)).join('')}
-           ${Object.keys(classes).length ? shiftForm(classes) : ''}</div>` : ''}`);
+           ${Object.keys(classes).length ? shiftForm(classes) : ''}</div>` : ''}
+         ${data.threshold_editors?.length ? `<div data-pane="${thresholdTab}" ${activeTab === thresholdTab ? '' : 'hidden'}>
+           <p class="muted small">Общие пороги для расчёта итогов. Класс может использовать свои пороги, ученик — личные.</p>
+           ${data.threshold_editors.map(thresholdForm).join('')}</div>` : ''}`);
       const bells = panel.querySelector('[data-form="bells"]');
       if (bells) prefillBells(bells, data);
     } catch (error) {
@@ -396,6 +416,10 @@ export function openModeration() {
       path = '/roles';
       payload = { ...payload, account_no: Number(fields.account_no),
         permissions: event.submitter?.name === 'revoke' ? [] : f.getAll('permission') };
+    } else if (kind === 'thresholds') {
+      path = '/thresholds';
+      payload = { ...data.scope, class_key: fields.class_key, thresholds: event.submitter?.name === 'reset'
+        ? null : { 5: Number(fields.grade5), 4: Number(fields.grade4), 3: Number(fields.grade3) } };
     } else if (kind === 'shift') {
       path = '/shift';
       payload.shift = Number(fields.shift);
@@ -447,6 +471,7 @@ export function openModeration() {
         banner(`Права выданы · ${result.data.title}`);
         return;
       }
+      if (kind === 'thresholds') await syncPrefs();
       if (kind === 'schools') selection = new URLSearchParams({
         installation: payload.installation.trim().toLowerCase(), school_id: payload.school_id,
       }).toString();

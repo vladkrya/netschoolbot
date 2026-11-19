@@ -2,7 +2,7 @@
 'use strict';
 
 import {
-  $, ABSENCES, DEFAULT_THRESHOLDS, api, avgClass, errorCard, esc, formatAverage, isAbsence, isoToday, dayMonth,
+  $, ABSENCES, api, avgClass, errorCard, esc, formatAverage, isAbsence, isoToday, dayMonth,
   markValue, observedTime, plural, shortDate, showFailure, showLoading, skeleton, state, syncFinished, syncStarted, weightedAverage, motionAtLeast, demo,
 } from './core.js';
 import { markBox, openMark } from './details.js';
@@ -14,7 +14,7 @@ import { getPref, setPref } from './prefs.js';
 import { isNewDesign } from './appearance.js';
 import { playAverages, tweenNumber } from './motion.js';
 import {
-  formatThreshold, neededMarks, thresholdPrefs, thresholdsFor, typicalWeight, validThresholds,
+  defaultThresholds, formatThreshold, neededMarks, thresholdPrefs, thresholdsFor, typicalWeight, validThresholds,
 } from './grading.js';
 
 const SHORT = { q1: '1/4', q2: '2/4', q3: '3/4', q4: '4/4' };
@@ -540,33 +540,7 @@ function renderCards(data, quarters) {
     }
   };
   fill(true);
-  hero.addEventListener('click', (event) => {
-    const grade = event.target.closest('[data-grade]');
-    if (grade) {
-      openGrade(data, quarters.find((q) => q.key === period), Number(grade.dataset.grade));
-      return;
-    }
-    const button = event.target.closest('[data-count]');
-    if (!button || button.dataset.count === countMode) return;
-    select();
-    countMode = button.dataset.count;
-    writeLocal(COUNTS_KEY, countMode);
-    // Переключатель остаётся тем же элементом — линза переезжает, как у
-    // периода; заменяется только остальная сводка.
-    const control = button.closest('.th-mode');
-    control.style.setProperty('--i', countMode === 'subjects' ? 0 : 1);
-    control.querySelectorAll('[data-count]').forEach((b) => b.classList.toggle('on', b === button));
-    const fresh = document.createElement('div');
-    fresh.innerHTML = heroHtml(periodRows(data), quarters.find((q) => q.key === period));
-    const box = hero.querySelector('.totals-hero');
-    box.querySelector('.th-head > div').replaceWith(fresh.querySelector('.th-head > div'));
-    box.querySelector('.th-bar')?.remove();
-    const bar = fresh.querySelector('.th-bar');
-    if (bar) box.querySelector('.th-counts').before(bar);
-    box.querySelector('.th-counts').replaceWith(fresh.querySelector('.th-counts'));
-    box.querySelector('.th-missing')?.remove();
-    if (fresh.querySelector('.th-missing')) box.append(fresh.querySelector('.th-missing'));
-  });
+  bindHero(hero, data, quarters);
 
   // Период меняется на месте: линза переезжает, карточки перерисовываются.
   // Именно переключатель периода: в сводке над ним есть свой (.th-mode).
@@ -604,6 +578,36 @@ function renderCards(data, quarters) {
     }
     tap();
     openSubject(data.subjects[Number(card.dataset.subject)], period);
+  });
+}
+
+function bindHero(hero, data, quarters) {
+  hero.addEventListener('click', (event) => {
+    const grade = event.target.closest('[data-grade]');
+    if (grade) {
+      openGrade(data, quarters.find((q) => q.key === period), Number(grade.dataset.grade));
+      return;
+    }
+    const button = event.target.closest('[data-count]');
+    if (!button || button.dataset.count === countMode) return;
+    select();
+    countMode = button.dataset.count;
+    writeLocal(COUNTS_KEY, countMode);
+    // Переключатель остаётся тем же элементом — линза переезжает, как у
+    // периода; заменяется только остальная сводка.
+    const control = button.closest('.th-mode');
+    control.style.setProperty('--i', countMode === 'subjects' ? 0 : 1);
+    control.querySelectorAll('[data-count]').forEach((b) => b.classList.toggle('on', b === button));
+    const fresh = document.createElement('div');
+    fresh.innerHTML = heroHtml(periodRows(data), quarters.find((q) => q.key === period));
+    const box = hero.querySelector('.totals-hero');
+    box.querySelector('.th-head > div').replaceWith(fresh.querySelector('.th-head > div'));
+    box.querySelector('.th-bar')?.remove();
+    const bar = fresh.querySelector('.th-bar');
+    if (bar) box.querySelector('.th-counts').before(bar);
+    box.querySelector('.th-counts').replaceWith(fresh.querySelector('.th-counts'));
+    box.querySelector('.th-missing')?.remove();
+    if (fresh.querySelector('.th-missing')) box.append(fresh.querySelector('.th-missing'));
   });
 }
 
@@ -704,9 +708,33 @@ function render() {
       </div>`);
 
   const container = $('totalsContent');
-  container.innerHTML = yearPicker(data) + (isNewDesign() ? `<div class="period-row">${viewToggle('Карточки', 'cards')}</div>` : '') + (data.subjects.length
+  const showHero = isNewDesign() && data.subjects.length && quarters.length;
+  period = pickPeriod(data, quarters);
+  const activeQuarter = quarters.find((q) => q.key === period);
+  container.innerHTML = yearPicker(data) + (showHero ? `<div data-hero>${heroHtml(periodRows(data), activeQuarter)}</div>` : '')
+    + (isNewDesign() ? `<div class="period-row table-tools">${showHero ? `<select class="field" id="tablePeriod" aria-label="Период сводки">${quarters.map((q) => `<option value="${q.key}" ${q.key === period ? 'selected' : ''}>${esc(q.label || segLabel(q))}</option>`).join('')}</select>` : ''}
+        ${viewToggle('Карточки', 'cards')}</div>` : '') + (data.subjects.length
     ? `<div class="totals-table" style="--totals-columns:${quarters.length + Number(hasYear) + Number(hasFinal)}">${head}${rows.join('')}</div>`
     : '<div class="empty">За этот учебный год итоги пока не опубликованы.</div>');
+  const hero = container.querySelector('[data-hero]');
+  if (hero) {
+    bindHero(hero, data, quarters);
+    container.querySelector('#tablePeriod').addEventListener('change', (event) => {
+      period = event.target.value;
+      manualPeriod = true;
+      render();
+      $('tablePeriod')?.focus();
+    });
+    if (data.archived && !data.loadedPeriods?.has(period)) {
+      const key = period;
+      hero.querySelector('.totals-hero').classList.add('is-loading');
+      ensureArchivedPeriod(data, key).then(() => {
+        if (hero.isConnected && period === key) render();
+      }, () => {
+        if (hero.isConnected) hero.innerHTML = '<p class="muted small">Не удалось загрузить сводку за этот период.</p>';
+      });
+    }
+  }
   bindYearPicker(data);
   container.querySelector('[data-view]')?.addEventListener('click', () => setView('cards'));
   container.querySelectorAll('[data-subject]').forEach((cell) =>
@@ -1467,7 +1495,8 @@ function bindThresholds(card, subject, onChange) {
   const fill = () => {
     const prefs = thresholdPrefs();
     const own = validThresholds(prefs.subjects[subject]);
-    const shown = scope === 'subject' ? own || prefs.all || DEFAULT_THRESHOLDS : prefs.all || DEFAULT_THRESHOLDS;
+    const common = prefs.all || defaultThresholds();
+    const shown = scope === 'subject' ? own || common : common;
     inputs.forEach((input) => {
       input.value = formatThreshold(shown[input.dataset.thr]);
       input.classList.remove('invalid');

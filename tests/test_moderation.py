@@ -245,3 +245,55 @@ async def test_owner_can_grant_school_moderation_by_account_number(client, app_c
     assert not await mod.allowed(app_context, target.telegram_id, school_scope, "lessons")
     row = await app_context.db.fetch_one("SELECT count(*) AS total FROM moderation_roles")
     assert row["total"] == 1
+
+
+async def test_thresholds_are_scoped_to_school_and_class(client, app_context, users, monkeypatch):
+    for user_id in range(1, 7):
+        await users.save(make_user(user_id))
+    headers = {i: {"X-Netschool-Token": await app_context.miniapp.issue_token(i)} for i in range(1, 7)}
+    owner = await users.get(1)
+    school = {"installation": mod.installation(owner.school.url), "school_id": 17}
+    first = mod.Scope(*school.values(), mod.school_year(owner.today()), "name:8а", "8А")
+    second = replace(first, class_key="name:9б", class_label="9Б")
+    another_school = replace(first, school_id=18)
+    scopes = {1: first, 2: first, 3: first, 4: second, 5: another_school, 6: first}
+
+    async def scope_for(app, user):
+        return scopes[user.telegram_id]
+
+    monkeypatch.setattr(mod, "scope_for", scope_for)
+    root = "/mini/api/moderation"
+    for school_id in (17, 18):
+        response = await client.post(root + "/schools", headers=headers[1], json={
+            **school, "school_id": school_id, "title": "Школа",
+        })
+        assert response.status == 200
+    await mod.remember_class(app_context, first)
+    await mod.remember_class(app_context, second)
+    for user_id, rights in ((2, ["announce"]), (6, ["read"])):
+        await app_context.db.execute("INSERT INTO moderation_roles VALUES (?, ?, ?, ?, ?, ?)", (
+            user_id, *first.cohort, json.dumps(rights),
+        ))
+
+    async def save(user_id, class_key, values):
+        return await client.post(root + "/thresholds", headers=headers[user_id], json={
+            **school, "class_key": class_key, "thresholds": values,
+        })
+
+    async def effective(user_id):
+        response = await client.get("/mini/api/prefs", headers=headers[user_id])
+        return (await response.json())["shared_thresholds"]
+
+    common = {"5": 4.6, "4": 3.6, "3": 2.6}
+    own = {**common, "4": 3.8}
+    assert (await save(1, "", common)).status == 200
+    assert (await save(2, first.class_key, own)).status == 200
+    assert (await save(2, "", own)).status == 403
+    assert (await save(2, second.class_key, own)).status == 403
+    assert (await save(6, first.class_key, own)).status == 403
+    assert (await save(2, first.class_key, {**own, "4": 5})).status == 400
+    assert await effective(3) == own
+    assert await effective(4) == common
+    assert await effective(5) is None
+    assert (await save(2, first.class_key, None)).status == 200
+    assert await effective(3) == common

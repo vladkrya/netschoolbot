@@ -11,6 +11,7 @@ from aiohttp import web
 from .. import access
 from .. import moderation as mod
 from .api import context, current_user, json_error
+from .api.prefs import _clean_grade_thresholds
 
 routes = web.RouteTableDef()
 
@@ -109,11 +110,18 @@ async def dashboard(request):
                 )
                 item["reports"] = [dict(count) for count in counts]
             history.append(item)
+    rules = await mod.threshold_rules(app, scope)
+    threshold_editors = []
+    if mod.THRESHOLD_EDITOR_RIGHTS.intersection(school_rights):
+        threshold_editors.append({"key": "", "label": "Вся школа", "values": rules.get("")})
+    if scope.class_key and mod.THRESHOLD_EDITOR_RIGHTS.intersection(class_rights):
+        threshold_editors.append({"key": scope.class_key, "label": scope.class_label,
+                                  "values": rules.get(scope.class_key), "inherited": rules.get("")})
     return response({"available": True, "owner": owner, "schools": schools, "school_rights": school_rights,
                      "class_rights": class_rights, "scope": {"installation": scope.installation,
                      "school_id": scope.school_id, "class_key": scope.class_key, "class_label": scope.class_label},
                      "permissions": mod.PERMISSIONS, "roles": roles, "classes": classes, "lessons": lessons, "history": history,
-                     "today": user.today().isoformat()})
+                     "threshold_editors": threshold_editors, "today": user.today().isoformat()})
 
 
 async def _add_preview(app, scope, lessons):
@@ -304,6 +312,46 @@ async def target_scope(app, user, data, class_key, right):
         if not await mod.allowed(app, user.telegram_id, school_scope, right):
             return None
     return mod.Scope(*scope.school, scope.year, class_key)
+
+
+@routes.post("/api/moderation/thresholds")
+async def save_thresholds(request):
+    app, user = context(request), current_user(request)
+    data = await body(request)
+    class_key = data.get("class_key")
+    if not isinstance(class_key, str) or len(class_key) > 50 or "thresholds" not in data:
+        return json_error("Проверьте класс и пороги")
+    thresholds = data["thresholds"]
+    clean = _clean_grade_thresholds(thresholds)
+    if thresholds is not None and clean is None:
+        return json_error("Укажите пороги от 1 до 5 по убыванию")
+    scope = await target_scope(app, user, data, class_key, "read")
+    if not scope:
+        return json_error("Нет прав менять пороги здесь", status=403)
+    async with app.db.transaction() as db:
+        for right in mod.THRESHOLD_EDITOR_RIGHTS:
+            if await mod.allowed(app, user.telegram_id, scope, right):
+                break
+        else:
+            return json_error("Нет прав менять пороги здесь", status=403)
+        if class_key and not await app.db.fetch_one(
+            """SELECT 1 FROM moderation_classes
+               WHERE installation=? AND school_id=? AND school_year=? AND class_key=?""", scope.cohort,
+        ):
+            return json_error("Класс не найден", status=404)
+        if clean is None:
+            await db.execute(
+                """DELETE FROM moderation_thresholds
+                   WHERE installation=? AND school_id=? AND school_year=? AND class_key=?""", scope.cohort,
+            )
+        else:
+            await db.execute(
+                """INSERT INTO moderation_thresholds VALUES (?, ?, ?, ?, ?)
+                   ON CONFLICT(installation, school_id, school_year, class_key)
+                   DO UPDATE SET thresholds=excluded.thresholds""",
+                (*scope.cohort, json.dumps(clean)),
+            )
+    return response(clean)
 
 
 @routes.post("/api/moderation/changes")

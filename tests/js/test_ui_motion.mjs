@@ -459,9 +459,15 @@ test('Streaming reply component adds words with springs', () => {
     assert.ok(bubble, 'stream bubble added');
     assert.ok(container.querySelector('.think'), 'thinking shimmer added');
 
+    streamer.update('При');
+    const first = container.querySelector('.stream-text .wd');
+    streamer.update('Привет, учен');
     streamer.update('Привет, ученик!');
+    assert.equal(container.querySelector('.think').hidden, true, 'thinking status leaves the layout');
+    assert.equal(container.querySelector('.stream-text .wd'), first, 'existing word remains in place');
     const words = container.querySelectorAll('.stream-text .wd');
     assert.equal(words.length, 2, 'two words generated');
+    assert.deepEqual(words.map((word) => word.textContent), ['Привет,', 'ученик!']);
 
     streamer.finish();
     assert.equal(words[0].style.opacity, '1', 'words settle on finish');

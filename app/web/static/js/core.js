@@ -1075,7 +1075,7 @@ export function attachmentsHtml(items) {
   return items
     .map(
       (item) =>
-        `<a class="attach" href="${attachmentUrl(item.id, item.name)}" data-attach="${esc(item.id)}" data-name="${esc(item.name)}" target="_blank" rel="noopener">${ICONS.clip} ${esc(item.name)}</a>`
+        `<a class="attach" href="${attachmentUrl(item.id, item.name)}" data-attach="${esc(item.id)}" data-name="${esc(item.name)}" target="_blank" rel="noopener">${ICONS.clip}<span class="attach-name">${esc(item.name)}</span></a>`
     )
     .join('');
 }

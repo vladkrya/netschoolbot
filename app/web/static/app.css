@@ -961,8 +961,9 @@ html.offline .switch-row:has(#pushToggle, #keepFiles, #sgoUpdates) {
 .subject-average { display: grid; gap: 12px; }
 .avg-line { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 8px; }
 .avg-line .card-title { margin-bottom: 2px; }
-.avg-score { display: grid; justify-items: end; align-items: center; row-gap: 4px; text-align: right; }
-.avg-score strong { grid-area: 1 / 1; }
+.avg-score { display: grid; justify-items: end; align-items: center; row-gap: 1px; text-align: right; }
+.avg-score strong { grid-area: 1 / 1; line-height: 1; }
+.avg-score .class-avg { line-height: 1.2; }
 .avg-score .odo-trend { grid-area: 1 / 2; margin-left: 8px; }
 .avg-score .class-avg { grid-area: 2 / 1 / 3 / -1; }
 .avg-carry { display: grid; gap: 8px; padding: 10px 0; border-block: 1px solid var(--border); }
@@ -1469,7 +1470,9 @@ html.offline .switch-row:has(#pushToggle, #keepFiles, #sgoUpdates) {
 @keyframes install-bounce { 50% { transform: translateY(6px); } }
 .demo-badge { margin: -4px 0 8px; padding: 8px 10px; border-radius: 10px; background: color-mix(in srgb, var(--head) 20%, transparent); color: var(--primary); font-size: 13px; font-weight: 600; text-align: center; }
 .demo-box .drawer-heading { display: flex; align-items: center; gap: 6px; }
-.attach { display: flex; align-items: center; gap: 8px; }
+.attach { display: flex; align-items: center; min-width: 0; gap: 8px; }
+.attach .icon { flex: none; }
+.attach-name { min-width: 0; overflow-wrap: anywhere; }
 /* Вложение качается: справа крутилка и «Загрузка…», сама плашка бледнеет. */
 .attach.loading { opacity: .75; pointer-events: none; }
 .attach.loading::after {
@@ -3131,6 +3134,8 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
   border: 1px solid var(--border);
   border-radius: 8px;
 }
+.moderation-panel [data-form="thresholds"] .thr-inputs { margin-top: 0; }
+.moderation-panel [data-form="thresholds"] .thr-field { min-width: 0; align-items: stretch; }
 .moderation-panel :is(form, section, details) {
   margin-block: 8px;
 }

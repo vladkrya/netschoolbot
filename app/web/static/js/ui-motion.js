@@ -918,134 +918,86 @@ export function setOtpResult(input, accepted) {
 /* ─────────────────────────── Streaming Reply ─────────────────────────── */
 // Designbookmark's Streaming Reply:
 // Initial shimmer "Думаю…" pill.
-// As tokens arrive, words stream in: each word rises (translateY) and sharpens
-// from blur on spring 340/26, while the bubble smoothly expands with spring 260/26.
-
+// Let the browser lay out the bubble so the status and the streamed lines
+// both fit their contents. Animate only newly displayed words.
 export function createStreamingReply(container) {
   if (!container) return { update() {}, finish() {}, destroy() {} };
 
   container.classList.add('ai-streaming-wrap');
   container.innerHTML = `
     <div class="ai-stream-bubble">
-      <span class="think"><span class="think-shimmer">Думаю…</span></span>
-      <div class="stream-text"></div>
+      <span class="think" role="status"><span class="think-shimmer">Думаю…</span></span>
+      <div class="stream-text" hidden></div>
     </div>
   `;
 
-  const bubble = container.querySelector('.ai-stream-bubble');
   const think = container.querySelector('.think');
   const textEl = container.querySelector('.stream-text');
-
-  const T = S(1, 300, 30);
-  const W = S(88, 260, 26);
-  const Hh = S(40, 260, 26);
-
-  let words = [];
-  let renderedCount = 0;
+  const tokens = [];
   let raf = 0;
-  let last = performance.now();
-  let done = false;
-
-  function wake() {
-    if (!raf) {
-      last = performance.now();
-      raf = requestAnimationFrame(loop);
-    }
-  }
+  let last = 0;
 
   function loop(now) {
     const dt = Math.min((now - last) / 1000, 1 / 30);
     last = now;
-
+    let moving = false;
     const isRed = reduced();
-    step(T, dt, isRed);
-    step(W, dt, isRed);
-    step(Hh, dt, isRed);
-    words.forEach((w) => step(w.s, dt, isRed));
-
-    if (think) {
-      think.style.opacity = clamp(T.x, 0, 1).toFixed(3);
+    for (const { node, spring } of tokens) {
+      if (!spring) continue;
+      step(spring, dt, isRed);
+      moving ||= Math.abs(spring.x - 1) > 0.01;
+      node.style.opacity = clamp(spring.x, 0, 1).toFixed(3);
     }
-    if (bubble) {
-      if (W.x > 88) bubble.style.width = `${W.x.toFixed(1)}px`;
-      if (Hh.x > 40) bubble.style.minHeight = `${Hh.x.toFixed(1)}px`;
-    }
-
-    words.forEach((w) => {
-      const v = clamp(w.s.x, 0, 1.2);
-      w.el.style.opacity = clamp(v, 0, 1).toFixed(3);
-      w.el.style.transform = `translateY(${((1 - clamp(v, 0, 1)) * 6).toFixed(2)}px)`;
-      w.el.style.filter = v < 0.98 && !isRed ? `blur(${((1 - clamp(v, 0, 1)) * 4).toFixed(1)}px)` : 'none';
-    });
-
-    const isMoving =
-      Math.abs(T.x - T.t) > 0.01 ||
-      Math.abs(W.x - W.t) > 0.5 ||
-      Math.abs(Hh.x - Hh.t) > 0.5 ||
-      words.some((w) => Math.abs(w.s.x - w.s.t) > 0.01);
-
-    if (isMoving && !done) {
-      raf = requestAnimationFrame(loop);
-    } else {
-      raf = 0;
-    }
+    raf = moving ? requestAnimationFrame(loop) : 0;
   }
 
-  wake();
+  function stop() {
+    cancelAnimationFrame(raf);
+    raf = 0;
+  }
 
   return {
     update(fullText) {
-      if (!fullText) return;
-      T.t = 0; // fade out "Thinking"
-
-      // Split into words
-      const parts = fullText.split(/(\s+)/);
-      for (let i = renderedCount; i < parts.length; i++) {
-        const part = parts[i];
-        if (!part) continue;
-        if (/^\s+$/.test(part)) {
-          textEl.appendChild(document.createTextNode(part));
-        } else {
-          const span = document.createElement('span');
-          span.className = 'wd';
-          span.textContent = part;
-          span.style.opacity = '0';
-          textEl.appendChild(span);
-
-          const wObj = { el: span, s: S(0, 340, 26) };
-          wObj.s.t = 1;
-          words.push(wObj);
+      const parts = fullText.match(/\s+|\S+/g) || [];
+      while (tokens.length > parts.length) textEl.removeChild(tokens.pop().node);
+      think.hidden = parts.length > 0;
+      textEl.hidden = !parts.length;
+      const animate = !reduced();
+      for (const [index, part] of parts.entries()) {
+        const token = tokens[index];
+        // A network chunk can land inside a word. Update that word in
+        // place, including punctuation, without restarting its animation.
+        if (token) {
+          if (token.node.textContent !== part) token.node.textContent = part;
+          continue;
         }
+        if (/^\s+$/.test(part)) {
+          const node = document.createTextNode(part);
+          textEl.appendChild(node);
+          tokens.push({ node });
+          continue;
+        }
+        const node = document.createElement('span');
+        node.className = 'wd';
+        node.textContent = part;
+        const spring = animate ? S(0.55, 340, 26) : null;
+        if (spring) {
+          spring.t = 1;
+          node.style.opacity = '0.55';
+        }
+        textEl.appendChild(node);
+        tokens.push({ node, spring });
       }
-      renderedCount = parts.length;
-
-      // Adjust height target
-      if (textEl) {
-        Hh.t = Math.max(40, textEl.offsetHeight + 18);
-        W.t = Math.min(container.parentElement?.clientWidth || 360, textEl.offsetWidth + 28);
+      if (!raf && animate) {
+        last = performance.now();
+        raf = requestAnimationFrame(loop);
       }
-      wake();
     },
     finish() {
-      done = true;
-      T.x = 0;
-      T.t = 0;
-      words.forEach((w) => {
-        w.s.x = 1;
-        w.s.t = 1;
-        w.el.style.opacity = '1';
-        w.el.style.transform = 'none';
-        w.el.style.filter = 'none';
-      });
-      if (bubble) {
-        bubble.style.width = '';
-        bubble.style.minHeight = '';
-      }
+      stop();
+      for (const { node, spring } of tokens) if (spring) node.style.opacity = '1';
     },
-    destroy() {
-      cancelAnimationFrame(raf);
-      raf = 0;
-    },
+    destroy: stop,
   };
 }
 

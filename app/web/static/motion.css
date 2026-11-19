@@ -521,24 +521,12 @@
   background: transparent;
 }
 .ai-stream-bubble {
-  position: relative;
-  overflow: hidden;
-  display: inline-block;
-  min-height: 40px;
-  padding: 9px 14px;
-  border-radius: 18px;
-  background: var(--card-2);
+  padding: 10px 12px;
+  border-radius: 18px 18px 18px 6px;
+  background: var(--card);
   color: var(--text);
-  will-change: width, min-height;
 }
-.think {
-  position: absolute;
-  left: 14px;
-  top: 9px;
-  white-space: nowrap;
-  font-weight: 500;
-  pointer-events: none;
-}
+.think { white-space: nowrap; font-weight: 500; }
 .think-shimmer {
   background: linear-gradient(90deg, var(--text2) 20%, var(--text) 50%, var(--text2) 80%) 0 0 / 200% 100%;
   -webkit-background-clip: text;
@@ -547,15 +535,7 @@
   animation: shine 1.4s linear infinite;
 }
 @keyframes shine { to { background-position: -200% 0; } }
-.stream-text {
-  position: relative;
-  margin: 0;
-  line-height: 1.45;
-}
-.stream-text .wd {
-  display: inline-block;
-  will-change: transform, opacity, filter;
-}
+.stream-text { white-space: pre-wrap; }
 
 /* 6. Kokonut UI Typewriter */
 .typewriter-screen {

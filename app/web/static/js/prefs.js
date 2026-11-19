@@ -52,6 +52,9 @@ function writeLocal(name, value) {
 }
 
 let managed = {};
+let sharedThresholds = null;
+
+export const getSharedThresholds = () => sharedThresholds;
 
 export function prefManaged(name) {
   return name in managed;
@@ -122,11 +125,14 @@ export async function syncPrefs() {
   syncStarted = true;
   try {
     const payload = await api('/api/prefs');
+    const nextThresholds = payload.shared_thresholds || null;
+    managementChanged = JSON.stringify(sharedThresholds) !== JSON.stringify(nextThresholds);
+    sharedThresholds = nextThresholds;
     // Сохранённая копия без сети старше того, что выбрано здесь.
-    if (payload.offline) return false;
+    if (payload.offline) return managementChanged;
     server = payload.data;
     const nextManaged = payload.managed || {};
-    managementChanged = JSON.stringify(managed) !== JSON.stringify(nextManaged);
+    managementChanged ||= JSON.stringify(managed) !== JSON.stringify(nextManaged);
     managed = nextManaged;
   } catch {
     return false;

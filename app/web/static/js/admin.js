@@ -18,23 +18,9 @@ const SWITCHES = {
   android_updates: '/api/admin/android-updates',
 };
 
-const WIDGET = [['main', 'Основной бот'], ['reserve', 'Резервный'], ['off', 'Выключен']];
-
 function toggle(key, label, note, on) {
   return `<label class="switch-row"><span>${label}<span class="muted small switch-note">${note}</span></span>
       <input type="checkbox" switch class="switch" data-admin-switch="${key}" ${on ? 'checked' : ''}></label>`;
-}
-
-function widgetCard(widget) {
-  const chips = WIDGET.filter(([mode]) => mode !== 'reserve' || widget.reserve || widget.mode === 'reserve')
-    .map(([mode, label]) => `<button class="chip ${mode === widget.mode ? 'active' : ''}" data-widget="${mode}" aria-pressed="${mode === widget.mode}">${label}</button>`)
-    .join('');
-  return `<div class="card">
-      <div class="card-title">Вход на сайт через Telegram</div>
-      <p class="muted small">Кнопка входа и привязки Telegram на сайте. Домен ${widget.domain ? `<b>${esc(widget.domain)}</b>` : 'не задан (NETSCHOOL_TG_LOGIN_DOMAIN) — кнопки нет'}
-        должен быть привязан в @BotFather (/setdomain) именно к выбранному боту. В боте то же — /tgwidget.</p>
-      <div class="chips">${chips}</div>
-    </div>`;
 }
 
 function tabs(active, pending) {
@@ -174,7 +160,6 @@ export function openAdmin() {
           <p class="muted small">Нажмите версию, чтобы снова разрешить её.</p></details>` : '<p class="muted small">Отключённых версий нет.</p>'}
 
       </div>
-      ${widgetCard(data.widget)}
       <div class="card">
         <div class="card-title">Статистика</div>
         <div class="admin-stats" data-stats><button class="btn outline" data-stats-load>Показать</button></div>
@@ -197,18 +182,6 @@ export function openAdmin() {
         banner(error.message, true);
       } finally {
         input.disabled = false;
-      }
-    }));
-    body.querySelectorAll('[data-widget]').forEach((button) => button.addEventListener('click', async () => {
-      if (button.classList.contains('active')) return;
-      select();
-      try {
-        const { data } = await post('/api/admin/widget', { mode: button.dataset.widget });
-        notify('success');
-        draw(data);
-      } catch (error) {
-        notify('error');
-        banner(error.message, true);
       }
     }));
     const versionAction = async (payload, label, button) => {

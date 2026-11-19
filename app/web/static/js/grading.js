@@ -5,7 +5,7 @@
 'use strict';
 
 import { DEFAULT_THRESHOLDS, weightedAverage } from './core.js';
-import { getPref } from './prefs.js';
+import { getPref, getSharedThresholds } from './prefs.js';
 
 // С какого среднего ставится «5», «4», «3». Общие пороги на все предметы,
 // у отдельных предметов могут быть свои: { all: {5, 4, 3}, subjects: { «Алгебра»: {…} } }.
@@ -24,9 +24,13 @@ export function thresholdPrefs() {
   return { all: validThresholds(saved?.all), subjects };
 }
 
+export function defaultThresholds() {
+  return validThresholds(getSharedThresholds()) || DEFAULT_THRESHOLDS;
+}
+
 export function thresholdsFor(subject) {
   const prefs = thresholdPrefs();
-  return validThresholds(prefs.subjects[subject]) || prefs.all || DEFAULT_THRESHOLDS;
+  return validThresholds(prefs.subjects[subject]) || prefs.all || defaultThresholds();
 }
 
 export const formatThreshold = (value) => String(value).replace('.', ',');

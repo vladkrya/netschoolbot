@@ -22,6 +22,7 @@ PERMISSIONS = {
     "reports": "Смотреть сообщения об ошибках",
 }
 CLASS_PERMISSIONS = frozenset(PERMISSIONS) - {"bells"}
+THRESHOLD_EDITOR_RIGHTS = {"announce", "lessons", "bells"}
 REPORT_REASONS = {"time", "room", "subject", "cancelled"}
 MAX_LESSONS = 20
 
@@ -348,6 +349,29 @@ async def available_for_school(app, user) -> bool:
         "SELECT 1 FROM moderation_schools WHERE installation=? AND enabled=1",
         (installation(user.school.url),),
     ))
+
+
+async def threshold_rules(app, scope: Scope) -> dict:
+    rows = await app.db.fetch_all(
+        """SELECT class_key, thresholds FROM moderation_thresholds
+           WHERE installation=? AND school_id=? AND school_year=? AND class_key IN ('', ?)""",
+        scope.cohort,
+    )
+    return {row["class_key"]: json.loads(row["thresholds"]) for row in rows}
+
+
+async def thresholds_for_user(app, user) -> dict | None:
+    if not user.school.configured or not await app.db.fetch_one(
+        """SELECT 1 FROM moderation_thresholds JOIN moderation_schools USING (installation, school_id)
+           WHERE installation=? AND school_year=? AND enabled=1 LIMIT 1""",
+        (installation(user.school.url), school_year(user.today())),
+    ):
+        return None
+    scope = await diary_scope(app, user)
+    if not scope:
+        return None
+    rules = await threshold_rules(app, scope)
+    return rules.get(scope.class_key) or rules.get("")
 
 
 async def has_dashboard(app, user) -> bool:

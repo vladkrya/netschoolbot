@@ -147,6 +147,17 @@ function watchMore() {
 // плавно сдвигаются вниз. При первом показе ничего не въезжает.
 let shownIds = null;
 
+function syncFolderControls() {
+  const inbox = folder === 'Inbox';
+  $('mailFilters').querySelectorAll('[data-filter]').forEach((chip) => {
+    const active = chip.dataset.filter === (inbox ? filter : 'deleted');
+    chip.classList.toggle('active', active);
+    chip.setAttribute('aria-pressed', String(active));
+  });
+  const title = document.querySelector('.subbar[data-for="mail"] .segment-title');
+  if (title) title.textContent = inbox ? 'Входящие' : 'Удалённые';
+}
+
 function render() {
   const list = current();
   const messages = list.messages || [];
@@ -155,12 +166,9 @@ function render() {
   if (inbox) setMailBadge(messages.filter((message) => message.read === false).length);
   const container = $('mailContent');
   container.classList.remove('quiet');
-  $('mailFilters').querySelectorAll('[data-filter]').forEach((chip) =>
-    chip.classList.toggle('active', inbox ? chip.dataset.filter === filter : chip.dataset.filter === 'deleted'));
+  syncFolderControls();
   $('mailSort').textContent = newestFirst ? '↓ Новые' : '↑ Старые';
   $('mailReadAll').hidden = !inbox || !messages.some((message) => message.read === false);
-  const title = document.querySelector('.subbar[data-for="mail"] .segment-title');
-  if (title) title.textContent = inbox ? 'Входящие' : 'Удалённые';
   moreObserver?.disconnect();
   const hasMore = (list.page || 1) < (list.pages || 1);
   if (!messages.length && !hasMore) {
@@ -426,8 +434,11 @@ export function initMail() {
     if (wanted === folder && (wanted === 'Deleted' || chip.dataset.filter === filter)) return;
     select();
     if (wanted === 'Inbox') filter = chip.dataset.filter;
-    if (wanted !== folder) {
-      folder = wanted;
+    const changedFolder = wanted !== folder;
+    folder = wanted;
+    syncFolderControls();
+    if (changedFolder) {
+      $('mailReadAll').hidden = true;
       loadMail();
     } else if (current()) render();
   });
