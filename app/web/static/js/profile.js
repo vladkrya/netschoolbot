@@ -3,7 +3,7 @@
 // вкладка «Настройки» с ещё одним разделом: какие вкладки в нижней панели.
 'use strict';
 
-import { $, androidApkUrl, api, banner, demo, ensureAttachmentTicket, esc, initData, motionAtLeast, openExternal, state } from './core.js';
+import { $, ONLINE_ONLY, androidApkUrl, api, banner, demo, ensureAttachmentTicket, esc, initData, motionAtLeast, openExternal, state } from './core.js';
 import {
   isUnity, saveUnity, isGtaViEventActive, isGtaViEventTheme, selectedViceCity, saveViceCity, setViceCityAccess, setHalloweenAccess,
   ACCENTS, applyMotion, currentAccent, forgetAccent, HALLOWEEN_ACCENTS, halloweenAccent, isHalloween, isNewDesign, motionChosen, motionLevel, rememberAccent, saveAccent, saveAnswers, saveBells, saveConfetti, savedAccents, saveDesign, saveHalloween, saveHalloweenAccent, saveHomeworkStatus, saveMotion, saveWeekends, showAnswers, showBells, showConfetti, showHomeworkStatus, showWeekends, syncChromeColor, weakDevice,
@@ -17,7 +17,7 @@ import { pushScreen, syncBackButton } from './screens.js';
 import { notify, select, tap } from './haptics.js';
 import { flushPrefs, getPref, setPref } from './prefs.js';
 import { openRetro, RETRO_AUTHOR_URL } from './retro.js';
-import { closeSheet, openSheet } from './sheet.js';
+import { closeSheet, openSheet, sheetOpen } from './sheet.js';
 import { openBugReport } from './bugreport.js';
 import { openLockSettings } from './lock.js';
 import { openInBrowser, openInstallGuide } from './install.js';
@@ -659,19 +659,25 @@ function toolGroupButton(group, icon, title) {
     ${ICONS[icon]}<span>${title}</span><span class="tool-group-chevron" aria-hidden="true">›</span></button>`;
 }
 
-function bindToolGroups(body) {
+function bindToolGroups(body, toolActions) {
   body.querySelectorAll('[data-tool-group]').forEach(button => {
     const list = body.querySelector(`[data-tool-list="${button.dataset.toolGroup}"]`);
     button.addEventListener('click', () => {
       tap();
       const panel = openSheet(button.querySelector('span').textContent, '<div class="tool-grid"></div>');
       const grid = panel.querySelector('.tool-grid');
+      let chosen = false;
       for (const tool of list.querySelectorAll('.tool-tile:not([hidden])')) {
+        const open = toolActions.get(tool.id);
+        if (!open) continue;
         const tile = tool.cloneNode(true);
         tile.removeAttribute('id');
+        if (tool.matches(ONLINE_ONLY)) tile.dataset.online = '';
         tile.addEventListener('click', () => {
+          if (chosen || !sheetOpen() || grid.parentElement !== panel) return;
+          chosen = true;
           closeSheet();
-          tool.click();
+          open();
         });
         grid.append(tile);
       }
@@ -697,7 +703,7 @@ function checkReferences() {
 
 function bindDrawer() {
   const body = settingsRoot();
-  bindToolGroups(body);
+  const toolActions = new Map();
   const managedSelectors = {
     theme: '[name="theme"], [data-theme-set]', design: '#designMode', unity: '#unityOn',
     halloween: '#halloweenOn', motion: '#motionLevel', confetti: '#confettiShow',
@@ -787,8 +793,8 @@ function bindDrawer() {
   });
   $('drawerWhatsNew').addEventListener('click', () => { closeDrawer(); openWhatsNew(); });
   $('drawerSearch').addEventListener('click', () => { closeDrawer(); openSearch(); });
-  $('drawerChildren')?.addEventListener('click', () => { closeDrawer(); openChildren(); });
-  $('drawerShareWeek').addEventListener('click', () => { closeDrawer(); openScheduleImage(); });
+  toolActions.set('drawerChildren', () => { closeDrawer(); openChildren(); });
+  toolActions.set('drawerShareWeek', () => { closeDrawer(); openScheduleImage(); });
   $('weekendsShow').addEventListener('change', (event) => {
     select();
     smoothRepaint(() => saveWeekends(event.target.checked));
@@ -953,8 +959,8 @@ function bindDrawer() {
       banner(error.message, true);
     }
   });
-  $('drawerExport')?.addEventListener('click', () => { closeDrawer(); openExport(); });
-  $('drawerFamily')?.addEventListener('click', () => { closeDrawer(); openFamily(); });
+  toolActions.set('drawerExport', () => { closeDrawer(); openExport(); });
+  toolActions.set('drawerFamily', () => { closeDrawer(); openFamily(); });
   body.querySelectorAll('[data-view]').forEach((chip) => chip.addEventListener('click', async () => {
     if (chip.classList.contains('active')) return;
     tap();
@@ -980,38 +986,38 @@ function bindDrawer() {
     loadCalc();
   });
   $('drawerAssistant')?.addEventListener('click', () => { closeDrawer(); openAssistant(); });
-  $('drawerGames')?.addEventListener('click', () => {
+  toolActions.set('drawerGames', () => {
     closeDrawer();
     window.dispatchEvent(new CustomEvent('netschool:tab', { detail: 'games' }));
   });
-  $('drawerTeacher')?.addEventListener('click', () => {
+  toolActions.set('drawerTeacher', () => {
     closeDrawer();
     window.dispatchEvent(new CustomEvent('netschool:tab', { detail: 'teacher' }));
   });
-  $('drawerHistory').addEventListener('click', () => { tap(); openHistory(); });
-  $('drawerStatus').addEventListener('click', async () => {
+  toolActions.set('drawerHistory', () => { tap(); openHistory(); });
+  toolActions.set('drawerStatus', async () => {
     closeDrawer();
     const { openStatus } = await import('./sgo.js');
     openStatus();
   });
-  $('drawerEvents')?.addEventListener('click', async () => {
+  toolActions.set('drawerEvents', async () => {
     closeDrawer();
     const { openEvents } = await import('./events.js');
     openEvents();
   });
-  $('drawerReferences')?.addEventListener('click', async () => {
+  toolActions.set('drawerReferences', async () => {
     closeDrawer();
     const { openReferences } = await import('./events.js');
     openReferences();
   });
-  $('drawerLock')?.addEventListener('click', () => { closeDrawer(); openLockSettings().catch(error => banner(error.message, true)); });
-  $('drawerIntegrations')?.addEventListener('click', async () => {
+  toolActions.set('drawerLock', () => { closeDrawer(); openLockSettings().catch(error => banner(error.message, true)); });
+  toolActions.set('drawerIntegrations', async () => {
     closeDrawer();
     const { openIntegrations } = await import('./integrations.js');
     openIntegrations();
   });
-  $('drawerCalendar')?.addEventListener('click', () => { tap(); openCalendar(); });
-  $('drawerDevices')?.addEventListener('click', async () => {
+  toolActions.set('drawerCalendar', () => { tap(); openCalendar(); });
+  toolActions.set('drawerDevices', async () => {
     tap();
     closeDrawer();
     const { openDevices } = await import('./devices.js');
@@ -1034,7 +1040,7 @@ function bindDrawer() {
     const { openAdmin } = await import('./admin.js');
     openAdmin();
   });
-  $('drawerAccount')?.addEventListener('click', async () => {
+  toolActions.set('drawerAccount', async () => {
     tap();
     closeDrawer();
     const { openAccountSettings } = await import('./account.js');
@@ -1051,6 +1057,7 @@ function bindDrawer() {
     }
     openExternal(androidApkUrl());
   });
+  bindToolGroups(body, toolActions);
   bindTabs();
   bindPushToggle();
   $('pwaOpen')?.addEventListener('click', openInBrowser);

@@ -226,7 +226,7 @@ export function banner(text, isError, hideAfter = 0) {
 
 export const NO_INTERNET = 'Нет подключения к интернету';
 // Что без сети не работает. Тот же список — в app.css (html.offline).
-const ONLINE_ONLY = [
+export const ONLINE_ONLY = [
   'a.attach', '[data-online]', '#refreshBtn', '#composeBtn', '#composeSend', '#aiFab',
   '.nav-item[data-tab="assistant"]', '#drawerAccount', '#drawerLock',
   '#drawerDevices', '#drawerAssistant', '#drawerIntegrations', '#drawerStatus', '#drawerExport', '#drawerFamily',
