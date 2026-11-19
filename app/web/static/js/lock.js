@@ -3,6 +3,7 @@ import { api, demo, onLocked, setUnlock, tg, stillMotion } from './core.js';
 import { biometricLabel, nativeBiometricEnabled, webBiometricLabel } from './biometrics.js';
 import { mountPinpad } from './pinpad.js';
 import { syncBackButton } from './screens.js';
+import { COMMIT_PX } from './swipeback.js';
 
 let active = false;
 const FORGOT_TELEGRAM = 'Отправьте /resetpin в личный чат с ботом — защита сбросится, и PIN можно будет задать заново.';
@@ -655,12 +656,16 @@ function swipeToClose(root) {
     start.dx = Math.max(0, dx);
     root.style.transform = `translateX(${start.dx}px)`;
   }, { passive: true });
-  const end = () => {
+  const end = (event) => {
     if (!start) return;
     const { dx, dir, at } = start; start = null;
     if (dir !== 'x') return;
     const fast = dx / Math.max(1, Date.now() - at) > 0.5;
-    if (dx > root.clientWidth * 0.33 || (fast && dx > 40)) { root.style.transform = ''; root.close(dx); return; }
+    if (event.type === 'touchend' && (dx > COMMIT_PX || (fast && dx > 40))) {
+      root.style.transform = '';
+      root.close(dx);
+      return;
+    }
     root.animate([{ transform: `translateX(${dx}px)` }, { transform: 'translateX(0)' }], { duration: 220, easing: 'ease-out' });
     root.style.transform = '';
   };

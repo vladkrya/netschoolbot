@@ -22,7 +22,7 @@ import { getPref, setPref } from './prefs.js';
 /** Ширина полосы у левого края, с которой начинается жест. */
 export const EDGE_PX = 28;
 // Насколько далеко увести палец, чтобы жест сработал.
-const COMMIT_PX = 90;
+export const COMMIT_PX = 90;
 const ARROW_MAX = 64;
 
 let arrow = null;
