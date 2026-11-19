@@ -10,7 +10,7 @@
 'use strict';
 
 import { $, esc } from './core.js';
-import { markScreen, pushScreen } from './screens.js';
+import { markScreen, pushScreen, topScreen } from './screens.js';
 import { tap } from './haptics.js';
 import { best, chips, clock, isMuted, setMuted, sfx } from './games/kit.js';
 
@@ -30,7 +30,17 @@ export const GAMES = [
 ];
 
 export function loadGames() {
-  const root = $('gamesContent');
+  renderGames($('gamesContent'));
+}
+
+export function openGamesCatalog() {
+  const root = pushScreen('Игры');
+  markScreen(root, 'games-catalog');
+  root.classList.add('games-grid', 'games-catalog');
+  renderGames(root);
+}
+
+function renderGames(root) {
   root.innerHTML = `<div class="games-hero">
       <div><div class="games-title">Игры</div><div class="games-sub">Без интернета · соперники — боты</div></div>
       <div class="games-chips" title="Игровые фишки">🪙 ${chips()}</div></div>
@@ -71,13 +81,18 @@ function soundButton() {
 export async function openGame(id) {
   const game = GAMES.find((item) => item.id === id);
   if (!game) return;
+  const catalog = topScreen()?.querySelector('.games-catalog') || $('gamesContent');
   tap();
   const body = pushScreen(game.name);
   markScreen(body, 'game', [id]);
   const screen = body.closest('.screen');
   screen.classList.add('game-screen');
   screen.dataset.game = id;
-  screen.querySelector('.screen-head').append(soundButton());
+  const header = screen.querySelector('.screen-head');
+  const label = document.createElement('span');
+  label.textContent = 'Назад';
+  header.querySelector('.screen-back').append(label);
+  header.append(soundButton());
   body.classList.add('game-body');
   // Свайпы в игре — её управление, а не жест «назад».
   body.dataset.ownGesture = '';
@@ -95,7 +110,7 @@ export async function openGame(id) {
   controller.signal.addEventListener('abort', () => {
     if (!document.querySelector('.game-screen')) document.documentElement.classList.remove('in-game');
     // Рекорд или фишки могли измениться — плитка на вкладке покажет новое.
-    if ($('gamesContent').childElementCount) loadGames();
+    if (catalog.isConnected && catalog.childElementCount) renderGames(catalog);
   });
   try {
     const module = await load(id);

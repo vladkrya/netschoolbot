@@ -149,6 +149,11 @@ function syncNav() {
 
 /** «Назад» вне стека экранов: закрыть шторку, меню, вернуться на первую вкладку. */
 function fallbackBack(dryRun) {
+  const lockSettings = document.querySelector('.lock-settings:not([inert])');
+  if (lockSettings) {
+    if (!dryRun) lockSettings.close();
+    return true;
+  }
   if (sheetOpen()) {
     if (!dryRun) closeSheet();
     return true;

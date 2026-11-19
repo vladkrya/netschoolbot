@@ -1186,6 +1186,7 @@ html.offline .switch-row:has(#pushToggle, #keepFiles, #sgoUpdates) {
   transition: transform .22s ease;
 }
 .drawer.open { pointer-events: auto; }
+#screens:has(.screen) ~ .drawer.open { z-index: 29; }
 .drawer.open .drawer-shade { opacity: 1; }
 .drawer.open .drawer-panel { transform: none; }
 .drawer-section { padding: 12px 0; border-bottom: 1px solid var(--border); }
@@ -1650,7 +1651,6 @@ body::after, .bottom-nav, .fab, .hw-fog { margin-bottom: calc(-1 * var(--pin-shi
 .screen.swiping { animation: none; transition: none; }
 /* Возврат после перезапуска (update.js): экраны встают на место сразу, без выезда. */
 html.resuming .screen, html.resuming .screen * { animation: none !important; }
-.screen.leaving { animation: none; transition: transform .22s var(--ease); }
 /* Вкладка за пальцем: тень слева, как у экрана поверх. */
 main.swiping { transition: none; box-shadow: -8px 0 24px rgba(0, 0, 0, .25); background: var(--bg); }
 main.leaving { transition: transform .22s var(--ease); box-shadow: -8px 0 24px rgba(0, 0, 0, .25); background: var(--bg); }

@@ -6,7 +6,6 @@ import { ICONS } from './icons.js';
 import { markBox, openLesson } from './details.js';
 import { pushScreen, reopenOnRefresh } from './screens.js';
 import { notify, select, tap } from './haptics.js';
-import { closeDrawer } from './profile.js';
 
 const HISTORY_KINDS = { new: 'Поставлена', changed: 'Исправлена', deleted: 'Удалена' };
 const HISTORY_FILTERS = [['all', 'Все'], ['new', 'Поставленные'], ['changed', 'Исправленные'], ['deleted', 'Удалённые']];
@@ -97,7 +96,6 @@ async function openHistoryLesson(item, card) {
 }
 
 export async function openHistory() {
-  closeDrawer();
   const screen = pushScreen('История оценок');
   reopenOnRefresh(screen, openHistory);
   screen.innerHTML = `<div class="history-skeleton">${'<div class="card"><div class="skeleton" style="width:50%"></div><div class="skeleton" style="width:75%"></div></div>'.repeat(5)}</div>`;

@@ -201,19 +201,21 @@ export function popScreen() {
 }
 
 /** Экран уезжает вправо и тает — зеркально тому, как появился. Из стека он
- *  уже убран, так что повторное «назад» закрывает следующий. Если его увёл
- *  свайп (transform уже за краем), просто убираем. */
+ *  уже убран, так что повторное «назад» закрывает следующий. После свайпа
+ *  экран доезжает от текущего положения пальца до края. */
 function leave(screen) {
-  const swiped = screen.style.transform.includes('100%');
+  const swiped = screen.classList.contains('swiping');
   const still = stillMotion();
-  if (swiped || still || !screen.animate) {
+  if (still || !screen.animate) {
     screen.remove();
     return;
   }
   screen.style.pointerEvents = 'none';
   screen.getAnimations().forEach((animation) => animation.cancel());
   const animation = screen.animate(
-    [{ transform: 'none', opacity: 1 }, { transform: 'translateX(40%)', opacity: 0 }],
+    swiped
+      ? [{ transform: screen.style.transform }, { transform: 'translateX(100%)' }]
+      : [{ transform: 'none', opacity: 1 }, { transform: 'translateX(40%)', opacity: 0 }],
     { duration: 220, easing: 'cubic-bezier(.4, 0, .6, 1)', fill: 'forwards' },
   );
   animation.onfinish = () => screen.remove();

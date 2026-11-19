@@ -2,6 +2,7 @@
 import { api, demo, onLocked, setUnlock, tg, stillMotion } from './core.js';
 import { biometricLabel, nativeBiometricEnabled, webBiometricLabel } from './biometrics.js';
 import { mountPinpad } from './pinpad.js';
+import { syncBackButton } from './screens.js';
 
 let active = false;
 const FORGOT_TELEGRAM = 'Отправьте /resetpin в личный чат с ботом — защита сбросится, и PIN можно будет задать заново.';
@@ -699,14 +700,20 @@ export async function openLockSettings() {
     </div>`;
   document.body.append(root);
   document.documentElement.classList.add('app-locked');
-  root.close = (from = 0) => closeAnimated(root, [{ transform: `translateX(${from}px)` }, { transform: 'translateX(100%)' }]);
+  root.close = (from = 0) => {
+    if (root.inert) return;
+    root.inert = true;
+    closeAnimated(root, [{ transform: `translateX(${from}px)` }, { transform: 'translateX(100%)' }]);
+    syncBackButton();
+  };
+  syncBackButton();
   if (!reducedMotion()) root.animate([{ transform: 'translateX(100%)' }, { transform: 'translateX(0)' }], { duration: 340, easing: 'cubic-bezier(.2,.8,.2,1)' });
   swipeToClose(root);
   const body = root.querySelector('.ls-body');
   const status = root.querySelector('.ls-status');
   const say = (text, bad = false) => { status.textContent = text; status.classList.toggle('bad', bad); };
   const fail = failure => say(failure.name === 'NotAllowedError' ? 'Биометрия отменена.' : failure.message || 'Не получилось', true);
-  root.querySelector('[data-close]').onclick = root.close;
+  root.querySelector('[data-close]').onclick = () => root.close();
   root.querySelector('[data-pin]').onclick = async () => {
     root.remove();
     await choosePin({ changing: data.pin, status: data });

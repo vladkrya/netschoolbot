@@ -11,6 +11,7 @@ import {
 import { ICONS } from './icons.js';
 import { smoothRepaint } from './motion.js';
 import { loadCalc } from './calc.js';
+import { openGamesCatalog } from './games.js';
 import { openAssistant } from './assistant.js';
 import { availableTabs, MAX_TABS, navTabs, resetTabs, saveTabs, TAB_NAMES } from './tabs.js';
 import { pushScreen, syncBackButton } from './screens.js';
@@ -786,9 +787,9 @@ function bindDrawer() {
     state.profile.keep_signed_in = { ...state.profile.keep_signed_in, on: event.target.checked };
   });
   $('drawerWhatsNew').addEventListener('click', () => { closeDrawer(); openWhatsNew(); });
-  $('drawerSearch').addEventListener('click', () => { closeDrawer(); openSearch(); });
-  $('drawerChildren')?.addEventListener('click', () => { closeDrawer(); openChildren(); });
-  $('drawerShareWeek').addEventListener('click', () => { closeDrawer(); openScheduleImage(); });
+  $('drawerSearch').addEventListener('click', () => openSearch());
+  $('drawerChildren')?.addEventListener('click', () => openChildren());
+  $('drawerShareWeek').addEventListener('click', () => { openScheduleImage(); });
   $('weekendsShow').addEventListener('change', (event) => {
     select();
     smoothRepaint(() => saveWeekends(event.target.checked));
@@ -953,8 +954,8 @@ function bindDrawer() {
       banner(error.message, true);
     }
   });
-  $('drawerExport')?.addEventListener('click', () => { closeDrawer(); openExport(); });
-  $('drawerFamily')?.addEventListener('click', () => { closeDrawer(); openFamily(); });
+  $('drawerExport')?.addEventListener('click', () => openExport());
+  $('drawerFamily')?.addEventListener('click', () => openFamily());
   body.querySelectorAll('[data-view]').forEach((chip) => chip.addEventListener('click', async () => {
     if (chip.classList.contains('active')) return;
     tap();
@@ -974,74 +975,61 @@ function bindDrawer() {
     button.addEventListener('click', () => switchStudent(button))
   );
   $('drawerCalc').addEventListener('click', () => {
-    closeDrawer();
     const screen = pushScreen('Калькулятор баллов');
     screen.innerHTML = '<div id="calcContent"></div>';
     loadCalc();
   });
-  $('drawerAssistant')?.addEventListener('click', () => { closeDrawer(); openAssistant(); });
-  $('drawerGames')?.addEventListener('click', () => {
-    closeDrawer();
-    window.dispatchEvent(new CustomEvent('netschool:tab', { detail: 'games' }));
-  });
+  $('drawerAssistant')?.addEventListener('click', () => openAssistant());
+  $('drawerGames')?.addEventListener('click', openGamesCatalog);
   $('drawerTeacher')?.addEventListener('click', () => {
     closeDrawer();
     window.dispatchEvent(new CustomEvent('netschool:tab', { detail: 'teacher' }));
   });
   $('drawerHistory').addEventListener('click', () => { tap(); openHistory(); });
   $('drawerStatus').addEventListener('click', async () => {
-    closeDrawer();
     const { openStatus } = await import('./sgo.js');
     openStatus();
   });
   $('drawerEvents')?.addEventListener('click', async () => {
-    closeDrawer();
     const { openEvents } = await import('./events.js');
     openEvents();
   });
   $('drawerReferences')?.addEventListener('click', async () => {
-    closeDrawer();
     const { openReferences } = await import('./events.js');
     openReferences();
   });
-  $('drawerLock')?.addEventListener('click', () => { closeDrawer(); openLockSettings().catch(error => banner(error.message, true)); });
+  $('drawerLock')?.addEventListener('click', () => { openLockSettings().catch(error => banner(error.message, true)); });
   $('drawerIntegrations')?.addEventListener('click', async () => {
-    closeDrawer();
     const { openIntegrations } = await import('./integrations.js');
     openIntegrations();
   });
   $('drawerCalendar')?.addEventListener('click', () => { tap(); openCalendar(); });
   $('drawerDevices')?.addEventListener('click', async () => {
     tap();
-    closeDrawer();
     const { openDevices } = await import('./devices.js');
     openDevices();
   });
   $('drawerAppIcon')?.addEventListener('click', async () => {
     tap();
-    closeDrawer();
     const { openAppIcon } = await import('./app-icon.js');
     openAppIcon();
   });
   $('drawerModeration')?.addEventListener('click', async () => {
-    closeDrawer();
     const { openModeration } = await import('./moderation.js');
     openModeration();
   });
   $('drawerAdmin')?.addEventListener('click', async () => {
     tap();
-    closeDrawer();
     const { openAdmin } = await import('./admin.js');
     openAdmin();
   });
   $('drawerAccount')?.addEventListener('click', async () => {
     tap();
-    closeDrawer();
     const { openAccountSettings } = await import('./account.js');
     openAccountSettings();
   });
   $('drawerLogout')?.addEventListener('click', () => { tap(); chooseSignOut(Boolean(state.profile?.readonly)); });
-  $('drawerBug')?.addEventListener('click', () => { tap(); closeDrawer(); openBugReport(); });
+  $('drawerBug')?.addEventListener('click', () => { tap(); openBugReport(); });
   $('drawerApk')?.addEventListener('click', async () => {
     tap();
     // Файл качает внешний браузер: туда не передать ни initData, ни PIN — нужен билет.

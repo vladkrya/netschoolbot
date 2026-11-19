@@ -186,20 +186,10 @@ export function initSwipeBack() {
     const go = commit && armed;
     hideBackHint();
     if (screen) {
-      screen.classList.remove('swiping');
-      if (go) {
-        // Экран доезжает вправо и только потом закрывается.
-        screen.classList.add('leaving');
-        screen.style.transform = 'translateX(100%)';
-        let done = false;
-        const close = () => {
-          if (done) return;
-          done = true;
-          handleBack();
-        };
-        screen.addEventListener('transitionend', close, { once: true });
-        setTimeout(close, 300);
+      if (go && topScreen() === screen) {
+        handleBack();
       } else {
+        screen.classList.remove('swiping');
         screen.style.transform = '';
       }
     } else if (page) {
