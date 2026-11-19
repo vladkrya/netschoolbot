@@ -415,16 +415,6 @@ export async function unlockApp() {
       document.documentElement.classList.remove('app-locked');
       return;
     }
-    const root = panel('Вход в дневник');
-    root.querySelector('.lock-error').textContent = '';
-    // Нижние действия занимают своё место с первого кадра, пока сервер
-    // уточняет способ восстановления PIN.
-    const forgot = document.createElement('button');
-    forgot.type = 'button'; forgot.className = 'pin-forgot';
-    forgot.dataset.forgot = ''; forgot.textContent = 'Забыли PIN?';
-    forgot.onclick = () => { root.querySelector('.lock-error').textContent = FORGOT_TELEGRAM; };
-    root.querySelector('.lock-fields').after(forgot);
-    addSignOut(root);
     // Проверка PIN не должна ждать ответ Telegram о биометрии (до 5 с).
     const nativeReady = nativeManager();
     const known = rememberedRequired();
@@ -433,14 +423,23 @@ export async function unlockApp() {
     // Чем открыть без сети: хешем PIN или ключом доступа этого устройства.
     const offlineReady = () => !!savedVerifier() || savedPasskeys().length > 0;
     const canOffline = known === true && offlineReady();
+    const title = 'Вход в дневник';
+    const loadingTitle = 'Запускаем СГОшку…';
+    const root = panel(known === true ? title : loadingTitle);
     if (known !== true) {
-      root.querySelector('.lock-fields').innerHTML = '<p role="status">Открываем дневник…</p>';
+      root.querySelector('.lock-fields').innerHTML = '<span class="boot-spinner" aria-hidden="true"></span>';
     }
     // Collect PIN while the authoritative status request runs; never unlock from the hint alone.
-    let earlyPad, earlyPin;
-    if (known === true) earlyPad = mountPinpad(root, async (pin, controls) => {
-      await new Promise(resolve => { earlyPin = {pin, resolve}; });
-    });
+    let status, earlyPad, earlyPin;
+    if (known === true) {
+      earlyPad = mountPinpad(root, async pin => {
+        await new Promise(resolve => { earlyPin = {pin, resolve}; });
+      }, { forgot: () => {
+        root.querySelector('.lock-error').textContent =
+          status?.password_reset && !tg?.initData ? FORGOT_PASSWORD : FORGOT_TELEGRAM;
+      } });
+      addSignOut(root);
+    }
     const clearEarly = () => {
       earlyPad?.destroy(); earlyPin?.resolve();
       const message = root.querySelector('.lock-error');
@@ -449,7 +448,6 @@ export async function unlockApp() {
       root.classList.remove('pin-screen');
       root.querySelector('.lock-fields').innerHTML = '';
     };
-    let status;
     while (!status) {
       // Без сети сервер не спросить. Если защиты не было, сразу открываем
       // сохранённые данные, а не крутим «Проверяем защиту…».
@@ -465,6 +463,8 @@ export async function unlockApp() {
           status = { required: true, pin: true, offline: true };
           break;
         }
+        const spinner = root.querySelector('.boot-spinner');
+        if (spinner) spinner.hidden = true;
         root.querySelector('.lock-error').textContent = failure.reason !== 'server' ? failure.message
           : offlineWiped() ? WIPED_MESSAGE : 'Нет связи с сервером. Вход по PIN продолжится, когда появится интернет.';
         root.querySelector('.lock-actions').innerHTML = '<button type="button">Повторить</button>';
@@ -474,6 +474,7 @@ export async function unlockApp() {
         });
         root.querySelector('.lock-error').textContent = '';
         root.querySelector('.lock-actions').innerHTML = '';
+        if (spinner) spinner.hidden = false;
       }
     }
     const submittedEarly = earlyPin?.pin;
@@ -487,10 +488,10 @@ export async function unlockApp() {
     if (Array.isArray(status.passkey_ids)) savePasskeys(status.passkey_ids);
     root.querySelector('.lock-error').textContent = '';
     root.querySelector('.lock-actions').innerHTML = '';
-    if (reuseEarly) {
-      forgot.onclick = () => { root.querySelector('.lock-error').textContent =
-        status.password_reset && !tg?.initData ? FORGOT_PASSWORD : FORGOT_TELEGRAM; };
-    } else root.querySelector('[data-forgot]')?.remove();
+    if (known !== true) {
+      root.querySelector('h2').textContent = title;
+      root.setAttribute('aria-label', title);
+    }
     const biometricReady = (async () => {
       if (status.offline) {
         // Без сети — только ключ доступа, которым уже входили на этом устройстве.
