@@ -2988,6 +2988,9 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
 .goal-text { margin-top: 6px; }
 
 .whats-new.drawer-link { width: 100%; margin: 4px 0 0; padding: 10px 16px; color: var(--primary); font-size: 16px; font-weight: 600; }
+/* Длинный список версий въезжает одним экраном, без анимации каждой карточки. */
+.whats-new-screen { animation-duration: .36s; }
+.screen-body > .whats-new-card { animation: none; }
 .news-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--red); flex: none; }
 .wn-item { display: flex; gap: 10px; align-items: flex-start; }
 .wn-item + .wn-item { margin-top: 10px; }

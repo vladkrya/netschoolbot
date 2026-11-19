@@ -9,6 +9,10 @@ import { getPref, setPref } from './prefs.js';
 
 // Свежие версии сверху. Пишем по-человечески: что изменилось для ученика и родителя.
 export const CHANGES = [
+  {version: '10.14.16', items: [
+    ['⚙️', 'Настройки', 'Игры, история оценок и поиск за год теперь под рукой в «Возможностях».'],
+    ['✨', 'Что нового', 'Список изменений открывается с плавным переходом.'],
+  ]},
   {version: '10.14.15', items: [
     ['⚙️', 'Настройки', 'Плитки в «Инструментах» и «Входе и защите» открывают экран один раз.'],
   ]},
@@ -874,6 +878,7 @@ export function whatsNewRow() {
 export function openWhatsNew() {
   tap();
   const body = pushScreen('Что нового');
+  body.closest('.screen').classList.add('whats-new-screen');
   body.innerHTML = CHANGES.map(({ version, items }) => `<div class="card whats-new-card">
       <div class="card-title">Версия ${esc(version)}</div>
       ${items.map(([icon, title, text]) => `<div class="wn-item"><span class="wn-ico">${icon}</span>

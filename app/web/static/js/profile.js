@@ -462,24 +462,24 @@ function render() {
     <section class="drawer-section">
       <div class="drawer-heading">Возможности</div>
       <div class="tool-grid">
-      ${data.assistant && !demo && !readonly && !navTabs().includes('assistant') ? toolTile('drawerAssistant', 'sparkles', 'ИИ-помощник') : ''}
+      ${toolTile('drawerGames', 'game', 'Игры')}
+      ${toolTile('drawerHistory', 'clock', 'История оценок')}
       ${toolTile('drawerSearch', 'search', 'Поиск за год')}
-      ${toolTile('drawerCalc', 'calc', 'Калькулятор баллов')}
       </div>
-      ${demo ? '' : `${toolGroupButton('security', 'shield', 'Вход и защита')}
+      ${demo ? '' : `${toolGroupButton('security', 'shield', 'Безопасность аккаунта')}
       <div data-tool-list="security" hidden>
       ${toolTile('drawerAccount', 'mail', 'Вход по почте')}
       ${toolTile('drawerLock', 'shield', 'PIN-код')}
       ${toolTile('drawerDevices', 'install', 'Устройства')}
       ${demo || readonly ? '' : toolTile('drawerIntegrations', 'key', 'API и интеграции')}
       </div>`}
-      ${toolGroupButton('tools', 'dots', 'Инструменты')}
+      ${toolGroupButton('tools', 'dots', 'Другие инструменты')}
       <div data-tool-list="tools" hidden>
       ${data.teacher_journal ? toolTile('drawerTeacher', 'book', 'Классный журнал') : ''}
-      ${navTabs().includes('games') ? '' : toolTile('drawerGames', 'game', 'Игры')}
+      ${data.assistant && !demo && !readonly && !navTabs().includes('assistant') ? toolTile('drawerAssistant', 'sparkles', 'ИИ-помощник') : ''}
+      ${toolTile('drawerCalc', 'calc', 'Калькулятор баллов')}
       ${!readonly && data.students.length > 1 ? toolTile('drawerChildren', 'users', 'Все дети') : ''}
       ${toolTile('drawerShareWeek', 'share', 'Расписание картинкой')}
-      ${toolTile('drawerHistory', 'clock', 'История оценок')}
       ${toolTile('drawerStatus', 'pulse', 'Статус серверов')}
       ${demo ? '' : toolTile('drawerExport', 'table', 'Отчёты в Excel')}
       ${demo ? '' : toolTile('drawerFamily', 'users', 'Родные')}
@@ -979,14 +979,14 @@ function bindDrawer() {
   body.querySelectorAll('[data-student]').forEach((button) =>
     button.addEventListener('click', () => switchStudent(button))
   );
-  $('drawerCalc').addEventListener('click', () => {
+  toolActions.set('drawerCalc', () => {
     closeDrawer();
     const screen = pushScreen('Калькулятор баллов');
     screen.innerHTML = '<div id="calcContent"></div>';
     loadCalc();
   });
-  $('drawerAssistant')?.addEventListener('click', () => { closeDrawer(); openAssistant(); });
-  toolActions.set('drawerGames', () => {
+  toolActions.set('drawerAssistant', () => { closeDrawer(); openAssistant(); });
+  $('drawerGames').addEventListener('click', () => {
     closeDrawer();
     window.dispatchEvent(new CustomEvent('netschool:tab', { detail: 'games' }));
   });
@@ -994,7 +994,7 @@ function bindDrawer() {
     closeDrawer();
     window.dispatchEvent(new CustomEvent('netschool:tab', { detail: 'teacher' }));
   });
-  toolActions.set('drawerHistory', () => { tap(); openHistory(); });
+  $('drawerHistory').addEventListener('click', () => { tap(); openHistory(); });
   toolActions.set('drawerStatus', async () => {
     closeDrawer();
     const { openStatus } = await import('./sgo.js');
