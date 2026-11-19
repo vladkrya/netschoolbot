@@ -119,7 +119,8 @@ export async function bindPushToggle() {
     syncNowhere(false);
     return;
   }
-  const subscription = await currentSubscription();
+  const registration = await workerRegistration().catch(() => null);
+  let subscription = registration && await registration.pushManager.getSubscription().catch(() => null);
   input.checked = Boolean(subscription) && Notification.permission === 'granted';
   input.disabled = false;
   syncNowhere(input.checked);
@@ -127,8 +128,21 @@ export async function bindPushToggle() {
     select();
     input.disabled = true;
     try {
-      if (input.checked) await subscribePush();
-      else await unsubscribePush();
+      if (input.checked) {
+        if (Notification.permission === 'denied') {
+          throw new Error('Уведомления запрещены в настройках устройства или браузера');
+        }
+        if (!registration) throw new Error('Не удалось подготовить уведомления. Откройте приложение заново.');
+        // WebKit требует прямого нажатия: регистрация и ключ готовы до change.
+        subscription ||= await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(window.NETSCHOOL.pushKey),
+        });
+        await savePushSubscription(subscription);
+      } else {
+        await removePushSubscription(subscription);
+        subscription = null;
+      }
       try {
         if (input.checked) localStorage.removeItem(PUSH_OFF_KEY);
         else localStorage.setItem(PUSH_OFF_KEY, '1');
@@ -156,13 +170,20 @@ async function subscribePush() {
       userVisibleOnly: true,
       applicationServerKey: urlBase64ToUint8Array(data.key),
     });
+  await savePushSubscription(subscription);
+}
+
+async function savePushSubscription(subscription) {
   await api('/api/push/subscribe', {
     method: 'POST',
     body: JSON.stringify(subscription.toJSON()),
   });
 }
 export async function unsubscribePush() {
-  const subscription = await currentSubscription();
+  await removePushSubscription(await currentSubscription());
+}
+
+async function removePushSubscription(subscription) {
   if (!subscription) return;
   await api('/api/push/unsubscribe', {
     method: 'POST',

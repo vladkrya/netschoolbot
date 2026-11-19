@@ -10,7 +10,7 @@ from dataclasses import replace
 
 import pytest
 
-from app.domain.models import ApiMode, Credentials, LoginType, MarkKind, QuietHours
+from app.domain.models import ApiMode, Credentials, LoginType, MarkKind, QuietHours, User
 from app.domain.records import HomeworkRecord, MarkRecord, RecentEvents, TrackedMark
 from app.netschool.errors import NetSchoolError, Reason
 from app.notifications.diff import MISSING_STREAK_FOR_DELETE
@@ -323,6 +323,37 @@ async def test_homework_lesson_number_change_is_not_new_homework(users, watcher,
     await watcher.run_once()
 
     assert [item.identity for item in notifier.homework] == [new.identity]
+    assert notifier.texts == []
+
+
+@pytest.mark.parametrize("assignment_id", [42, None])
+async def test_far_homework_notified_once_when_within_two_weeks(
+    users, watcher, diary, notifier, monkeypatch, assignment_id,
+):
+    today = dt.date(2026, 11, 18)
+    monkeypatch.setattr(User, "today", lambda self: today)
+    await users.save(make_user())
+    diary.marks = [record(date=today)]
+    await watcher.run_once()
+    due = today + dt.timedelta(days=30)
+    item = HomeworkRecord("Алгебра", due, "ДЗ", "№ 5", assignment_id=assignment_id)
+    nearby = HomeworkRecord("Физика", today + dt.timedelta(days=14), "ДЗ", "§ 2")
+    removed = HomeworkRecord("Химия", due, "ДЗ", "§ 8", assignment_id=43)
+    diary.homework = [item, nearby, removed]
+    await watcher.run_once()
+    assert [entry.identity for entry in notifier.homework] == [nearby.identity]
+
+    today = due - dt.timedelta(days=15)
+    updated = replace(item, text="№ 6") if assignment_id else item
+    diary.homework = [updated]
+    await watcher.run_once()
+    assert [entry.identity for entry in notifier.homework] == [nearby.identity]
+    assert notifier.texts == []
+
+    today += dt.timedelta(days=1)
+    await watcher.run_once()
+    await watcher.run_once()
+    assert [entry.identity for entry in notifier.homework] == [nearby.identity, updated.identity]
     assert notifier.texts == []
 
 

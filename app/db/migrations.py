@@ -1128,6 +1128,16 @@ MIGRATIONS: list[str] = [
         FROM moderation_lessons GROUP BY installation, school_id, school_year, class_key;
     """,
 
+    """
+    CREATE TABLE deferred_homework (
+        telegram_id INTEGER NOT NULL REFERENCES users(telegram_id) ON DELETE CASCADE,
+        school TEXT NOT NULL,
+        student_id INTEGER NOT NULL,
+        assignment_key TEXT NOT NULL,
+        date TEXT NOT NULL,
+        PRIMARY KEY (telegram_id, school, student_id, assignment_key)
+    );
+    """,
 ]
 
 

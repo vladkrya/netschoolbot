@@ -36,7 +36,7 @@ from ..domain.models import (
     normalize,
     parse_marks_filter,
 )
-from ..domain.records import MarkRecord, TrackedMark
+from ..domain.records import HomeworkRecord, MarkRecord, TrackedMark
 from ..notifications.homework_changes import HomeworkPoll, changes_between, homework_snapshot
 from ..notifications.outbox import OutboxKind, encode
 from .crypto import NO_ENCRYPTION, PasswordCipher
@@ -418,12 +418,27 @@ def _homework_scope(user: User) -> tuple[int, str, int]:
     return user.telegram_id, user.school.url, user.selected_student_id or 0
 
 
+HOMEWORK_NOTIFY_DAYS = 14
+
+
+def _deferred_homework_key(item: HomeworkRecord) -> str:
+    return item.revision_key or f"identity:{item.identity}"
+
+
 async def _write_homework_poll(
     db: aiosqlite.Connection, poll: HomeworkPoll | None, outbox: list[tuple[str, str]],
 ) -> tuple[set[str], list[dict]]:
     if poll is None:
         return set(), []
     scope = _homework_scope(poll.user)
+    today = poll.user.today()
+    horizon = today + dt.timedelta(days=HOMEWORK_NOTIFY_DAYS)
+    async with db.execute(
+        """SELECT assignment_key FROM deferred_homework
+           WHERE telegram_id = ? AND school = ? AND student_id = ?""",
+        scope,
+    ) as cursor:
+        deferred = {row["assignment_key"] for row in await cursor.fetchall()}
     async with db.execute(
         """SELECT assignment_key, payload, date FROM homework_snapshots
            WHERE telegram_id = ? AND school = ? AND student_id = ?""",
@@ -445,6 +460,7 @@ async def _write_homework_poll(
         snapshots[key] = item, snapshot
 
     edits = []
+    notify_edits = []
     edited = set()
     writes = []
     for key, (item, snapshot) in snapshots.items():
@@ -458,13 +474,17 @@ async def _write_homework_poll(
                 snapshot["comment"] = before.get("comment")
             changes = changes_between(before, snapshot)
             if changes:
+                notify_edit = poll.notify and item.due_date <= horizon and key not in deferred
                 async with db.execute(
                     """INSERT INTO homework_changes
                        (telegram_id, school, student_id, assignment_key, subject, date, payload, notify)
                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                    (*scope, key, item.subject, date, json.dumps(changes, ensure_ascii=False), poll.notify),
+                    (*scope, key, item.subject, date, json.dumps(changes, ensure_ascii=False), notify_edit),
                 ) as cursor:
-                    edits.append({"id": cursor.lastrowid, "subject": item.subject, "date": date})
+                    edit = {"id": cursor.lastrowid, "subject": item.subject, "date": date}
+                    edits.append(edit)
+                    if notify_edit:
+                        notify_edits.append(edit)
                 edited.add(key)
             elif previous["date"] == date and before.get("comment") == snapshot["comment"]:
                 continue
@@ -477,7 +497,7 @@ async def _write_homework_poll(
             writes,
         )
 
-    cutoff = (poll.user.today() - dt.timedelta(weeks=6)).isoformat()
+    cutoff = (today - dt.timedelta(weeks=6)).isoformat()
     await db.execute(
         """DELETE FROM homework_snapshots
            WHERE telegram_id = ? AND school = ? AND student_id = ? AND date < ?""",
@@ -492,11 +512,53 @@ async def _write_homework_poll(
         and (item.revision_key not in saved
              or saved[item.revision_key]["date"] != item.due_date.isoformat())
     ]
+    ready = []
+    waiting = {}
+    released = set()
     if poll.notify:
-        if fresh:
-            outbox.append((OutboxKind.HOMEWORK.value, encode(OutboxKind.HOMEWORK, fresh)))
-        if edits:
-            outbox.append((OutboxKind.HOMEWORK_CHANGED.value, encode(OutboxKind.HOMEWORK_CHANGED, edits)))
+        for item in fresh:
+            key = _deferred_homework_key(item)
+            if item.due_date > horizon:
+                waiting[key] = item.due_date.isoformat()
+            elif key not in deferred:
+                ready.append(item)
+
+    # Проверяем задания по свежему ответу, чтобы отложенное уведомление
+    # использовало актуальные дату и текст и не пришло за удалённое задание.
+    if deferred:
+        for item in poll.items:
+            key = _deferred_homework_key(item)
+            if key not in deferred or key in ambiguous:
+                continue
+            if poll.notify and today <= item.due_date <= horizon:
+                if key not in released:
+                    ready.append(item)
+                released.add(key)
+            else:
+                waiting[key] = item.due_date.isoformat()
+
+    if waiting:
+        await db.executemany(
+            """INSERT INTO deferred_homework (telegram_id, school, student_id, assignment_key, date)
+               VALUES (?, ?, ?, ?, ?) ON CONFLICT DO UPDATE SET date = excluded.date""",
+            [(*scope, key, date) for key, date in waiting.items()],
+        )
+    if released:
+        await db.executemany(
+            """DELETE FROM deferred_homework WHERE telegram_id = ? AND school = ? AND student_id = ?
+               AND assignment_key = ?""",
+            [(*scope, key) for key in released],
+        )
+    if deferred:
+        await db.execute(
+            """DELETE FROM deferred_homework WHERE telegram_id = ? AND school = ? AND student_id = ?
+               AND date < ?""",
+            (*scope, today.isoformat()),
+        )
+    if ready:
+        outbox.append((OutboxKind.HOMEWORK.value, encode(OutboxKind.HOMEWORK, ready)))
+    if notify_edits:
+        outbox.append((OutboxKind.HOMEWORK_CHANGED.value, encode(OutboxKind.HOMEWORK_CHANGED, notify_edits)))
     return {item.identity for item in fresh}, edits
 
 
@@ -1100,7 +1162,7 @@ class MarkStateRepository:
         async with self._db.transaction() as db:
             for table in (
                 "tracked_marks", "tracked_homework", "seen_mail", "mail_baselines", "tracked_absences",
-                "outbox", "mark_history", "homework_done", "tracked_schedule", "child_state",
+                "outbox", "mark_history", "homework_done", "tracked_schedule", "child_state", "deferred_homework",
             ):
                 await db.execute(f"DELETE FROM {table} WHERE telegram_id = ?", (telegram_id,))
 

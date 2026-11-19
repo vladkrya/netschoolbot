@@ -342,6 +342,7 @@
     appVersion: {{ (app_version or '') | tojson }},
     token: {{ token | tojson }},
     pushEnabled: {{ push_enabled | tojson }},
+    pushKey: {{ push_key | default("") | tojson }},
     assistant: {{ (assistant or (demo is defined and demo)) | tojson }},
     student: {{ student | tojson }},
     school: {{ school | tojson }},
