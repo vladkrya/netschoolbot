@@ -77,7 +77,11 @@ export async function openGame(id) {
   const screen = body.closest('.screen');
   screen.classList.add('game-screen');
   screen.dataset.game = id;
-  screen.querySelector('.screen-head').append(soundButton());
+  const header = screen.querySelector('.screen-head');
+  const label = document.createElement('span');
+  label.textContent = 'Назад';
+  header.querySelector('.screen-back').append(label);
+  header.append(soundButton());
   body.classList.add('game-body');
   // Свайпы в игре — её управление, а не жест «назад».
   body.dataset.ownGesture = '';
