@@ -22,7 +22,7 @@ import { getPref, setPref } from './prefs.js';
 /** Ширина полосы у левого края, с которой начинается жест. */
 export const EDGE_PX = 28;
 // Насколько далеко увести палец, чтобы жест сработал.
-export const COMMIT_PX = 90;
+const COMMIT_PX = 90;
 const ARROW_MAX = 64;
 
 let arrow = null;
@@ -186,10 +186,20 @@ export function initSwipeBack() {
     const go = commit && armed;
     hideBackHint();
     if (screen) {
-      if (go && topScreen() === screen) {
-        handleBack();
+      screen.classList.remove('swiping');
+      if (go) {
+        // Экран доезжает вправо и только потом закрывается.
+        screen.classList.add('leaving');
+        screen.style.transform = 'translateX(100%)';
+        let done = false;
+        const close = () => {
+          if (done) return;
+          done = true;
+          handleBack();
+        };
+        screen.addEventListener('transitionend', close, { once: true });
+        setTimeout(close, 300);
       } else {
-        screen.classList.remove('swiping');
         screen.style.transform = '';
       }
     } else if (page) {

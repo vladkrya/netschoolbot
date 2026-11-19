@@ -14,7 +14,7 @@ import { openSubjectForDate, openSubjectNamed } from './totals.js';
 import { openAnnouncements, openCompose, openMessage } from './mail.js';
 import { openDue } from './due.js';
 import { openSearch } from './search.js';
-import { openGame, openGamesCatalog } from './games.js';
+import { openGame } from './games.js';
 
 const RESUME_KEY = 'ns-resume';
 // Метка в адресе перезапуска: по ней worker ждёт свежую страницу из сети,
@@ -101,7 +101,6 @@ const OPENERS = {
   due: openDue,
   search: openSearch,
   game: openGame,
-  'games-catalog': openGamesCatalog,
 };
 const RENDER_WAIT_MS = 4000;
 

@@ -4,8 +4,10 @@
 import { $, api, banner, esc, showFailure } from './core.js';
 import { onScreenRefresh, pushScreen } from './screens.js';
 import { notify } from './haptics.js';
+import { closeDrawer } from './profile.js';
 
 export async function openCalendar() {
+  closeDrawer();
   const screen = pushScreen('Расписание в календаре');
   screen.closest('.screen').classList.add('calendar-screen');
   screen.innerHTML = '<div class="muted small">Загрузка…</div>';

@@ -2,8 +2,6 @@
 import { api, demo, onLocked, setUnlock, tg, stillMotion } from './core.js';
 import { biometricLabel, nativeBiometricEnabled, webBiometricLabel } from './biometrics.js';
 import { mountPinpad } from './pinpad.js';
-import { syncBackButton } from './screens.js';
-import { COMMIT_PX } from './swipeback.js';
 
 let active = false;
 const FORGOT_TELEGRAM = 'Отправьте /resetpin в личный чат с ботом — защита сбросится, и PIN можно будет задать заново.';
@@ -656,16 +654,12 @@ function swipeToClose(root) {
     start.dx = Math.max(0, dx);
     root.style.transform = `translateX(${start.dx}px)`;
   }, { passive: true });
-  const end = (event) => {
+  const end = () => {
     if (!start) return;
     const { dx, dir, at } = start; start = null;
     if (dir !== 'x') return;
     const fast = dx / Math.max(1, Date.now() - at) > 0.5;
-    if (event.type === 'touchend' && (dx > COMMIT_PX || (fast && dx > 40))) {
-      root.style.transform = '';
-      root.close(dx);
-      return;
-    }
+    if (dx > root.clientWidth * 0.33 || (fast && dx > 40)) { root.style.transform = ''; root.close(dx); return; }
     root.animate([{ transform: `translateX(${dx}px)` }, { transform: 'translateX(0)' }], { duration: 220, easing: 'ease-out' });
     root.style.transform = '';
   };
@@ -705,20 +699,14 @@ export async function openLockSettings() {
     </div>`;
   document.body.append(root);
   document.documentElement.classList.add('app-locked');
-  root.close = (from = 0) => {
-    if (root.inert) return;
-    root.inert = true;
-    closeAnimated(root, [{ transform: `translateX(${from}px)` }, { transform: 'translateX(100%)' }]);
-    syncBackButton();
-  };
-  syncBackButton();
+  root.close = (from = 0) => closeAnimated(root, [{ transform: `translateX(${from}px)` }, { transform: 'translateX(100%)' }]);
   if (!reducedMotion()) root.animate([{ transform: 'translateX(100%)' }, { transform: 'translateX(0)' }], { duration: 340, easing: 'cubic-bezier(.2,.8,.2,1)' });
   swipeToClose(root);
   const body = root.querySelector('.ls-body');
   const status = root.querySelector('.ls-status');
   const say = (text, bad = false) => { status.textContent = text; status.classList.toggle('bad', bad); };
   const fail = failure => say(failure.name === 'NotAllowedError' ? 'Биометрия отменена.' : failure.message || 'Не получилось', true);
-  root.querySelector('[data-close]').onclick = () => root.close();
+  root.querySelector('[data-close]').onclick = root.close;
   root.querySelector('[data-pin]').onclick = async () => {
     root.remove();
     await choosePin({ changing: data.pin, status: data });
