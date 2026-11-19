@@ -19,6 +19,7 @@ import {
 let query = '';
 // all — с сегодняшнего дня, todo — только невыполненные, past — прошедшие.
 let filter = 'all';
+let renderedItems = [];
 
 export async function loadHomework(force = false) {
   dueChecked = false;
@@ -90,8 +91,9 @@ function subjectNames() {
   return [...new Set((state.homework?.items || []).map((item) => item.subject))].sort((a, b) => a.localeCompare(b, 'ru'));
 }
 
-function render() {
+function render(quiet = false) {
   const items = visibleItems();
+  renderedItems = items;
   const done = state.hwDone || new Set();
   const titles = { all: 'Домашние задания', todo: 'Не сделано', past: 'Прошедшие задания' };
   $('hwCount').textContent = `${titles[filter]} (${items.length})`;
@@ -99,6 +101,7 @@ function render() {
     chip.classList.toggle('active', chip.dataset.filter === filter));
 
   const container = $('homeworkContent');
+  container.classList.toggle('quiet', quiet);
   const top = filter === 'past' || query.trim() ? ''
     : '<button class="hw-add" data-add-note>＋ Своя задача</button>';
   // «Должен сдать» — сверху и только когда что-то висит (due.js).
@@ -159,7 +162,7 @@ function render() {
         const next = !item.done;
         paintCard(card.querySelector('[data-done]'), next);
         if (!await setNoteDone(item, next)) paintCard(card.querySelector('[data-done]'), !next);
-        else if (filter === 'todo') render();
+        else if (filter === 'todo') render(true);
         return;
       }
       if (check) toggleDone(item, check);
@@ -217,17 +220,29 @@ function paintCard(button, isDone) {
 
 function toggleDone(item, button) {
   // Сразу на экране, сервер — следом: галочка не должна ждать сети.
-  // В «Не сделано» выполненное уходит из списка — тут перерисовка нужна.
-  saveDone(item, !isDoneItem(item), (value) => (filter === 'todo' ? render() : paintCard(button, value)), 'list');
+  saveDone(item, !isDoneItem(item), (value) => paintCard(button, value), 'list');
 }
 
 export function initHomework() {
   // Отметили на экране урока или задания — галочки в списке должны совпасть.
-  window.addEventListener('netschool:hwdone', (event) => {
-    const source = filter === 'past' ? state.homeworkPast : state.homework;
+  window.addEventListener('netschool:hwdone', () => {
     dueChecked = false;
-    if (event.detail?.source !== 'list' && source) render();
-    else if ($('hwDue')) refreshDue();
+    const container = $('homeworkContent');
+    if (filter === 'todo' && state.homework) {
+      const items = visibleItems();
+      if (items.length !== renderedItems.length || items.some((item, index) => {
+        const previous = renderedItems[index];
+        return item.own ? item.id !== previous.id : item !== previous;
+      })) {
+        render(true);
+        return;
+      }
+    }
+    container.querySelectorAll('[data-hw] button[data-done]').forEach((button) => {
+      const item = renderedItems[Number(button.dataset.done)];
+      if (!item.own) paintCard(button, isDoneItem(item));
+    });
+    if ($('hwDue')) refreshDue();
   });
   $('hwSearch').addEventListener('input', (event) => {
     query = event.target.value;

@@ -306,6 +306,7 @@ function daySummary(lessons) {
 }
 
 let renderedKey = '';
+let renderedDayDate = '';
 
 /** quiet — перерисовка по таймеру: без анимации появления и только если
  *  что-то поменялось (статус урока), иначе экран «перезагружался» каждую
@@ -315,6 +316,7 @@ function renderDay(quiet = false) {
   const day = days.get(state.date);
   const lessons = day?.lessons || [];
   const container = $('dayContent');
+  renderedDayDate = state.date;
   const notices = visibleNotices(day?.moderation_notices);
 
   updateTimer(lessons.filter(lesson => !lesson.moderation_cancelled), state.date === isoToday());
@@ -340,7 +342,7 @@ function renderDay(quiet = false) {
 
   const notes = (state.notes || []).filter((note) => note.date === state.date);
   const homeworkStatuses = lessons.map((lesson) => homeworkStatus(lesson.homework));
-  const key = `${state.date}|${countdownHtml().length}|${statuses}|${routeKey}|${homeworkStatuses.join(',')}|${notes.map((n) => `${n.id}${n.done}${n.time}${n.remind}${n.text}${n.subject}`).join()}|${editsKey(day)}|${notices.map(notice => notice.id).join(',')}`;
+  const key = `${state.date}|${countdownHtml().length}|${statuses}|${routeKey}|${notes.map((n) => `${n.id}${n.done}${n.time}${n.remind}${n.text}${n.subject}`).join()}|${editsKey(day)}|${notices.map(notice => notice.id).join(',')}`;
   if (quiet && key === renderedKey && container.children.length) return;
   renderedKey = key;
   freshMarks = takeFresh(lessons.flatMap((lesson) => realMarks(lesson.marks)
@@ -476,6 +478,18 @@ function homeworkStatus(homework) {
   return state.hwDone ? 'hw-todo' : '';
 }
 
+function paintHomeworkStatuses() {
+  const lessons = dayData(renderedDayDate)?.lessons || [];
+  $('dayContent').querySelectorAll('[data-lesson]').forEach((card) => {
+    const lesson = lessons[Number(card.dataset.lesson)];
+    const badge = card.querySelector('[data-hw-badge]');
+    if (!lesson || !badge) return;
+    const status = homeworkStatus(lesson.homework);
+    badge.classList.toggle('hw-done', status === 'hw-done');
+    badge.classList.toggle('hw-todo', status === 'hw-todo');
+  });
+}
+
 function lessonCard(lesson, index, status) {
   // Новый дизайн: коэффициент маленькой цифрой у оценки, как в «Оценках».
   const marks = realMarks(lesson.marks).map((m) => markBox(m.mark, freshClass(m, lesson.subject), isNewDesign() ? m.weight || 1 : null)).join('');
@@ -507,7 +521,7 @@ function lessonCard(lesson, index, status) {
         ${hasFiles ? `<span class="hw-badge clip">${ICONS.clip}</span>` : ''}
         ${hasComment ? `<span class="hw-badge clip" title="Есть комментарий к заданию">${ICONS.chat}</span>` : ''}
       </div>` : ''}
-      ${preview ? `<div class="lc-hw ${status}">${hasFiles ? ICONS.clip : ''}${hasComment ? ICONS.chat : ''}<span>${esc(preview)}</span></div>` : ''}
+      ${preview ? `<div class="lc-hw ${status}" data-hw-badge>${hasFiles ? ICONS.clip : ''}${hasComment ? ICONS.chat : ''}<span>${esc(preview)}</span></div>` : ''}
       <div class="lc-bottom"><span class="lc-time">${esc(time)}</span><span class="lc-status">${esc(timing)}</span></div>
     </div>`;
 }
@@ -915,7 +929,7 @@ export function initDay() {
   $('dayBells').addEventListener('click', openWeekSheet);
   $('dayToday').addEventListener('click', () => slideTo(pickDay()));
   // Отметку поставили на экране урока или задания — перекрасить Д/З.
-  window.addEventListener('netschool:hwdone', () => { if (dayData(state.date)) renderDay(true); });
+  window.addEventListener('netschool:hwdone', paintHomeworkStatuses);
   $('weekStrip').addEventListener('click', (event) => {
     const button = event.target.closest('[data-week-day]');
     if (button && button.dataset.weekDay !== state.date) slideTo(button.dataset.weekDay);
