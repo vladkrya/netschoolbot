@@ -461,22 +461,24 @@ function render() {
     </section>
     <section class="drawer-section">
       <div class="drawer-heading">Возможности</div>
-      ${demo ? '' : `<div class="drawer-sub">Вход и защита</div>
-      <div class="tool-grid tool-grid-account">
+      <div class="tool-grid">
+      ${data.assistant && !demo && !readonly && !navTabs().includes('assistant') ? toolTile('drawerAssistant', 'sparkles', 'ИИ-помощник') : ''}
+      ${toolTile('drawerSearch', 'search', 'Поиск за год')}
+      ${toolTile('drawerCalc', 'calc', 'Калькулятор баллов')}
+      </div>
+      ${demo ? '' : `${toolGroupButton('security', 'shield', 'Вход и защита')}
+      <div data-tool-list="security" hidden>
       ${toolTile('drawerAccount', 'mail', 'Вход по почте')}
       ${toolTile('drawerLock', 'shield', 'PIN-код')}
       ${toolTile('drawerDevices', 'install', 'Устройства')}
       ${demo || readonly ? '' : toolTile('drawerIntegrations', 'key', 'API и интеграции')}
-      </div>
-      <div class="drawer-sub">Полезное</div>`}
-      <div class="tool-grid">
+      </div>`}
+      ${toolGroupButton('tools', 'dots', 'Инструменты')}
+      <div data-tool-list="tools" hidden>
       ${data.teacher_journal ? toolTile('drawerTeacher', 'book', 'Классный журнал') : ''}
-      ${data.assistant && !demo && !readonly && !navTabs().includes('assistant') ? toolTile('drawerAssistant', 'sparkles', 'ИИ-помощник') : ''}
       ${navTabs().includes('games') ? '' : toolTile('drawerGames', 'game', 'Игры')}
-      ${toolTile('drawerSearch', 'search', 'Поиск за год')}
       ${!readonly && data.students.length > 1 ? toolTile('drawerChildren', 'users', 'Все дети') : ''}
       ${toolTile('drawerShareWeek', 'share', 'Расписание картинкой')}
-      ${toolTile('drawerCalc', 'calc', 'Калькулятор баллов')}
       ${toolTile('drawerHistory', 'clock', 'История оценок')}
       ${toolTile('drawerStatus', 'pulse', 'Статус серверов')}
       ${demo ? '' : toolTile('drawerExport', 'table', 'Отчёты в Excel')}
@@ -652,6 +654,31 @@ function toolTile(id, icon, label, hidden = false) {
   return `<button class="tool-tile" id="${id}"${hidden ? ' hidden' : ''}><span class="tool-ico">${ICONS[icon]}</span><span>${label}</span></button>`;
 }
 
+function toolGroupButton(group, icon, title) {
+  return `<button type="button" class="drawer-link tool-group" data-tool-group="${group}" aria-haspopup="dialog">
+    ${ICONS[icon]}<span>${title}</span><span class="tool-group-chevron" aria-hidden="true">›</span></button>`;
+}
+
+function bindToolGroups(body) {
+  body.querySelectorAll('[data-tool-group]').forEach(button => {
+    const list = body.querySelector(`[data-tool-list="${button.dataset.toolGroup}"]`);
+    button.addEventListener('click', () => {
+      tap();
+      const panel = openSheet(button.querySelector('span').textContent, '<div class="tool-grid"></div>');
+      const grid = panel.querySelector('.tool-grid');
+      for (const tool of list.querySelectorAll('.tool-tile:not([hidden])')) {
+        const tile = tool.cloneNode(true);
+        tile.removeAttribute('id');
+        tile.addEventListener('click', () => {
+          closeSheet();
+          tool.click();
+        });
+        grid.append(tile);
+      }
+    });
+  });
+}
+
 // Заказ справок школьный сервер разрешает не всем учётным записям (ученику
 // обычно отказывает). Кнопка показывается, только когда он ответил списком
 // справок; ответ помнится до перезапуска.
@@ -670,6 +697,7 @@ function checkReferences() {
 
 function bindDrawer() {
   const body = settingsRoot();
+  bindToolGroups(body);
   const managedSelectors = {
     theme: '[name="theme"], [data-theme-set]', design: '#designMode', unity: '#unityOn',
     halloween: '#halloweenOn', motion: '#motionLevel', confetti: '#confettiShow',
