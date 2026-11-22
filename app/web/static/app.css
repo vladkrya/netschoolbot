@@ -2939,29 +2939,40 @@ html.app-locked body > :not(.app-lock) { visibility: hidden !important; }
 /* ───────── 6.15: отсчёт, «Что нового», цели, «Должен сдать», поиск, дети ───────── */
 
 .oge-promo {
+  --oge-gradient: linear-gradient(90deg, #294274, #563592);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  min-height: 44px;
+  gap: 10px;
   margin-bottom: 10px;
-  padding: 8px 12px;
-  border: 1px solid color-mix(in srgb, var(--primary) 36%, var(--border));
-  border-radius: var(--radius);
-  background: color-mix(in srgb, var(--primary) 18%, var(--card));
-  color: var(--text);
-  font-size: 14px;
+  padding: 10px 14px;
+  border-radius: 22px;
+  background: var(--oge-gradient);
+  color: #fff;
+  font-size: 1rem;
+  font-weight: 700;
   line-height: 1.3;
   text-decoration: none;
 }
-.oge-promo small {
-  display: block;
-  margin-bottom: 2px;
-  color: var(--text2);
-  font-size: 11px;
+[data-theme="dark"] .oge-promo {
+  --oge-gradient: linear-gradient(90deg, #414f7c, #65429b);
 }
-.oge-promo-arrow { color: var(--primary); }
-.oge-promo:hover { background: color-mix(in srgb, var(--primary) 26%, var(--card)); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .oge-promo {
+    --oge-gradient: linear-gradient(90deg, #414f7c, #65429b);
+  }
+}
+.oge-promo-arrow {
+  display: grid;
+  flex: 0 0 34px;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border-radius: 50%;
+  background: rgb(255 255 255 / 20%);
+  font-size: 18px;
+}
+.oge-promo:hover { filter: brightness(1.08); }
 .oge-promo:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 
 .countdown-card {

@@ -326,7 +326,7 @@ window.addEventListener('netschool:profile', () => {
 function ogePromoHtml() {
   if (!ogePromoEligible || state.profile?.readonly) return '';
   return `<a class="oge-promo" href="https://sdam.colave.ru/?sgoshka" target="_blank" rel="noopener noreferrer">
-    <span><small>Реклама</small>Бесплатные тренажёры к ОГЭ</span>
+    <span>Новинка в СГОшке: бесплатные тренажёры для подготовки к ОГЭ</span>
     <span class="oge-promo-arrow" aria-hidden="true">↗</span>
   </a>`;
 }
