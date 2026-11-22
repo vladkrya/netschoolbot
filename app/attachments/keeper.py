@@ -29,6 +29,7 @@ from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
 from ..db.crypto import NO_ENCRYPTION, FILE_MAGIC, PasswordCipher
+from ..domain.models import ApiMode
 from ..netschool.errors import NetSchoolError, Reason
 
 if TYPE_CHECKING:
@@ -87,7 +88,11 @@ class AttachmentKeeper:
         return self._ttl > 0
 
     def _key(self, user: User, attachment_id: int) -> tuple[str, str, int]:
-        return _host(user.school.url), user.effective_api_mode.value, attachment_id
+        host, mode = _host(user.school.url), user.effective_api_mode
+        if mode is ApiMode.MYSCHOOL:
+            # У всех пользователей здесь один сервер, а материалы относятся к ученику.
+            host = f"{host}:{user.telegram_id}:{user.selected_student_id or 1}"
+        return host, mode.value, attachment_id
 
     def _path(self, key: tuple[str, str, int]) -> Path:
         host, mode, attachment_id = key
@@ -147,7 +152,7 @@ class AttachmentKeeper:
         task.add_done_callback(lambda _: self._running.pop(user.telegram_id, None))
 
     async def _keep(self, user: User, ids: list[int]) -> None:
-        host, mode = _host(user.school.url), user.effective_api_mode.value
+        host, mode, _ = self._key(user, ids[0])
         try:
             if self._wanted is not None and not await self._wanted(user):
                 return

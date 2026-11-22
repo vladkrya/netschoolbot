@@ -112,16 +112,21 @@
     event.preventDefault();
     const match = link.getAttribute('href').match(/attachment\/(\d+)\?name=([^&]*)/);
     if (!match || config.demo) return;
-    let credential = '';
+    const tab = initData && tg?.openLink ? null : window.open('about:blank', '_blank');
+    if (tab) tab.opener = null;
     try {
-      const response = await realFetch(`${base}/api/attachment-ticket`, { headers: headers(), cache: 'no-store' });
-      credential = `ticket=${encodeURIComponent((await response.json()).data.ticket)}`;
+      const params = new URLSearchParams({ resource: `/api/attachment/${match[1]}` });
+      const response = await realFetch(`${base}/api/attachment-ticket?${params}`, { headers: headers(), cache: 'no-store' });
+      if (!response.ok) throw new Error('Не удалось получить билет');
+      const { data } = await response.json();
+      const target = `${location.origin}${base}/attachment/${match[1]}?ticket=${encodeURIComponent(data.ticket)}&name=${match[2]}`;
+      if (tab) tab.location.replace(target);
+      else if (initData && tg?.openLink) tg.openLink(target, { try_instant_view: false });
+      else location.assign(target);
     } catch {
-      credential = initData ? `tgWebAppData=${encodeURIComponent(initData)}` : `token=${encodeURIComponent(config.token || '')}`;
+      tab?.close();
+      window.alert('Не удалось открыть вложение');
     }
-    const target = `${location.origin}${base}/attachment/${match[1]}?${credential}&name=${match[2]}`;
-    if (initData && tg.openLink) tg.openLink(target, { try_instant_view: false });
-    else window.open(target, '_blank', 'noopener');
   });
 
   if (tg) {

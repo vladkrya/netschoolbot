@@ -12,11 +12,16 @@
 
 from __future__ import annotations
 
+import asyncio
 import datetime as dt
 import hashlib
+import ipaddress
 import re
+import socket
 from collections import defaultdict
 from typing import Any
+
+import httpx
 
 from ..domain.models import School, Student, User
 from ..domain.records import Attachment, DiaryDay, HomeworkRecord, Lesson, MarkRecord
@@ -38,7 +43,7 @@ DEFAULT_WORK = "Оценка"
 # Файлы заданий в «Моей школе» — ссылки, а бот и мини-приложение называют вложение
 # числом. Число считается из ссылки, а ссылки по числу помнятся здесь: качать можно
 # только то, что API отдал самому ученику.
-_LINKS: dict[int, str] = {}
+_LINKS: dict[tuple[tuple[int, str], int], str] = {}
 
 
 def material_id(url: str) -> int:
@@ -47,12 +52,12 @@ def material_id(url: str) -> int:
     return int.from_bytes(digest, "big") & (2 ** 53 - 1)
 
 
-def _remember(url: str) -> int:
+def _remember(owner: tuple[int, str], url: str) -> int:
     if len(_LINKS) >= LINKS_LIMIT:
         for key in list(_LINKS)[: LINKS_LIMIT // 2]:
             del _LINKS[key]
     file_id = material_id(url)
-    _LINKS[file_id] = url
+    _LINKS[owner, file_id] = url
     return file_id
 
 
@@ -97,7 +102,7 @@ async def fetch_days(client: Any, user: User, start: dt.date, end: dt.date) -> l
     lessons = await client.lessons(student, start, end)
     marks = await client.marks(student, start, end)
     homeworks = await client.homeworks(student, start, end)
-    return build_days(lessons, marks, homeworks)
+    return build_days(lessons, marks, homeworks, owner=(user.telegram_id, str(student.id)))
 
 
 def _hhmm(value: dt.datetime | None) -> str:
@@ -111,7 +116,9 @@ def _int(value: Any, default: int = 1) -> int:
         return default
 
 
-def build_days(lessons: list[Any], marks: list[Any], homeworks: list[Any]) -> list[DiaryDay]:
+def build_days(
+    lessons: list[Any], marks: list[Any], homeworks: list[Any], *, owner: tuple[int, str] | None = None,
+) -> list[DiaryDay]:
     """Уроки, оценки и задания → дни дневника."""
     days: dict[dt.date, DiaryDay] = {}
 
@@ -164,7 +171,7 @@ def build_days(lessons: list[Any], marks: list[Any], homeworks: list[Any]) -> li
             assignment_type=HOMEWORK_TYPE,
             text=re.sub(r"\s+", " ", item.description or "").strip(),
             lesson_number=numbers.get(item.ready_lesson_id or ""),
-            attachments=tuple(_attachments(item.materials)),
+            attachments=tuple(_attachments(item.materials, owner)),
             external_id=item.id,
             # Пустой комментарий: карточки задания в «Моей школе» нет, спрашивать нечего.
             comment="",
@@ -203,7 +210,7 @@ def build_days(lessons: list[Any], marks: list[Any], homeworks: list[Any]) -> li
     return sorted(days.values(), key=lambda d: d.day)
 
 
-def _attachments(materials: list[Any]) -> list[Attachment]:
+def _attachments(materials: list[Any], owner: tuple[int, str] | None) -> list[Attachment]:
     items = []
     for material in materials or []:
         if isinstance(material, dict):
@@ -213,26 +220,65 @@ def _attachments(materials: list[Any]) -> list[Attachment]:
             name, link = str(material), ""
         if not name:
             continue
-        file_id = _remember(link) if isinstance(link, str) and link.startswith("https://") else None
+        file_id = None
+        if isinstance(link, str) and link.startswith("https://"):
+            file_id = _remember(owner, link) if owner is not None else material_id(link)
         items.append(Attachment(id=file_id, name=str(name)))
     return items
 
 
-async def download_material(client: Any, user: User, attachment_id: int) -> bytes:
-    """Файл задания по числу из `Attachment.id`."""
-    import httpx
+async def _public_material_address(url: httpx.URL) -> str:
+    if url.scheme != "https" or not url.host or url.userinfo or url.port not in (None, 443):
+        raise NetSchoolError(Reason.UNKNOWN, "Недопустимый адрес материала.")
+    records = await asyncio.get_running_loop().getaddrinfo(
+        url.raw_host.decode("ascii"), 443, type=socket.SOCK_STREAM, proto=socket.IPPROTO_TCP,
+    )
+    addresses = [ipaddress.ip_address(record[4][0]) for record in records]
+    if not addresses or any(
+        not address.is_global or address.is_multicast or address.is_reserved for address in addresses
+    ):
+        raise NetSchoolError(Reason.UNKNOWN, "Недопустимый адрес материала.")
+    return str(addresses[0])
 
-    url = _LINKS.get(attachment_id)
-    if url is None:
+
+async def download_material(client: Any, user: User, attachment_id: int) -> bytes:
+    """Файл из дневника выбранного ученика."""
+    student = pick_student(await list_students(client), user)
+    key = (user.telegram_id, str(student.id)), attachment_id
+    link = _LINKS.get(key)
+    if link is None:
         today = dt.date.today()
-        await fetch_days(client, user, today - dt.timedelta(days=LOOKUP_DAYS_BACK),
-                         today + dt.timedelta(days=LOOKUP_DAYS_FORWARD))
-        url = _LINKS.get(attachment_id)
-    if url is None:
+        homeworks = await client.homeworks(
+            student, today - dt.timedelta(days=LOOKUP_DAYS_BACK), today + dt.timedelta(days=LOOKUP_DAYS_FORWARD),
+        )
+        for item in homeworks:
+            _attachments(item.materials, key[0])
+        link = _LINKS.get(key)
+    if link is None:
         raise NetSchoolError(Reason.UNKNOWN, "Файл не найден среди заданий «Моей школы».")
+
     try:
-        async with httpx.AsyncClient(timeout=MATERIAL_TIMEOUT_S, follow_redirects=True) as http:
-            async with http.stream("GET", url) as response:
+        async with asyncio.timeout(MATERIAL_TIMEOUT_S):
+            return await _download_public_material(httpx.URL(link))
+    except (httpx.TransportError, httpx.InvalidURL, OSError, TimeoutError) as exc:
+        raise NetSchoolError(Reason.SERVER_UNAVAILABLE, "Сервер школы не отдал файл. Попробуйте позже.") from exc
+
+
+async def _download_public_material(url: httpx.URL) -> bytes:
+    # Подключаемся к проверенному IP, сохраняя имя хоста для Host и TLS.
+    # Повторное DNS-разрешение между проверкой и соединением не требуется.
+    limits = httpx.Limits(max_keepalive_connections=0)
+    async with httpx.AsyncClient(trust_env=False, limits=limits, timeout=MATERIAL_TIMEOUT_S) as http:
+        for _ in range(6):
+            address = await _public_material_address(url)
+            hostname = url.raw_host.decode("ascii")
+            async with http.stream(
+                "GET", url.copy_with(host=address), headers={"Host": url.netloc.decode("ascii")},
+                extensions={"sni_hostname": hostname}, follow_redirects=False,
+            ) as response:
+                if response.has_redirect_location:
+                    url = url.join(response.headers["Location"])
+                    continue
                 if response.status_code != 200:
                     raise NetSchoolError(Reason.UNKNOWN, "Не удалось скачать файл из «Моей школы».")
                 chunks, size = [], 0
@@ -241,6 +287,5 @@ async def download_material(client: Any, user: User, attachment_id: int) -> byte
                     if size > MAX_MATERIAL_BYTES:
                         raise NetSchoolError(Reason.UNKNOWN, "Файл слишком большой.")
                     chunks.append(chunk)
-    except httpx.TransportError as exc:
-        raise NetSchoolError(Reason.SERVER_UNAVAILABLE, "Сервер школы не отдал файл. Попробуйте позже.") from exc
-    return b"".join(chunks)
+                return b"".join(chunks)
+    raise NetSchoolError(Reason.UNKNOWN, "Слишком много перенаправлений при скачивании материала.")

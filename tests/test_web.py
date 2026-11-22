@@ -1566,7 +1566,8 @@ class TestTelegramMiniApp:
         # билет на вложения выдаётся приложению и работает только для них.
         await users.save(make_user())
         response = await client.get(
-            f"{BASE}/api/attachment-ticket", headers={"X-Telegram-Init-Data": self.init_data(1)}
+            f"{BASE}/api/attachment-ticket", headers={"X-Telegram-Init-Data": self.init_data(1)},
+            params={"resource": "/api/attachment/1"},
         )
         ticket = (await response.json())["data"]["ticket"]
         response = await client.get(f"{BASE}/api/attachment/1", params={"ticket": ticket, "name": "лист.pdf"})
@@ -1578,9 +1579,14 @@ class TestTelegramMiniApp:
             response = await client.get(f"{BASE}/api/attachment/1", params={"ticket": bad})
             assert response.status == 401, bad
         from app.web.api import issue_attachment_ticket
-        old = issue_attachment_ticket(app_context, 1, now=0)
+        old = issue_attachment_ticket(app_context, 1, "/api/attachment/1", now=0)
         assert (await client.get(f"{BASE}/api/attachment/1", params={"ticket": old})).status == 401
         assert (await client.get(f"{BASE}/api/profile", params={"ticket": ticket})).status == 401
+        assert (await client.get(f"{BASE}/api/attachment/2", params={"ticket": ticket})).status == 401
+        assert (await client.get(f"{BASE}/api/export/year.xlsx", params={"ticket": ticket})).status == 401
+        svg = await client.get(f"{BASE}/api/attachment/1", params={"ticket": ticket, "name": "drawing.svg"})
+        assert svg.headers["Content-Type"] == "application/octet-stream"
+        assert svg.headers["Content-Disposition"].startswith("attachment;")
 
 
 class TestAttachmentWaitPage:

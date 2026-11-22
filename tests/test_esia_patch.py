@@ -86,3 +86,28 @@ async def test_mfa_sends_code_once_to_the_matching_endpoint(mfa_type, path, stat
     assert len(seen) == 1
     assert str(seen[0].url).split("?")[0] == f"{esia.ESIA_LOGIN_API}/{path}/verify"
     assert seen[0].url.params["code"] == "012345"
+
+
+@pytest.mark.parametrize(("mfa_type", "path"), [("SMS", "otp"), ("TOTP", "totp"), ("TTP", "totp"), ("MAX", "otp-max")])
+async def test_myschool_mfa_sends_code_to_the_matching_endpoint(mfa_type, path):
+    from myschoolpy import _esia
+
+    seen = []
+
+    def handler(request):
+        seen.append(request)
+        if not request.url.path.endswith(f"/{path}/verify"):
+            return httpx.Response(400)
+        return httpx.Response(202, json={"action": "MAX_QUIZ"})
+
+    async def get_code(*_):
+        return "012345"
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        flow = _esia._Flow(http=client, otp_callback=get_code)
+        result = await _esia._mfa(flow, {"mfa_details": {"type": mfa_type}})
+
+    assert result == {"action": "MAX_QUIZ"}
+    assert len(seen) == 1
+    assert str(seen[0].url).split("?")[0] == f"{esia.ESIA_LOGIN_API}/{path}/verify"
+    assert seen[0].url.params["code"] == "012345"

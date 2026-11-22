@@ -2,7 +2,7 @@
 'use strict';
 
 import {
-  $, api, assistantEnabled, forgetRevalidated, banner, base, demo, isMyschool, isOffline, isReadOnly, keepTouch, loadAttachmentTicket, noConnectionText, school, sgoSaid, state, student, studentFirstName, syncFinished, syncStarted, tg, token,
+  $, api, assistantEnabled, forgetRevalidated, banner, base, demo, isMyschool, isOffline, isReadOnly, keepTouch, noConnectionText, school, sgoSaid, state, student, studentFirstName, syncFinished, syncStarted, tg, token,
 } from './core.js';
 import { initDay, loadDay, restoreDay } from './day.js';
 import { initUpdates, reopenScreens, takeResume } from './update.js';
@@ -958,9 +958,6 @@ function surveyThanks(body, feedback) {
 
 async function start() {
   const requestedModeration = location.hash === '#moderation';
-  // Билет на вложения — заранее: внешний браузер открывается только прямо
-  // из нажатия, ждать сети в этот момент нельзя.
-  loadAttachmentTicket();
   applyStoredTheme();
   applyHalloween();
   applyAccent();

@@ -7,6 +7,7 @@ import datetime as dt
 import hashlib
 import hmac
 import logging
+import re
 
 from aiohttp import web
 
@@ -162,29 +163,30 @@ async def resolve_identity(request: web.Request) -> tuple[int | None, str]:
 # Билет на вложения: вложение открывается во внешнем браузере, куда не
 # передать ни заголовок разблокировки, ни initData. Постоянный токен в адресе
 # остался бы в истории браузера, поэтому в ссылке — подписанный билет только
-# на вложения, на те же 12 часов, что и разблокировка.
-ATTACHMENT_TICKET_TTL = 12 * 3600
+# на конкретный файл или отчёт с коротким сроком действия.
+ATTACHMENT_TICKET_TTL = 5 * 60
+DOWNLOAD_PATH = re.compile(r"/api/(?:attachment/[0-9]+|export/(?:period|year)\.xlsx|admin/android\.apk)\Z")
 
 
 def _ticket_key(app: AppContext) -> bytes:
     return hmac.new(b"attachment-ticket", app.settings.telegram.bot_token.encode(), hashlib.sha256).digest()
 
 
-def issue_attachment_ticket(app: AppContext, telegram_id: int, now: float | None = None) -> str:
+def issue_attachment_ticket(app: AppContext, telegram_id: int, resource: str, now: float | None = None) -> str:
     expires = int((now if now is not None else dt.datetime.now().timestamp()) + ATTACHMENT_TICKET_TTL)
     body = f"{telegram_id}.{expires}"
-    signature = hmac.new(_ticket_key(app), body.encode(), hashlib.sha256).hexdigest()[:32]
+    signature = hmac.new(_ticket_key(app), f"{body}:{resource}".encode(), hashlib.sha256).hexdigest()[:32]
     return f"{body}.{signature}"
 
 
-def verify_attachment_ticket(app: AppContext, ticket: str, now: float | None = None) -> int | None:
+def verify_attachment_ticket(app: AppContext, ticket: str, resource: str, now: float | None = None) -> int | None:
     try:
         telegram_id, expires, signature = ticket.split(".")
         body = f"{int(telegram_id)}.{int(expires)}"
     except ValueError:
         return None
-    expected = hmac.new(_ticket_key(app), body.encode(), hashlib.sha256).hexdigest()[:32]
-    if not hmac.compare_digest(expected, signature):
+    expected = hmac.new(_ticket_key(app), f"{body}:{resource}".encode(), hashlib.sha256).hexdigest()[:32]
+    if not signature.isascii() or not hmac.compare_digest(expected, signature):
         return None
     if int(expires) < (now if now is not None else dt.datetime.now().timestamp()):
         return None
@@ -204,9 +206,12 @@ async def auth_middleware(request: web.Request, handler):
     # Вложение по билету: билет выдан уже опознанному и разблокированному
     # приложению, поэтому ни входа, ни PIN здесь не спрашиваем.
     ticket = request.query.get("ticket", "")
-    if ticket and ("/api/attachment/" in request.path or "/api/export/" in request.path
-                   or request.path.endswith("/api/admin/android.apk")):
-        telegram_id = verify_attachment_ticket(context(request), ticket)
+    download = DOWNLOAD_PATH.search(request.path)
+    if ticket and download and request.method in ("GET", "HEAD"):
+        resource = download[0]
+        if resource.startswith("/api/export/"):
+            resource += ":" + request.query.get("report", "grades")
+        telegram_id = verify_attachment_ticket(context(request), ticket, resource)
         user = await context(request).users.get(telegram_id) if telegram_id else None
         if user is None:
             return json_error("Ссылка на вложение устарела — откройте его в приложении ещё раз", status=401, reason="auth")

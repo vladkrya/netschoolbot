@@ -3,7 +3,7 @@
 // вкладка «Настройки» с ещё одним разделом: какие вкладки в нижней панели.
 'use strict';
 
-import { $, ONLINE_ONLY, androidApkUrl, api, banner, demo, ensureAttachmentTicket, esc, initData, motionAtLeast, openExternal, state } from './core.js';
+import { $, ONLINE_ONLY, androidApkUrl, api, banner, demo, esc, initData, motionAtLeast, openDownload, state } from './core.js';
 import {
   isUnity, saveUnity, isGtaViEventActive, isGtaViEventTheme, selectedViceCity, saveViceCity, setViceCityAccess, setHalloweenAccess,
   ACCENTS, applyMotion, currentAccent, forgetAccent, HALLOWEEN_ACCENTS, halloweenAccent, isHalloween, isNewDesign, motionChosen, motionLevel, rememberAccent, saveAccent, saveAnswers, saveBells, saveConfetti, savedAccents, saveDesign, saveHalloween, saveHalloweenAccent, saveHomeworkStatus, saveMotion, saveWeekends, showAnswers, showBells, showConfetti, showHomeworkStatus, showWeekends, syncChromeColor, weakDevice,
@@ -1051,11 +1051,10 @@ function bindDrawer() {
   $('drawerApk')?.addEventListener('click', async () => {
     tap();
     // Файл качает внешний браузер: туда не передать ни initData, ни PIN — нужен билет.
-    if (!(await ensureAttachmentTicket())) {
+    if (!(await openDownload('/api/admin/android.apk', androidApkUrl))) {
       banner('Не удалось получить ссылку на APK', true);
       return;
     }
-    openExternal(androidApkUrl());
   });
   bindToolGroups(body, toolActions);
   bindTabs();

@@ -100,7 +100,7 @@ class TestExportApi:
         from app.web.api import issue_attachment_ticket
 
         app_context.diary.marks = [record(0), record(1, "4")]
-        ticket = issue_attachment_ticket(app_context, 1)
+        ticket = issue_attachment_ticket(app_context, 1, "/api/export/year.xlsx:grades")
         response = await client.get(f"{BASE}/api/export/year.xlsx", params={"ticket": ticket, "prepare": "1"})
         assert (await response.json())["data"]["size"] > 0
         app_context.diary.marks = []
@@ -110,7 +110,10 @@ class TestExportApi:
         with zipfile.ZipFile(io.BytesIO(await response.read())) as book:
             assert "xl/worksheets/sheet1.xml" in book.namelist()
         assert (await client.get(f"{BASE}/api/export/year.xlsx", params={"ticket": "garbage"})).status == 401
-        assert (await client.get(f"{BASE}/api/export/forever.xlsx", params={"ticket": ticket})).status == 400
+        assert (await client.get(
+            f"{BASE}/api/export/year.xlsx", params={"ticket": ticket, "report": "homework"},
+        )).status == 401
+        assert (await client.get(f"{BASE}/api/export/forever.xlsx", params={"ticket": ticket})).status == 401
 
     async def test_other_report(self, client, token, app_context):
         response = await client.get(f"{BASE}/api/export/period.xlsx?report=lessons", headers=auth(token))

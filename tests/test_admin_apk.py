@@ -51,7 +51,7 @@ async def test_apk_only_for_owner(client, app_context, users, tmp_path, monkeypa
     assert (await client.get(PATH)).status == 401
 
     # Внешний браузер приходит с билетом вложений: владельцу отдаём, чужому нет.
-    response = await client.get(PATH, params={"ticket": issue_attachment_ticket(app_context, ADMIN)})
+    response = await client.get(PATH, params={"ticket": issue_attachment_ticket(app_context, ADMIN, "/api/admin/android.apk")})
     assert response.status == 200
-    response = await client.get(PATH, params={"ticket": issue_attachment_ticket(app_context, 5)})
+    response = await client.get(PATH, params={"ticket": issue_attachment_ticket(app_context, 5, "/api/admin/android.apk")})
     assert response.status == 403

@@ -95,10 +95,10 @@ async def test_owner_can_pause_updates_but_still_download_private_apk(app_contex
         assert response.status == 200 and await response.read() == apk
         response = await client.post('/mini/api/admin/android-link', headers={'X-Netschool-Token': admin})
         assert response.status == 200 and 'ticket=' in (await response.json())['data']['url']
-        ticket = issue_attachment_ticket(app_context, 1)
+        ticket = issue_attachment_ticket(app_context, 1, "/api/admin/android.apk")
         response = await client.get('/mini/api/admin/android.apk', params={'ticket': ticket})
         assert response.status == 200 and await response.read() == apk
-        ticket = issue_attachment_ticket(app_context, 5)
+        ticket = issue_attachment_ticket(app_context, 5, "/api/admin/android.apk")
         assert (await client.get('/mini/api/admin/android.apk', params={'ticket': ticket})).status == 403
         response = await client.post('/mini/api/admin/android-updates', headers={'X-Netschool-Token': admin}, json={'on': True})
         assert (await response.json())['data']['android_updates']['on'] is True

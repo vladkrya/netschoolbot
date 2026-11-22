@@ -1,7 +1,7 @@
 // Отчёты в Excel: выбор отчёта и срока, открытие в браузере или файлом в чат.
 'use strict';
 
-import { api, demo, ensureAttachmentTicket, exportUrl, initData, openExternal, state } from './core.js';
+import { api, demo, exportUrl, initData, openDownload, state } from './core.js';
 import { notify, select, tap } from './haptics.js';
 import { openSheet } from './sheet.js';
 
@@ -63,12 +63,12 @@ export function openExport() {
     select();
     const report = body.querySelector('[name="report"]:checked')?.value || 'grades';
     if (!body.querySelector('#exportToChat')?.checked) {
-      if (!(await ensureAttachmentTicket()) && initData) {
+      const downloadScope = scope;
+      if (!(await openDownload(`/api/export/${downloadScope}.xlsx`, ticket => exportUrl(downloadScope, report, ticket), report))) {
         notify('error');
         status.textContent = 'Не удалось открыть файл — попробуйте ещё раз.';
         return;
       }
-      openExternal(exportUrl(scope, report));
       status.textContent = 'Файл открывается в браузере — там его можно посмотреть или сохранить.';
       return;
     }

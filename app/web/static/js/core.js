@@ -998,49 +998,40 @@ export function refuseReadOnly() {
   return true;
 }
 
-// Билет на вложения (см. attachment_ticket в api/attachments.py): ссылка открывается во
-// внешнем браузере, куда не передать ни initData, ни заголовок разблокировки.
-let attachmentTicket = '';
-export async function loadAttachmentTicket() {
-  if (demo) return;
+// Билет выдаётся для конкретного скачивания перед открытием браузера.
+export async function openDownload(resource, buildUrl, report) {
+  const params = new URLSearchParams({ resource });
+  if (report) params.set('report', report);
+  const tab = initData && tg?.openLink ? null : window.open('about:blank', '_blank');
+  if (tab) tab.opener = null;
   try {
-    attachmentTicket = (await api('/api/attachment-ticket')).data.ticket;
+    const { data } = await api(`/api/attachment-ticket?${params}`);
+    const url = new URL(buildUrl(data.ticket), location.href).href;
+    if (tab) tab.location.replace(url);
+    else if (initData && tg?.openLink) openExternal(url);
+    else location.assign(url);
+    return true;
   } catch {
-    /* без билета — прежняя ссылка */
+    tab?.close();
+    return false;
   }
 }
 
-/** Билет есть или его удалось получить — внешний браузер откроет ссылку. */
-export async function ensureAttachmentTicket() {
-  if (!attachmentTicket) await loadAttachmentTicket();
-  return Boolean(attachmentTicket);
-}
-
-/** Ссылка на вложение: браузер качает её сам, заголовок туда не положить. */
-export function attachmentUrl(id, name = '') {
-  // Имя нужно серверу для заголовка: без него файл сохранялся как
-  // «attachment-123» без расширения и не открывался как docx или pdf.
+export function attachmentUrl(id, name, ticket) {
   const filename = name ? `&name=${encodeURIComponent(name)}` : '';
-  return fileUrl(`attachment/${id}`, filename);
+  return fileUrl(`attachment/${id}`, filename, ticket);
 }
 
-/** Android-клиент для владельца (admin.py): прямая ссылка на файл с билетом вложений. */
-export function androidApkUrl() {
-  return `${alternateActive ? ALTERNATE_ORIGIN : ''}${base}/api/admin/android.apk?ticket=${encodeURIComponent(attachmentTicket)}`;
+export function androidApkUrl(ticket) {
+  return `${alternateActive ? ALTERNATE_ORIGIN : ''}${base}/api/admin/android.apk?ticket=${encodeURIComponent(ticket)}`;
 }
 
-/** Отчёты в Excel: та же страница ожидания и тот же билет, что у вложений. */
-export function exportUrl(scope, report = 'grades') {
-  return fileUrl(`export/${scope}`, `&report=${encodeURIComponent(report)}`);
+export function exportUrl(scope, report, ticket) {
+  return fileUrl(`export/${scope}`, `&report=${encodeURIComponent(report)}`, ticket);
 }
 
-function fileUrl(path, extra) {
-  if (demo) return '#';
-  const credential = attachmentTicket
-    ? `ticket=${encodeURIComponent(attachmentTicket)}`
-    : initData
-      ? `tgWebAppData=${encodeURIComponent(initData)}`
-      : `token=${encodeURIComponent(token)}`;
+function fileUrl(path, extra, ticket) {
+  const credential = `ticket=${encodeURIComponent(ticket)}`;
   // Страница ожидания, а не сам файл: она показывает загрузку и ошибку,
   // пока перегруженный сервер школы отдаёт вложение.
   const host = alternateActive ? ALTERNATE_ORIGIN : attachmentHost();
@@ -1075,7 +1066,7 @@ export function attachmentsHtml(items) {
   return items
     .map(
       (item) =>
-        `<a class="attach" href="${attachmentUrl(item.id, item.name)}" data-attach="${esc(item.id)}" data-name="${esc(item.name)}" target="_blank" rel="noopener">${ICONS.clip}<span class="attach-name">${esc(item.name)}</span></a>`
+        `<a class="attach" href="#" data-attach="${esc(item.id)}" data-name="${esc(item.name)}" target="_blank" rel="noopener">${ICONS.clip}<span class="attach-name">${esc(item.name)}</span></a>`
     )
     .join('');
 }
@@ -1271,23 +1262,12 @@ document.addEventListener('click', async event => {
   const done = () => attachBusy(link, false);
   document.addEventListener('visibilitychange', done, { once: true });
   setTimeout(done, 8000);
-  if (!attachmentTicket && (unlockToken || initData)) {
-    // Без билета ссылка во внешнем браузере не откроется: сначала берём его.
-    event.preventDefault();
-    await loadAttachmentTicket();
-    if (!attachmentTicket) {
-      done();
-      banner('Не удалось открыть вложение', true);
-      return;
-    }
-    openExternal(attachmentUrl(link.dataset.attach, link.dataset.name));
-    return;
-  }
-  // Билет мог прийти позже, чем нарисовали ссылку, — адрес берём свежий.
-  if (link.dataset.attach) link.href = attachmentUrl(link.dataset.attach, link.dataset.name);
-  if (initData && tg?.openLink) {
-    event.preventDefault();
-    openExternal(link.href);
+  event.preventDefault();
+  const { attach: id, name } = link.dataset;
+  const opened = await openDownload(`/api/attachment/${id}`, ticket => attachmentUrl(id, name, ticket));
+  if (!opened) {
+    done();
+    banner('Не удалось открыть вложение', true);
   }
 });
 

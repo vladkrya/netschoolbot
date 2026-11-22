@@ -239,11 +239,11 @@ class TestMaterials:
     def test_material_gets_stable_id_and_link_is_remembered(self):
         from app.netschool import myschool
         material = {"name": "Презентация.pptx", "link": self.LINK, "id": "1_2"}
-        (day,) = build_days([], [], [self._homework([material])])
+        (day,) = build_days([], [], [self._homework([material])], owner=(1, "aaa"))
         (attachment,) = day.homework[0].attachments
         assert attachment.name == "Презентация.pptx"
         assert attachment.id == myschool.material_id(self.LINK) < 2 ** 53
-        assert myschool._LINKS[attachment.id] == self.LINK
+        assert myschool._LINKS[(1, "aaa"), attachment.id] == self.LINK
 
     def test_material_without_link_has_no_id(self):
         (day,) = build_days([], [], [self._homework([{"name": "Файл"}])])
@@ -252,18 +252,57 @@ class TestMaterials:
     async def test_download_uses_remembered_link(self, monkeypatch):
         import httpx
         from app.netschool import myschool
-        file_id = myschool._remember(self.LINK)
+        user = myschool_user()
+        client = MySchool()
+        file_id = myschool._remember((user.telegram_id, "aaa"), self.LINK)
         real = httpx.AsyncClient
         seen = []
 
         def handler(request):
-            seen.append(str(request.url))
+            assert request.extensions["sni_hostname"] == "sgo.example.ru"
+            seen.append((request.url.host, request.headers["Host"]))
             return httpx.Response(200, content=b"data")
 
         monkeypatch.setattr(httpx, "AsyncClient",
                             lambda **kw: real(transport=httpx.MockTransport(handler), **kw))
-        assert await myschool.download_material(None, None, file_id) == b"data"
-        assert seen == [self.LINK]
+
+        async def resolve(url):
+            assert str(url) == self.LINK
+            return "8.8.8.8"
+
+        monkeypatch.setattr(myschool, "_public_material_address", resolve)
+        assert await myschool.download_material(client, user, file_id) == b"data"
+        with pytest.raises(NetSchoolError, match="Файл не найден"):
+            await myschool.download_material(client, replace(user, telegram_id=user.telegram_id + 1), file_id)
+        with pytest.raises(NetSchoolError, match="Файл не найден"):
+            await myschool.download_material(client, replace(user, selected_student_id=2), file_id)
+        assert seen == [("8.8.8.8", "sgo.example.ru")]
+
+    async def test_nonpublic_redirect_is_rejected_before_connect(self, monkeypatch):
+        import asyncio
+        import httpx
+        from app.netschool import myschool
+
+        resolved = []
+        requested = []
+
+        async def resolve(host, *args, **kwargs):
+            resolved.append(host)
+            address = "8.8.8.8" if host == "sgo.example.ru" else "10.0.0.1"
+            return [(None, None, None, "", (address, 443))]
+
+        def handler(request):
+            requested.append(request.url.host)
+            return httpx.Response(302, headers={"Location": "https://files.example.ru/material"})
+
+        real = httpx.AsyncClient
+        monkeypatch.setattr(asyncio.get_running_loop(), "getaddrinfo", resolve)
+        monkeypatch.setattr(httpx, "AsyncClient",
+                            lambda **kw: real(transport=httpx.MockTransport(handler), **kw))
+        with pytest.raises(NetSchoolError, match="Недопустимый адрес материала"):
+            await myschool._download_public_material(httpx.URL(self.LINK))
+        assert resolved == ["sgo.example.ru", "files.example.ru"]
+        assert requested == ["8.8.8.8"]
 
 
 def test_duplicate_homework_rows_collapse():

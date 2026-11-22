@@ -175,6 +175,7 @@ export async function loadDay(force = false) {
     return;
   }
   renderDay();
+  loadOgePromo();
   prefetchAround();
   if (!state.notes) loadNotes().then(() => { if (state.tab === 'day') renderDay(true); });
 }
@@ -305,6 +306,31 @@ function daySummary(lessons) {
     </div>`;
 }
 
+let ogePromoRequest;
+let ogePromoEligible = false;
+
+function loadOgePromo() {
+  if (!state.profile || state.profile.readonly || ogePromoRequest) return;
+  ogePromoRequest = api('/api/student-class')
+    .then(({ data }) => {
+      ogePromoEligible = /^\s*[89](?![0-9])/.test(data?.name ?? '');
+      if (ogePromoEligible && state.tab === 'day' && renderedDayDate === state.date) renderDay(true);
+    })
+    .catch(() => { ogePromoRequest = undefined; });
+}
+
+window.addEventListener('netschool:profile', () => {
+  if (state.tab === 'day' && renderedDayDate) loadOgePromo();
+});
+
+function ogePromoHtml() {
+  if (!ogePromoEligible || state.profile?.readonly) return '';
+  return `<a class="oge-promo" href="https://sdam.colave.ru/?sgoshka" target="_blank" rel="noopener noreferrer">
+    <span><small>Реклама</small>Бесплатные тренажёры к ОГЭ</span>
+    <span class="oge-promo-arrow" aria-hidden="true">↗</span>
+  </a>`;
+}
+
 let renderedKey = '';
 let renderedDayDate = '';
 
@@ -321,9 +347,10 @@ function renderDay(quiet = false) {
 
   updateTimer(lessons.filter(lesson => !lesson.moderation_cancelled), state.date === isoToday());
   loadCountdown(() => renderDay(true));
+  const promo = ogePromoHtml();
   if (!lessons.length) {
     renderedKey = '';
-    container.innerHTML = installCardHtml() + noticesHtml(notices, Boolean(state.profile?.readonly)) + countdownHtml()
+    container.innerHTML = installCardHtml() + noticesHtml(notices, Boolean(state.profile?.readonly)) + promo + countdownHtml()
       + `<div class="empty big">${weekdayIndex(state.date) >= 5 ? 'Выходной' : 'Уроков нет'}</div>`
       + hiddenHtml(day) + addLessonButton();
     bindInstallCard(container);
@@ -342,7 +369,7 @@ function renderDay(quiet = false) {
 
   const notes = (state.notes || []).filter((note) => note.date === state.date);
   const homeworkStatuses = lessons.map((lesson) => homeworkStatus(lesson.homework));
-  const key = `${state.date}|${countdownHtml().length}|${statuses}|${routeKey}|${notes.map((n) => `${n.id}${n.done}${n.time}${n.remind}${n.text}${n.subject}`).join()}|${editsKey(day)}|${notices.map(notice => notice.id).join(',')}`;
+  const key = `${state.date}|${promo.length}|${countdownHtml().length}|${statuses}|${routeKey}|${notes.map((n) => `${n.id}${n.done}${n.time}${n.remind}${n.text}${n.subject}`).join()}|${editsKey(day)}|${notices.map(notice => notice.id).join(',')}`;
   if (quiet && key === renderedKey && container.children.length) return;
   renderedKey = key;
   freshMarks = takeFresh(lessons.flatMap((lesson) => realMarks(lesson.marks)
@@ -350,7 +377,7 @@ function renderDay(quiet = false) {
   container.classList.toggle('quiet', quiet);
   const summary = daySummary(lessons);
   container.innerHTML = installCardHtml() + noticesHtml(notices, Boolean(state.profile?.readonly))
-    + (route ? routeBoardHtml(route, summary) : summary) + countdownHtml()
+    + promo + (route ? routeBoardHtml(route, summary) : summary) + countdownHtml()
     + lessons.map((lesson, index) => lessonCard(lesson, index, homeworkStatuses[index])).join('')
     + notesBlock(notes) + hiddenHtml(day) + addLessonButton();
   if (route) bindRouteBoard(container, state.date, route);

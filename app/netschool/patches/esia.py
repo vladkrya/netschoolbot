@@ -124,6 +124,28 @@ def _patch_mfa_paths() -> None:
     ns_client.NetSchool._handle_esia_mfa = handle_esia_mfa
 
 
+def _patch_myschool_mfa_paths() -> None:
+    """Направляем код на нужный адрес в версиях с перебором адресов."""
+    from myschoolpy import _esia
+
+    if hasattr(_esia, "_VERIFY_PATHS"):
+        return
+    original = _esia._mfa
+    if getattr(original, "__netschoolbot_patched__", False):
+        return
+
+    async def handle_mfa(flow, data):
+        mfa_type = str(data.get("mfa_details", {}).get("type", "")).upper()
+        token = _mfa_path.set(_MFA_PATHS.get(mfa_type))
+        try:
+            return await original(flow, data)
+        finally:
+            _mfa_path.reset(token)
+
+    handle_mfa.__netschoolbot_patched__ = True
+    _esia._mfa = handle_mfa
+
+
 def _patch_max_quiz() -> None:
     """Пробуем пропустить MAX_QUIZ даже без флага ``skippable``."""
     from netschoolpy import client as ns_client
@@ -172,6 +194,7 @@ def apply() -> None:
         _patch_httpx_202()
         _patch_mfa_paths()
         _patch_max_quiz()
+        _patch_myschool_mfa_paths()
     except (ImportError, AttributeError) as exc:
         logger.warning("Не удалось пропатчить ЕСИА-вход netschoolpy: %s", exc)
         return

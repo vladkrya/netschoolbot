@@ -170,6 +170,6 @@ async def android_link(request: web.Request) -> web.Response:
         return json_error("Это может только владелец", status=403)
     if android_updates.release_manifest(android_updates.directory(request)) is None:
         return json_error("Сборка ещё не опубликована", status=404)
-    ticket = issue_attachment_ticket(context(request), current_user(request).telegram_id)
+    ticket = issue_attachment_ticket(context(request), current_user(request).telegram_id, "/api/admin/android.apk")
     url = context(request).settings.web.miniapp_url.rstrip("/") + "/api/admin/android.apk?ticket=" + ticket
     return web.json_response({"ok": True, "data": {"url": url}})
