@@ -263,10 +263,11 @@ function goalProgress(subject, marks, avg, carried = null) {
   if (!goal || avg == null) return '';
   const threshold = thresholdsFor(subject)[goal];
   if (avg >= threshold) return `Цель «${goal}» — выходит ✓`;
-  const needed = neededWithCarry(marks, threshold, 1, carried);
+  const weight = typicalWeight(marks);
+  const needed = neededWithCarry(marks, threshold, weight, carried);
   return needed == null ? `Цель «${goal}»: в этой четверти уже не успеть`
     : needed === 0 ? `Цель «${goal}» — выходит ✓`
-      : `Цель «${goal}»: ещё ${needed} ${plural(needed, ...MARK_WORDS[5])}`;
+      : `Цель «${goal}»: ещё ${needed} ${plural(needed, ...MARK_WORDS[5])}${weight !== 1 && carried?.mode !== 'marks' ? ` с весом ${formatWeight(weight)}` : ''}`;
 }
 
 /** Что нужно до следующей оценки: «до «4» ещё 1 пятёрка или 2 четвёрки». */
@@ -1049,6 +1050,7 @@ function openSubject(subject, key, existingBody = null, data = state.totals) {
         <div class="whatif-real"></div>
       </div>
       <div class="whatif-result"></div>
+      <div class="muted small whatif-carried" hidden></div>
       <div class="muted small whatif-goals"></div>
       <div class="thr">
         <div class="thr-line"><span class="muted small thr-text"></span>
@@ -1379,8 +1381,13 @@ function bindWhatIf(card, marks, id, subjectName, carry = {}) {
       }
       return current(items);
     };
-    const before = combine(marks);
-    const after = combine([...kept(), ...plan.extra]);
+    const all = [...kept(), ...plan.extra];
+    const before = current(marks);
+    const after = current(all);
+    const carried = changed && carry.mode && carry.previousAverage != null ? combine(all) : null;
+    const carriedRow = card.querySelector('.whatif-carried');
+    carriedRow.hidden = carried == null;
+    carriedRow.textContent = carried == null ? '' : `С учётом прошлого периода: ${formatAverage(carried)}`;
     const delta = before != null && after != null ? after - before : 0;
     card.querySelector('.whatif-result').innerHTML = changed
       ? `<span>Средний балл станет:</span><span><strong class="${after == null ? '' : avgClass(after, thresholds)}">${formatAverage(after)}</strong>${
@@ -1394,10 +1401,9 @@ function bindWhatIf(card, marks, id, subjectName, carry = {}) {
     }
     shown = changed ? after : null;
 
-    const all = [...kept(), ...plan.extra];
     card.querySelector('.whatif-goals').innerHTML = [5, 4]
       .map((target) => {
-        const needed = neededWithCarry(all, thresholds[target], plan.weight, carry.mode ? carry : null);
+        const needed = neededMarks(all, thresholds[target], 5, plan.weight);
         const text = needed === 0 ? 'уже выходит'
           : needed == null ? 'не набрать' : `ещё ${needed} × «5» с весом ${formatWeight(plan.weight)}`;
         return `До «${target}»: ${text}`;

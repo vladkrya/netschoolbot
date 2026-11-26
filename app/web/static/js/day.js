@@ -307,14 +307,17 @@ function daySummary(lessons) {
 }
 
 let ogePromoRequest;
-let ogePromoEligible = false;
+let ogeAccountNo = null;
 
 function loadOgePromo() {
   if (!state.profile || state.profile.readonly || ogePromoRequest) return;
   ogePromoRequest = api('/api/student-class')
     .then(({ data }) => {
-      ogePromoEligible = /^\s*[89](?![0-9])/.test(data?.name ?? '');
-      if (ogePromoEligible && state.tab === 'day' && renderedDayDate === state.date) renderDay(true);
+      const number = data?.account_no;
+      if (Number.isSafeInteger(number) && number > 0 && /^\s*[89](?![0-9])/.test(data?.name ?? '')) {
+        ogeAccountNo = number;
+      }
+      if (ogeAccountNo && state.tab === 'day' && renderedDayDate === state.date) renderDay(true);
     })
     .catch(() => { ogePromoRequest = undefined; });
 }
@@ -324,8 +327,8 @@ window.addEventListener('netschool:profile', () => {
 });
 
 function ogePromoHtml() {
-  if (!ogePromoEligible || state.profile?.readonly) return '';
-  return `<a class="oge-promo" href="https://sdam.colave.ru/?sgoshka" target="_blank" rel="noopener noreferrer">
+  if (!ogeAccountNo || state.profile?.readonly) return '';
+  return `<a class="oge-promo" href="https://sdam.colave.ru/?sgoshka&amp;sgoshka_id=${ogeAccountNo}" target="_blank" rel="noopener noreferrer">
     <span>Новинка в СГОшке: бесплатные тренажёры для подготовки к ОГЭ</span>
     <span class="oge-promo-arrow" aria-hidden="true">↗</span>
   </a>`;

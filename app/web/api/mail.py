@@ -11,7 +11,7 @@ from .base import _cached, context, current_user, json_error, routes
 
 
 # Папки почты, которые видны в приложении, и писем на странице списка.
-MAIL_FOLDERS = ("Inbox", "Deleted")
+MAIL_FOLDERS = ("Inbox", "Sent", "Deleted")
 MAIL_PAGE_SIZE = 50
 
 

@@ -258,8 +258,12 @@ async def class_name(app: AppContext, user: User) -> str:
 @routes.get("/api/student-class")
 async def student_class(request: web.Request) -> web.Response:
     """Класс ученика для настроек."""
-    name = await class_name(context(request), current_user(request))
-    return web.json_response({"ok": True, "data": {"name": name, "label": formatting.class_label(name)}})
+    app, user = context(request), current_user(request)
+    name = await class_name(app, user)
+    return web.json_response({"ok": True, "data": {
+        "name": name, "label": formatting.class_label(name),
+        "account_no": await app.accounts.number(user.telegram_id),
+    }})
 
 
 @routes.get("/api/pwa-link")

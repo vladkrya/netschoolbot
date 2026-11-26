@@ -1111,9 +1111,11 @@ class TestNewFeatures:
         app_context.diary.fetch_mail_page = fetch_mail_page
         response = await client.get(f"{BASE}/api/mail", params={"token": token, "folder": "Deleted", "page": 2})
         assert (await response.json())["data"] == {"messages": [{"id": 2}], "page": 2, "pages": 3}
-        assert asked == [("Deleted", 2)]
+        response = await client.get(f"{BASE}/api/mail", params={"token": token, "folder": "Sent"})
+        assert (await response.json())["data"] == {"messages": [{"id": 1}], "page": 1, "pages": 3}
+        assert asked == [("Deleted", 2), ("Sent", 1)]
         assert await app_context.cache.get(uid, "mail") is None
-        for params in ({"folder": "Sent"}, {"page": "0"}, {"page": "x"}):
+        for params in ({"folder": "Unknown"}, {"page": "0"}, {"page": "x"}):
             response = await client.get(f"{BASE}/api/mail", params={"token": token, **params})
             assert response.status == 400, params
 
@@ -1905,7 +1907,7 @@ class TestStudentClass:
         monkeypatch.setattr(app_context.diary, "fetch_class_name", fetch, raising=False)
         url = f"{BASE}/api/student-class"
         data = (await (await client.get(url, params={"token": token})).json())["data"]
-        assert data == {"name": "9б", "label": "9 «Б» класс"}
+        assert data == {"name": "9б", "label": "9 «Б» класс", "account_no": await app_context.accounts.number(1)}
         await client.get(url, params={"token": token})
         assert len(calls) == 1
 
@@ -1915,7 +1917,9 @@ class TestStudentClass:
 
         monkeypatch.setattr(app_context.diary, "fetch_class_name", fetch, raising=False)
         response = await client.get(f"{BASE}/api/student-class", params={"token": token})
-        assert (await response.json())["data"] == {"name": "", "label": ""}
+        assert (await response.json())["data"] == {
+            "name": "", "label": "", "account_no": await app_context.accounts.number(1),
+        }
 
 
 async def test_every_report_can_be_sent_to_chat(app_context, users, tmp_path, monkeypatch):

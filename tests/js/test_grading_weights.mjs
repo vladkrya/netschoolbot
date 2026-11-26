@@ -44,3 +44,20 @@ test('goal count follows the real weight, not weight 1', () => {
   assert.ok(withOne === null || withOne > 50, `with weight 1 it takes ${withOne}`);
   assert.ok(withReal < 20, `with the real weight it takes ${withReal}`);
 });
+
+test('a subject goal uses the weight of future marks', () => {
+  const totals = readFileSync(new URL('../../app/web/static/js/totals.js', import.meta.url), 'utf8');
+  const start = totals.indexOf('function neededWithCarry(');
+  const end = totals.indexOf('/** Что нужно до следующей оценки', start);
+  Object.assign(context, {
+    subjectGoal: () => 5,
+    thresholdsFor: () => ({ 5: 4.5 }),
+    MARK_WORDS: { 5: ['пятёрка', 'пятёрки', 'пятёрок'] },
+    plural: (count, ...forms) => forms[count === 3 ? 1 : 2],
+    formatWeight: String,
+  });
+  vm.runInContext(totals.slice(start, end), context);
+  const journal = marks([2, 15], [5, 15], [5, 15]);
+  assert.equal(context.goalProgress('Алгебра', journal, 4), 'Цель «5»: ещё 3 пятёрки с весом 15');
+  assert.equal(context.weightedAverage(journal.slice(1)), 5);
+});

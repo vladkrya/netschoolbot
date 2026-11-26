@@ -21,10 +21,10 @@ function avatarColor(name) {
 
 // Новый дизайн: во вкладке два раздела — письма и объявления школы.
 let mode = 'mail';
-// Папка писем: входящие или «Удалённые». Входящие лежат в state.mail,
-// удалённые — здесь же, рядом.
 let folder = 'Inbox';
-let deleted = null;
+const otherFolders = new Map();
+const folderTitles = { Inbox: 'Входящие', Sent: 'Отправленные', Deleted: 'Удалённые' };
+const emptyFolder = { Inbox: 'Писем нет', Sent: 'Отправленных писем нет', Deleted: 'Удалённых писем нет' };
 // Поиск и фильтры писем: всё на месте, по уже загруженному списку.
 let query = '';
 let filter = 'all'; // all | unread | read
@@ -32,12 +32,12 @@ let newestFirst = true;
 
 /** Загруженный список открытой папки: { messages, page, pages }. */
 function current() {
-  return folder === 'Deleted' ? deleted : state.mail;
+  return folder === 'Inbox' ? state.mail : otherFolders.get(folder);
 }
 
 function setCurrent(data) {
-  if (folder === 'Deleted') deleted = data;
-  else state.mail = data;
+  if (folder === 'Inbox') state.mail = data;
+  else otherFolders.set(folder, data);
 }
 
 function folderUrl(page, force = false) {
@@ -150,12 +150,12 @@ let shownIds = null;
 function syncFolderControls() {
   const inbox = folder === 'Inbox';
   $('mailFilters').querySelectorAll('[data-filter]').forEach((chip) => {
-    const active = chip.dataset.filter === (inbox ? filter : 'deleted');
+    const active = chip.dataset.filter === (inbox ? filter : folder.toLowerCase());
     chip.classList.toggle('active', active);
     chip.setAttribute('aria-pressed', String(active));
   });
   const title = document.querySelector('.subbar[data-for="mail"] .segment-title');
-  if (title) title.textContent = inbox ? 'Входящие' : 'Удалённые';
+  if (title) title.textContent = folderTitles[folder];
 }
 
 function render() {
@@ -172,14 +172,14 @@ function render() {
   moreObserver?.disconnect();
   const hasMore = (list.page || 1) < (list.pages || 1);
   if (!messages.length && !hasMore) {
-    container.innerHTML = `<div class="empty big">${inbox ? 'Писем нет' : 'Удалённых писем нет'}</div>`;
+    container.innerHTML = `<div class="empty big">${emptyFolder[folder]}</div>`;
     return;
   }
   const visible = visibleMessages(messages);
   const more = hasMore ? `<div class="mail-more" id="mailMore">${skeleton(2)}</div>` : '';
   if (!visible.length) {
     const empty = query.trim() ? 'Ничего не найдено'
-      : !inbox ? 'Удалённых писем нет'
+      : !inbox ? emptyFolder[folder]
       : filter === 'unread' ? 'Непрочитанных писем нет' : 'Прочитанных писем нет';
     // Ещё не всё загружено — ищем дальше по старым письмам.
     container.innerHTML = hasMore ? more : `<div class="empty big">${empty}</div>`;
@@ -314,8 +314,10 @@ async function moveMessage(id, restore, button) {
   popScreen();
   dropFromList(id);
   // Другая папка изменилась тоже — перечитаем её, когда откроют.
-  if (restore) state.mail = null;
-  else deleted = null;
+  if (restore) {
+    state.mail = null;
+    otherFolders.delete('Sent');
+  } else otherFolders.delete('Deleted');
   banner(restore ? 'Письмо вернулось во входящие' : 'Письмо перемещено в «Удалённые»', false, 2500);
 }
 
@@ -429,9 +431,8 @@ export function initMail() {
   $('mailFilters').addEventListener('click', (event) => {
     const chip = event.target.closest('[data-filter]');
     if (!chip) return;
-    // «Удалённые» — другая папка, остальные чипы — фильтры входящих.
-    const wanted = chip.dataset.filter === 'deleted' ? 'Deleted' : 'Inbox';
-    if (wanted === folder && (wanted === 'Deleted' || chip.dataset.filter === filter)) return;
+    const wanted = { sent: 'Sent', deleted: 'Deleted' }[chip.dataset.filter] ?? 'Inbox';
+    if (wanted === folder && (wanted !== 'Inbox' || chip.dataset.filter === filter)) return;
     select();
     if (wanted === 'Inbox') filter = chip.dataset.filter;
     const changedFolder = wanted !== folder;
@@ -595,6 +596,8 @@ export async function openCompose(draft = {}) {
       notify('success');
       popScreen();
       draft.onSent?.([...chosen.values()]);
+      otherFolders.delete('Sent');
+      if (folder === 'Sent') void loadMail(true);
       banner('Письмо отправлено ✓');
       setTimeout(() => banner(''), 3000);
     } catch (error) {
