@@ -1049,7 +1049,10 @@ class UserWatcher:
         # Памяти процесса недостаточно: перезапуски и чередование ошибок
         # не должны снова слать просьбу войти при той же неисправности.
         esia_expired = user.credentials.login_type.is_gosuslugi and error.reason.needs_relogin
-        should_notify = not esia_expired and (error.reason.needs_relogin or not error.reason.is_retryable)
+        # Общая ошибка фоновой проверки не подсказывает пользователю, что сделать.
+        should_notify = (
+            not esia_expired and not error.reason.is_retryable and error.reason is not Reason.UNKNOWN
+        )
         if error.reason is Reason.SERVER_UNAVAILABLE:
             now = self._clock()
             if self._down_since is None:

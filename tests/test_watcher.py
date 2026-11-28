@@ -527,6 +527,21 @@ class TestErrors:
         diary.error = NetSchoolError(Reason.AUTH, "войдите заново")
         assert await watcher.run_once() == float(MAX_BACKOFF)
 
+    async def test_unknown_error_is_recorded_without_notifying(self, users, marks, watcher, diary, notifier):
+        user = make_user()
+        await users.save(user)
+        diary.error = NetSchoolError(Reason.UNKNOWN, "Не удалось получить данные")
+        await watcher.run_once()
+        diary.error = None
+        await watcher.run_once()
+        diary.error = NetSchoolError(Reason.UNKNOWN, "Не удалось получить данные")
+        await watcher.run_once()
+
+        assert notifier.errors == []
+        status = await marks.watch_status(user.telegram_id)
+        assert status.last_ok_at is not None
+        assert status.last_error == diary.error.user_message
+
     async def test_server_error_is_not_reported_to_user(self, users, watcher, diary, notifier):
         await users.save(make_user())
         diary.error = NetSchoolError(Reason.SERVER_UNAVAILABLE, "сервер лежит")
